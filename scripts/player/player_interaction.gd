@@ -1,0 +1,931 @@
+class_name PlayerInteraction
+extends Node
+
+## Sub-module for interaction system: chests, mounting, caves, raft.
+## Add as child of PlayerController. Stores `var pc: PlayerController` and accesses state via `pc.`.
+
+var pc: PlayerController
+
+const CHEST_COLS := 4
+const CHEST_ROWS := 8
+const CHEST_SLOTS := CHEST_COLS * CHEST_ROWS
+const RAFT_SPEED := 4.0
+const RAFT_TURN_SPEED := 1.8
+const MOUNT_SPEED_MULT := 2.0
+const _HORSE_WALK_FRAME_DURATION := 0.14
+const _HORSE_RUN_FRAME_DURATION := 0.09
+const _SIT_IDLE_FRAME_DURATION := 0.12
+
+
+# ===================================================================
+# CHEST
+# ===================================================================
+
+func build_chest_panel(root: Control) -> void:
+	pc._chest_panel = PanelContainer.new()
+	pc._chest_panel.name = "ChestPanel"
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.1, 0.08, 0.06, 0.94)
+	style.border_color = Color(0.5, 0.38, 0.2)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(8)
+	style.set_content_margin_all(16)
+	pc._chest_panel.add_theme_stylebox_override("panel", style)
+	pc._chest_panel.anchor_left = 1.0
+	pc._chest_panel.anchor_right = 1.0
+	pc._chest_panel.anchor_top = 0.0
+	pc._chest_panel.anchor_bottom = 0.0
+	pc._chest_panel.offset_left = -320
+	pc._chest_panel.offset_right = -30
+	pc._chest_panel.offset_top = 30
+	pc._chest_panel.offset_bottom = 560
+	pc._chest_panel.visible = false
+	pc._chest_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	pc._chest_panel.z_index = 60
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+
+	var title := Label.new()
+	title.text = "Chest"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", Color(0.9, 0.8, 0.5))
+	vbox.add_child(title)
+
+	pc._chest_grid = GridContainer.new()
+	pc._chest_grid.columns = CHEST_COLS
+	pc._chest_grid.add_theme_constant_override("h_separation", 4)
+	pc._chest_grid.add_theme_constant_override("v_separation", 4)
+	vbox.add_child(pc._chest_grid)
+
+	pc._chest_panel.add_child(vbox)
+	root.add_child(pc._chest_panel)
+
+
+func open_chest(chest_node: Node3D) -> void:
+	if pc._chest_open:
+		close_chest()
+	pc._chest_node = chest_node
+	pc._chest_open = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if not chest_node.has_meta("chest_contents"):
+		var slots: Array[Dictionary] = []
+		slots.resize(CHEST_SLOTS)
+		for i in CHEST_SLOTS:
+			slots[i] = {}
+		chest_node.set_meta("chest_contents", slots)
+	refresh_chest_ui()
+	if pc._chest_panel:
+		pc._chest_panel.visible = true
+	if pc._inventory_panel:
+		pc._inventory_panel.visible = true
+		pc._refresh_inventory_ui()
+	AudioManager.play_sfx_at("wood_thud", chest_node.global_position, -6.0, 0.2)
+
+
+func close_chest() -> void:
+	pc._chest_open = false
+	pc._chest_node = null
+	if pc._chest_panel:
+		pc._chest_panel.visible = false
+	if pc._inventory_panel and not pc._inventory_open:
+		pc._inventory_panel.visible = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func refresh_chest_ui() -> void:
+	if not pc._chest_grid or not pc._chest_node:
+		return
+	for child in pc._chest_grid.get_children():
+		pc._chest_grid.remove_child(child)
+		child.free()
+
+	var contents: Array = pc._chest_node.get_meta("chest_contents", []) as Array
+
+	for i in CHEST_SLOTS:
+		var slot := PanelContainer.new()
+		slot.custom_minimum_size = Vector2(56, 56)
+		var slot_style := StyleBoxFlat.new()
+		slot_style.bg_color = Color(0.15, 0.13, 0.1, 0.8)
+		slot_style.border_color = Color(0.35, 0.3, 0.2, 0.6)
+		slot_style.set_border_width_all(1)
+		slot_style.set_corner_radius_all(3)
+		slot.add_theme_stylebox_override("panel", slot_style)
+
+		var slot_data: Dictionary = contents[i] if i < contents.size() else {}
+		var item_id: StringName = slot_data.get("item_id", &"") as StringName
+		var count: int = int(slot_data.get("count", 0))
+
+		if item_id != &"" and count > 0:
+			var data: Dictionary = ItemDatabase.get_item(item_id)
+			var icon_path: String = str(data.get("icon", ""))
+			if icon_path != "" and ResourceLoader.exists(icon_path):
+				var tex_rect := TextureRect.new()
+				tex_rect.texture = load(icon_path) as Texture2D
+				tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				tex_rect.custom_minimum_size = Vector2(48, 48)
+				tex_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+				tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				slot.add_child(tex_rect)
+			else:
+				var color_rect := ColorRect.new()
+				color_rect.color = pc._get_item_fallback_color(item_id)
+				color_rect.custom_minimum_size = Vector2(48, 48)
+				color_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				slot.add_child(color_rect)
+
+			if count > 1:
+				var qty := Label.new()
+				qty.text = str(count)
+				qty.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+				qty.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+				qty.add_theme_font_size_override("font_size", 14)
+				qty.add_theme_color_override("font_color", Color.WHITE)
+				qty.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+				qty.add_theme_constant_override("shadow_offset_x", 1)
+				qty.add_theme_constant_override("shadow_offset_y", 1)
+				qty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				slot.add_child(qty)
+
+		var slot_idx := i
+		slot.gui_input.connect(func(ev: InputEvent):
+			on_chest_slot_click(ev, slot_idx)
+		)
+		pc._chest_grid.add_child(slot)
+
+
+func on_chest_slot_click(event: InputEvent, slot_idx: int) -> void:
+	if not event is InputEventMouseButton or not event.pressed:
+		return
+	if not pc._chest_node or not pc._chest_node.has_meta("chest_contents"):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT and mb.button_index != MOUSE_BUTTON_RIGHT:
+		return
+	if not mb.shift_pressed:
+		return
+
+	var contents: Array = pc._chest_node.get_meta("chest_contents") as Array
+	var slot_data: Dictionary = contents[slot_idx] if slot_idx < contents.size() else {}
+	var chest_id: StringName = slot_data.get("item_id", &"") as StringName
+	var chest_count: int = int(slot_data.get("count", 0))
+
+	if chest_id == &"" or chest_count <= 0:
+		return
+
+	if mb.button_index == MOUSE_BUTTON_LEFT:
+		var half := maxi(chest_count / 2, 1)
+		Inventory.add_item(chest_id, half)
+		chest_count -= half
+		if chest_count <= 0:
+			contents[slot_idx] = {}
+		else:
+			contents[slot_idx] = {"item_id": chest_id, "count": chest_count}
+	else:
+		Inventory.add_item(chest_id, chest_count)
+		contents[slot_idx] = {}
+
+	pc._chest_node.set_meta("chest_contents", contents)
+	refresh_chest_ui()
+	pc._refresh_inventory_ui()
+
+
+func deposit_inv_slot_to_chest(slot_idx: int, half_only: bool) -> void:
+	var items: Array = Inventory.get_item_list()
+	if slot_idx >= items.size():
+		return
+	var item_id: StringName = items[slot_idx]["id"] as StringName
+	var count: int = int(items[slot_idx].get("amount", 1))
+	var to_deposit := count if not half_only else maxi(count / 2, 1)
+
+	var contents: Array = pc._chest_node.get_meta("chest_contents") as Array
+	var stack_size: int = ItemDatabase.get_item(item_id).get("stack_size", 50)
+	var deposited := 0
+
+	for i in CHEST_SLOTS:
+		if deposited >= to_deposit:
+			break
+		var sd: Dictionary = contents[i] if i < contents.size() else {}
+		if sd.get("item_id", &"") == item_id:
+			var cur: int = int(sd.get("count", 0))
+			var space := stack_size - cur
+			var add := mini(to_deposit - deposited, space)
+			if add > 0:
+				contents[i] = {"item_id": item_id, "count": cur + add}
+				deposited += add
+
+	for i in CHEST_SLOTS:
+		if deposited >= to_deposit:
+			break
+		var sd: Dictionary = contents[i] if i < contents.size() else {}
+		if sd.is_empty() or sd.get("item_id", &"") == &"":
+			var add := mini(to_deposit - deposited, stack_size)
+			contents[i] = {"item_id": item_id, "count": add}
+			deposited += add
+
+	if deposited > 0:
+		Inventory.remove_item(item_id, deposited)
+		pc._chest_node.set_meta("chest_contents", contents)
+		refresh_chest_ui()
+		pc._refresh_inventory_ui()
+
+
+func deposit_item_to_chest(item_id: StringName, half_only: bool) -> void:
+	var count: int = Inventory.get_amount(item_id)
+	if count <= 0:
+		return
+	var to_deposit := count if not half_only else maxi(count / 2, 1)
+	var contents: Array = pc._chest_node.get_meta("chest_contents") as Array
+	var stack_size: int = ItemDatabase.get_item(item_id).get("stack_size", 50)
+	var deposited := 0
+	for i in CHEST_SLOTS:
+		if deposited >= to_deposit:
+			break
+		var sd: Dictionary = contents[i] if i < contents.size() else {}
+		if sd.get("item_id", &"") == item_id:
+			var cur: int = int(sd.get("count", 0))
+			var space := stack_size - cur
+			var add := mini(to_deposit - deposited, space)
+			if add > 0:
+				contents[i] = {"item_id": item_id, "count": cur + add}
+				deposited += add
+	for i in CHEST_SLOTS:
+		if deposited >= to_deposit:
+			break
+		var sd: Dictionary = contents[i] if i < contents.size() else {}
+		if sd.is_empty() or sd.get("item_id", &"") == &"":
+			var add := mini(to_deposit - deposited, stack_size)
+			contents[i] = {"item_id": item_id, "count": add}
+			deposited += add
+	if deposited > 0:
+		Inventory.remove_item(item_id, deposited)
+		pc._chest_node.set_meta("chest_contents", contents)
+		refresh_chest_ui()
+		pc._refresh_inventory_ui()
+
+
+# ===================================================================
+# INTERACT PROMPT & TRY INTERACT
+# ===================================================================
+
+func update_interact_prompt() -> void:
+	if not pc._interact_prompt:
+		return
+	if pc._inventory_open or pc._workbench_open or pc._build_menu_open or pc._build_mode or pc._chest_open or pc._map_open:
+		pc._interact_prompt.visible = false
+		if pc._world_name_label:
+			pc._world_name_label.visible = false
+		return
+
+	# Check for nearby workbenches
+	var closest_dist := 3.5
+	var closest_name := ""
+	for wb in pc.get_tree().get_nodes_in_group(&"workbenches"):
+		var wb3d := wb as Node3D
+		if not wb3d:
+			continue
+		var d := pc.global_position.distance_to(wb3d.global_position)
+		if d < closest_dist:
+			closest_dist = d
+			closest_name = "Workbench"
+
+	# Check for nearby chests
+	for ch in pc.get_tree().get_nodes_in_group(&"chests"):
+		var ch3d := ch as Node3D
+		if not ch3d:
+			continue
+		var d := pc.global_position.distance_to(ch3d.global_position)
+		if d < closest_dist:
+			closest_dist = d
+			closest_name = "Chest"
+
+	# Check for nearby horses/rafts (mount prompt) or show dismount
+	if pc._on_raft:
+		closest_name = "Dismount Raft"
+	elif pc._mounted:
+		closest_name = "Dismount"
+	else:
+		for horse in pc.get_tree().get_nodes_in_group(&"horses"):
+			var h3d := horse as Node3D
+			if not h3d:
+				continue
+			var d := pc.global_position.distance_to(h3d.global_position)
+			if d < closest_dist:
+				closest_dist = d
+				closest_name = "Mount"
+		for raft in pc.get_tree().get_nodes_in_group(&"rafts"):
+			var r3d := raft as Node3D
+			if not r3d:
+				continue
+			var d := pc.global_position.distance_to(r3d.global_position)
+			if d < 4.0 and d < closest_dist:
+				closest_dist = d
+				closest_name = "Board Raft"
+
+	# Show interactable name only when crosshair is aimed at it (raycast)
+	var nearest_world_name := ""
+	var cam: Camera3D = pc._spring_arm.get_child(0) if pc._spring_arm.get_child_count() > 0 else null
+	if cam and cam.is_inside_tree() and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		var ray_origin := cam.global_position
+		var ray_dir := -cam.global_transform.basis.z
+		var ray_end := ray_origin + ray_dir * 20.0
+		var space := pc.get_world_3d().direct_space_state
+		if space:
+			var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 4)
+			q.exclude = [pc.get_rid()]
+			var hit := space.intersect_ray(q)
+			if not hit.is_empty():
+				var obj := hit["collider"] as Node3D
+				if obj:
+					if obj.has_meta("tree_name"):
+						nearest_world_name = obj.get_meta("tree_name") as String
+					elif obj.has_meta("rock_name"):
+						nearest_world_name = obj.get_meta("rock_name") as String
+					elif obj.has_meta("vein_name"):
+						nearest_world_name = obj.get_meta("vein_name") as String
+					elif obj.has_meta("cave_entrance"):
+						nearest_world_name = "Cave"
+					elif obj.has_meta("cave_exit"):
+						nearest_world_name = "Exit"
+
+	# Cave entrance / exit prompt
+	if not pc._in_cave:
+		for ce in pc.get_tree().get_nodes_in_group(&"cave_entrances"):
+			var ce3d := ce as Node3D
+			if not ce3d:
+				continue
+			var d := pc.global_position.distance_to(ce3d.global_position)
+			if d < 4.0 and d < closest_dist:
+				closest_dist = d
+				closest_name = "Enter Cave"
+	else:
+		for node in pc.get_tree().get_nodes_in_group(&"interactables"):
+			var n3d := node as Node3D
+			if not n3d or not n3d.has_meta("cave_exit"):
+				continue
+			var d := pc.global_position.distance_to(n3d.global_position)
+			if d < 4.0 and d < closest_dist:
+				closest_dist = d
+				closest_name = "Exit Cave"
+
+	if closest_name != "":
+		pc._interact_prompt.text = "[E] %s" % closest_name
+		pc._interact_prompt.visible = true
+	else:
+		pc._interact_prompt.visible = false
+
+	if pc._world_name_label:
+		if nearest_world_name != "" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			pc._world_name_label.text = nearest_world_name
+			pc._world_name_label.visible = true
+			var vp_center := pc.get_viewport().get_visible_rect().size * 0.5
+			pc._world_name_label.position = vp_center + Vector2(18, 16)
+		else:
+			pc._world_name_label.visible = false
+
+
+func try_interact() -> void:
+	# Dismount raft
+	if pc._on_raft:
+		dismount_raft()
+		return
+	# Dismount if mounted
+	if pc._mounted:
+		dismount()
+		return
+
+	# Cave exit — check first if inside a cave
+	if pc._in_cave:
+		for node in pc.get_tree().get_nodes_in_group(&"interactables"):
+			var n3d := node as Node3D
+			if not n3d or not n3d.has_meta("cave_exit"):
+				continue
+			if pc.global_position.distance_to(n3d.global_position) < 4.0:
+				exit_cave()
+				return
+
+	# Cave entrances
+	if not pc._in_cave:
+		for node in pc.get_tree().get_nodes_in_group(&"cave_entrances"):
+			var n3d := node as Node3D
+			if not n3d:
+				continue
+			if pc.global_position.distance_to(n3d.global_position) < 4.0:
+				enter_cave(n3d)
+				return
+
+	var best_loot: Node3D
+	var best_dist := 3.45
+	for node in pc.get_tree().get_nodes_in_group(&"loot"):
+		var loot := node as Node3D
+		if not loot:
+			continue
+		if "pickup_grace" in loot and loot.pickup_grace > 0.0:
+			continue
+		var d: float = pc.global_position.distance_to(loot.global_position)
+		if d < best_dist:
+			best_dist = d
+			best_loot = loot
+	if best_loot and best_loot.has_method("pickup"):
+		best_loot.pickup(pc)
+		return
+
+	# Check rafts
+	for raft in pc.get_tree().get_nodes_in_group(&"rafts"):
+		var r3d := raft as Node3D
+		if r3d and pc.global_position.distance_to(r3d.global_position) < 4.0:
+			mount_raft(r3d)
+			return
+
+	# Check horses
+	for horse in pc.get_tree().get_nodes_in_group(&"horses"):
+		var h3d := horse as Node3D
+		if h3d and pc.global_position.distance_to(h3d.global_position) < 3.5:
+			mount(h3d)
+			return
+
+	# Check chests
+	for ch in pc.get_tree().get_nodes_in_group(&"chests"):
+		var ch3d := ch as Node3D
+		if not ch3d:
+			continue
+		if pc.global_position.distance_to(ch3d.global_position) < 3.0:
+			open_chest(ch3d)
+			return
+
+	# Check workbenches
+	for wb in pc.get_tree().get_nodes_in_group(&"workbenches"):
+		var wb3d := wb as Node3D
+		if not wb3d:
+			continue
+		if pc.global_position.distance_to(wb3d.global_position) < 3.0:
+			pc._workbench_ui.open_workbench()
+			return
+
+
+# ===================================================================
+# CAVE TELEPORTATION
+# ===================================================================
+
+func enter_cave(entrance: Node3D) -> void:
+	if pc._in_cave:
+		return
+	pc._cave_return_pos = pc.global_position
+	pc._cave_entrance_node = entrance
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(entrance.global_position)
+	pc._cave_instance = CaveGenerator.create_cave_instance(rng)
+	pc.get_tree().root.add_child(pc._cave_instance)
+
+	var spawn_local: Vector3 = pc._cave_instance.get_meta("player_spawn", Vector3.ZERO)
+	pc.global_position = pc._cave_instance.global_position + spawn_local
+	pc.velocity = Vector3.ZERO
+	pc._in_cave = true
+
+	if pc._footstep_player and pc._footstep_player.playing:
+		pc._footstep_player.stop()
+	if pc._gallop_player and pc._gallop_player.playing:
+		pc._gallop_player.stop()
+
+
+func exit_cave() -> void:
+	if not pc._in_cave:
+		return
+	pc._in_cave = false
+	pc.global_position = pc._cave_return_pos + Vector3(0.0, 1.0, 0.0)
+	pc.velocity = Vector3.ZERO
+
+	if is_instance_valid(pc._cave_instance):
+		pc._cave_instance.queue_free()
+	pc._cave_instance = null
+	pc._cave_entrance_node = null
+
+
+# ===================================================================
+# MOUNT (HORSE)
+# ===================================================================
+
+func mount(horse: Node3D) -> void:
+	pc._mounted = true
+	pc._mount_node = horse
+	pc._horse_walk_frames = horse.get_meta("walk_frames", {}) as Dictionary
+	pc._horse_run_frames = horse.get_meta("run_frames", {}) as Dictionary
+	pc._horse_anim_idx = 0
+	pc._horse_anim_timer = 0.0
+	pc.floor_max_angle = deg_to_rad(55.0)
+	pc.floor_snap_length = 1.5
+	horse.remove_from_group(&"horses")
+	if horse is StaticBody3D:
+		(horse as StaticBody3D).collision_layer = 0
+		(horse as StaticBody3D).collision_mask = 0
+	for child in horse.get_children():
+		if child is CollisionShape3D:
+			(child as CollisionShape3D).disabled = true
+
+	var gpos := horse.global_position
+	var grot := horse.rotation
+	var old_parent := horse.get_parent()
+	if old_parent:
+		old_parent.remove_child(horse)
+	var world_root := pc.get_tree().current_scene
+	if world_root:
+		world_root.add_child(horse)
+	horse.global_position = gpos
+	horse.rotation = grot
+
+	pc._mount_anim_player = pc._find_anim_player(horse)
+
+	if pc._footstep_player and pc._footstep_player.playing:
+		pc._footstep_player.stop()
+
+	pc._sit_idle_anim_idx = 0
+	pc._sit_idle_anim_timer = 0.0
+
+	if pc._player_sprite and pc._gltf_anim_player:
+		pc._player_sprite.visible = true
+		var rider_node := pc._player_sprite.duplicate()
+		rider_node.name = "Rider3D"
+		rider_node.scale = pc._player_sprite.scale
+		var mount_model := get_mount_3d_model(horse)
+		var ride_y := 1.2
+		if mount_model:
+			ride_y = estimate_mount_height(mount_model)
+		rider_node.position = Vector3(0, ride_y, 0)
+		horse.add_child(rider_node)
+		pc._player_sprite.visible = false
+		var rider_anim := pc._find_anim_player(rider_node)
+		if rider_anim:
+			for anim_name in rider_anim.get_animation_list():
+				var anim := rider_anim.get_animation(anim_name)
+				if anim:
+					anim.loop_mode = Animation.LOOP_LINEAR
+			var played := false
+			for anim_name in rider_anim.get_animation_list():
+				if "sit" in anim_name.to_lower():
+					rider_anim.play(anim_name)
+					played = true
+					break
+			if not played:
+				for anim_name in rider_anim.get_animation_list():
+					if "idle" in anim_name.to_lower():
+						rider_anim.play(anim_name)
+						break
+	elif pc._player_sprite:
+		pc._player_sprite.visible = false
+		var rider := Sprite3D.new()
+		rider.name = "RiderSprite"
+		if pc._sit_idle_frames.has("south") and not (pc._sit_idle_frames["south"] as Array).is_empty():
+			rider.texture = (pc._sit_idle_frames["south"] as Array)[0] as Texture2D
+		elif pc._player_textures.has("south"):
+			rider.texture = pc._player_textures["south"] as Texture2D
+		rider.pixel_size = 0.025
+		rider.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		rider.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		rider.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+		rider.transparent = true
+		rider.shaded = true
+		rider.double_sided = true
+		rider.position.y = 1.55
+		rider.render_priority = 1
+		horse.add_child(rider)
+
+
+func get_mount_3d_model(horse: Node3D) -> Node3D:
+	for child in horse.get_children():
+		if child is Node3D and not child is CollisionShape3D and child.name != "BodySprite" and child.name != "RiderSprite" and child.name != "Rider3D":
+			return child
+	return null
+
+
+func estimate_mount_height(model: Node3D) -> float:
+	var max_y := 1.0
+	for child in model.get_children():
+		if child is MeshInstance3D:
+			var aabb := (child as MeshInstance3D).get_aabb()
+			var top := aabb.position.y + aabb.size.y
+			if top > max_y:
+				max_y = top
+	return max_y * model.scale.y * 0.85
+
+
+func force_dismount() -> void:
+	pc._mounted = false
+	pc.floor_max_angle = deg_to_rad(55.0)
+	pc.floor_snap_length = 1.0
+
+	if pc._player_sprite:
+		pc._player_sprite.visible = true
+	if pc._gallop_player and pc._gallop_player.playing:
+		pc._gallop_player.stop()
+
+	if is_instance_valid(pc._mount_node):
+		pc._mount_node.add_to_group(&"horses")
+		if pc._mount_node is StaticBody3D:
+			(pc._mount_node as StaticBody3D).collision_layer = 4
+			(pc._mount_node as StaticBody3D).collision_mask = 1
+		for child in pc._mount_node.get_children():
+			if child is CollisionShape3D:
+				(child as CollisionShape3D).disabled = false
+		for tag in ["RiderSprite", "Rider3D"]:
+			var rider := pc._mount_node.get_node_or_null(tag)
+			if rider:
+				rider.queue_free()
+
+	pc._mount_node = null
+	pc._mount_anim_player = null
+	pc._horse_walk_frames = {}
+	pc._horse_run_frames = {}
+	pc._horse_anim_idx = 0
+	pc._horse_anim_timer = 0.0
+
+
+func dismount() -> void:
+	if not pc._mounted:
+		return
+	pc._mounted = false
+	pc.floor_max_angle = deg_to_rad(55.0)
+	pc.floor_snap_length = 1.0
+
+	if pc._player_sprite:
+		pc._player_sprite.visible = true
+	if pc._gallop_player and pc._gallop_player.playing:
+		pc._gallop_player.stop()
+
+	if is_instance_valid(pc._mount_node):
+		pc._mount_node.add_to_group(&"horses")
+		if pc._mount_node is StaticBody3D:
+			(pc._mount_node as StaticBody3D).collision_layer = 4
+			(pc._mount_node as StaticBody3D).collision_mask = 1
+		for child in pc._mount_node.get_children():
+			if child is CollisionShape3D:
+				(child as CollisionShape3D).disabled = false
+		for tag in ["RiderSprite", "Rider3D"]:
+			var rider := pc._mount_node.get_node_or_null(tag)
+			if rider:
+				rider.queue_free()
+		var offset := -pc.global_transform.basis.z * 2.0
+		offset.y = 0.0
+		pc._mount_node.global_position = pc.global_position + offset
+
+	pc._mount_node = null
+	pc._mount_anim_player = null
+	pc._horse_walk_frames = {}
+	pc._horse_run_frames = {}
+	pc._horse_anim_idx = 0
+	pc._horse_anim_timer = 0.0
+
+
+# ===================================================================
+# RAFT
+# ===================================================================
+
+func spawn_raft(pos: Vector3, rot_y: float) -> void:
+	var raft := StaticBody3D.new()
+	raft.name = "Raft"
+	raft.collision_layer = 4
+	raft.collision_mask = 0
+	raft.add_to_group(&"rafts")
+	raft.set_meta("interact_name", "Raft")
+
+	var raft_visual := build_raft_model()
+	raft.add_child(raft_visual)
+
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(3.0, 0.3, 4.0)
+	col.shape = box
+	col.position.y = 0.15
+	raft.add_child(col)
+
+	pc.get_tree().current_scene.add_child(raft)
+	raft.global_position = pos
+	raft.rotation.y = rot_y
+
+
+func build_raft_model() -> Node3D:
+	var root := Node3D.new()
+	root.name = "RaftModel"
+
+	var plank_mat := StandardMaterial3D.new()
+	plank_mat.albedo_color = Color(0.45, 0.32, 0.18)
+	plank_mat.roughness = 0.9
+	plank_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	var dark_mat := StandardMaterial3D.new()
+	dark_mat.albedo_color = Color(0.32, 0.22, 0.12)
+	dark_mat.roughness = 0.85
+	dark_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	var rope_mat := StandardMaterial3D.new()
+	rope_mat.albedo_color = Color(0.60, 0.52, 0.35)
+	rope_mat.roughness = 0.8
+	rope_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+
+	# Base planks (5 logs lashed together)
+	for i in 5:
+		var x_off := (float(i) - 2.0) * 0.58
+		pc._add_box_part(root, "log_%d" % i, Vector3(0.28, 0.18, 3.6), Vector3(x_off, 0.09, 0.0), plank_mat)
+
+	# Cross beams
+	pc._add_box_part(root, "beam_f", Vector3(2.8, 0.10, 0.14), Vector3(0.0, 0.22, 1.2), dark_mat)
+	pc._add_box_part(root, "beam_b", Vector3(2.8, 0.10, 0.14), Vector3(0.0, 0.22, -1.2), dark_mat)
+
+	# Rope lashings
+	for bz in [1.2, -1.2]:
+		for lx in [-1.0, 0.0, 1.0]:
+			pc._add_box_part(root, "rope_%.0f_%.0f" % [bz, lx], Vector3(0.06, 0.06, 0.20), Vector3(lx, 0.26, bz), rope_mat)
+
+	# Raised edge rails
+	pc._add_box_part(root, "rail_l", Vector3(0.08, 0.20, 3.2), Vector3(-1.35, 0.32, 0.0), dark_mat)
+	pc._add_box_part(root, "rail_r", Vector3(0.08, 0.20, 3.2), Vector3(1.35, 0.32, 0.0), dark_mat)
+
+	# Paddle (resting on the side)
+	var paddle_root := Node3D.new()
+	paddle_root.name = "Paddle"
+	pc._add_box_part(paddle_root, "shaft", Vector3(0.05, 0.05, 1.8), Vector3.ZERO, dark_mat)
+	pc._add_box_part(paddle_root, "blade", Vector3(0.14, 0.02, 0.40), Vector3(0.0, 0.0, -1.0), plank_mat)
+	pc._add_box_part(paddle_root, "grip", Vector3(0.07, 0.07, 0.12), Vector3(0.0, 0.0, 0.85), dark_mat)
+	paddle_root.position = Vector3(0.0, 0.8, 0.0)
+	root.add_child(paddle_root)
+
+	return root
+
+
+func mount_raft(raft: Node3D) -> void:
+	pc._on_raft = true
+	pc._raft_node = raft
+	pc._raft_paddle_timer = 0.0
+	pc._is_swimming = false
+
+	raft.remove_from_group(&"rafts")
+	if raft is StaticBody3D:
+		(raft as StaticBody3D).collision_layer = 0
+		(raft as StaticBody3D).collision_mask = 0
+	for child in raft.get_children():
+		if child is CollisionShape3D:
+			(child as CollisionShape3D).disabled = true
+
+	pc.collision_layer = 0
+	pc.collision_mask = 0
+
+
+func dismount_raft() -> void:
+	if not pc._on_raft or not is_instance_valid(pc._raft_node):
+		pc._on_raft = false
+		pc._raft_node = null
+		pc.rotation = Vector3.ZERO
+		pc.collision_layer = 1
+		pc.collision_mask = 1
+		return
+
+	pc._on_raft = false
+	pc._raft_node.add_to_group(&"rafts")
+	if pc._raft_node is StaticBody3D:
+		(pc._raft_node as StaticBody3D).collision_layer = 4
+		(pc._raft_node as StaticBody3D).collision_mask = 0
+	for child in pc._raft_node.get_children():
+		if child is CollisionShape3D:
+			(child as CollisionShape3D).disabled = false
+
+	var dismount_dir := -pc.global_transform.basis.z
+	dismount_dir.y = 0.0
+	dismount_dir = dismount_dir.normalized()
+	var water_y := WaterSystem.get_surface_y(pc.global_position.x, pc.global_position.z)
+	pc.global_position = pc._raft_node.global_position + dismount_dir * 3.0
+	pc.global_position.y = water_y + 0.3
+	pc.velocity = Vector3.ZERO
+	pc.rotation = Vector3.ZERO
+
+	pc._raft_node = null
+	pc.collision_layer = 1
+	pc.collision_mask = 1
+
+
+func tick_raft(delta: float) -> void:
+	if not pc._on_raft or not is_instance_valid(pc._raft_node):
+		dismount_raft()
+		return
+
+	var water_y := WaterSystem.get_surface_y(pc._raft_node.global_position.x, pc._raft_node.global_position.z)
+	pc._raft_node.global_position.y = water_y
+
+	var input_dir := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_backward")
+	var raft_forward := Vector3(-sin(pc._raft_node.rotation.y), 0.0, -cos(pc._raft_node.rotation.y))
+	var moving := input_dir.length() > 0.1
+
+	if absf(input_dir.x) > 0.1:
+		pc._raft_node.rotation.y -= input_dir.x * RAFT_TURN_SPEED * delta
+
+	if absf(input_dir.y) > 0.1:
+		var spd := RAFT_SPEED * input_dir.y
+		pc._raft_node.global_position += raft_forward * spd * delta
+
+	pc.global_position = pc._raft_node.global_position + Vector3(0.0, 0.4, 0.0)
+	pc.rotation.y = pc._raft_node.rotation.y
+	pc.velocity = Vector3.ZERO
+
+	# Wave tilt
+	var wave_tilt_x := WaterSystem.get_surface_y(pc._raft_node.global_position.x + 1.0, pc._raft_node.global_position.z) - WaterSystem.get_surface_y(pc._raft_node.global_position.x - 1.0, pc._raft_node.global_position.z)
+	var wave_tilt_z := WaterSystem.get_surface_y(pc._raft_node.global_position.x, pc._raft_node.global_position.z + 1.0) - WaterSystem.get_surface_y(pc._raft_node.global_position.x, pc._raft_node.global_position.z - 1.0)
+	pc._raft_node.rotation.x = lerpf(pc._raft_node.rotation.x, wave_tilt_z * 0.15, 4.0 * delta)
+	pc._raft_node.rotation.z = lerpf(pc._raft_node.rotation.z, -wave_tilt_x * 0.15, 4.0 * delta)
+
+	tick_paddle_animation(delta, moving)
+
+
+func tick_paddle_animation(delta: float, rowing: bool) -> void:
+	var paddle := pc._raft_node.get_node_or_null("RaftModel/Paddle") as Node3D
+	if not paddle:
+		return
+	if rowing:
+		pc._raft_paddle_timer += delta * 3.0
+		var cycle := fmod(pc._raft_paddle_timer, TAU)
+		var dip := sin(cycle)
+		var side_f := 1.0 if pc._raft_paddle_side else -1.0
+		# Switch sides every full stroke
+		if cycle < delta * 3.0 and pc._raft_paddle_timer > TAU * 0.5:
+			pc._raft_paddle_side = not pc._raft_paddle_side
+		paddle.position = Vector3(side_f * 0.8, 0.7, 0.2)
+		paddle.rotation = Vector3(
+			deg_to_rad(lerpf(-15.0, 45.0, (dip + 1.0) * 0.5)),
+			deg_to_rad(side_f * 20.0),
+			deg_to_rad(side_f * -30.0),
+		)
+	else:
+		paddle.position = paddle.position.lerp(Vector3(0.0, 0.8, 0.0), 4.0 * delta)
+		paddle.rotation = paddle.rotation.lerp(Vector3.ZERO, 4.0 * delta)
+
+
+func tick_horse_animation(delta: float) -> void:
+	if not pc._mount_node:
+		return
+
+	var flat_speed := Vector2(pc.velocity.x, pc.velocity.z).length()
+	var is_moving := flat_speed > 0.5
+
+	if pc._mount_anim_player:
+		var want_anim := "idle"
+		if is_moving:
+			want_anim = "run" if pc._is_sprinting else "walk"
+		if want_anim != pc._mount_current_anim:
+			pc._mount_current_anim = want_anim
+			for candidate in ["animation." + want_anim, want_anim]:
+				if pc._mount_anim_player.has_animation(candidate):
+					pc._mount_anim_player.play(candidate)
+					break
+
+		var mount_model := get_mount_3d_model(pc._mount_node)
+		if mount_model:
+			var flat_vel := Vector2(pc.velocity.x, pc.velocity.z)
+			if flat_vel.length() > 0.3:
+				var target_angle := atan2(-pc.velocity.x, -pc.velocity.z)
+				mount_model.rotation.y = lerp_angle(mount_model.rotation.y, target_angle, 0.15)
+		return
+
+	var dir := pc._get_camera_relative_dir()
+	var body_sprite := pc._mount_node.get_node_or_null("BodySprite") as Sprite3D
+	var rider := pc._mount_node.get_node_or_null("RiderSprite") as Sprite3D
+
+	if is_moving:
+		var use_run := pc._is_sprinting and pc._horse_run_frames.has(dir)
+		var frame_dict: Dictionary = pc._horse_run_frames if use_run else pc._horse_walk_frames
+		var frame_dur := _HORSE_RUN_FRAME_DURATION if use_run else _HORSE_WALK_FRAME_DURATION
+		if frame_dict.has(dir):
+			var frames: Array = Array(frame_dict[dir])
+			if not frames.is_empty():
+				pc._horse_anim_timer -= delta
+				if pc._horse_anim_timer <= 0.0:
+					pc._horse_anim_idx = (pc._horse_anim_idx + 1) % frames.size()
+					pc._horse_anim_timer = frame_dur
+				if pc._horse_anim_idx >= frames.size():
+					pc._horse_anim_idx = 0
+				var tex := frames[pc._horse_anim_idx] as Texture2D
+				if tex and body_sprite:
+					body_sprite.texture = tex
+					var smat := body_sprite.material_override as ShaderMaterial
+					if smat:
+						smat.set_shader_parameter("sprite_texture", tex)
+	else:
+		pc._horse_anim_idx = 0
+		pc._horse_anim_timer = 0.0
+		var horse_textures: Dictionary = pc._mount_node.get_meta("sprite_textures", {}) as Dictionary
+		if body_sprite and horse_textures.has(dir):
+			var htex: Texture2D = horse_textures[dir] as Texture2D
+			body_sprite.texture = htex
+			var smat := body_sprite.material_override as ShaderMaterial
+			if smat:
+				smat.set_shader_parameter("sprite_texture", htex)
+
+	if rider:
+		if pc._sit_idle_frames.has(dir) and not (pc._sit_idle_frames[dir] as Array).is_empty():
+			var sit_frames: Array = Array(pc._sit_idle_frames[dir])
+			pc._sit_idle_anim_timer -= delta
+			if pc._sit_idle_anim_timer <= 0.0:
+				pc._sit_idle_anim_idx = (pc._sit_idle_anim_idx + 1) % sit_frames.size()
+				pc._sit_idle_anim_timer = _SIT_IDLE_FRAME_DURATION
+			if pc._sit_idle_anim_idx >= sit_frames.size():
+				pc._sit_idle_anim_idx = 0
+			rider.texture = sit_frames[pc._sit_idle_anim_idx] as Texture2D
+		elif pc._player_textures.has(dir):
+			rider.texture = pc._player_textures[dir] as Texture2D

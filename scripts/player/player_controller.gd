@@ -120,9 +120,6 @@ var _chest_open: bool = false
 var _chest_panel: PanelContainer
 var _chest_grid: GridContainer
 var _chest_node: Node3D
-const CHEST_COLS := 4
-const CHEST_ROWS := 8
-const CHEST_SLOTS := CHEST_COLS * CHEST_ROWS
 
 # Mounting
 var _mounted: bool = false
@@ -131,8 +128,6 @@ var _on_raft: bool = false
 var _raft_node: Node3D = null
 var _raft_paddle_timer: float = 0.0
 var _raft_paddle_side: bool = false  # false=left, true=right
-const RAFT_SPEED := 4.0
-const RAFT_TURN_SPEED := 1.8
 var _last_safe_position: Vector3 = Vector3.ZERO
 var _safe_pos_timer: float = 0.0
 var _respawn_grace: float = 0.0
@@ -141,12 +136,9 @@ var _horse_walk_frames: Dictionary = {}  # {dir -> Array[Texture2D]}
 var _horse_run_frames: Dictionary = {}   # {dir -> Array[Texture2D]}
 var _horse_anim_idx: int = 0
 var _horse_anim_timer: float = 0.0
-const _HORSE_WALK_FRAME_DURATION := 0.14
-const _HORSE_RUN_FRAME_DURATION := 0.09
 var _sit_idle_frames: Dictionary = {}  # {dir -> Array[Texture2D]}
 var _sit_idle_anim_idx: int = 0
 var _sit_idle_anim_timer: float = 0.0
-const _SIT_IDLE_FRAME_DURATION := 0.12
 
 # Cave instancing
 var _in_cave: bool = false
@@ -341,6 +333,15 @@ var _minimap_time_label: Label
 var _minimap_refresh_timer := 0.0
 var _minimap_needs_refresh := true
 
+var _movement: PlayerMovement
+var _combat: PlayerCombat
+var _building: PlayerBuilding
+var _inventory_ui: PlayerInventoryUI
+var _workbench_ui: PlayerWorkbenchUI
+var _hud_module: PlayerHUD
+var _interaction: PlayerInteraction
+var _anim: PlayerAnimation
+
 
 func _set_player_sprite_tex(_tex: Texture2D) -> void:
 	pass
@@ -356,6 +357,47 @@ func _ready() -> void:
 	floor_snap_length = 1.0
 	floor_max_angle = deg_to_rad(55.0)
 	_respawn_grace = 3.0
+
+	_movement = PlayerMovement.new()
+	_movement.name = "PlayerMovement"
+	add_child(_movement)
+	_movement.pc = self
+
+	_combat = PlayerCombat.new()
+	_combat.name = "PlayerCombat"
+	add_child(_combat)
+	_combat.pc = self
+
+	_building = PlayerBuilding.new()
+	_building.name = "PlayerBuilding"
+	add_child(_building)
+	_building.pc = self
+
+	_inventory_ui = PlayerInventoryUI.new()
+	_inventory_ui.name = "PlayerInventoryUI"
+	add_child(_inventory_ui)
+	_inventory_ui.pc = self
+
+	_workbench_ui = PlayerWorkbenchUI.new()
+	_workbench_ui.name = "PlayerWorkbenchUI"
+	add_child(_workbench_ui)
+	_workbench_ui.pc = self
+
+	_hud_module = PlayerHUD.new()
+	_hud_module.name = "PlayerHUD"
+	add_child(_hud_module)
+	_hud_module.pc = self
+
+	_interaction = PlayerInteraction.new()
+	_interaction.name = "PlayerInteraction"
+	add_child(_interaction)
+	_interaction.pc = self
+
+	_anim = PlayerAnimation.new()
+	_anim.name = "PlayerAnimation"
+	add_child(_anim)
+	_anim.pc = self
+
 	_setup_player_sprite()
 	_setup_floating_bars()
 	_build_hud()
@@ -397,7 +439,7 @@ func _notification(what: int) -> void:
 
 func _input(event: InputEvent) -> void:
 	if _workbench_open and (event.is_action_pressed(&"interact") or event.is_action_pressed(&"inventory") or event.is_action_pressed(&"quit_game")):
-		_close_workbench()
+		_workbench_ui.close_workbench()
 		get_viewport().set_input_as_handled()
 		return
 	if (_build_menu_open or _build_mode) and event.is_action_pressed(&"block"):
@@ -440,9 +482,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cancel_bow_draw()
 			return
 		if _chest_open:
-			_close_chest()
+			_interaction.close_chest()
 		elif _workbench_open:
-			_close_workbench()
+			_workbench_ui.close_workbench()
 		elif _build_mode:
 			_cancel_build_mode()
 		elif _build_menu_open:
@@ -457,7 +499,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event.is_action_pressed(&"inventory"):
 		if _chest_open:
-			_close_chest()
+			_interaction.close_chest()
 			return
 		if _build_menu_open:
 			_close_build_menu()
@@ -472,7 +514,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event.is_action_pressed(&"map"):
 		if _chest_open:
-			_close_chest()
+			_interaction.close_chest()
 		if _inventory_open:
 			_close_inventory()
 		_toggle_map()
@@ -589,7 +631,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_spring_arm.spring_length = minf(_spring_arm.spring_length + zoom_speed, max_zoom)
 
 	if event.is_action_pressed(&"interact"):
-		_try_interact()
+		_interaction.try_interact()
 	if event.is_action_pressed(&"auto_run"):
 		_auto_run = not _auto_run
 	if event.is_action_pressed(&"toggle_walk"):
@@ -691,14 +733,14 @@ func _physics_process(delta: float) -> void:
 		_update_build_ghost()
 
 	if _on_raft:
-		_tick_raft(delta)
+		_interaction.tick_raft(delta)
 	elif _mounted:
 		if not is_instance_valid(_mount_node):
-			_force_dismount()
+			_interaction.force_dismount()
 		elif _mount_node:
 			_mount_node.global_position = global_position
 			_mount_node.rotation.y = rotation.y + PI
-			_tick_horse_animation(delta)
+			_interaction.tick_horse_animation(delta)
 
 	if global_position.y < -10.0 and not _in_cave:
 		if _last_safe_position != Vector3.ZERO:
@@ -730,7 +772,7 @@ func _physics_process(delta: float) -> void:
 	_interact_check_timer -= delta
 	if _interact_check_timer <= 0.0:
 		_interact_check_timer = 0.15
-		_update_interact_prompt()
+		_interaction.update_interact_prompt()
 
 
 # ===================================================================
@@ -2434,8 +2476,11 @@ func _build_hud() -> void:
 	_build_map_panel(_hud_root)
 	_build_drag_icon(_hud_root)
 	_build_build_menu(_hud_root)
-	_build_workbench_panel(_hud_root)
-	_build_chest_panel(_hud_root)
+	_workbench_ui = PlayerWorkbenchUI.new()
+	add_child(_workbench_ui)
+	_workbench_ui.pc = self
+	_workbench_ui.build_workbench_panel(_hud_root)
+	_interaction.build_chest_panel(_hud_root)
 	_build_interaction_prompt(_hud_root)
 	_build_world_name_label(_hud_root)
 	_build_snap_label(_hud_root)
@@ -4158,7 +4203,7 @@ func _place_build() -> void:
 	var mesh_type: String = recipe.get("mesh", "box") as String
 
 	if build_id == &"raft":
-		_spawn_raft(_build_ghost.global_position, _build_ghost.rotation.y)
+		_interaction.spawn_raft(_build_ghost.global_position, _build_ghost.rotation.y)
 		AudioManager.play_sfx_at("wood_thud", _build_ghost.global_position, -2.0, 0.2)
 		return
 
@@ -5114,468 +5159,6 @@ func _build_build_crosshair(root: Control) -> void:
 	root.add_child(_build_crosshair)
 
 
-func _build_workbench_panel(root: Control) -> void:
-	_workbench_panel = PanelContainer.new()
-	_workbench_panel.name = "WorkbenchPanel"
-	_workbench_panel.visible = false
-	_workbench_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_workbench_panel.position = Vector2(-252, -240)
-	_workbench_panel.custom_minimum_size = Vector2(504, 480)
-	_workbench_panel.z_index = 90
-
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.06, 0.06, 0.1, 0.95)
-	bg.border_color = Color(0.6, 0.45, 0.2)
-	bg.set_border_width_all(2)
-	bg.set_corner_radius_all(6)
-	bg.set_content_margin_all(17)
-	_workbench_panel.add_theme_stylebox_override("panel", bg)
-
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 10)
-
-	var title_row := HBoxContainer.new()
-	title_row.alignment = BoxContainer.ALIGNMENT_CENTER
-
-	var title := Label.new()
-	title.text = "Workbench"
-	title.add_theme_font_size_override("font_size", 22)
-	title.add_theme_color_override("font_color", Color(0.9, 0.75, 0.4))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_row.add_child(title)
-
-	_workbench_discard_btn = Button.new()
-	_workbench_discard_btn.text = "🗑 Off"
-	_workbench_discard_btn.add_theme_font_size_override("font_size", 12)
-	_workbench_discard_btn.custom_minimum_size = Vector2(70, 28)
-	_workbench_discard_btn.tooltip_text = "Auto-discard: crafted items at or below this rarity are dropped on the ground"
-	_workbench_discard_btn.pressed.connect(_cycle_auto_discard)
-	var discard_style := StyleBoxFlat.new()
-	discard_style.bg_color = Color(0.15, 0.12, 0.1, 0.9)
-	discard_style.border_color = Color(0.4, 0.35, 0.25)
-	discard_style.set_border_width_all(1)
-	discard_style.set_corner_radius_all(4)
-	discard_style.set_content_margin_all(4)
-	_workbench_discard_btn.add_theme_stylebox_override("normal", discard_style)
-	title_row.add_child(_workbench_discard_btn)
-
-	_workbench_preview_btn = Button.new()
-	_workbench_preview_btn.text = "👁 Preview"
-	_workbench_preview_btn.add_theme_font_size_override("font_size", 12)
-	_workbench_preview_btn.custom_minimum_size = Vector2(86, 28)
-	_workbench_preview_btn.tooltip_text = "Toggle craft preview: see material breakdown and star chances before crafting"
-	_workbench_preview_btn.pressed.connect(_toggle_workbench_preview)
-	var preview_style := discard_style.duplicate() as StyleBoxFlat
-	preview_style.border_color = Color(0.3, 0.5, 0.4)
-	_workbench_preview_btn.add_theme_stylebox_override("normal", preview_style)
-	_workbench_preview_btn.add_theme_color_override("font_color", Color(0.5, 0.9, 0.6))
-	title_row.add_child(_workbench_preview_btn)
-
-	vbox.add_child(title_row)
-
-	var tab_row := HBoxContainer.new()
-	tab_row.add_theme_constant_override("separation", 4)
-	tab_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_workbench_tab_buttons.clear()
-	for cat in ["Tools", "Equipment", "Supplies", "Building"]:
-		var btn := Button.new()
-		btn.text = cat
-		btn.custom_minimum_size = Vector2(102, 34)
-		btn.add_theme_font_size_override("font_size", 13)
-		btn.pressed.connect(_on_workbench_tab.bind(cat))
-		tab_row.add_child(btn)
-		_workbench_tab_buttons.append(btn)
-	vbox.add_child(tab_row)
-
-	# Quality tier selector (Low / Medium / High) — only visible for Equipment tab
-	var tier_vbox := VBoxContainer.new()
-	tier_vbox.add_theme_constant_override("separation", 2)
-
-	_workbench_tier_row = HBoxContainer.new()
-	_workbench_tier_row.add_theme_constant_override("separation", 4)
-	_workbench_tier_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_workbench_tier_buttons.clear()
-	for tier_name in ["Low", "Medium", "High"]:
-		var tbtn := Button.new()
-		tbtn.text = tier_name
-		tbtn.custom_minimum_size = Vector2(96, 29)
-		tbtn.add_theme_font_size_override("font_size", 13)
-		tbtn.pressed.connect(_on_workbench_tier.bind(tier_name.to_lower()))
-		_workbench_tier_row.add_child(tbtn)
-		_workbench_tier_buttons.append(tbtn)
-	tier_vbox.add_child(_workbench_tier_row)
-
-	var info_btn := Button.new()
-	info_btn.text = "ⓘ  Material Quality"
-	info_btn.add_theme_font_size_override("font_size", 12)
-	info_btn.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-	var info_style := StyleBoxFlat.new()
-	info_style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
-	info_style.set_border_width_all(0)
-	info_style.set_content_margin_all(2)
-	info_btn.add_theme_stylebox_override("normal", info_style)
-	var info_hover := info_style.duplicate() as StyleBoxFlat
-	info_hover.bg_color = Color(0.2, 0.2, 0.3, 0.3)
-	info_btn.add_theme_stylebox_override("hover", info_hover)
-	info_btn.pressed.connect(_toggle_tier_info)
-	tier_vbox.add_child(info_btn)
-
-	_workbench_tier_info_panel = PanelContainer.new()
-	_workbench_tier_info_panel.visible = false
-	var info_bg := StyleBoxFlat.new()
-	info_bg.bg_color = Color(0.08, 0.08, 0.14, 0.95)
-	info_bg.border_color = Color(0.5, 0.4, 0.25)
-	info_bg.set_border_width_all(1)
-	info_bg.set_corner_radius_all(4)
-	info_bg.set_content_margin_all(12)
-	_workbench_tier_info_panel.add_theme_stylebox_override("panel", info_bg)
-	var info_rtl := RichTextLabel.new()
-	info_rtl.bbcode_enabled = true
-	info_rtl.fit_content = true
-	info_rtl.scroll_active = false
-	info_rtl.add_theme_font_size_override("normal_font_size", 12)
-	info_rtl.add_theme_font_size_override("bold_font_size", 12)
-	info_rtl.text = "[b]Controls which materials are used when crafting weapons and armor.[/b]\n\n" \
-		+ "[color=#ffffff]Low[/color] — Uses 0–1★ materials only. Consumes [color=#aaaaaa]lowest[/color] quality first.\n" \
-		+ "  Ideal for basic crafts without spending starred materials.\n\n" \
-		+ "[color=#55aaff]Medium[/color] — Uses 1–3★ materials only (ignores 0★). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
-		+ "  Good balance — uses your mid-tier materials for a reasonable star chance.\n\n" \
-		+ "[color=#ff4444]High[/color] — Uses 3–5★ materials only (ignores 0–2★). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
-		+ "  Best chance at high-star gear, but requires rare materials.\n\n" \
-		+ "[color=#ccaa66]Higher quality materials increase the chance of crafting starred gear with powerful affixes.\n" \
-		+ "Use Preview mode (👁) to see exact material consumption and star chances before crafting.[/color]"
-	_workbench_tier_info_panel.add_child(info_rtl)
-	tier_vbox.add_child(_workbench_tier_info_panel)
-
-	vbox.add_child(tier_vbox)
-
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(468, 336)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_workbench_grid = VBoxContainer.new()
-	_workbench_grid.add_theme_constant_override("separation", 8)
-	scroll.add_child(_workbench_grid)
-	vbox.add_child(scroll)
-
-	_workbench_panel.add_child(vbox)
-	root.add_child(_workbench_panel)
-
-	_workbench_preview_panel = PanelContainer.new()
-	_workbench_preview_panel.name = "CraftPreviewPanel"
-	_workbench_preview_panel.visible = false
-	_workbench_preview_panel.set_anchors_preset(Control.PRESET_CENTER)
-	_workbench_preview_panel.custom_minimum_size = Vector2(360, 0)
-	_workbench_preview_panel.position = Vector2(270, -120)
-	_workbench_preview_panel.z_index = 95
-	var ppbg := StyleBoxFlat.new()
-	ppbg.bg_color = Color(0.08, 0.07, 0.12, 0.97)
-	ppbg.border_color = Color(0.5, 0.7, 0.5)
-	ppbg.set_border_width_all(2)
-	ppbg.set_corner_radius_all(8)
-	ppbg.set_content_margin_all(14)
-	_workbench_preview_panel.add_theme_stylebox_override("panel", ppbg)
-	root.add_child(_workbench_preview_panel)
-
-
-func _toggle_tier_info() -> void:
-	if _workbench_tier_info_panel:
-		_workbench_tier_info_panel.visible = not _workbench_tier_info_panel.visible
-
-
-func _cycle_auto_discard() -> void:
-	_workbench_auto_discard_star += 1
-	if _workbench_auto_discard_star > 4:
-		_workbench_auto_discard_star = -1
-	_update_discard_btn_label()
-
-
-func _update_discard_btn_label() -> void:
-	if not _workbench_discard_btn:
-		return
-	if _workbench_auto_discard_star < 0:
-		_workbench_discard_btn.text = "🗑 Off"
-		_workbench_discard_btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-	else:
-		var rname: String = ItemDatabase.RARITY_NAMES[_workbench_auto_discard_star]
-		_workbench_discard_btn.text = "🗑 ≤%s" % rname
-		_workbench_discard_btn.add_theme_color_override("font_color", ItemDatabase.RARITY_COLORS[_workbench_auto_discard_star])
-
-
-func _toggle_workbench_preview() -> void:
-	_workbench_preview_on = not _workbench_preview_on
-	if _workbench_preview_btn:
-		if _workbench_preview_on:
-			_workbench_preview_btn.text = "👁 Preview"
-			_workbench_preview_btn.add_theme_color_override("font_color", Color(0.5, 0.9, 0.6))
-		else:
-			_workbench_preview_btn.text = "👁 Off"
-			_workbench_preview_btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-	_refresh_workbench_ui()
-
-
-func _on_workbench_tier(tier: String) -> void:
-	_workbench_quality_tier = tier
-	_refresh_workbench_ui()
-
-
-func _get_workbench_star_config() -> Dictionary:
-	match _workbench_quality_tier:
-		"medium": return {"min": 1, "max": 3, "prefer_low": false}
-		"high": return {"min": 3, "max": 5, "prefer_low": false}
-		_: return {"min": 0, "max": 1, "prefer_low": true}
-
-
-func _on_workbench_tab(category: String) -> void:
-	_workbench_category = category
-	_refresh_workbench_ui()
-
-
-func _build_chest_panel(root: Control) -> void:
-	_chest_panel = PanelContainer.new()
-	_chest_panel.name = "ChestPanel"
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.1, 0.08, 0.06, 0.94)
-	style.border_color = Color(0.5, 0.38, 0.2)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(8)
-	style.set_content_margin_all(16)
-	_chest_panel.add_theme_stylebox_override("panel", style)
-	_chest_panel.anchor_left = 1.0
-	_chest_panel.anchor_right = 1.0
-	_chest_panel.anchor_top = 0.0
-	_chest_panel.anchor_bottom = 0.0
-	_chest_panel.offset_left = -320
-	_chest_panel.offset_right = -30
-	_chest_panel.offset_top = 30
-	_chest_panel.offset_bottom = 560
-	_chest_panel.visible = false
-	_chest_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	_chest_panel.z_index = 60
-
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 8)
-
-	var title := Label.new()
-	title.text = "Chest"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 20)
-	title.add_theme_color_override("font_color", Color(0.9, 0.8, 0.5))
-	vbox.add_child(title)
-
-	_chest_grid = GridContainer.new()
-	_chest_grid.columns = CHEST_COLS
-	_chest_grid.add_theme_constant_override("h_separation", 4)
-	_chest_grid.add_theme_constant_override("v_separation", 4)
-	vbox.add_child(_chest_grid)
-
-	_chest_panel.add_child(vbox)
-	root.add_child(_chest_panel)
-
-
-func _open_chest(chest_node: Node3D) -> void:
-	if _chest_open:
-		_close_chest()
-	_chest_node = chest_node
-	_chest_open = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	if not chest_node.has_meta("chest_contents"):
-		var slots: Array[Dictionary] = []
-		slots.resize(CHEST_SLOTS)
-		for i in CHEST_SLOTS:
-			slots[i] = {}
-		chest_node.set_meta("chest_contents", slots)
-	_refresh_chest_ui()
-	if _chest_panel:
-		_chest_panel.visible = true
-	if _inventory_panel:
-		_inventory_panel.visible = true
-		_refresh_inventory_ui()
-	AudioManager.play_sfx_at("wood_thud", chest_node.global_position, -6.0, 0.2)
-
-
-func _close_chest() -> void:
-	_chest_open = false
-	_chest_node = null
-	if _chest_panel:
-		_chest_panel.visible = false
-	if _inventory_panel and not _inventory_open:
-		_inventory_panel.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-
-
-func _refresh_chest_ui() -> void:
-	if not _chest_grid or not _chest_node:
-		return
-	for child in _chest_grid.get_children():
-		_chest_grid.remove_child(child)
-		child.free()
-
-	var contents: Array = _chest_node.get_meta("chest_contents", []) as Array
-
-	for i in CHEST_SLOTS:
-		var slot := PanelContainer.new()
-		slot.custom_minimum_size = Vector2(56, 56)
-		var slot_style := StyleBoxFlat.new()
-		slot_style.bg_color = Color(0.15, 0.13, 0.1, 0.8)
-		slot_style.border_color = Color(0.35, 0.3, 0.2, 0.6)
-		slot_style.set_border_width_all(1)
-		slot_style.set_corner_radius_all(3)
-		slot.add_theme_stylebox_override("panel", slot_style)
-
-		var slot_data: Dictionary = contents[i] if i < contents.size() else {}
-		var item_id: StringName = slot_data.get("item_id", &"") as StringName
-		var count: int = int(slot_data.get("count", 0))
-
-		if item_id != &"" and count > 0:
-			var data: Dictionary = ItemDatabase.get_item(item_id)
-			var icon_path: String = str(data.get("icon", ""))
-			if icon_path != "" and ResourceLoader.exists(icon_path):
-				var tex_rect := TextureRect.new()
-				tex_rect.texture = load(icon_path) as Texture2D
-				tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-				tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-				tex_rect.custom_minimum_size = Vector2(48, 48)
-				tex_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-				tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				slot.add_child(tex_rect)
-			else:
-				var color_rect := ColorRect.new()
-				color_rect.color = _get_item_fallback_color(item_id)
-				color_rect.custom_minimum_size = Vector2(48, 48)
-				color_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				slot.add_child(color_rect)
-
-			if count > 1:
-				var qty := Label.new()
-				qty.text = str(count)
-				qty.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-				qty.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-				qty.add_theme_font_size_override("font_size", 14)
-				qty.add_theme_color_override("font_color", Color.WHITE)
-				qty.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-				qty.add_theme_constant_override("shadow_offset_x", 1)
-				qty.add_theme_constant_override("shadow_offset_y", 1)
-				qty.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				slot.add_child(qty)
-
-		var slot_idx := i
-		slot.gui_input.connect(func(ev: InputEvent):
-			_on_chest_slot_click(ev, slot_idx)
-		)
-		_chest_grid.add_child(slot)
-
-
-func _on_chest_slot_click(event: InputEvent, slot_idx: int) -> void:
-	if not event is InputEventMouseButton or not event.pressed:
-		return
-	if not _chest_node or not _chest_node.has_meta("chest_contents"):
-		return
-	var mb := event as InputEventMouseButton
-	if mb.button_index != MOUSE_BUTTON_LEFT and mb.button_index != MOUSE_BUTTON_RIGHT:
-		return
-	if not mb.shift_pressed:
-		return
-
-	var contents: Array = _chest_node.get_meta("chest_contents") as Array
-	var slot_data: Dictionary = contents[slot_idx] if slot_idx < contents.size() else {}
-	var chest_id: StringName = slot_data.get("item_id", &"") as StringName
-	var chest_count: int = int(slot_data.get("count", 0))
-
-	if chest_id == &"" or chest_count <= 0:
-		return
-
-	if mb.button_index == MOUSE_BUTTON_LEFT:
-		var half := maxi(chest_count / 2, 1)
-		Inventory.add_item(chest_id, half)
-		chest_count -= half
-		if chest_count <= 0:
-			contents[slot_idx] = {}
-		else:
-			contents[slot_idx] = {"item_id": chest_id, "count": chest_count}
-	else:
-		Inventory.add_item(chest_id, chest_count)
-		contents[slot_idx] = {}
-
-	_chest_node.set_meta("chest_contents", contents)
-	_refresh_chest_ui()
-	_refresh_inventory_ui()
-
-
-func _deposit_inv_slot_to_chest(slot_idx: int, half_only: bool) -> void:
-	var items: Array = Inventory.get_item_list()
-	if slot_idx >= items.size():
-		return
-	var item_id: StringName = items[slot_idx]["id"] as StringName
-	var count: int = int(items[slot_idx].get("amount", 1))
-	var to_deposit := count if not half_only else maxi(count / 2, 1)
-
-	var contents: Array = _chest_node.get_meta("chest_contents") as Array
-	var stack_size: int = ItemDatabase.get_item(item_id).get("stack_size", 50)
-	var deposited := 0
-
-	for i in CHEST_SLOTS:
-		if deposited >= to_deposit:
-			break
-		var sd: Dictionary = contents[i] if i < contents.size() else {}
-		if sd.get("item_id", &"") == item_id:
-			var cur: int = int(sd.get("count", 0))
-			var space := stack_size - cur
-			var add := mini(to_deposit - deposited, space)
-			if add > 0:
-				contents[i] = {"item_id": item_id, "count": cur + add}
-				deposited += add
-
-	for i in CHEST_SLOTS:
-		if deposited >= to_deposit:
-			break
-		var sd: Dictionary = contents[i] if i < contents.size() else {}
-		if sd.is_empty() or sd.get("item_id", &"") == &"":
-			var add := mini(to_deposit - deposited, stack_size)
-			contents[i] = {"item_id": item_id, "count": add}
-			deposited += add
-
-	if deposited > 0:
-		Inventory.remove_item(item_id, deposited)
-		_chest_node.set_meta("chest_contents", contents)
-		_refresh_chest_ui()
-		_refresh_inventory_ui()
-
-
-func _deposit_item_to_chest(item_id: StringName, half_only: bool) -> void:
-	var count: int = Inventory.get_amount(item_id)
-	if count <= 0:
-		return
-	var to_deposit := count if not half_only else maxi(count / 2, 1)
-	var contents: Array = _chest_node.get_meta("chest_contents") as Array
-	var stack_size: int = ItemDatabase.get_item(item_id).get("stack_size", 50)
-	var deposited := 0
-	for i in CHEST_SLOTS:
-		if deposited >= to_deposit:
-			break
-		var sd: Dictionary = contents[i] if i < contents.size() else {}
-		if sd.get("item_id", &"") == item_id:
-			var cur: int = int(sd.get("count", 0))
-			var space := stack_size - cur
-			var add := mini(to_deposit - deposited, space)
-			if add > 0:
-				contents[i] = {"item_id": item_id, "count": cur + add}
-				deposited += add
-	for i in CHEST_SLOTS:
-		if deposited >= to_deposit:
-			break
-		var sd: Dictionary = contents[i] if i < contents.size() else {}
-		if sd.is_empty() or sd.get("item_id", &"") == &"":
-			var add := mini(to_deposit - deposited, stack_size)
-			contents[i] = {"item_id": item_id, "count": add}
-			deposited += add
-	if deposited > 0:
-		Inventory.remove_item(item_id, deposited)
-		_chest_node.set_meta("chest_contents", contents)
-		_refresh_chest_ui()
-		_refresh_inventory_ui()
-
-
 func _add_building_glb(parent: Node3D, model_path: String, sz: Vector3, ghost_mat: Material = null, tint: Color = Color(-1, -1, -1)) -> bool:
 	var scene: PackedScene = load(model_path) as PackedScene
 	if not scene:
@@ -5777,303 +5360,6 @@ func _build_interaction_prompt(root: Control) -> void:
 	root.add_child(_interact_prompt)
 
 
-func _open_workbench() -> void:
-	if not _workbench_panel:
-		return
-	if _workbench_open:
-		return
-	_workbench_open = true
-	_workbench_panel.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	call_deferred("_refresh_workbench_ui")
-
-
-func _close_workbench() -> void:
-	_workbench_open = false
-	if _workbench_panel:
-		_workbench_panel.visible = false
-	if _workbench_preview_panel:
-		_workbench_preview_panel.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-
-
-func _get_workbench_category(data: Dictionary) -> String:
-	var item_type: String = str(data.get("type", "material"))
-	if item_type == "tool":
-		return "Tools"
-	elif item_type in ["weapon", "armor"]:
-		return "Equipment"
-	elif item_type == "placeable":
-		return "Building"
-	else:
-		return "Supplies"
-
-
-func _refresh_workbench_ui() -> void:
-	if _workbench_preview_panel:
-		_workbench_preview_panel.visible = false
-	if not _workbench_grid or not is_instance_valid(_workbench_grid):
-		return
-	while _workbench_grid.get_child_count() > 0:
-		var c := _workbench_grid.get_child(0)
-		_workbench_grid.remove_child(c)
-		c.free()
-
-	# Style active tab
-	for btn in _workbench_tab_buttons:
-		var is_active := btn.text == _workbench_category
-		var s := StyleBoxFlat.new()
-		if is_active:
-			s.bg_color = Color(0.9, 0.75, 0.4, 0.3)
-			s.border_color = Color(0.9, 0.75, 0.4)
-		else:
-			s.bg_color = Color(0.15, 0.14, 0.2, 0.8)
-			s.border_color = Color(0.3, 0.28, 0.22)
-		s.set_border_width_all(1)
-		s.set_corner_radius_all(4)
-		s.set_content_margin_all(4)
-		btn.add_theme_stylebox_override("normal", s)
-		var h := s.duplicate() as StyleBoxFlat
-		h.bg_color = s.bg_color.lightened(0.15)
-		btn.add_theme_stylebox_override("hover", h)
-		btn.add_theme_color_override("font_color", Color.WHITE if is_active else Color(0.7, 0.65, 0.55))
-
-	# Show/hide quality tier row — only for Equipment tab
-	var show_tiers := _workbench_category == "Equipment"
-	if _workbench_tier_row:
-		_workbench_tier_row.get_parent().visible = show_tiers
-	if _workbench_tier_info_panel and not show_tiers:
-		_workbench_tier_info_panel.visible = false
-	if _workbench_discard_btn:
-		_workbench_discard_btn.visible = show_tiers
-	if _workbench_preview_btn:
-		_workbench_preview_btn.visible = show_tiers
-
-	# Style active tier button
-	var tier_colors := {"low": Color.WHITE, "medium": Color(0.35, 0.7, 1.0), "high": Color(1.0, 0.25, 0.25)}
-	for tbtn in _workbench_tier_buttons:
-		var tier_key := tbtn.text.to_lower()
-		var is_active_tier := tier_key == _workbench_quality_tier
-		var ts := StyleBoxFlat.new()
-		if is_active_tier:
-			var accent: Color = tier_colors.get(tier_key, Color.WHITE)
-			ts.bg_color = accent * Color(1, 1, 1, 0.25)
-			ts.border_color = accent
-		else:
-			ts.bg_color = Color(0.12, 0.12, 0.18, 0.8)
-			ts.border_color = Color(0.25, 0.24, 0.2)
-		ts.set_border_width_all(1)
-		ts.set_corner_radius_all(4)
-		ts.set_content_margin_all(3)
-		tbtn.add_theme_stylebox_override("normal", ts)
-		var th := ts.duplicate() as StyleBoxFlat
-		th.bg_color = ts.bg_color.lightened(0.15)
-		tbtn.add_theme_stylebox_override("hover", th)
-		var font_col: Color = tier_colors.get(tier_key, Color.WHITE) if is_active_tier else Color(0.6, 0.55, 0.5)
-		tbtn.add_theme_color_override("font_color", font_col)
-
-	var _star_cfg := _get_workbench_star_config()
-	var max_star: int = _star_cfg["max"]
-	var min_star: int = _star_cfg["min"]
-	var prefer_low: bool = _star_cfg["prefer_low"]
-
-	# Building tab: show BUILD_RECIPES (same items as hammer build menu)
-	if _workbench_category == "Building":
-		_populate_workbench_building_tab()
-		return
-
-	var recipes: Array = ItemDatabase.get_workbench_recipes()
-	if recipes.is_empty():
-		return
-
-	var found_any := false
-	for i in recipes.size():
-		var entry = recipes[i]
-		if not entry is Dictionary:
-			continue
-		var item_id: StringName = StringName(str(entry.get("id", "")))
-		var data = entry.get("data", {})
-		if not data is Dictionary:
-			continue
-		if item_id == &"" or data.is_empty():
-			continue
-
-		if _get_workbench_category(data) != _workbench_category:
-			continue
-
-		found_any = true
-		var item_type: String = str(data.get("type", "material"))
-		var is_starrable := item_type in ["weapon", "armor"]
-		var eff_max: int = max_star if is_starrable else 0
-		var eff_min: int = min_star if is_starrable else 0
-		var eff_low: bool = prefer_low if is_starrable else false
-		var can_make: bool = ItemDatabase.can_craft(item_id, eff_max, eff_min)
-
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-
-		var icon_rect := TextureRect.new()
-		icon_rect.custom_minimum_size = Vector2(43, 43)
-		icon_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-		icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		var icon_tex: Texture2D = ItemDatabase.get_icon(item_id)
-		if icon_tex:
-			icon_rect.texture = icon_tex
-		else:
-			var ph := PlaceholderTexture2D.new()
-			ph.size = Vector2(38, 38)
-			icon_rect.texture = ph
-			icon_rect.modulate = _get_item_fallback_color(item_id)
-		row.add_child(icon_rect)
-
-		var info_vb := VBoxContainer.new()
-		info_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		info_vb.add_theme_constant_override("separation", 2)
-
-		var craft_amount: int = int(data.get("craft_amount", 1))
-		var name_text: String = str(data.get("name", str(item_id)))
-		if craft_amount > 1:
-			name_text += " x%d" % craft_amount
-		var name_lbl := Label.new()
-		name_lbl.text = name_text
-		name_lbl.add_theme_font_size_override("font_size", 15)
-		name_lbl.add_theme_color_override("font_color", Color.WHITE if can_make else Color(0.5, 0.45, 0.4))
-		info_vb.add_child(name_lbl)
-
-		var recipe_arr = data.get("recipe", [])
-		if not recipe_arr is Array:
-			recipe_arr = []
-
-		var cost_lbl := RichTextLabel.new()
-		cost_lbl.bbcode_enabled = true
-		cost_lbl.fit_content = true
-		cost_lbl.scroll_active = false
-		cost_lbl.autowrap_mode = TextServer.AUTOWRAP_OFF
-		cost_lbl.add_theme_font_size_override("normal_font_size", 12)
-		cost_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var cost_text := ""
-		for j in recipe_arr.size():
-			var ingredient = recipe_arr[j]
-			if not ingredient is Dictionary:
-				continue
-			var req_id: StringName = StringName(str(ingredient.get("item_id", "")))
-			var req_amt: int = int(ingredient.get("amount", 0))
-			var req_data: Dictionary = ItemDatabase.get_item(req_id)
-			var req_name: String = str(req_data.get("name", str(req_id)))
-			var have: int = Inventory.get_amount_capped_star(req_id, eff_max, eff_min)
-			var have_color := "aaffaa" if have >= req_amt else "ff6666"
-			if cost_text != "":
-				cost_text += "  "
-			cost_text += "[color=#%s]%s %d/%d[/color]" % [have_color, req_name, have, req_amt]
-		cost_lbl.text = cost_text
-		info_vb.add_child(cost_lbl)
-
-		row.add_child(info_vb)
-
-		var btn := Button.new()
-		if _workbench_preview_on and is_starrable:
-			btn.text = "Preview"
-		else:
-			btn.text = "Craft"
-		btn.disabled = not can_make
-		btn.custom_minimum_size = Vector2(72, 36)
-		btn.pressed.connect(_on_workbench_craft.bind(item_id))
-		row.add_child(btn)
-
-		_workbench_grid.add_child(row)
-
-	if not found_any:
-		var empty_lbl := Label.new()
-		empty_lbl.text = "No recipes in this category."
-		empty_lbl.add_theme_font_size_override("font_size", 14)
-		empty_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-		empty_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_workbench_grid.add_child(empty_lbl)
-
-
-func _get_build_icon(recipe_id: StringName) -> Texture2D:
-	var path := "res://textures/items/%s.png" % str(recipe_id)
-	if ResourceLoader.exists(path):
-		return load(path) as Texture2D
-	return null
-
-
-func _populate_workbench_building_tab() -> void:
-	for recipe: Dictionary in BUILD_RECIPES:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-
-		var recipe_id: StringName = recipe["id"] as StringName
-		var icon_tex := _get_build_icon(recipe_id)
-		if icon_tex:
-			var tex_rect := TextureRect.new()
-			tex_rect.texture = icon_tex
-			tex_rect.custom_minimum_size = Vector2(43, 43)
-			tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			row.add_child(tex_rect)
-		else:
-			var color_rect := ColorRect.new()
-			color_rect.custom_minimum_size = Vector2(43, 43)
-			color_rect.color = recipe.get("color", Color(0.4, 0.3, 0.15)) as Color
-			row.add_child(color_rect)
-
-		var info_vb := VBoxContainer.new()
-		info_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		info_vb.add_theme_constant_override("separation", 2)
-
-		var name_lbl := Label.new()
-		name_lbl.add_theme_font_size_override("font_size", 15)
-
-		var cost_text := ""
-		var can_afford := true
-		for mat: Dictionary in (recipe["cost"] as Array):
-			var mat_id: StringName = mat["item"] as StringName
-			var mat_amt: int = int(mat["amount"])
-			var have: int = Inventory.get_amount_any_star(mat_id)
-			var mat_name: String = (ItemDatabase.get_item(mat_id) as Dictionary).get("name", str(mat_id)) as String
-			if have < mat_amt:
-				can_afford = false
-			var have_color := "aaffaa" if have >= mat_amt else "ff6666"
-			if cost_text != "":
-				cost_text += "  "
-			cost_text += "[color=#%s]%s %d/%d[/color]" % [have_color, mat_name, have, mat_amt]
-
-		var tab_name: String = recipe.get("tab", "Misc") as String
-		var display_name: String = recipe["name"] as String
-		name_lbl.text = display_name
-		name_lbl.add_theme_color_override("font_color", Color(0.9, 0.85, 0.7) if can_afford else Color(0.5, 0.45, 0.4))
-		info_vb.add_child(name_lbl)
-
-		var cost_lbl := RichTextLabel.new()
-		cost_lbl.bbcode_enabled = true
-		cost_lbl.text = cost_text
-		cost_lbl.fit_content = true
-		cost_lbl.scroll_active = false
-		cost_lbl.autowrap_mode = TextServer.AUTOWRAP_OFF
-		cost_lbl.custom_minimum_size.y = 19
-		cost_lbl.add_theme_font_size_override("normal_font_size", 12)
-		cost_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		info_vb.add_child(cost_lbl)
-		row.add_child(info_vb)
-
-		var btn := Button.new()
-		btn.text = "Build"
-		btn.disabled = not can_afford
-		btn.custom_minimum_size = Vector2(72, 36)
-		btn.pressed.connect(_on_workbench_build.bind(recipe_id))
-		row.add_child(btn)
-
-		_workbench_grid.add_child(row)
-
-
-func _on_workbench_build(build_id: StringName) -> void:
-	_build_selected = build_id
-	_close_workbench()
-	_build_from_workbench = true
-	_enter_build_mode()
-
-
 func _drop_item_on_ground(item_id: StringName, amount: int, despawn_time: float = 60.0) -> void:
 	var parsed := ItemDatabase.parse_star_id(item_id)
 	var stars: int = parsed["stars"]
@@ -6098,195 +5384,6 @@ func _drop_item_on_ground(item_id: StringName, amount: int, despawn_time: float 
 			if is_instance_valid(drop):
 				drop.queue_free()
 		)
-
-
-func _on_workbench_craft(item_id: StringName) -> void:
-	var item_data := ItemDatabase.get_item(item_id)
-	var item_type: String = str(item_data.get("type", ""))
-	var is_starrable := item_type in ["weapon", "armor"]
-	if _workbench_preview_on and is_starrable:
-		_show_craft_preview(item_id)
-		return
-	_execute_craft(item_id)
-
-
-func _execute_craft(item_id: StringName) -> void:
-	var item_data := ItemDatabase.get_item(item_id)
-	var item_type: String = str(item_data.get("type", ""))
-	var is_starrable := item_type in ["weapon", "armor"]
-	var _craft_cfg := _get_workbench_star_config()
-	var eff_max: int = int(_craft_cfg["max"]) if is_starrable else 0
-	var eff_min: int = int(_craft_cfg["min"]) if is_starrable else 0
-	var eff_low: bool = bool(_craft_cfg["prefer_low"]) if is_starrable else false
-	if item_type == "placeable":
-		if not ItemDatabase.can_craft(item_id, eff_max, eff_min):
-			return
-		var recipe_var = item_data.get("recipe", [])
-		var recipe: Array = recipe_var if recipe_var is Array else []
-		for ingredient in recipe:
-			if not ingredient is Dictionary:
-				continue
-			var req_id: StringName = StringName(str(ingredient.get("item_id", "")))
-			var req_amount: int = int(ingredient.get("amount", 0))
-			Inventory.remove_item_capped_star(req_id, req_amount, eff_max, eff_min, eff_low)
-		_close_workbench()
-		_enter_raft_placement()
-		return
-	var crafted_id: StringName = ItemDatabase.craft_item_at(item_id, "workbench", eff_max, eff_min, eff_low)
-	if crafted_id != &"":
-		var crafted_parsed := ItemDatabase.parse_star_id(crafted_id)
-		var crafted_stars: int = crafted_parsed["stars"]
-		if _workbench_auto_discard_star >= 0 and crafted_stars <= _workbench_auto_discard_star:
-			var craft_amount: int = int(ItemDatabase.get_item(crafted_id).get("craft_amount", 1))
-			Inventory.remove_item(crafted_id, craft_amount)
-			_drop_item_on_ground(crafted_id, craft_amount, 60.0)
-			_spawn_discard_text(crafted_id)
-		else:
-			_spawn_craft_text(crafted_id)
-		_refresh_workbench_ui()
-		_refresh_inventory_ui()
-
-
-func _show_craft_preview(item_id: StringName) -> void:
-	if not _workbench_preview_panel:
-		return
-	for ch in _workbench_preview_panel.get_children():
-		ch.queue_free()
-
-	var item_data := ItemDatabase.get_item(item_id)
-	var item_name: String = str(item_data.get("name", str(item_id)))
-	var recipe_var = item_data.get("recipe", [])
-	var recipe_arr: Array = recipe_var if recipe_var is Array else []
-
-	var cfg := _get_workbench_star_config()
-	var eff_max: int = cfg["max"]
-	var eff_min: int = cfg["min"]
-	var eff_low: bool = cfg["prefer_low"]
-
-	var vb := VBoxContainer.new()
-	vb.add_theme_constant_override("separation", 10)
-
-	var title := Label.new()
-	title.text = "Craft Preview — %s" % item_name
-	title.add_theme_font_size_override("font_size", 16)
-	title.add_theme_color_override("font_color", Color(0.9, 0.75, 0.4))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(title)
-
-	var sep := HSeparator.new()
-	sep.add_theme_constant_override("separation", 4)
-	vb.add_child(sep)
-
-	var detail_rtl := RichTextLabel.new()
-	detail_rtl.bbcode_enabled = true
-	detail_rtl.fit_content = true
-	detail_rtl.scroll_active = false
-	detail_rtl.add_theme_font_size_override("normal_font_size", 13)
-	detail_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	var text := ""
-
-	var using_parts: PackedStringArray = []
-	for ingredient in recipe_arr:
-		if not ingredient is Dictionary:
-			continue
-		var mat_id: StringName = StringName(str(ingredient.get("item_id", "")))
-		var mat_amt: int = int(ingredient.get("amount", 0))
-		var mat_name: String = str(ItemDatabase.get_item(mat_id).get("name", str(mat_id)))
-		var consumed: Dictionary = Inventory.preview_consume_capped_star(mat_id, mat_amt, eff_max, eff_min, eff_low)
-		for sl: int in consumed.keys():
-			var qty: int = int(consumed[sl])
-			if qty > 0:
-				var stars_str := "★".repeat(sl) if sl > 0 else "0★"
-				var col: Color = ItemDatabase.RARITY_COLORS[sl]
-				var hex := "%02x%02x%02x" % [int(col.r * 255), int(col.g * 255), int(col.b * 255)]
-				using_parts.append("[color=#%s]%dx %s[/color] %s" % [hex, qty, stars_str, mat_name])
-	if using_parts.size() > 0:
-		text += "[b]Materials consumed:[/b]\n" + "\n".join(using_parts)
-
-	var avg_q: float = ItemDatabase.compute_recipe_star_avg(recipe_arr, eff_max, eff_min, eff_low)
-	text += "\n\n[b]Average quality:[/b]  [color=#ffcc44]%.2f[/color]" % avg_q
-
-	var probs: Array[float] = ItemDatabase.get_crafting_probabilities(avg_q)
-	var chance_parts: PackedStringArray = []
-	for ti in probs.size():
-		var pct := probs[ti] * 100.0
-		if pct < 0.5:
-			continue
-		var col: Color = ItemDatabase.RARITY_COLORS[ti]
-		var hex := "%02x%02x%02x" % [int(col.r * 255), int(col.g * 255), int(col.b * 255)]
-		chance_parts.append("[color=#%s]%d★  %d%%[/color]" % [hex, ti, roundi(pct)])
-	if chance_parts.size() > 0:
-		text += "\n\n[b]Star chances:[/b]\n" + "\n".join(chance_parts)
-
-	detail_rtl.text = text
-	vb.add_child(detail_rtl)
-
-	var sep2 := HSeparator.new()
-	sep2.add_theme_constant_override("separation", 6)
-	vb.add_child(sep2)
-
-	var btn_row := HBoxContainer.new()
-	btn_row.add_theme_constant_override("separation", 12)
-	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
-
-	var craft_btn := Button.new()
-	craft_btn.text = "Confirm Craft"
-	craft_btn.custom_minimum_size = Vector2(120, 36)
-	craft_btn.add_theme_font_size_override("font_size", 14)
-	craft_btn.pressed.connect(func():
-		_workbench_preview_panel.visible = false
-		_execute_craft(item_id)
-	)
-	btn_row.add_child(craft_btn)
-
-	var cancel_btn := Button.new()
-	cancel_btn.text = "Cancel"
-	cancel_btn.custom_minimum_size = Vector2(80, 36)
-	cancel_btn.add_theme_font_size_override("font_size", 14)
-	cancel_btn.pressed.connect(func():
-		_workbench_preview_panel.visible = false
-	)
-	btn_row.add_child(cancel_btn)
-
-	vb.add_child(btn_row)
-
-	_workbench_preview_panel.add_child(vb)
-	_workbench_preview_panel.visible = true
-
-
-func _spawn_discard_text(crafted_id: StringName) -> void:
-	var parsed := ItemDatabase.parse_star_id(crafted_id)
-	var stars: int = parsed["stars"]
-	var display := ItemDatabase.get_display_name(crafted_id)
-	var num := DamageNumber.new()
-	num.font_size = 24
-	num.pixel_size = 0.01
-	num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	num.no_depth_test = true
-	num.modulate = Color(0.7, 0.3, 0.3)
-	num.outline_modulate = Color.BLACK
-	num.outline_size = 6
-	num._velocity = Vector3(0, 1.5, 0)
-	if stars > 0:
-		num.text = "Discarded: %s " % display
-		var star_lbl := Label3D.new()
-		star_lbl.text = "★".repeat(stars)
-		star_lbl.font_size = 24
-		star_lbl.pixel_size = 0.01
-		star_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		star_lbl.no_depth_test = true
-		star_lbl.modulate = ItemDatabase.get_rarity_color(stars)
-		star_lbl.outline_modulate = Color.BLACK
-		star_lbl.outline_size = 6
-		star_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-		num.add_child(star_lbl)
-	else:
-		num.text = "Discarded: %s" % display
-	get_tree().current_scene.add_child(num)
-	var cam := get_viewport().get_camera_3d()
-	var right_offset := cam.global_transform.basis.x * 5.1 if cam else Vector3(5.1, 0, 0)
-	num.global_position = global_position + Vector3(0, 2.5, 0) + right_offset
 
 
 func _make_gradient_tex(w: int, h: int, top: Color, bottom: Color) -> ImageTexture:
@@ -7627,9 +6724,9 @@ func _on_inv_slot_gui_input(event: InputEvent, slot_idx: int) -> void:
 					var variants: Dictionary = entry["variants"]
 					for star_level in variants.keys():
 						var vid: StringName = ItemDatabase.make_star_id(base, int(star_level))
-						_deposit_item_to_chest(vid, half_only)
+						_interaction.deposit_item_to_chest(vid, half_only)
 				elif not raw_indices.is_empty():
-					_deposit_inv_slot_to_chest(int(raw_indices[0]), half_only)
+					_interaction.deposit_inv_slot_to_chest(int(raw_indices[0]), half_only)
 				return
 		if mb.shift_pressed and mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed and not _chest_open:
 			_discard_inventory_slot.call_deferred(entry)
@@ -8942,7 +8039,7 @@ func _try_interact() -> void:
 		if not wb3d:
 			continue
 		if global_position.distance_to(wb3d.global_position) < 3.0:
-			_open_workbench()
+			_workbench_ui.open_workbench()
 			return
 
 
@@ -9221,7 +8318,7 @@ func _on_death() -> void:
 	if _gallop_player and _gallop_player.playing:
 		_gallop_player.stop()
 	if _mounted:
-		_force_dismount()
+		_interaction.force_dismount()
 	velocity = Vector3.ZERO
 	set_physics_process(false)
 	await get_tree().create_timer(2.0).timeout
@@ -9231,9 +8328,9 @@ func _on_death() -> void:
 
 func _respawn() -> void:
 	if _in_cave:
-		_exit_cave()
+		_interaction.exit_cave()
 	if _mounted:
-		_force_dismount()
+		_interaction.force_dismount()
 	if _bow_drawing:
 		_cancel_bow_draw()
 	velocity = Vector3.ZERO
@@ -9276,431 +8373,7 @@ func _respawn() -> void:
 
 
 var _mount_anim_player: AnimationPlayer = null
-
-func _mount(horse: Node3D) -> void:
-	_mounted = true
-	_mount_node = horse
-	_horse_walk_frames = horse.get_meta("walk_frames", {}) as Dictionary
-	_horse_run_frames = horse.get_meta("run_frames", {}) as Dictionary
-	_horse_anim_idx = 0
-	_horse_anim_timer = 0.0
-	floor_max_angle = deg_to_rad(55.0)
-	floor_snap_length = 1.5
-	horse.remove_from_group(&"horses")
-	if horse is StaticBody3D:
-		(horse as StaticBody3D).collision_layer = 0
-		(horse as StaticBody3D).collision_mask = 0
-	for child in horse.get_children():
-		if child is CollisionShape3D:
-			(child as CollisionShape3D).disabled = true
-
-	var gpos := horse.global_position
-	var grot := horse.rotation
-	var old_parent := horse.get_parent()
-	if old_parent:
-		old_parent.remove_child(horse)
-	var world_root := get_tree().current_scene
-	if world_root:
-		world_root.add_child(horse)
-	horse.global_position = gpos
-	horse.rotation = grot
-
-	_mount_anim_player = _find_anim_player(horse)
-
-	if _footstep_player and _footstep_player.playing:
-		_footstep_player.stop()
-
-	_sit_idle_anim_idx = 0
-	_sit_idle_anim_timer = 0.0
-
-	if _player_sprite and _gltf_anim_player:
-		_player_sprite.visible = true
-		var rider_node := _player_sprite.duplicate()
-		rider_node.name = "Rider3D"
-		rider_node.scale = _player_sprite.scale
-		var mount_model := _get_mount_3d_model(horse)
-		var ride_y := 1.2
-		if mount_model:
-			ride_y = _estimate_mount_height(mount_model)
-		rider_node.position = Vector3(0, ride_y, 0)
-		horse.add_child(rider_node)
-		_player_sprite.visible = false
-		var rider_anim := _find_anim_player(rider_node)
-		if rider_anim:
-			for anim_name in rider_anim.get_animation_list():
-				var anim := rider_anim.get_animation(anim_name)
-				if anim:
-					anim.loop_mode = Animation.LOOP_LINEAR
-			var played := false
-			for anim_name in rider_anim.get_animation_list():
-				if "sit" in anim_name.to_lower():
-					rider_anim.play(anim_name)
-					played = true
-					break
-			if not played:
-				for anim_name in rider_anim.get_animation_list():
-					if "idle" in anim_name.to_lower():
-						rider_anim.play(anim_name)
-						break
-	elif _player_sprite:
-		_player_sprite.visible = false
-		var rider := Sprite3D.new()
-		rider.name = "RiderSprite"
-		if _sit_idle_frames.has("south") and not (_sit_idle_frames["south"] as Array).is_empty():
-			rider.texture = (_sit_idle_frames["south"] as Array)[0] as Texture2D
-		elif _player_textures.has("south"):
-			rider.texture = _player_textures["south"] as Texture2D
-		rider.pixel_size = 0.025
-		rider.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		rider.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-		rider.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
-		rider.transparent = true
-		rider.shaded = true
-		rider.double_sided = true
-		rider.position.y = 1.55
-		rider.render_priority = 1
-		horse.add_child(rider)
-
-
-func _get_mount_3d_model(horse: Node3D) -> Node3D:
-	for child in horse.get_children():
-		if child is Node3D and not child is CollisionShape3D and child.name != "BodySprite" and child.name != "RiderSprite" and child.name != "Rider3D":
-			return child
-	return null
-
-
-func _estimate_mount_height(model: Node3D) -> float:
-	var max_y := 1.0
-	for child in model.get_children():
-		if child is MeshInstance3D:
-			var aabb := (child as MeshInstance3D).get_aabb()
-			var top := aabb.position.y + aabb.size.y
-			if top > max_y:
-				max_y = top
-	return max_y * model.scale.y * 0.85
-
-
-func _force_dismount() -> void:
-	_mounted = false
-	floor_max_angle = deg_to_rad(55.0)
-	floor_snap_length = 1.0
-
-	if _player_sprite:
-		_player_sprite.visible = true
-	if _gallop_player and _gallop_player.playing:
-		_gallop_player.stop()
-
-	if is_instance_valid(_mount_node):
-		_mount_node.add_to_group(&"horses")
-		if _mount_node is StaticBody3D:
-			(_mount_node as StaticBody3D).collision_layer = 4
-			(_mount_node as StaticBody3D).collision_mask = 1
-		for child in _mount_node.get_children():
-			if child is CollisionShape3D:
-				(child as CollisionShape3D).disabled = false
-		for tag in ["RiderSprite", "Rider3D"]:
-			var rider := _mount_node.get_node_or_null(tag)
-			if rider:
-				rider.queue_free()
-
-	_mount_node = null
-	_mount_anim_player = null
-	_horse_walk_frames = {}
-	_horse_run_frames = {}
-	_horse_anim_idx = 0
-	_horse_anim_timer = 0.0
-
-
-func _dismount() -> void:
-	if not _mounted:
-		return
-	_mounted = false
-	floor_max_angle = deg_to_rad(55.0)
-	floor_snap_length = 1.0
-
-	if _player_sprite:
-		_player_sprite.visible = true
-	if _gallop_player and _gallop_player.playing:
-		_gallop_player.stop()
-
-	if is_instance_valid(_mount_node):
-		_mount_node.add_to_group(&"horses")
-		if _mount_node is StaticBody3D:
-			(_mount_node as StaticBody3D).collision_layer = 4
-			(_mount_node as StaticBody3D).collision_mask = 1
-		for child in _mount_node.get_children():
-			if child is CollisionShape3D:
-				(child as CollisionShape3D).disabled = false
-		for tag in ["RiderSprite", "Rider3D"]:
-			var rider := _mount_node.get_node_or_null(tag)
-			if rider:
-				rider.queue_free()
-		var offset := -global_transform.basis.z * 2.0
-		offset.y = 0.0
-		_mount_node.global_position = global_position + offset
-
-	_mount_node = null
-	_mount_anim_player = null
-	_horse_walk_frames = {}
-	_horse_run_frames = {}
-	_horse_anim_idx = 0
-	_horse_anim_timer = 0.0
-
-
-# ===================================================================
-# RAFT
-# ===================================================================
-
-func _spawn_raft(pos: Vector3, rot_y: float) -> void:
-	var raft := StaticBody3D.new()
-	raft.name = "Raft"
-	raft.collision_layer = 4
-	raft.collision_mask = 0
-	raft.add_to_group(&"rafts")
-	raft.set_meta("interact_name", "Raft")
-
-	var raft_visual := _build_raft_model()
-	raft.add_child(raft_visual)
-
-	var col := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(3.0, 0.3, 4.0)
-	col.shape = box
-	col.position.y = 0.15
-	raft.add_child(col)
-
-	get_tree().current_scene.add_child(raft)
-	raft.global_position = pos
-	raft.rotation.y = rot_y
-
-
-func _build_raft_model() -> Node3D:
-	var root := Node3D.new()
-	root.name = "RaftModel"
-
-	var plank_mat := StandardMaterial3D.new()
-	plank_mat.albedo_color = Color(0.45, 0.32, 0.18)
-	plank_mat.roughness = 0.9
-	plank_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	var dark_mat := StandardMaterial3D.new()
-	dark_mat.albedo_color = Color(0.32, 0.22, 0.12)
-	dark_mat.roughness = 0.85
-	dark_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	var rope_mat := StandardMaterial3D.new()
-	rope_mat.albedo_color = Color(0.60, 0.52, 0.35)
-	rope_mat.roughness = 0.8
-	rope_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-
-	# Base planks (5 logs lashed together)
-	for i in 5:
-		var x_off := (float(i) - 2.0) * 0.58
-		_add_box_part(root, "log_%d" % i, Vector3(0.28, 0.18, 3.6), Vector3(x_off, 0.09, 0.0), plank_mat)
-
-	# Cross beams
-	_add_box_part(root, "beam_f", Vector3(2.8, 0.10, 0.14), Vector3(0.0, 0.22, 1.2), dark_mat)
-	_add_box_part(root, "beam_b", Vector3(2.8, 0.10, 0.14), Vector3(0.0, 0.22, -1.2), dark_mat)
-
-	# Rope lashings
-	for bz in [1.2, -1.2]:
-		for lx in [-1.0, 0.0, 1.0]:
-			_add_box_part(root, "rope_%.0f_%.0f" % [bz, lx], Vector3(0.06, 0.06, 0.20), Vector3(lx, 0.26, bz), rope_mat)
-
-	# Raised edge rails
-	_add_box_part(root, "rail_l", Vector3(0.08, 0.20, 3.2), Vector3(-1.35, 0.32, 0.0), dark_mat)
-	_add_box_part(root, "rail_r", Vector3(0.08, 0.20, 3.2), Vector3(1.35, 0.32, 0.0), dark_mat)
-
-	# Paddle (resting on the side)
-	var paddle_root := Node3D.new()
-	paddle_root.name = "Paddle"
-	_add_box_part(paddle_root, "shaft", Vector3(0.05, 0.05, 1.8), Vector3.ZERO, dark_mat)
-	_add_box_part(paddle_root, "blade", Vector3(0.14, 0.02, 0.40), Vector3(0.0, 0.0, -1.0), plank_mat)
-	_add_box_part(paddle_root, "grip", Vector3(0.07, 0.07, 0.12), Vector3(0.0, 0.0, 0.85), dark_mat)
-	paddle_root.position = Vector3(0.0, 0.8, 0.0)
-	root.add_child(paddle_root)
-
-	return root
-
-
-func _mount_raft(raft: Node3D) -> void:
-	_on_raft = true
-	_raft_node = raft
-	_raft_paddle_timer = 0.0
-	_is_swimming = false
-
-	raft.remove_from_group(&"rafts")
-	if raft is StaticBody3D:
-		(raft as StaticBody3D).collision_layer = 0
-		(raft as StaticBody3D).collision_mask = 0
-	for child in raft.get_children():
-		if child is CollisionShape3D:
-			(child as CollisionShape3D).disabled = true
-
-	collision_layer = 0
-	collision_mask = 0
-
-
-func _dismount_raft() -> void:
-	if not _on_raft or not is_instance_valid(_raft_node):
-		_on_raft = false
-		_raft_node = null
-		rotation = Vector3.ZERO
-		collision_layer = 1
-		collision_mask = 1
-		return
-
-	_on_raft = false
-	_raft_node.add_to_group(&"rafts")
-	if _raft_node is StaticBody3D:
-		(_raft_node as StaticBody3D).collision_layer = 4
-		(_raft_node as StaticBody3D).collision_mask = 0
-	for child in _raft_node.get_children():
-		if child is CollisionShape3D:
-			(child as CollisionShape3D).disabled = false
-
-	var dismount_dir := -global_transform.basis.z
-	dismount_dir.y = 0.0
-	dismount_dir = dismount_dir.normalized()
-	var water_y := WaterSystem.get_surface_y(global_position.x, global_position.z)
-	global_position = _raft_node.global_position + dismount_dir * 3.0
-	global_position.y = water_y + 0.3
-	velocity = Vector3.ZERO
-	rotation = Vector3.ZERO
-
-	_raft_node = null
-	collision_layer = 1
-	collision_mask = 1
-
-
-func _tick_raft(delta: float) -> void:
-	if not _on_raft or not is_instance_valid(_raft_node):
-		_dismount_raft()
-		return
-
-	var water_y := WaterSystem.get_surface_y(_raft_node.global_position.x, _raft_node.global_position.z)
-	_raft_node.global_position.y = water_y
-
-	var input_dir := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_backward")
-	var raft_forward := Vector3(-sin(_raft_node.rotation.y), 0.0, -cos(_raft_node.rotation.y))
-	var moving := input_dir.length() > 0.1
-
-	if absf(input_dir.x) > 0.1:
-		_raft_node.rotation.y -= input_dir.x * RAFT_TURN_SPEED * delta
-
-	if absf(input_dir.y) > 0.1:
-		var spd := RAFT_SPEED * input_dir.y
-		_raft_node.global_position += raft_forward * spd * delta
-
-	global_position = _raft_node.global_position + Vector3(0.0, 0.4, 0.0)
-	rotation.y = _raft_node.rotation.y
-	velocity = Vector3.ZERO
-
-	# Wave tilt
-	var wave_tilt_x := WaterSystem.get_surface_y(_raft_node.global_position.x + 1.0, _raft_node.global_position.z) - WaterSystem.get_surface_y(_raft_node.global_position.x - 1.0, _raft_node.global_position.z)
-	var wave_tilt_z := WaterSystem.get_surface_y(_raft_node.global_position.x, _raft_node.global_position.z + 1.0) - WaterSystem.get_surface_y(_raft_node.global_position.x, _raft_node.global_position.z - 1.0)
-	_raft_node.rotation.x = lerpf(_raft_node.rotation.x, wave_tilt_z * 0.15, 4.0 * delta)
-	_raft_node.rotation.z = lerpf(_raft_node.rotation.z, -wave_tilt_x * 0.15, 4.0 * delta)
-
-	_tick_paddle_animation(delta, moving)
-
-
-func _tick_paddle_animation(delta: float, rowing: bool) -> void:
-	var paddle := _raft_node.get_node_or_null("RaftModel/Paddle") as Node3D
-	if not paddle:
-		return
-	if rowing:
-		_raft_paddle_timer += delta * 3.0
-		var cycle := fmod(_raft_paddle_timer, TAU)
-		var dip := sin(cycle)
-		var side_f := 1.0 if _raft_paddle_side else -1.0
-		# Switch sides every full stroke
-		if cycle < delta * 3.0 and _raft_paddle_timer > TAU * 0.5:
-			_raft_paddle_side = not _raft_paddle_side
-		paddle.position = Vector3(side_f * 0.8, 0.7, 0.2)
-		paddle.rotation = Vector3(
-			deg_to_rad(lerpf(-15.0, 45.0, (dip + 1.0) * 0.5)),
-			deg_to_rad(side_f * 20.0),
-			deg_to_rad(side_f * -30.0),
-		)
-	else:
-		paddle.position = paddle.position.lerp(Vector3(0.0, 0.8, 0.0), 4.0 * delta)
-		paddle.rotation = paddle.rotation.lerp(Vector3.ZERO, 4.0 * delta)
-
-
 var _mount_current_anim := ""
-
-func _tick_horse_animation(delta: float) -> void:
-	if not _mount_node:
-		return
-
-	var flat_speed := Vector2(velocity.x, velocity.z).length()
-	var is_moving := flat_speed > 0.5
-
-	if _mount_anim_player:
-		var want_anim := "idle"
-		if is_moving:
-			want_anim = "run" if _is_sprinting else "walk"
-		if want_anim != _mount_current_anim:
-			_mount_current_anim = want_anim
-			for candidate in ["animation." + want_anim, want_anim]:
-				if _mount_anim_player.has_animation(candidate):
-					_mount_anim_player.play(candidate)
-					break
-
-		var mount_model := _get_mount_3d_model(_mount_node)
-		if mount_model:
-			var flat_vel := Vector2(velocity.x, velocity.z)
-			if flat_vel.length() > 0.3:
-				var target_angle := atan2(-velocity.x, -velocity.z)
-				mount_model.rotation.y = lerp_angle(mount_model.rotation.y, target_angle, 0.15)
-		return
-
-	var dir := _get_camera_relative_dir()
-	var body_sprite := _mount_node.get_node_or_null("BodySprite") as Sprite3D
-	var rider := _mount_node.get_node_or_null("RiderSprite") as Sprite3D
-
-	if is_moving:
-		var use_run := _is_sprinting and _horse_run_frames.has(dir)
-		var frame_dict: Dictionary = _horse_run_frames if use_run else _horse_walk_frames
-		var frame_dur := _HORSE_RUN_FRAME_DURATION if use_run else _HORSE_WALK_FRAME_DURATION
-		if frame_dict.has(dir):
-			var frames: Array = Array(frame_dict[dir])
-			if not frames.is_empty():
-				_horse_anim_timer -= delta
-				if _horse_anim_timer <= 0.0:
-					_horse_anim_idx = (_horse_anim_idx + 1) % frames.size()
-					_horse_anim_timer = frame_dur
-				if _horse_anim_idx >= frames.size():
-					_horse_anim_idx = 0
-				var tex := frames[_horse_anim_idx] as Texture2D
-				if tex and body_sprite:
-					body_sprite.texture = tex
-					var smat := body_sprite.material_override as ShaderMaterial
-					if smat:
-						smat.set_shader_parameter("sprite_texture", tex)
-	else:
-		_horse_anim_idx = 0
-		_horse_anim_timer = 0.0
-		var horse_textures: Dictionary = _mount_node.get_meta("sprite_textures", {}) as Dictionary
-		if body_sprite and horse_textures.has(dir):
-			var htex: Texture2D = horse_textures[dir] as Texture2D
-			body_sprite.texture = htex
-			var smat := body_sprite.material_override as ShaderMaterial
-			if smat:
-				smat.set_shader_parameter("sprite_texture", htex)
-
-	if rider:
-		if _sit_idle_frames.has(dir) and not (_sit_idle_frames[dir] as Array).is_empty():
-			var sit_frames: Array = Array(_sit_idle_frames[dir])
-			_sit_idle_anim_timer -= delta
-			if _sit_idle_anim_timer <= 0.0:
-				_sit_idle_anim_idx = (_sit_idle_anim_idx + 1) % sit_frames.size()
-				_sit_idle_anim_timer = _SIT_IDLE_FRAME_DURATION
-			if _sit_idle_anim_idx >= sit_frames.size():
-				_sit_idle_anim_idx = 0
-			rider.texture = sit_frames[_sit_idle_anim_idx] as Texture2D
-		elif _player_textures.has(dir):
-			rider.texture = _player_textures[dir] as Texture2D
-
 
 # ===================================================================
 # GLTF MODEL HELPERS
