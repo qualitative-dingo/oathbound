@@ -325,8 +325,8 @@ func _on_host_lan() -> void:
 	var w_name: String = str(_selected_world.get("name", "World"))
 	NetworkManager.world_seed = seed_str
 	NetworkManager.world_name = w_name
-	_launch_world(_selected_world)
 	NetworkManager.host_game()
+	_launch_world(_selected_world)
 
 
 func _on_join_lan() -> void:
