@@ -65,6 +65,8 @@ const MAP_PX := 512
 var equipped_weapon: StringName = &"fists"
 ## Synced for multiplayer; updated when animation changes.
 var synced_animation: String = ""
+## Full equipment state for remote players (slot -> item_id).
+var synced_equipped: Dictionary = {}
 var _selected_slot: int = 0
 
 # Affix system state
@@ -411,6 +413,12 @@ func _ready() -> void:
 	add_child(_anim)
 	_anim.pc = self
 
+	# Per-player inventory (Phase 4a): local authority owns its own inventory
+	var my_inventory := PlayerInventory.new()
+	Inventory.set_local(my_inventory)
+	if multiplayer.multiplayer_peer:
+		Inventory.register_inventory(multiplayer.get_unique_id(), my_inventory)
+
 	_setup_multiplayer_sync()
 	_setup_player_sprite()
 	_setup_floating_bars()
@@ -419,6 +427,28 @@ func _ready() -> void:
 		_spring_arm.spring_length = min_zoom + 0.85 * (max_zoom - min_zoom)
 	_setup_movement_audio()
 	GameEvents.inventory_changed.connect(_on_inventory_changed)
+	if NetworkManager.is_connected_to_game():
+		NetworkManager.chest_contents_received.connect(_on_chest_contents_received)
+
+
+func _on_chest_contents_received(chest_path: String, contents: Array) -> void:
+	var chest := get_tree().root.get_node_or_null(chest_path) as Node3D
+	if not chest:
+		return
+	chest.set_meta("chest_contents", contents)
+	if _chest_node == null:
+		_interaction.open_chest(chest)
+	elif _chest_node == chest:
+		_interaction.refresh_chest_ui()
+		_refresh_inventory_ui()
+
+
+func _exit_tree() -> void:
+	if is_multiplayer_authority():
+		if multiplayer.multiplayer_peer:
+			Inventory.unregister_inventory(multiplayer.get_unique_id())
+		if NetworkManager.is_connected_to_game():
+			NetworkManager.chest_contents_received.disconnect(_on_chest_contents_received)
 
 
 func _setup_multiplayer_sync() -> void:
@@ -439,6 +469,8 @@ func _setup_multiplayer_sync() -> void:
 	cfg.property_set_replication_mode(NodePath("synced_animation"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 	cfg.add_property(NodePath("equipped_weapon"))
 	cfg.property_set_replication_mode(NodePath("equipped_weapon"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	cfg.add_property(NodePath("synced_equipped"))
+	cfg.property_set_replication_mode(NodePath("synced_equipped"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 	if not is_multiplayer_authority():
 		sync.synchronized.connect(_on_sync_received)
 
@@ -473,6 +505,8 @@ func _on_inventory_changed() -> void:
 		if new_weapon != equipped_weapon:
 			equipped_weapon = new_weapon
 			_update_equipped_weapon_model()
+	# Phase 4c: sync full equipment state for remote players
+	synced_equipped = Inventory.get_all_equipped().duplicate()
 	_refresh_stats_panel()
 	_position_stats_panel.call_deferred()
 
@@ -1269,6 +1303,12 @@ func _get_armor_aabb(instance: Node3D) -> AABB:
 	return combined
 
 
+func _get_equipped_for_display(slot: String) -> StringName:
+	if is_multiplayer_authority():
+		return Inventory.get_equipped(slot)
+	return (synced_equipped.get(slot, &"") as StringName) if synced_equipped.has(slot) else &""
+
+
 func _update_armor_visuals() -> void:
 	for slot: String in _armor_nodes.keys():
 		var node: Node3D = _armor_nodes[slot] as Node3D
@@ -1317,7 +1357,7 @@ func _update_armor_visuals() -> void:
 	}
 
 	for slot in Inventory.EQUIPMENT_SLOTS:
-		var item_id: StringName = Inventory.get_equipped(slot)
+		var item_id: StringName = _get_equipped_for_display(slot)
 		if item_id == &"":
 			continue
 		var data: Dictionary = ItemDatabase.get_item(item_id)
@@ -1420,7 +1460,7 @@ func _hide_body_under_armor(skel: Skeleton3D) -> void:
 
 	var bones_to_hide: Array[int] = []
 	for slot in Inventory.EQUIPMENT_SLOTS:
-		var item_id: StringName = Inventory.get_equipped(slot)
+		var item_id: StringName = _get_equipped_for_display(slot)
 		if item_id == &"":
 			continue
 		var names: Array = slot_bone_names.get(slot, []) as Array
@@ -2153,7 +2193,7 @@ func _tick_arrows(delta: float) -> void:
 					if dist_to_enemy > 15.0:
 						final_dmg *= 1.25
 				if enemy.has_method("take_damage"):
-					enemy.take_damage(final_dmg, self)
+					_apply_damage_to_creature(enemy, final_dmg)
 					_set_target_creature(enemy)
 					_DamageNumber.spawn(get_tree(), enemy.global_position + Vector3.UP * 1.5, final_dmg, is_headshot)
 				# Bow-specific affix procs
@@ -2171,7 +2211,7 @@ func _tick_arrows(delta: float) -> void:
 							continue
 						if enemy.global_position.distance_to(aoe_e.global_position) < 4.0:
 							if aoe_e.has_method("take_damage"):
-								aoe_e.take_damage(aoe_dmg, self)
+								_apply_damage_to_creature(aoe_e, aoe_dmg)
 								_DamageNumber.spawn(get_tree(), aoe_e.global_position + Vector3.UP * 1.0, aoe_dmg)
 				if kb > 0.0 and enemy is CharacterBody3D:
 					var kb_dir := (enemy.global_position - hit_pos).normalized()
@@ -7238,6 +7278,16 @@ func _try_attack() -> void:
 	)
 
 
+func _apply_damage_to_creature(creature: Node3D, amount: float) -> void:
+	## Apply damage to creature (host-authoritative). Client sends RPC to host.
+	if creature.has_method("take_damage"):
+		if NetworkManager.is_connected_to_game() and not NetworkManager.is_server():
+			if creature.has_method("request_damage"):
+				creature.request_damage.rpc_id(1, amount, NetworkManager.get_peer_id())
+		else:
+			creature.take_damage(amount, self)
+
+
 func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, single_target: bool = false) -> void:
 	var cam: Camera3D = _spring_arm.get_child(0) if _spring_arm.get_child_count() > 0 else null
 	if not cam:
@@ -7312,7 +7362,7 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 			if affixes.has(&"bane") and randf() < 0.08:
 				final_dmg *= 2.0
 			if enemy.has_method("take_damage"):
-				enemy.take_damage(final_dmg, self)
+				_apply_damage_to_creature(enemy, final_dmg)
 				_set_target_creature(enemy)
 				_DamageNumber.spawn(get_tree(), enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit)
 				hit_something = true
@@ -7410,7 +7460,7 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 					continue
 				if enemy.global_position.distance_to(other_3d.global_position) < 5.0:
 					if other_3d.has_method("take_damage"):
-						other_3d.take_damage(aoe_dmg, self)
+						_apply_damage_to_creature(other_3d, aoe_dmg)
 						_DamageNumber.spawn(get_tree(), other_3d.global_position + Vector3.UP * 1.0, aoe_dmg)
 		# Frostbite
 		if affixes.has(&"frostbite") and randf() < 0.20:
@@ -7442,7 +7492,7 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 					continue
 				if enemy.global_position.distance_to(aoe_e.global_position) < 3.0:
 					if aoe_e.has_method("take_damage"):
-						aoe_e.take_damage(slam_dmg, self)
+						_apply_damage_to_creature(aoe_e, slam_dmg)
 						_DamageNumber.spawn(get_tree(), aoe_e.global_position + Vector3.UP * 1.0, slam_dmg)
 		# Staggering (mace): 18% chance to stun briefly
 		if affixes.has(&"staggering") and randf() < 0.18:

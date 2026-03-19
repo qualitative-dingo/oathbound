@@ -218,6 +218,10 @@ func _deferred_load_save() -> void:
 	var save_data := load_game()
 	if not save_data.is_empty():
 		apply_save_data(save_data)
+	else:
+		# New game: player's per-inventory is now set; give starting gear
+		Inventory.give_starting_gear()
+		GameEvents.inventory_changed.emit()
 
 
 func _get_player() -> Node:

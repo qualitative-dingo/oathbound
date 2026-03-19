@@ -280,7 +280,7 @@ func tick_arrows(delta: float) -> void:
 					if dist_to_enemy > 15.0:
 						final_dmg *= 1.25
 				if enemy.has_method("take_damage"):
-					enemy.take_damage(final_dmg, pc)
+					pc._apply_damage_to_creature(enemy, final_dmg)
 					pc._set_target_creature(enemy)
 					_DamageNumber.spawn(pc.get_tree(), enemy.global_position + Vector3.UP * 1.5, final_dmg, is_headshot)
 				if has_affix(&"frost_arrow") and randf() < 0.35 and enemy.has_method("apply_slow"):
@@ -296,7 +296,7 @@ func tick_arrows(delta: float) -> void:
 							continue
 						if enemy.global_position.distance_to(aoe_e.global_position) < 4.0:
 							if aoe_e.has_method("take_damage"):
-								aoe_e.take_damage(aoe_dmg, pc)
+								pc._apply_damage_to_creature(aoe_e, aoe_dmg)
 								_DamageNumber.spawn(pc.get_tree(), aoe_e.global_position + Vector3.UP * 1.0, aoe_dmg)
 				if kb > 0.0 and enemy is CharacterBody3D:
 					var kb_dir := (enemy.global_position - hit_pos).normalized()
@@ -796,7 +796,7 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 			if affixes.has(&"bane") and randf() < 0.08:
 				final_dmg *= 2.0
 			if enemy.has_method("take_damage"):
-				enemy.take_damage(final_dmg, pc)
+				pc._apply_damage_to_creature(enemy, final_dmg)
 				pc._set_target_creature(enemy)
 				_DamageNumber.spawn(pc.get_tree(), enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit)
 				hit_something = true
@@ -818,7 +818,7 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 		if affixes.has(&"bane") and randf() < 0.08:
 			final_dmg *= 2.0
 		if best_enemy.has_method("take_damage"):
-			best_enemy.take_damage(final_dmg, pc)
+			pc._apply_damage_to_creature(best_enemy, final_dmg)
 			pc._set_target_creature(best_enemy)
 			_DamageNumber.spawn(pc.get_tree(), best_enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit)
 			hit_something = true
@@ -841,7 +841,7 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 		if affixes.has(&"firebrand") and randf() < 0.15:
 			var fire_dmg := wpn_damage * 0.5
 			if enemy.has_method("take_damage"):
-				enemy.take_damage(fire_dmg, pc)
+				pc._apply_damage_to_creature(enemy, fire_dmg)
 				var fire_num := _DamageNumber.new()
 				fire_num.text = "%.0f" % fire_dmg
 				fire_num.font_size = 22
@@ -867,7 +867,7 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 					nearest_dist = d
 					nearest = other_3d
 			if nearest and nearest.has_method("take_damage"):
-				nearest.take_damage(arc_dmg, pc)
+				pc._apply_damage_to_creature(nearest, arc_dmg)
 				var arc_num := _DamageNumber.new()
 				arc_num.text = "⚡%.0f" % arc_dmg
 				arc_num.font_size = 22
@@ -888,7 +888,7 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 					continue
 				if enemy.global_position.distance_to(other_3d.global_position) < 5.0:
 					if other_3d.has_method("take_damage"):
-						other_3d.take_damage(aoe_dmg, pc)
+						pc._apply_damage_to_creature(other_3d, aoe_dmg)
 						_DamageNumber.spawn(pc.get_tree(), other_3d.global_position + Vector3.UP * 1.0, aoe_dmg)
 		if affixes.has(&"frostbite") and randf() < 0.20:
 			if enemy.has_method("apply_slow"):
@@ -914,7 +914,7 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 					continue
 				if enemy.global_position.distance_to(aoe_e.global_position) < 3.0:
 					if aoe_e.has_method("take_damage"):
-						aoe_e.take_damage(slam_dmg, pc)
+						pc._apply_damage_to_creature(aoe_e, slam_dmg)
 						_DamageNumber.spawn(pc.get_tree(), aoe_e.global_position + Vector3.UP * 1.0, slam_dmg)
 		if affixes.has(&"staggering") and randf() < 0.18:
 			if enemy.has_method("apply_stun"):
@@ -927,7 +927,7 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 					continue
 				if enemy.global_position.distance_to(t_e.global_position) < 3.0:
 					if t_e.has_method("take_damage"):
-						t_e.take_damage(thunder_dmg, pc)
+						pc._apply_damage_to_creature(t_e, thunder_dmg)
 						var t_num := _DamageNumber.new()
 						t_num.text = "⚡%.0f" % thunder_dmg
 						t_num.font_size = 22
@@ -1154,9 +1154,6 @@ func get_terrain_slope_dir(pos: Vector3) -> Vector3:
 
 
 func fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = true) -> void:
-	var sync := pc._get_world_state_sync()
-	if sync:
-		sync.record_object_destroyed(node)
 	var drop_id: StringName = node.get_meta("drop_id", &"wood") as StringName
 	var drop_min: int = int(node.get_meta("drop_min", 2))
 	var drop_max: int = int(node.get_meta("drop_max", 4))

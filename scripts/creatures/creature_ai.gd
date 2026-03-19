@@ -71,6 +71,7 @@ var _perch_timer: float = 0.0
 var _perch_target: Node3D = null
 var _perch_settled: bool = false
 var _dying_fall: bool = false
+var _death_visual_started: bool = false
 var idle_frames: Dictionary = {}
 
 var _fish_target: Node3D = null
@@ -223,6 +224,29 @@ func _find_anim_player_recursive(node: Node) -> AnimationPlayer:
 	return null
 
 
+func _setup_multiplayer_sync() -> void:
+	if not multiplayer.has_multiplayer_peer():
+		return
+	set_multiplayer_authority(1)
+	var sync := MultiplayerSynchronizer.new()
+	sync.name = "MultiplayerSynchronizer"
+	sync.root_path = NodePath("..")
+	add_child(sync)
+	var cfg := sync.replication_config
+	cfg.add_property(NodePath("global_position"))
+	cfg.property_set_replication_mode(NodePath("global_position"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	cfg.add_property(NodePath("velocity"))
+	cfg.property_set_replication_mode(NodePath("velocity"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	cfg.add_property(NodePath("rotation"))
+	cfg.property_set_replication_mode(NodePath("rotation"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	cfg.add_property(NodePath("_state"))
+	cfg.property_set_replication_mode(NodePath("_state"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	cfg.add_property(NodePath("current_health"))
+	cfg.property_set_replication_mode(NodePath("current_health"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	cfg.add_property(NodePath("_model_current_anim"))
+	cfg.property_set_replication_mode(NodePath("_model_current_anim"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+
+
 func _ready() -> void:
 	current_health = max_health
 	add_to_group(&"enemies")
@@ -236,6 +260,20 @@ func _ready() -> void:
 	floor_stop_on_slope = true
 	_fly_bob_phase = randf_range(0.0, TAU)
 	_create_floating_ui()
+
+	# Host-authoritative creatures: only server runs AI; clients receive synced state
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		_state = State.IDLE
+		_setup_multiplayer_sync()
+		if use_3d_model and _model_node:
+			_compute_arrow_hitbox()
+			_cache_model_material_colors(_model_node)
+			if _model_anim_player:
+				var anim_list := _model_anim_player.get_animation_list()
+				_build_anim_map(anim_list)
+		return
+
+	_setup_multiplayer_sync()
 
 	if use_3d_model and _model_node:
 		_compute_arrow_hitbox()
@@ -264,6 +302,16 @@ func _physics_process(delta: float) -> void:
 	_update_proximity_label()
 
 	if _state == State.DEAD:
+		# Client: when DEAD state syncs in, play death visual once
+		if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+			if not _death_visual_started:
+				_death_visual_started = true
+				_play_death_sound()
+				var ui := get_node_or_null("FloatingUI")
+				if ui:
+					ui.visible = false
+				_spawn_loot_and_play_ground_death()
+			return
 		if _dying_fall:
 			velocity.y -= GRAVITY * delta
 			velocity.x = move_toward(velocity.x, 0.0, 2.0 * delta)
@@ -272,6 +320,13 @@ func _physics_process(delta: float) -> void:
 			if is_on_floor():
 				_dying_fall = false
 				_finish_death_on_ground()
+		return
+
+	# Non-server: skip AI, only run visual updates (position/state synced from host)
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		_update_hit_flash(delta)
+		_update_sprite_direction()
+		_tick_animation(delta)
 		return
 
 	# Status effect ticks
@@ -1019,6 +1074,33 @@ func _tick_3d_animation() -> void:
 			_play_model_anim("idle")
 
 
+@rpc("any_peer", "reliable")
+func request_damage(amount: float, source_peer: int) -> void:
+	if not multiplayer.is_server():
+		return
+	take_damage(amount, _get_player_by_peer(source_peer))
+
+
+@rpc("authority", "reliable")
+func deal_damage_to_player(peer_id: int, amount: float) -> void:
+	# Called on the target client to apply creature damage to local player
+	var player := _get_player_by_peer(peer_id)
+	if player and player.has_method("take_damage"):
+		player.take_damage(amount, self)
+		_DamageNumber.spawn(get_tree(), player.global_position, amount, false, "enemy")
+
+
+func _get_player_by_peer(peer_id: int) -> Node3D:
+	var players := get_tree().get_nodes_in_group(&"player")
+	for node in players:
+		var p := node as Node3D
+		if not is_instance_valid(p):
+			continue
+		if p.get_multiplayer_authority() == peer_id:
+			return p
+	return null
+
+
 func take_damage(amount: float, source: Node3D = null) -> void:
 	if _state == State.DEAD:
 		return
@@ -1184,17 +1266,19 @@ func _spawn_loot_and_play_ground_death() -> void:
 
 
 func _explode_and_free() -> void:
-	if not loot_table.is_empty():
-		_LootDrop.spawn_loot(get_tree(), global_position, loot_table, star_level, rare_loot_table)
+	# Loot and affix application only on host (host spawns loot via WorldStateSync)
+	if multiplayer.is_server() or not multiplayer.has_multiplayer_peer():
+		if not loot_table.is_empty():
+			_LootDrop.spawn_loot(get_tree(), global_position, loot_table, star_level, rare_loot_table)
 
-	for node in get_tree().get_nodes_in_group(&"player"):
-		var player = node
-		if not is_instance_valid(player) or not player.has_method("_has_affix"):
-			continue
-		if player._has_affix(&"adrenaline"):
-			player._adrenaline_timer = 4.0
-		if player._has_affix(&"crushing_momentum"):
-			player._crushing_momentum_timer = 4.0
+		for node in get_tree().get_nodes_in_group(&"player"):
+			var player = node
+			if not is_instance_valid(player) or not player.has_method("_has_affix"):
+				continue
+			if player._has_affix(&"adrenaline"):
+				player._adrenaline_timer = 4.0
+			if player._has_affix(&"crushing_momentum"):
+				player._crushing_momentum_timer = 4.0
 
 	var burst_pos := global_position + Vector3.UP * 0.8
 	var scene_root := get_tree().current_scene

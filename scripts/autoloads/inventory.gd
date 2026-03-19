@@ -10,6 +10,14 @@ const EQUIPMENT_SLOTS: Array[String] = ["weapon", "sword", "bow", "pickaxe", "sh
 var _local: PlayerInventory
 var _all_inventories: Dictionary = {}  # peer_id -> PlayerInventory
 
+## Backward compat for save_manager/main_menu; forwards to _local.
+var _slots: Dictionary:
+	get: return _local._slots if _local else {}
+var _order: Array:
+	get: return _local._order if _local else []
+var _equipped: Dictionary:
+	get: return _local._equipped if _local else {}
+
 
 func _ready() -> void:
 	_local = PlayerInventory.new()

@@ -12,6 +12,8 @@ signal connection_succeeded()
 signal connection_failed()
 signal server_started()
 signal world_info_received()
+## Phase 4d: emitted when chest contents are received (path, contents)
+signal chest_contents_received(chest_path: String, contents: Array)
 
 var is_hosting := false
 var world_seed: String = ""
@@ -19,11 +21,7 @@ var world_name: String = ""
 var character_name: String = ""
 
 
-func host_game(port: int = DEFAULT_PORT, seed_str: String = "", w_name: String = "") -> Error:
-	if seed_str != "":
-		world_seed = seed_str
-	if w_name != "":
-		world_name = w_name
+func host_game(port: int = DEFAULT_PORT) -> Error:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, MAX_PLAYERS)
 	if err != OK:
@@ -165,3 +163,88 @@ func _get_players_container() -> Node:
 	if not current:
 		return null
 	return current.get_node_or_null("Players")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 4d: Chest sharing (host-authoritative)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@rpc("any_peer", "reliable")
+func request_open_chest(chest_path: String) -> void:
+	if not is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	var chest := get_tree().root.get_node_or_null(chest_path) as Node3D
+	if not chest:
+		return
+	var contents: Array = chest.get_meta("chest_contents", []) as Array
+	_update_chest_contents.rpc_id(sender, chest_path, contents)
+
+
+@rpc("any_peer", "reliable")
+func request_deposit_to_chest(chest_path: String, item_id: String, amount: int) -> void:
+	if not is_server():
+		return
+	var chest := get_tree().root.get_node_or_null(chest_path) as Node3D
+	if not chest or not chest.has_meta("chest_contents"):
+		return
+	var contents: Array = (chest.get_meta("chest_contents", []) as Array).duplicate(true)
+	while contents.size() < 32:
+		contents.append({})
+	var stack_size: int = ItemDatabase.get_item(StringName(item_id)).get("stack_size", 50)
+	var remaining := amount
+	const CHEST_SLOTS := 32
+	for i in CHEST_SLOTS:
+		if remaining <= 0:
+			break
+		var sd: Dictionary = contents[i] if i < contents.size() else {}
+		if sd.get("item_id", &"") == StringName(item_id):
+			var cur: int = int(sd.get("count", 0))
+			var space := stack_size - cur
+			var add := mini(remaining, space)
+			if add > 0:
+				contents[i] = {"item_id": StringName(item_id), "count": cur + add}
+				remaining -= add
+	for i in CHEST_SLOTS:
+		if remaining <= 0:
+			break
+		var sd: Dictionary = contents[i] if i < contents.size() else {}
+		if sd.is_empty() or sd.get("item_id", &"") == &"":
+			var add := mini(remaining, stack_size)
+			contents[i] = {"item_id": StringName(item_id), "count": add}
+			remaining -= add
+	if remaining < amount:
+		chest.set_meta("chest_contents", contents)
+		_update_chest_contents.rpc(chest_path, contents)
+
+
+@rpc("any_peer", "reliable")
+func request_withdraw_from_chest(chest_path: String, item_id: String, amount: int) -> void:
+	if not is_server():
+		return
+	var chest := get_tree().root.get_node_or_null(chest_path) as Node3D
+	if not chest or not chest.has_meta("chest_contents"):
+		return
+	var contents: Array = (chest.get_meta("chest_contents", []) as Array).duplicate(true)
+	var removed := 0
+	for i in range(contents.size() - 1, -1, -1):
+		if removed >= amount:
+			break
+		var sd: Dictionary = contents[i] if i < contents.size() else {}
+		if sd.get("item_id", &"") != StringName(item_id):
+			continue
+		var take := mini(amount - removed, int(sd.get("count", 0)))
+		sd["count"] = int(sd.get("count", 0)) - take
+		removed += take
+		if sd.get("count", 0) <= 0:
+			contents[i] = {}
+		else:
+			contents[i] = sd
+	if removed > 0:
+		chest.set_meta("chest_contents", contents)
+		_update_chest_contents.rpc(chest_path, contents)
+
+
+@rpc("authority", "reliable")
+func _update_chest_contents(chest_path: String, contents: Array) -> void:
+	chest_contents_received.emit(chest_path, contents)

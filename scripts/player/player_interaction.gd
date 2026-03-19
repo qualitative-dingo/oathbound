@@ -175,21 +175,26 @@ func on_chest_slot_click(event: InputEvent, slot_idx: int) -> void:
 	if chest_id == &"" or chest_count <= 0:
 		return
 
+	var to_take: int
 	if mb.button_index == MOUSE_BUTTON_LEFT:
-		var half := maxi(chest_count / 2, 1)
-		Inventory.add_item(chest_id, half)
-		chest_count -= half
+		to_take = maxi(chest_count / 2, 1)
+	else:
+		to_take = chest_count
+
+	Inventory.add_item(chest_id, to_take)
+	if NetworkManager.is_server() or not NetworkManager.is_connected_to_game():
+		chest_count -= to_take
 		if chest_count <= 0:
 			contents[slot_idx] = {}
 		else:
 			contents[slot_idx] = {"item_id": chest_id, "count": chest_count}
+		pc._chest_node.set_meta("chest_contents", contents)
+		refresh_chest_ui()
+		pc._refresh_inventory_ui()
 	else:
-		Inventory.add_item(chest_id, chest_count)
-		contents[slot_idx] = {}
-
-	pc._chest_node.set_meta("chest_contents", contents)
-	refresh_chest_ui()
-	pc._refresh_inventory_ui()
+		NetworkManager.request_withdraw_from_chest.rpc_id(1, str(pc._chest_node.get_path()), str(chest_id), to_take)
+		pc._refresh_inventory_ui()
+		# Chest UI refreshes on chest_contents_received
 
 
 func deposit_inv_slot_to_chest(slot_idx: int, half_only: bool) -> void:
@@ -199,37 +204,43 @@ func deposit_inv_slot_to_chest(slot_idx: int, half_only: bool) -> void:
 	var item_id: StringName = items[slot_idx]["id"] as StringName
 	var count: int = int(items[slot_idx].get("amount", 1))
 	var to_deposit := count if not half_only else maxi(count / 2, 1)
+	if to_deposit <= 0:
+		return
 
-	var contents: Array = pc._chest_node.get_meta("chest_contents") as Array
-	var stack_size: int = ItemDatabase.get_item(item_id).get("stack_size", 50)
-	var deposited := 0
+	if not Inventory.remove_item(item_id, to_deposit):
+		return
 
-	for i in CHEST_SLOTS:
-		if deposited >= to_deposit:
-			break
-		var sd: Dictionary = contents[i] if i < contents.size() else {}
-		if sd.get("item_id", &"") == item_id:
-			var cur: int = int(sd.get("count", 0))
-			var space := stack_size - cur
-			var add := mini(to_deposit - deposited, space)
-			if add > 0:
-				contents[i] = {"item_id": item_id, "count": cur + add}
+	if NetworkManager.is_server() or not NetworkManager.is_connected_to_game():
+		var contents: Array = pc._chest_node.get_meta("chest_contents") as Array
+		var stack_size: int = ItemDatabase.get_item(item_id).get("stack_size", 50)
+		var deposited := 0
+		for i in CHEST_SLOTS:
+			if deposited >= to_deposit:
+				break
+			var sd: Dictionary = contents[i] if i < contents.size() else {}
+			if sd.get("item_id", &"") == item_id:
+				var cur: int = int(sd.get("count", 0))
+				var space := stack_size - cur
+				var add := mini(to_deposit - deposited, space)
+				if add > 0:
+					contents[i] = {"item_id": item_id, "count": cur + add}
+					deposited += add
+		for i in CHEST_SLOTS:
+			if deposited >= to_deposit:
+				break
+			var sd: Dictionary = contents[i] if i < contents.size() else {}
+			if sd.is_empty() or sd.get("item_id", &"") == &"":
+				var add := mini(to_deposit - deposited, stack_size)
+				contents[i] = {"item_id": item_id, "count": add}
 				deposited += add
-
-	for i in CHEST_SLOTS:
-		if deposited >= to_deposit:
-			break
-		var sd: Dictionary = contents[i] if i < contents.size() else {}
-		if sd.is_empty() or sd.get("item_id", &"") == &"":
-			var add := mini(to_deposit - deposited, stack_size)
-			contents[i] = {"item_id": item_id, "count": add}
-			deposited += add
-
-	if deposited > 0:
-		Inventory.remove_item(item_id, deposited)
-		pc._chest_node.set_meta("chest_contents", contents)
+		if deposited > 0:
+			pc._chest_node.set_meta("chest_contents", contents)
 		refresh_chest_ui()
 		pc._refresh_inventory_ui()
+	else:
+		NetworkManager.request_deposit_to_chest.rpc_id(1, str(pc._chest_node.get_path()), str(item_id), to_deposit)
+		pc._refresh_inventory_ui()
+		# Chest UI refreshes on chest_contents_received
 
 
 func deposit_item_to_chest(item_id: StringName, half_only: bool) -> void:
@@ -237,32 +248,38 @@ func deposit_item_to_chest(item_id: StringName, half_only: bool) -> void:
 	if count <= 0:
 		return
 	var to_deposit := count if not half_only else maxi(count / 2, 1)
-	var contents: Array = pc._chest_node.get_meta("chest_contents") as Array
-	var stack_size: int = ItemDatabase.get_item(item_id).get("stack_size", 50)
-	var deposited := 0
-	for i in CHEST_SLOTS:
-		if deposited >= to_deposit:
-			break
-		var sd: Dictionary = contents[i] if i < contents.size() else {}
-		if sd.get("item_id", &"") == item_id:
-			var cur: int = int(sd.get("count", 0))
-			var space := stack_size - cur
-			var add := mini(to_deposit - deposited, space)
-			if add > 0:
-				contents[i] = {"item_id": item_id, "count": cur + add}
+	if not Inventory.remove_item(item_id, to_deposit):
+		return
+
+	if NetworkManager.is_server() or not NetworkManager.is_connected_to_game():
+		var contents: Array = pc._chest_node.get_meta("chest_contents") as Array
+		var stack_size: int = ItemDatabase.get_item(item_id).get("stack_size", 50)
+		var deposited := 0
+		for i in CHEST_SLOTS:
+			if deposited >= to_deposit:
+				break
+			var sd: Dictionary = contents[i] if i < contents.size() else {}
+			if sd.get("item_id", &"") == item_id:
+				var cur: int = int(sd.get("count", 0))
+				var space := stack_size - cur
+				var add := mini(to_deposit - deposited, space)
+				if add > 0:
+					contents[i] = {"item_id": item_id, "count": cur + add}
+					deposited += add
+		for i in CHEST_SLOTS:
+			if deposited >= to_deposit:
+				break
+			var sd: Dictionary = contents[i] if i < contents.size() else {}
+			if sd.is_empty() or sd.get("item_id", &"") == &"":
+				var add := mini(to_deposit - deposited, stack_size)
+				contents[i] = {"item_id": item_id, "count": add}
 				deposited += add
-	for i in CHEST_SLOTS:
-		if deposited >= to_deposit:
-			break
-		var sd: Dictionary = contents[i] if i < contents.size() else {}
-		if sd.is_empty() or sd.get("item_id", &"") == &"":
-			var add := mini(to_deposit - deposited, stack_size)
-			contents[i] = {"item_id": item_id, "count": add}
-			deposited += add
-	if deposited > 0:
-		Inventory.remove_item(item_id, deposited)
-		pc._chest_node.set_meta("chest_contents", contents)
+		if deposited > 0:
+			pc._chest_node.set_meta("chest_contents", contents)
 		refresh_chest_ui()
+		pc._refresh_inventory_ui()
+	else:
+		NetworkManager.request_deposit_to_chest.rpc_id(1, str(pc._chest_node.get_path()), str(item_id), to_deposit)
 		pc._refresh_inventory_ui()
 
 
@@ -452,7 +469,10 @@ func try_interact() -> void:
 		if not ch3d:
 			continue
 		if pc.global_position.distance_to(ch3d.global_position) < 3.0:
-			open_chest(ch3d)
+			if NetworkManager.is_server() or not NetworkManager.is_connected_to_game():
+				open_chest(ch3d)
+			else:
+				NetworkManager.request_open_chest.rpc_id(1, str(ch3d.get_path()))
 			return
 
 	# Check workbenches
