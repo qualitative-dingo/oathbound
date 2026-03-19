@@ -341,6 +341,23 @@ func _spawn_building(entry: Dictionary) -> void:
 				last_chest.set_meta("chest_contents", restored)
 
 
+## Return world state for save (destroyed objects, placed buildings).
+func get_world_state_for_save() -> Dictionary:
+	return {
+		"destroyed": _destroyed_objects.duplicate(),
+		"buildings": _placed_buildings.duplicate(),
+	}
+
+
+## Apply world state from save. Call when loading.
+func apply_world_state_from_save(data: Dictionary) -> void:
+	if data.has("destroyed"):
+		_destroyed_objects = data["destroyed"].duplicate()
+	if data.has("buildings"):
+		_placed_buildings = data["buildings"].duplicate()
+	_apply_mutations()
+
+
 ## Apply destroyed objects to a zone that was just generated. Call from WorldGenerator.
 func apply_destroyed_to_zone(zone_root: Node, coord: Vector2i) -> void:
 	var idx := 0

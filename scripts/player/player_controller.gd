@@ -276,6 +276,7 @@ var _hp_bar: MeshInstance3D
 var _stam_bar: MeshInstance3D
 var _hp_pulse: float = 0.0
 var _bar_shader: Shader
+var _remote_nameplate_label: Label3D = null
 
 # HUD references
 var _hud_root: Control
@@ -289,6 +290,12 @@ var _target_hud_hp_fill: ColorRect
 var _target_hud_hp_label: Label
 var _target_creature: Node3D = null
 var _target_hud_timer: float = 0.0
+var _chat_panel: PanelContainer
+var _chat_log: VBoxContainer
+var _chat_input: LineEdit
+var _chat_focused: bool = false
+var _player_list_panel: PanelContainer
+var _player_list_visible: bool = false
 var _inventory_panel: PanelContainer
 var _inventory_grid: GridContainer
 var _cached_grouped: Array = []
@@ -337,6 +344,10 @@ var _minimap_time_label: Label
 var _minimap_refresh_timer := 0.0
 var _minimap_needs_refresh := true
 
+## Phase 5: Report player data to host for save on disconnect
+const _REPORT_DATA_INTERVAL := 8.0
+var _report_data_timer := 0.0
+
 var _movement: PlayerMovement
 var _combat: PlayerCombat
 var _building: PlayerBuilding
@@ -359,8 +370,10 @@ func _ready() -> void:
 		if _camera_pivot:
 			_camera_pivot.queue_free()
 			_camera_pivot = null
+		_synced_position = global_position  # Initialize before first sync
 		_setup_multiplayer_sync()
 		_setup_player_sprite()  # Model only, no HUD
+		_setup_remote_nameplate()
 		return  # Skip HUD, floating bars, etc.
 
 	current_health = max_health
@@ -421,6 +434,8 @@ func _ready() -> void:
 
 	_setup_multiplayer_sync()
 	_setup_player_sprite()
+	if NetworkManager.is_connected_to_game():
+		character_display_name = str(SaveManager.current_character.get("name", "Unknown"))
 	_setup_floating_bars()
 	_build_hud()
 	if _spring_arm:
@@ -451,15 +466,44 @@ func _exit_tree() -> void:
 			NetworkManager.chest_contents_received.disconnect(_on_chest_contents_received)
 
 
+func _report_player_data_to_host() -> void:
+	## Phase 5: Report our player and inventory data to host for save on disconnect.
+	var char_id: String = str(SaveManager.current_character.get("id", ""))
+	var player_data := {
+		"position": {"x": global_position.x, "y": global_position.y, "z": global_position.z},
+		"rotation_y": rotation.y,
+		"health": current_health,
+		"stamina": current_stamina,
+		"equipped_weapon": str(equipped_weapon),
+		"selected_slot": _selected_slot,
+		"base_strength": base_strength,
+		"base_dexterity": base_dexterity,
+		"base_vitality": base_vitality,
+	}
+	var inv := Inventory.get_local()
+	var inv_data: Dictionary = {}
+	if inv:
+		inv_data["items"] = inv.get_all_items().duplicate()
+		var order_strings: Array[String] = []
+		for sid: StringName in inv.get_order():
+			order_strings.append(String(sid))
+		inv_data["order"] = order_strings
+		var eq: Dictionary = {}
+		for slot: String in inv.get_all_equipped().keys():
+			eq[slot] = String(inv.get_equipped(slot))
+		inv_data["equipped"] = eq
+	NetworkManager.report_player_data.rpc_id(1, char_id, player_data, inv_data)
+
+
 func _setup_multiplayer_sync() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "MultiplayerSynchronizer"
 	sync.root_path = NodePath("..")
 	add_child(sync)
 	var cfg := sync.replication_config
-	# Unreliable (REPLICATION_MODE_ALWAYS): position, velocity, rotation
-	cfg.add_property(NodePath("global_position"))
-	cfg.property_set_replication_mode(NodePath("global_position"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	# Unreliable: _synced_position for interpolation on remote (authority updates each frame)
+	cfg.add_property(NodePath("_synced_position"))
+	cfg.property_set_replication_mode(NodePath("_synced_position"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	cfg.add_property(NodePath("velocity"))
 	cfg.property_set_replication_mode(NodePath("velocity"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	cfg.add_property(NodePath("rotation"))
@@ -471,8 +515,29 @@ func _setup_multiplayer_sync() -> void:
 	cfg.property_set_replication_mode(NodePath("equipped_weapon"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 	cfg.add_property(NodePath("synced_equipped"))
 	cfg.property_set_replication_mode(NodePath("synced_equipped"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	cfg.add_property(NodePath("character_display_name"))
+	cfg.property_set_replication_mode(NodePath("character_display_name"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 	if not is_multiplayer_authority():
 		sync.synchronized.connect(_on_sync_received)
+
+
+func _setup_remote_nameplate() -> void:
+	## Floating Label3D above remote players showing character name.
+	var parent := _model if _model else self
+	_remote_nameplate_label = Label3D.new()
+	_remote_nameplate_label.name = "RemoteNameplate"
+	_remote_nameplate_label.text = character_display_name if character_display_name != "" else "Player"
+	_remote_nameplate_label.font_size = 28
+	_remote_nameplate_label.pixel_size = 0.00096
+	_remote_nameplate_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_remote_nameplate_label.fixed_size = true
+	_remote_nameplate_label.no_depth_test = false
+	_remote_nameplate_label.modulate = Color.WHITE
+	_remote_nameplate_label.outline_modulate = Color(0, 0, 0, 0.9)
+	_remote_nameplate_label.outline_size = 6
+	_remote_nameplate_label.render_priority = 1
+	_remote_nameplate_label.position = Vector3(0.0, 2.2, 0.0)
+	parent.add_child(_remote_nameplate_label)
 
 
 func _on_sync_received() -> void:
@@ -482,6 +547,8 @@ func _on_sync_received() -> void:
 			_gltf_current_anim = synced_animation
 			_gltf_anim_player.play(synced_animation)
 	_update_equipped_weapon_model()
+	if _remote_nameplate_label and character_display_name != "":
+		_remote_nameplate_label.text = character_display_name
 
 
 func _on_inventory_changed() -> void:
@@ -552,6 +619,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		if (ke.alt_pressed or ke.meta_pressed) and ke.physical_keycode == KEY_F4:
 			get_tree().quit()
 			return
+
+	if event.is_action_pressed(&"chat") and _chat_input and not _chat_focused and NetworkManager.is_connected_to_game():
+		_chat_input.grab_focus()
+		_chat_focused = true
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		get_viewport().set_input_as_handled()
+		return
+
+	if event.is_action_pressed(&"player_list") and _player_list_panel and NetworkManager.is_connected_to_game():
+		_player_list_visible = not _player_list_visible
+		_player_list_panel.visible = _player_list_visible
+		if _player_list_visible:
+			_hud_module._refresh_player_list(self)
+		get_viewport().set_input_as_handled()
+		return
 
 	if event.is_action_pressed(&"quit_game"):
 		if _pause_open:
@@ -720,6 +802,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if not is_multiplayer_authority():
+		global_position = global_position.lerp(_synced_position, delta * 15.0)
+		velocity = velocity.lerp(Vector3.ZERO, delta * 10.0)  # Damp velocity for visuals
+		return
+
 	var wants_block := Input.is_action_pressed(&"block") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _inventory_open
 	var _bow_slot_item: StringName = Inventory.get_equipped("bow")
 	var _has_bow_equipped := _bow_slot_item != &""
@@ -804,6 +891,9 @@ func _physics_process(delta: float) -> void:
 	_tick_footstep_sfx(delta)
 	_tick_gallop_sfx(delta)
 	_update_floating_bars(delta)
+
+	if NetworkManager.is_connected_to_game():
+		_synced_position = global_position
 
 	if _attack_cooldown > 0.0:
 		_attack_cooldown -= delta
@@ -2729,7 +2819,8 @@ func _make_pause_button(text: String, color: Color) -> Button:
 func _open_pause_menu() -> void:
 	_pause_open = true
 	_pause_overlay.visible = true
-	get_tree().paused = true
+	if not NetworkManager.is_connected_to_game():
+		get_tree().paused = true
 	AudioServer.set_bus_mute(AudioServer.get_bus_index(&"Master"), true)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var catcher := _pause_overlay.get_node_or_null("PauseInputCatcher") as Control
@@ -2740,7 +2831,8 @@ func _open_pause_menu() -> void:
 func _close_pause_menu() -> void:
 	_pause_open = false
 	_pause_overlay.visible = false
-	get_tree().paused = false
+	if not NetworkManager.is_connected_to_game():
+		get_tree().paused = false
 	AudioServer.set_bus_mute(AudioServer.get_bus_index(&"Master"), false)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -7041,6 +7133,13 @@ func _process(delta: float) -> void:
 		_fps_label.text = "%d FPS" % Engine.get_frames_per_second()
 
 	_tick_equip_progress(delta)
+
+	# Phase 5: Clients report player data to host for save on disconnect
+	if is_multiplayer_authority() and NetworkManager.is_connected_to_game() and not NetworkManager.is_server():
+		_report_data_timer += delta
+		if _report_data_timer >= _REPORT_DATA_INTERVAL:
+			_report_data_timer = 0.0
+			_report_player_data_to_host()
 
 	if _chest_open and _chest_node:
 		if global_position.distance_to(_chest_node.global_position) > 4.0:

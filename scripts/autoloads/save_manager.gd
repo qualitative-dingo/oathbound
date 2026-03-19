@@ -19,6 +19,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not _game_active:
 		return
+	# Only host auto-saves in multiplayer (5a)
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		return
 	_autosave_timer += delta
 	if _autosave_timer >= AUTOSAVE_INTERVAL:
 		_autosave_timer = 0.0
@@ -141,6 +144,9 @@ func start_game(character: Dictionary, world: Dictionary) -> void:
 func save_game() -> void:
 	if current_character.is_empty() or current_world.is_empty():
 		return
+	# Only host saves in multiplayer (5a)
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		return
 
 	var char_id: String = str(current_character.get("id", ""))
 	var world_id: String = str(current_world.get("id", ""))
@@ -149,9 +155,10 @@ func save_game() -> void:
 	var save_data := {
 		"character": current_character,
 		"world": current_world,
+		"world_state": _serialize_world_state(),
 		"player": _serialize_player(player),
 		"inventory": _serialize_inventory(),
-		"structures": _serialize_structures(),
+		"players": _serialize_all_players(char_id),
 		"timestamp": Time.get_datetime_string_from_system(),
 	}
 
@@ -184,10 +191,16 @@ func apply_save_data(save_data: Dictionary) -> void:
 	if save_data.is_empty():
 		return
 
+	# 5a: Apply world state (destroyed objects, placed buildings)
+	if save_data.has("world_state"):
+		_deserialize_world_state(save_data["world_state"])
+
 	var player := _get_player()
 	_deserialize_player(player, save_data.get("player", {}))
 	_deserialize_inventory(save_data.get("inventory", {}))
-	_deserialize_structures(save_data.get("structures", []))
+	# Legacy: structures from scene (superseded by world_state when present)
+	if not save_data.has("world_state") and save_data.has("structures"):
+		_deserialize_structures(save_data.get("structures", []))
 
 
 func stop_game() -> void:
@@ -423,8 +436,52 @@ func _deserialize_structures(data: Array) -> void:
 					restored.append({"item_id": StringName(str(slot["item_id"])), "count": int(slot.get("count", 0))})
 				else:
 					restored.append({})
-			var chests := get_tree().get_nodes_in_group(&"chests")
-			if not chests.is_empty():
-				var last_chest := chests.back() as Node3D
-				if last_chest:
-					last_chest.set_meta("chest_contents", restored)
+		var chests := get_tree().get_nodes_in_group(&"chests")
+		if not chests.is_empty():
+			var last_chest := chests.back() as Node3D
+			if last_chest:
+				last_chest.set_meta("chest_contents", restored)
+
+
+func _serialize_world_state() -> Dictionary:
+	var wss := _get_world_state_sync()
+	if not wss:
+		return {"destroyed": {}, "buildings": []}
+	return wss.get_world_state_for_save()
+
+
+func _deserialize_world_state(data: Dictionary) -> void:
+	var wss := _get_world_state_sync()
+	if wss and not data.is_empty():
+		wss.apply_world_state_from_save(data)
+
+
+func _get_world_state_sync() -> Node:
+	var wss := get_tree().get_nodes_in_group(&"world_state_sync")
+	if not wss.is_empty() and wss[0].has_method(&"get_world_state_for_save"):
+		return wss[0]
+	return null
+
+
+func _serialize_all_players(host_char_id: String) -> Dictionary:
+	var result: Dictionary = {}
+	# Host's own data
+	var player := _get_player()
+	if player:
+		result[host_char_id] = {
+			"player": _serialize_player(player),
+			"inventory": _serialize_inventory(),
+		}
+	# Cached data from other players
+	if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
+		for peer_id in NetworkManager.get_connected_peers():
+			if peer_id == multiplayer.get_unique_id():
+				continue
+			var cached := NetworkManager.get_cached_player_data(peer_id)
+			if not cached.is_empty():
+				var char_id: String = str(cached.get("character_id", peer_id))
+				result[char_id] = {
+					"player": cached.get("player", {}),
+					"inventory": cached.get("inventory", {}),
+				}
+	return result

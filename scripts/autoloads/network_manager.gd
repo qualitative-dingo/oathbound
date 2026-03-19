@@ -20,6 +20,9 @@ var world_seed: String = ""
 var world_name: String = ""
 var character_name: String = ""
 
+## Phase 5: Cached player data from clients (peer_id -> {character_id, player, inventory})
+var _player_data_cache: Dictionary = {}
+
 
 func host_game(port: int = DEFAULT_PORT) -> Error:
 	var peer := ENetMultiplayerPeer.new()
@@ -33,7 +36,7 @@ func host_game(port: int = DEFAULT_PORT) -> Error:
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	player_connected.connect(spawn_player)
-	player_disconnected.connect(despawn_player)
+	# 5c: despawn_player called directly in _on_peer_disconnected, not via signal
 
 	print("[NET] Server started on port %d (peer_id=%d)" % [port, multiplayer.get_unique_id()])
 	server_started.emit()
@@ -100,6 +103,7 @@ func _send_world_info(seed_str: String, w_name: String) -> void:
 	world_seed = seed_str
 	world_name = w_name
 	print("[NET] Received world info: seed=%s name=%s" % [seed_str, w_name])
+	world_info_received.emit()
 
 
 func _on_peer_connected(id: int) -> void:
@@ -109,6 +113,11 @@ func _on_peer_connected(id: int) -> void:
 
 func _on_peer_disconnected(id: int) -> void:
 	print("[NET] Peer disconnected: %d" % id)
+	# 5c: Save player data before removing
+	if is_server():
+		_save_player_data(id)
+	despawn_player(id)
+	_player_data_cache.erase(id)
 	player_disconnected.emit(id)
 
 
@@ -248,3 +257,80 @@ func request_withdraw_from_chest(chest_path: String, item_id: String, amount: in
 @rpc("authority", "reliable")
 func _update_chest_contents(chest_path: String, contents: Array) -> void:
 	chest_contents_received.emit(chest_path, contents)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase 5: Player data sync and disconnect save
+# ═══════════════════════════════════════════════════════════════════════════════
+
+## Clients call this to report their player data to the host (for save on disconnect).
+@rpc("any_peer", "reliable")
+func report_player_data(character_id: String, player_data: Dictionary, inventory_data: Dictionary) -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	_player_data_cache[sender] = {
+		"character_id": character_id,
+		"player": player_data,
+		"inventory": inventory_data,
+	}
+
+
+func get_cached_player_data(peer_id: int) -> Dictionary:
+	return _player_data_cache.get(peer_id, {})
+
+
+func cache_local_player_data(peer_id: int, character_id: String, player_data: Dictionary, inventory_data: Dictionary) -> void:
+	if not is_server():
+		return
+	_player_data_cache[peer_id] = {
+		"character_id": character_id,
+		"player": player_data,
+		"inventory": inventory_data,
+	}
+
+
+func _save_player_data(peer_id: int) -> void:
+	var cached := _player_data_cache.get(peer_id, {})
+	if cached.is_empty():
+		# Fallback: get position from replicated player node (inventory not available on host)
+		var player_node := _get_player_by_peer(peer_id)
+		if player_node:
+			var p := player_node as CharacterBody3D
+			if p:
+				var player_data := {
+					"position": {"x": p.global_position.x, "y": p.global_position.y, "z": p.global_position.z},
+					"rotation_y": p.rotation.y,
+					"health": p.get("current_health"),
+					"stamina": p.get("current_stamina"),
+					"equipped_weapon": str(p.get("equipped_weapon")),
+					"selected_slot": p.get("_selected_slot"),
+					"base_strength": p.get("base_strength"),
+					"base_dexterity": p.get("base_dexterity"),
+					"base_vitality": p.get("base_vitality"),
+				}
+				SaveManager.save_disconnected_player(peer_id, str(peer_id), player_data, {})
+		return
+	var char_id: String = str(cached.get("character_id", peer_id))
+	SaveManager.save_disconnected_player(peer_id, char_id, cached["player"], cached["inventory"])
+
+
+func _get_player_by_peer(peer_id: int) -> Node:
+	var players_node := _get_players_container()
+	if not players_node:
+		return null
+	return players_node.get_node_or_null(str(peer_id))
+
+
+func _serialize_inventory_from(inv: PlayerInventory) -> Dictionary:
+	var result: Dictionary = {}
+	result["items"] = inv.get_all_items().duplicate()
+	var order_strings: Array[String] = []
+	for sid: StringName in inv.get_order():
+		order_strings.append(String(sid))
+	result["order"] = order_strings
+	var eq: Dictionary = {}
+	for slot: String in inv.get_all_equipped().keys():
+		eq[slot] = String(inv.get_equipped(slot))
+	result["equipped"] = eq
+	return result
