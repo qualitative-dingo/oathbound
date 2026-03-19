@@ -277,6 +277,8 @@ var _stam_bar: MeshInstance3D
 var _hp_pulse: float = 0.0
 var _bar_shader: Shader
 var _remote_nameplate_label: Label3D = null
+var _synced_position: Vector3 = Vector3.ZERO
+var character_display_name: String = ""
 
 # HUD references
 var _hud_root: Control
@@ -499,8 +501,9 @@ func _setup_multiplayer_sync() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "MultiplayerSynchronizer"
 	sync.root_path = NodePath("..")
+	var cfg := SceneReplicationConfig.new()
+	sync.replication_config = cfg
 	add_child(sync)
-	var cfg := sync.replication_config
 	# Unreliable: _synced_position for interpolation on remote (authority updates each frame)
 	cfg.add_property(NodePath("_synced_position"))
 	cfg.property_set_replication_mode(NodePath("_synced_position"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
@@ -7143,7 +7146,7 @@ func _process(delta: float) -> void:
 
 	if _chest_open and _chest_node:
 		if global_position.distance_to(_chest_node.global_position) > 4.0:
-			_close_chest()
+			_interaction.close_chest()
 
 	if _dragging_item != &"" and _drag_icon and _drag_icon.visible and _hud_root:
 		_drag_icon.position = _hud_root.get_local_mouse_position() - Vector2(16, 16)

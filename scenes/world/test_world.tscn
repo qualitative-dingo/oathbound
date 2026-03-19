@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://ck45ipgdamo82" path="res://scripts/world/world_generator.gd" id="2_worldgen"]
 [ext_resource type="Script" uid="uid://ugkop6ug47lv" path="res://scripts/ui/biome_label.gd" id="3_biomelabel"]
 [ext_resource type="Script" uid="uid://c7lx21y7jm2w0" path="res://scripts/world/art_unifier.gd" id="5_artunify"]
-[ext_resource type="Script" path="res://scripts/network/world_state_sync.gd" id="6_worldstatesync"]
+[ext_resource type="Script" uid="uid://bphqbl2qnm5mh" path="res://scripts/network/world_state_sync.gd" id="6_worldstatesync"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
 sky_top_color = Color(0.22, 0.42, 0.78, 1)
@@ -25,8 +25,11 @@ ambient_light_color = Color(0.38, 0.42, 0.58, 1)
 ambient_light_energy = 0.65
 tonemap_mode = 2
 tonemap_white = 5.0
-ssao_enabled = false
-glow_enabled = false
+ssao_intensity = 1.0
+ssao_light_affect = 0.5
+glow_intensity = 0.2
+glow_strength = 0.5
+glow_bloom = 0.03
 fog_enabled = true
 fog_light_color = Color(0.65, 0.72, 0.82, 1)
 fog_sun_scatter = 0.4
@@ -64,16 +67,15 @@ directional_shadow_max_distance = 50.0
 script = ExtResource("2_worldgen")
 world_seed = "hearthlands"
 
-[node name="WorldStateSync" type="Node" parent="."]
+[node name="WorldStateSync" type="Node" parent="." unique_id=836876274]
 script = ExtResource("6_worldstatesync")
 
-[node name="Players" type="Node3D" parent="."]
+[node name="Players" type="Node3D" parent="." unique_id=2003709809]
 
-[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="Players"]
+[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="Players" unique_id=69368056]
 spawn_path = NodePath("..")
-spawnable_scenes = PackedStringArray("res://scenes/player/player.tscn")
 
-[node name="Player" parent="Players" instance=ExtResource("1_player")]
+[node name="Player" parent="Players" unique_id=1729932161 instance=ExtResource("1_player")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 
 [node name="BiomeHUD" type="CanvasLayer" parent="." unique_id=49723321]

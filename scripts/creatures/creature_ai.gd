@@ -231,8 +231,9 @@ func _setup_multiplayer_sync() -> void:
 	var sync := MultiplayerSynchronizer.new()
 	sync.name = "MultiplayerSynchronizer"
 	sync.root_path = NodePath("..")
+	var cfg := SceneReplicationConfig.new()
+	sync.replication_config = cfg
 	add_child(sync)
-	var cfg := sync.replication_config
 	cfg.add_property(NodePath("global_position"))
 	cfg.property_set_replication_mode(NodePath("global_position"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
 	cfg.add_property(NodePath("velocity"))

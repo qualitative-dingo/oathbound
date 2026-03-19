@@ -1,20 +1,24 @@
 extends Control
 ## Main menu: character selection → world selection → play.
 
-enum Screen { CHARACTER_SELECT, WORLD_SELECT }
+enum Screen { CHARACTER_SELECT, WORLD_SELECT, PLAY_MODE }
 
 var _current_screen: int = Screen.CHARACTER_SELECT
 var _characters: Array = []
 var _worlds: Array = []
 var _selected_character: Dictionary = {}
+var _selected_world: Dictionary = {}
 
 var _char_list: VBoxContainer
 var _world_list: VBoxContainer
 var _char_panel: PanelContainer
 var _world_panel: PanelContainer
+var _play_mode_panel: PanelContainer
 var _title_label: Label
 var _subtitle_label: Label
 var _new_name_input: LineEdit
+var _ip_input: LineEdit
+var _connection_status: Label
 
 
 func _ready() -> void:
@@ -124,6 +128,9 @@ func _show_character_select() -> void:
 	_new_name_input.text = ""
 	_char_panel.visible = true
 	_world_panel.visible = false
+	if _play_mode_panel:
+		_play_mode_panel.queue_free()
+		_play_mode_panel = null
 	var back_btn := _char_panel.get_parent().get_node_or_null("BackButton")
 	if back_btn:
 		back_btn.visible = false
@@ -137,6 +144,9 @@ func _show_world_select() -> void:
 	_new_name_input.text = ""
 	_char_panel.visible = false
 	_world_panel.visible = true
+	if _play_mode_panel:
+		_play_mode_panel.queue_free()
+		_play_mode_panel = null
 	var back_btn := _world_panel.get_parent().get_node_or_null("BackButton")
 	if back_btn:
 		back_btn.visible = true
@@ -210,8 +220,8 @@ func _on_character_deleted(char_id: String) -> void:
 
 
 func _on_world_selected(world_data: Dictionary) -> void:
-	SaveManager.start_game(_selected_character, world_data)
-	_launch_world(world_data)
+	_selected_world = world_data
+	_show_play_mode()
 
 
 func _on_world_deleted(world_id: String) -> void:
@@ -234,7 +244,121 @@ func _on_create_pressed() -> void:
 
 
 func _on_back_pressed() -> void:
-	_show_character_select()
+	if _current_screen == Screen.PLAY_MODE:
+		_show_world_select()
+	else:
+		_show_character_select()
+
+
+func _show_play_mode() -> void:
+	_current_screen = Screen.PLAY_MODE
+	_char_panel.visible = false
+	_world_panel.visible = false
+	_title_label.text = "Play Mode"
+	_subtitle_label.text = _selected_world.get("name", "World")
+
+	if _play_mode_panel:
+		_play_mode_panel.queue_free()
+	_play_mode_panel = _make_panel()
+	_play_mode_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_play_mode_panel.offset_left = -200
+	_play_mode_panel.offset_right = 200
+	_play_mode_panel.offset_top = -160
+	_play_mode_panel.offset_bottom = 160
+	add_child(_play_mode_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 12)
+	_play_mode_panel.add_child(vbox)
+
+	var offline_btn := _make_button("Play Offline", Color(0.2, 0.45, 0.3))
+	offline_btn.custom_minimum_size = Vector2(0, 42)
+	offline_btn.pressed.connect(_on_play_offline)
+	vbox.add_child(offline_btn)
+
+	var host_btn := _make_button("Host LAN Game", Color(0.25, 0.35, 0.55))
+	host_btn.custom_minimum_size = Vector2(0, 42)
+	host_btn.pressed.connect(_on_host_lan)
+	vbox.add_child(host_btn)
+
+	vbox.add_child(_make_spacer(8))
+
+	var sep_label := Label.new()
+	sep_label.text = "— or join a game —"
+	sep_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sep_label.add_theme_font_size_override("font_size", 14)
+	sep_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+	vbox.add_child(sep_label)
+
+	_ip_input = LineEdit.new()
+	_ip_input.placeholder_text = "Host IP (e.g. 192.168.1.50)"
+	_ip_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_ip_input.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(_ip_input)
+
+	var join_btn := _make_button("Join LAN Game", Color(0.45, 0.35, 0.2))
+	join_btn.custom_minimum_size = Vector2(0, 42)
+	join_btn.pressed.connect(_on_join_lan)
+	vbox.add_child(join_btn)
+
+	_connection_status = Label.new()
+	_connection_status.text = ""
+	_connection_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_connection_status.add_theme_font_size_override("font_size", 14)
+	_connection_status.add_theme_color_override("font_color", Color(0.7, 0.65, 0.5))
+	vbox.add_child(_connection_status)
+
+	var back_btn := _make_button("Back", Color(0.3, 0.3, 0.35))
+	back_btn.custom_minimum_size = Vector2(0, 36)
+	back_btn.pressed.connect(_on_back_pressed)
+	vbox.add_child(back_btn)
+
+
+func _on_play_offline() -> void:
+	SaveManager.start_game(_selected_character, _selected_world)
+	_launch_world(_selected_world)
+
+
+func _on_host_lan() -> void:
+	SaveManager.start_game(_selected_character, _selected_world)
+	var seed_str: String = str(_selected_world.get("seed", "oathbound"))
+	var w_name: String = str(_selected_world.get("name", "World"))
+	NetworkManager.world_seed = seed_str
+	NetworkManager.world_name = w_name
+	_launch_world(_selected_world)
+	NetworkManager.host_game()
+
+
+func _on_join_lan() -> void:
+	var ip := _ip_input.text.strip_edges()
+	if ip.is_empty():
+		ip = "127.0.0.1"
+	_connection_status.text = "Connecting to %s..." % ip
+	_connection_status.add_theme_color_override("font_color", Color(0.7, 0.65, 0.5))
+
+	NetworkManager.connection_succeeded.connect(_on_join_connected, CONNECT_ONE_SHOT)
+	NetworkManager.connection_failed.connect(_on_join_failed, CONNECT_ONE_SHOT)
+	NetworkManager.world_info_received.connect(_on_join_world_info, CONNECT_ONE_SHOT)
+	NetworkManager.join_game(ip)
+
+
+func _on_join_connected() -> void:
+	_connection_status.text = "Connected! Waiting for world info..."
+	_connection_status.add_theme_color_override("font_color", Color(0.5, 0.8, 0.5))
+
+
+func _on_join_failed() -> void:
+	_connection_status.text = "Connection failed."
+	_connection_status.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+	if NetworkManager.world_info_received.is_connected(_on_join_world_info):
+		NetworkManager.world_info_received.disconnect(_on_join_world_info)
+
+
+func _on_join_world_info() -> void:
+	_connection_status.text = "Loading world..."
+	SaveManager.start_game(_selected_character, {"id": "lan_client", "name": NetworkManager.world_name, "seed": NetworkManager.world_seed})
+	var world_data := {"seed": NetworkManager.world_seed, "name": NetworkManager.world_name}
+	_launch_world(world_data)
 
 
 func _launch_world(world_data: Dictionary) -> void:
@@ -253,10 +377,8 @@ func _launch_world(world_data: Dictionary) -> void:
 	get_tree().root.add_child(world_instance)
 	get_tree().current_scene = world_instance
 
-	if NetworkManager.pending_host:
-		NetworkManager.call_deferred("_do_host_in_world")
-	if not skip_save_load:
-		SaveManager.call_deferred("_deferred_load_save")
+	# Defer save loading to SaveManager (survives queue_free since it's an autoload)
+	SaveManager.call_deferred("_deferred_load_save")
 	queue_free()
 
 

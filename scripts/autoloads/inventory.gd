@@ -128,3 +128,17 @@ func set_equipped_from_save(data: Dictionary) -> void:
 
 func give_starting_gear() -> void:
 	_local.give_starting_gear()
+
+
+# Properties forwarded for backward-compat with save_manager / main_menu
+var _slots: Dictionary:
+	get: return _local._slots
+	set(v): _local._slots = v
+
+var _order: Array[StringName]:
+	get: return _local._order
+	set(v): _local._order = v
+
+var _equipped: Dictionary:
+	get: return _local._equipped
+	set(v): _local._equipped = v

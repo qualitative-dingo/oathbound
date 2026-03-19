@@ -436,11 +436,11 @@ func _deserialize_structures(data: Array) -> void:
 					restored.append({"item_id": StringName(str(slot["item_id"])), "count": int(slot.get("count", 0))})
 				else:
 					restored.append({})
-		var chests := get_tree().get_nodes_in_group(&"chests")
-		if not chests.is_empty():
-			var last_chest := chests.back() as Node3D
-			if last_chest:
-				last_chest.set_meta("chest_contents", restored)
+			var chests := get_tree().get_nodes_in_group(&"chests")
+			if not chests.is_empty():
+				var last_chest := chests.back() as Node3D
+				if last_chest:
+					last_chest.set_meta("chest_contents", restored)
 
 
 func _serialize_world_state() -> Dictionary:
@@ -485,3 +485,21 @@ func _serialize_all_players(host_char_id: String) -> Dictionary:
 					"inventory": cached.get("inventory", {}),
 				}
 	return result
+
+
+func save_disconnected_player(peer_id: int, char_id: String, player_data: Dictionary, inventory_data: Dictionary) -> void:
+	if current_world.is_empty():
+		return
+	var world_id: String = str(current_world.get("id", ""))
+	var save_path := SAVE_DIR + char_id + "_" + world_id + "_disconnected.json"
+	var data := {
+		"character_id": char_id,
+		"peer_id": peer_id,
+		"player": player_data,
+		"inventory": inventory_data,
+		"timestamp": Time.get_datetime_string_from_system(),
+	}
+	var file := FileAccess.open(save_path, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(data, "\t"))
+		print("[SAVE] Saved disconnected player %s (peer %d)" % [char_id, peer_id])
