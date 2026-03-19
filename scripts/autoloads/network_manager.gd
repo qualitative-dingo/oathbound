@@ -291,7 +291,7 @@ func cache_local_player_data(peer_id: int, character_id: String, player_data: Di
 
 
 func _save_player_data(peer_id: int) -> void:
-	var cached := _player_data_cache.get(peer_id, {})
+	var cached: Dictionary = _player_data_cache.get(peer_id, {})
 	if cached.is_empty():
 		# Fallback: get position from replicated player node (inventory not available on host)
 		var player_node := _get_player_by_peer(peer_id)
