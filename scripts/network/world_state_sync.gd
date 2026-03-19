@@ -128,7 +128,9 @@ func request_world_state() -> void:
 @rpc("authority", "reliable")
 func _send_world_state(destroyed: Dictionary, buildings: Array) -> void:
 	_destroyed_objects = destroyed
-	_placed_buildings = buildings
+	_placed_buildings.clear()
+	for entry in buildings:
+		_placed_buildings.append(entry as Dictionary)
 	_apply_mutations()
 	world_state_received.emit()
 	print("[WorldStateSync] Received world state: %d destroyed, %d buildings" % [destroyed.size(), buildings.size()])
@@ -354,7 +356,10 @@ func apply_world_state_from_save(data: Dictionary) -> void:
 	if data.has("destroyed"):
 		_destroyed_objects = data["destroyed"].duplicate()
 	if data.has("buildings"):
-		_placed_buildings = data["buildings"].duplicate()
+		_placed_buildings.clear()
+		var raw_buildings: Array = data["buildings"]
+		for entry in raw_buildings:
+			_placed_buildings.append(entry as Dictionary)
 	_apply_mutations()
 
 
