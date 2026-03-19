@@ -29,6 +29,7 @@ WaterSystem="*res://scripts/autoloads/water_system.gd"
 AudioManager="*res://scripts/autoloads/audio_manager.gd"
 SaveManager="*res://scripts/autoloads/save_manager.gd"
 WeatherSystem="*res://scripts/autoloads/weather_system.gd"
+NetworkManager="*res://scripts/autoloads/network_manager.gd"
 MCPGameBridge="res://addons/godot_mcp/game_bridge/mcp_game_bridge.gd"
 
 [display]
