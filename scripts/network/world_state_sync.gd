@@ -38,7 +38,7 @@ static func get_object_key_for_node(node: Node) -> String:
 	var zone = node.get_parent()
 	if not zone or not zone.name.begins_with("Zone_"):
 		return ""
-	var parts := zone.name.split("_")
+	var parts: PackedStringArray = zone.name.split("_")
 	if parts.size() < 3:
 		return ""
 	var zx := int(parts[1])
