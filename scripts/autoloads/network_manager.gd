@@ -4,6 +4,7 @@ extends Node
 
 const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 4
+const PLAYER_SCENE := preload("res://scenes/player/player.tscn")
 
 signal player_connected(peer_id: int)
 signal player_disconnected(peer_id: int)
@@ -28,9 +29,12 @@ func host_game(port: int = DEFAULT_PORT) -> Error:
 
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	player_connected.connect(spawn_player)
+	player_disconnected.connect(despawn_player)
 
 	print("[NET] Server started on port %d (peer_id=%d)" % [port, multiplayer.get_unique_id()])
 	server_started.emit()
+	spawn_player(multiplayer.get_unique_id())
 	return OK
 
 
@@ -115,3 +119,44 @@ func _on_connection_failed() -> void:
 	print("[NET] Connection failed")
 	connection_failed.emit()
 	disconnect_game()
+
+
+func spawn_player(peer_id: int) -> void:
+	if not is_server():
+		return
+	var players_node := _get_players_container()
+	if not players_node:
+		push_error("[NET] No Players container found; cannot spawn player %d" % peer_id)
+		return
+	# Remove default single-player Player when spawning host
+	if peer_id == multiplayer.get_unique_id():
+		var default_player := players_node.get_node_or_null("Player")
+		if default_player:
+			default_player.queue_free()
+	var player := PLAYER_SCENE.instantiate()
+	player.name = str(peer_id)
+	player.set_multiplayer_authority(peer_id)
+	players_node.add_child(player)
+	print("[NET] Spawned player %d" % peer_id)
+
+
+func despawn_player(peer_id: int) -> void:
+	if not is_server():
+		return
+	var players_node := _get_players_container()
+	if not players_node:
+		return
+	var player_node := players_node.get_node_or_null(str(peer_id))
+	if player_node:
+		player_node.queue_free()
+		print("[NET] Despawned player %d" % peer_id)
+
+
+func _get_players_container() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if not tree:
+		return null
+	var current := tree.current_scene
+	if not current:
+		return null
+	return current.get_node_or_null("Players")

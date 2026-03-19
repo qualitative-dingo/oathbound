@@ -63,6 +63,8 @@ const MAP_ZOOM_SPEED := 10.0
 const MAP_PX := 512
 
 var equipped_weapon: StringName = &"fists"
+## Synced for multiplayer; updated when animation changes.
+var synced_animation: String = ""
 var _selected_slot: int = 0
 
 # Affix system state
@@ -348,6 +350,17 @@ func _set_player_sprite_tex(_tex: Texture2D) -> void:
 
 
 func _ready() -> void:
+	if not is_multiplayer_authority():
+		# Remote player: disable input, camera, UI; keep model visible
+		set_process_unhandled_input(false)
+		set_process_input(false)
+		if _camera_pivot:
+			_camera_pivot.queue_free()
+			_camera_pivot = null
+		_setup_multiplayer_sync()
+		_setup_player_sprite()  # Model only, no HUD
+		return  # Skip HUD, floating bars, etc.
+
 	current_health = max_health
 	current_stamina = max_stamina
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -398,6 +411,7 @@ func _ready() -> void:
 	add_child(_anim)
 	_anim.pc = self
 
+	_setup_multiplayer_sync()
 	_setup_player_sprite()
 	_setup_floating_bars()
 	_build_hud()
@@ -405,6 +419,37 @@ func _ready() -> void:
 		_spring_arm.spring_length = min_zoom + 0.85 * (max_zoom - min_zoom)
 	_setup_movement_audio()
 	GameEvents.inventory_changed.connect(_on_inventory_changed)
+
+
+func _setup_multiplayer_sync() -> void:
+	var sync := MultiplayerSynchronizer.new()
+	sync.name = "MultiplayerSynchronizer"
+	sync.root_path = NodePath("..")
+	add_child(sync)
+	var cfg := sync.replication_config
+	# Unreliable (REPLICATION_MODE_ALWAYS): position, velocity, rotation
+	cfg.add_property(NodePath("global_position"))
+	cfg.property_set_replication_mode(NodePath("global_position"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	cfg.add_property(NodePath("velocity"))
+	cfg.property_set_replication_mode(NodePath("velocity"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	cfg.add_property(NodePath("rotation"))
+	cfg.property_set_replication_mode(NodePath("rotation"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+	# Reliable (REPLICATION_MODE_ON_CHANGE): animation, equipped_weapon
+	cfg.add_property(NodePath("synced_animation"))
+	cfg.property_set_replication_mode(NodePath("synced_animation"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	cfg.add_property(NodePath("equipped_weapon"))
+	cfg.property_set_replication_mode(NodePath("equipped_weapon"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	if not is_multiplayer_authority():
+		sync.synchronized.connect(_on_sync_received)
+
+
+func _on_sync_received() -> void:
+	## Apply synced state on remote peers.
+	if _gltf_anim_player and synced_animation != "" and _gltf_anim_player.has_animation(synced_animation):
+		if _gltf_current_anim != synced_animation:
+			_gltf_current_anim = synced_animation
+			_gltf_anim_player.play(synced_animation)
+	_update_equipped_weapon_model()
 
 
 func _on_inventory_changed() -> void:
@@ -8443,6 +8488,7 @@ func _gltf_play(anim_name: String) -> void:
 			if _gltf_anim_player.has_animation(candidate):
 				if _gltf_current_anim != candidate:
 					_gltf_current_anim = candidate
+					synced_animation = candidate
 					_gltf_anim_player.speed_scale = speed
 					_gltf_anim_player.play(candidate)
 				return
@@ -8453,6 +8499,7 @@ func _gltf_play(anim_name: String) -> void:
 				if _gltf_anim_player.has_animation(candidate):
 					if _gltf_current_anim != candidate + "_fast":
 						_gltf_current_anim = candidate + "_fast"
+						synced_animation = candidate + "_fast"
 						_gltf_anim_player.speed_scale = 1.4 if base == "walk" else 1.0
 						_gltf_anim_player.play(candidate)
 					return
@@ -8462,6 +8509,7 @@ func _gltf_play(anim_name: String) -> void:
 		if anim_name == "idle":
 			if _gltf_current_anim != "NlaTrack_idle":
 				_gltf_current_anim = "NlaTrack_idle"
+				synced_animation = "NlaTrack_idle"
 				_gltf_anim_player.play("NlaTrack")
 				_gltf_anim_player.seek(0.0, true)
 				_gltf_anim_player.pause()
@@ -8469,6 +8517,7 @@ func _gltf_play(anim_name: String) -> void:
 		if anim_name in ["walk", "run"]:
 			var was_paused := _gltf_current_anim == "NlaTrack_idle"
 			_gltf_current_anim = "NlaTrack"
+			synced_animation = "NlaTrack"
 			if was_paused or not _gltf_anim_player.is_playing():
 				_gltf_anim_player.play("NlaTrack")
 			if anim_name == "run":

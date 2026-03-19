@@ -63,7 +63,13 @@ directional_shadow_max_distance = 50.0
 script = ExtResource("2_worldgen")
 world_seed = "hearthlands"
 
-[node name="Player" parent="." unique_id=2132426928 instance=ExtResource("1_player")]
+[node name="Players" type="Node3D" parent="."]
+
+[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="Players"]
+spawn_path = NodePath("..")
+spawnable_scenes = PackedStringArray("res://scenes/player/player.tscn")
+
+[node name="Player" parent="Players" instance=ExtResource("1_player")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 
 [node name="BiomeHUD" type="CanvasLayer" parent="." unique_id=49723321]
