@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="BiomeData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/biome_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"the_blight"
+display_name = "The Blight"
+description = "The land itself is dying. Perpetual darkness blankets rotting vegetation. Shambling hordes grow denser the longer you linger. Necromancer towers pulse with sickly light."
+min_distance_from_center = 5500.0
+max_distance_from_center = 8000.0
+min_altitude = -2.0
+max_altitude = 10.0
+generation_weight = 1.0
+ambient_color = Color(0.15, 0.1, 0.2, 1)
+fog_color = Color(0.2, 0.18, 0.25, 1)
+fog_density = 0.012
+requires_frost_resistance = false
+requires_heat_resistance = false
+has_perpetual_darkness = true
+has_poison_environment = true
+terrain_noise_amplitude = 5.0
+terrain_noise_frequency = 0.01
+terrain_color = Color(0.18, 0.15, 0.2, 1)
+tier = 6
+boss_drop_key = &"hollow_crown"
+boss_id = &"the_hollow_king"
+boss_summon_item = &"cursed_skull"
+boss_summon_count = 10

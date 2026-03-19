@@ -1,0 +1,2536 @@
+class_name ZonePopulator
+extends RefCounted
+## Deterministically scatters proper 3D objects into zones.
+##
+## Trees = CylinderMesh trunk + SphereMesh canopy (Oathbound-style low-poly).
+## Rocks = low-poly SphereMesh with triplanar stone texture.
+## Bushes = small squished SphereMesh with triplanar leaf texture.
+## All materials use TEXTURE_FILTER_NEAREST + triplanar mapping for pixel-art look.
+## Creatures keep billboards (they have directional sprite swapping).
+
+const _CreatureAI := preload("res://scripts/creatures/creature_ai.gd")
+const _LootDrop := preload("res://scripts/items/loot_drop.gd")
+const _FishIdle := preload("res://scripts/creatures/fish_idle.gd")
+
+const ZONE_SIZE := 64.0
+
+# ─── Shared materials ──────────────────────────────────────────────────────────
+
+static var _mat_bark: StandardMaterial3D
+static var _mat_leaves: Material
+static var _mat_pine_leaves: Material
+static var _mat_palm_leaves: Material
+static var _mat_stone: StandardMaterial3D
+static var _rock_meshes: Array[ArrayMesh] = []
+static var _rock_convex_shapes: Array[ConvexPolygonShape3D] = []
+static var _mat_bush_leaves: Material
+static var _mat_birch_bark: StandardMaterial3D
+static var _mat_birch_leaves: Material
+static var _wind_shader: Shader
+static var _leaf_shader: Shader
+static var _leaf_tex_oak: ImageTexture
+static var _leaf_tex_birch: ImageTexture
+static var _leaf_tex_pine: ImageTexture
+static var _leaf_tex_willow: ImageTexture
+static var _leaf_tex_palm: ImageTexture
+static var _leaf_tex_generic: ImageTexture
+
+# Creature 3D-enhancement shaders + cached materials
+static var _creature_shader: Shader
+static var _shadow_mat: StandardMaterial3D
+
+# Creature billboard textures
+static var _tex_boar: Dictionary = {}  # {south/east/north/west -> Texture2D}
+static var _tex_skeleton: Dictionary = {}
+static var _tex_grizzly: Dictionary = {}
+static var _tex_blackbear: Dictionary = {}
+static var _tex_lion: Dictionary = {}
+static var _tex_grizzly_run: Dictionary = {}
+static var _tex_grizzly_attack: Dictionary = {}
+static var _tex_blackbear_run: Dictionary = {}
+static var _tex_blackbear_attack: Dictionary = {}
+static var _tex_lion_run: Dictionary = {}
+static var _tex_lion_attack: Dictionary = {}
+static var _tex_moose: Dictionary = {}
+static var _tex_mamabear: Dictionary = {}
+static var _tex_tiger: Dictionary = {}
+static var _tex_boar_walk: Dictionary = {}
+static var _tex_boar_run: Dictionary = {}
+static var _tex_moose_walk: Dictionary = {}
+static var _tex_moose_run: Dictionary = {}
+static var _tex_grizzly_walk: Dictionary = {}
+static var _tex_blackbear_walk: Dictionary = {}
+static var _tex_lion_walk: Dictionary = {}
+static var _tex_mamabear_walk: Dictionary = {}
+static var _tex_mamabear_run: Dictionary = {}
+static var _tex_tiger_walk: Dictionary = {}
+static var _tex_tiger_run: Dictionary = {}
+static var _tex_tiger_attack: Dictionary = {}
+static var _tex_hawk: Dictionary = {}
+static var _tex_hawk_fly: Dictionary = {}
+static var _tex_hawk_attack: Dictionary = {}
+static var _tex_seagull: Dictionary = {}
+static var _tex_seagull_fly: Dictionary = {}
+static var _tex_seagull_idle: Dictionary = {}
+static var _tex_fish: Dictionary = {}
+static var _tex_fish_idle: Dictionary = {}
+static var _tex_horse: Dictionary = {}
+static var _tex_horse_walk: Dictionary = {}  # {dir -> Array[Texture2D]} walk animation frames
+static var _tex_horse_run: Dictionary = {}   # {dir -> Array[Texture2D]} run animation frames
+static var _tex_bush: Texture2D  # fallback if no 3D tex
+
+static var _grass_shader: Shader
+static var _grass_quad_mesh: ArrayMesh
+static var _leaf_unit_quad: QuadMesh
+static var _grass_textures: Array[ImageTexture] = []
+
+static var _textures_loaded := false
+
+
+static func _ensure_textures() -> void:
+	if _textures_loaded:
+		return
+	_textures_loaded = true
+
+	var bark_tex := _try_load("res://textures/materials/bark.png")
+	var leaves_tex := _try_load("res://textures/materials/leaves.png")
+	var stone_tex := _try_load("res://textures/materials/stone.png")
+
+	for dir in ["south", "east", "north", "west"]:
+		var boar_path := "res://textures/creatures/boar_%s.png" % dir
+		if ResourceLoader.exists(boar_path):
+			_tex_boar[dir] = load(boar_path) as Texture2D
+		var skel_path := "res://textures/creatures/skeleton_%s.png" % dir
+		if ResourceLoader.exists(skel_path):
+			_tex_skeleton[dir] = load(skel_path) as Texture2D
+		var grizzly_path := "res://textures/creatures/grizzly_%s.png" % dir
+		if ResourceLoader.exists(grizzly_path):
+			_tex_grizzly[dir] = load(grizzly_path) as Texture2D
+		var bb_path := "res://textures/creatures/blackbear_%s.png" % dir
+		if ResourceLoader.exists(bb_path):
+			_tex_blackbear[dir] = load(bb_path) as Texture2D
+		var lion_path := "res://textures/creatures/lion_%s.png" % dir
+		if ResourceLoader.exists(lion_path):
+			_tex_lion[dir] = load(lion_path) as Texture2D
+		var hawk_path := "res://textures/creatures/hawk_%s.png" % dir
+		if ResourceLoader.exists(hawk_path):
+			_tex_hawk[dir] = load(hawk_path) as Texture2D
+		var seagull_path := "res://textures/creatures/seagull_%s.png" % dir
+		if ResourceLoader.exists(seagull_path):
+			_tex_seagull[dir] = load(seagull_path) as Texture2D
+		var fish_path := "res://textures/creatures/fish_%s.png" % dir
+		if ResourceLoader.exists(fish_path):
+			_tex_fish[dir] = load(fish_path) as Texture2D
+		var moose_path := "res://textures/creatures/moose_%s.png" % dir
+		if ResourceLoader.exists(moose_path):
+			_tex_moose[dir] = load(moose_path) as Texture2D
+		var mamabear_path := "res://textures/creatures/mamabear_%s.png" % dir
+		if ResourceLoader.exists(mamabear_path):
+			_tex_mamabear[dir] = load(mamabear_path) as Texture2D
+		var tiger_path := "res://textures/creatures/tiger_%s.png" % dir
+		if ResourceLoader.exists(tiger_path):
+			_tex_tiger[dir] = load(tiger_path) as Texture2D
+
+		for creature_info: Array in [
+			["grizzly_run", _tex_grizzly_run, 8],
+			["grizzly_attack", _tex_grizzly_attack, 7],
+			["blackbear_run", _tex_blackbear_run, 8],
+			["blackbear_attack", _tex_blackbear_attack, 7],
+			["lion_run", _tex_lion_run, 8],
+			["lion_attack", _tex_lion_attack, 9],
+			["hawk_fly", _tex_hawk_fly, 16],
+			["hawk_attack", _tex_hawk_attack, 16],
+			["seagull_fly", _tex_seagull_fly, 16],
+			["seagull_idle", _tex_seagull_idle, 8],
+			["fish_idle", _tex_fish_idle, 8],
+			["boar_walk", _tex_boar_walk, 8],
+			["boar_run", _tex_boar_run, 8],
+			["moose_walk", _tex_moose_walk, 8],
+			["moose_run", _tex_moose_run, 8],
+			["grizzly_walk", _tex_grizzly_walk, 8],
+			["blackbear_walk", _tex_blackbear_walk, 8],
+			["lion_walk", _tex_lion_walk, 8],
+			["mamabear_walk", _tex_mamabear_walk, 8],
+			["mamabear_run", _tex_mamabear_run, 8],
+			["tiger_walk", _tex_tiger_walk, 8],
+			["tiger_run", _tex_tiger_run, 8],
+			["tiger_attack", _tex_tiger_attack, 9],
+		]:
+			var folder: String = creature_info[0]
+			var target: Dictionary = creature_info[1]
+			var frame_count: int = creature_info[2]
+			var anim_frames: Array[Texture2D] = []
+			for fi in frame_count:
+				var fpath := "res://textures/creatures/%s/%s_%d.png" % [folder, dir, fi]
+				if ResourceLoader.exists(fpath):
+					var ftex := load(fpath) as Texture2D
+					if ftex:
+						anim_frames.append(ftex)
+			if not anim_frames.is_empty():
+				target[dir] = anim_frames
+
+		var horse_path := "res://textures/creatures/horse_%s.png" % dir
+		if ResourceLoader.exists(horse_path):
+			_tex_horse[dir] = load(horse_path) as Texture2D
+		var walk_frames: Array[Texture2D] = []
+		for fi in 4:
+			var wpath := "res://textures/creatures/horse_walk/%s_%d.png" % [dir, fi]
+			if ResourceLoader.exists(wpath):
+				var wtex := load(wpath) as Texture2D
+				if wtex:
+					walk_frames.append(wtex)
+		if not walk_frames.is_empty():
+			_tex_horse_walk[dir] = walk_frames
+		var run_frames: Array[Texture2D] = []
+		for ri in 8:
+			var rpath := "res://textures/creatures/horse_run/%s_%d.png" % [dir, ri]
+			if ResourceLoader.exists(rpath):
+				var rtex := load(rpath) as Texture2D
+				if rtex:
+					run_frames.append(rtex)
+		if not run_frames.is_empty():
+			_tex_horse_run[dir] = run_frames
+
+	# ── Bark material — wraps around CylinderMesh trunk ──
+	_mat_bark = _make_triplanar_mat(bark_tex, Color(0.35, 0.22, 0.12))
+	_mat_bark.uv1_scale = Vector3(4.0, 2.0, 4.0)
+
+	# ── Birch bark — procedural white/beige with dark lenticel marks ──
+	var birch_tex := _generate_birch_bark_texture()
+	_mat_birch_bark = StandardMaterial3D.new()
+	_mat_birch_bark.albedo_texture = birch_tex
+	_mat_birch_bark.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_mat_birch_bark.uv1_triplanar = true
+	_mat_birch_bark.uv1_world_triplanar = true
+	_mat_birch_bark.uv1_triplanar_sharpness = 1.0
+	_mat_birch_bark.uv1_scale = Vector3(3.0, 2.0, 3.0)
+	_mat_birch_bark.roughness = 0.7
+
+	# ── Wind foliage shader ──
+	if ResourceLoader.exists("res://shaders/wind_foliage.gdshader"):
+		_wind_shader = load("res://shaders/wind_foliage.gdshader") as Shader
+
+	# ── Grass billboard shader + procedural textures ──
+	if ResourceLoader.exists("res://shaders/grass_billboard.gdshader"):
+		_grass_shader = load("res://shaders/grass_billboard.gdshader") as Shader
+	_grass_quad_mesh = _create_grass_cross(1.0, 1.0)
+	_leaf_unit_quad = QuadMesh.new()
+	_leaf_unit_quad.size = Vector2(1.0, 1.0)
+	_grass_textures.clear()
+	for gi in 20:
+		_grass_textures.append(_gen_grass_variety(gi))
+
+	# ── Creature 3D-enhancement shaders ──
+	if ResourceLoader.exists("res://shaders/creature_sprite.gdshader"):
+		_creature_shader = load("res://shaders/creature_sprite.gdshader") as Shader
+
+	# Procedural radial-gradient shadow texture (no shader needed)
+	var shadow_size := 64
+	var shadow_img := Image.create(shadow_size, shadow_size, false, Image.FORMAT_RGBA8)
+	var center := Vector2(shadow_size * 0.5, shadow_size * 0.5)
+	var max_r := shadow_size * 0.5
+	for sy in shadow_size:
+		for sx in shadow_size:
+			var dist := Vector2(sx, sy).distance_to(center) / max_r
+			var a := (1.0 - smoothstep(0.25, 1.0, dist)) * 0.45
+			shadow_img.set_pixel(sx, sy, Color(0.02, 0.02, 0.05, a))
+	var shadow_tex := ImageTexture.create_from_image(shadow_img)
+	_shadow_mat = StandardMaterial3D.new()
+	_shadow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_shadow_mat.albedo_texture = shadow_tex
+	_shadow_mat.albedo_color = Color.WHITE
+	_shadow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_shadow_mat.no_depth_test = false
+	_shadow_mat.render_priority = -1
+
+	# ── Leaf materials — shader-based with wind ──
+	_mat_leaves = _make_wind_leaf_mat(leaves_tex, Color(0.25, 0.55, 0.15))
+	_mat_pine_leaves = _make_wind_leaf_mat(leaves_tex, Color(0.15, 0.35, 0.12))
+	_mat_palm_leaves = _make_wind_leaf_mat(leaves_tex, Color(0.22, 0.55, 0.20))
+
+	# ── Birch leaves — lighter, yellow-green ──
+	_mat_birch_leaves = _make_wind_leaf_mat(leaves_tex, Color(0.32, 0.58, 0.15), 0.5, Vector3(4.0, 4.0, 4.0))
+
+	# ── Stone material — wraps around SphereMesh rock ──
+	_mat_stone = _make_triplanar_mat(stone_tex, Color(0.5, 0.48, 0.45))
+	_mat_stone.uv1_scale = Vector3(3.0, 3.0, 3.0)
+
+	# ── 30 unique procedural rock meshes ──
+	_rock_meshes.clear()
+	_rock_convex_shapes.clear()
+	for ri in 30:
+		var rmesh := _generate_rock_mesh(ri)
+		_rock_meshes.append(rmesh)
+		_rock_convex_shapes.append(rmesh.create_convex_shape())
+
+	# ── Bush leaves — shader-based with gentler wind ──
+	_mat_bush_leaves = _make_wind_leaf_mat(leaves_tex, Color(0.28, 0.52, 0.18), 0.15, Vector3(4.0, 4.0, 4.0))
+
+	# ── 2D leaf billboard textures (one per tree shape family) ──
+	if ResourceLoader.exists("res://shaders/leaf_billboard.gdshader"):
+		_leaf_shader = load("res://shaders/leaf_billboard.gdshader") as Shader
+	_leaf_tex_oak = _gen_leaf_tex_oak()
+	_leaf_tex_birch = _gen_leaf_tex_birch()
+	_leaf_tex_pine = _gen_leaf_tex_pine()
+	_leaf_tex_willow = _gen_leaf_tex_willow()
+	_leaf_tex_palm = _gen_leaf_tex_palm()
+	_leaf_tex_generic = _gen_leaf_tex_generic()
+
+
+static func _generate_birch_bark_texture() -> ImageTexture:
+	var size := 32
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 8472
+
+	# Base: warm white/cream with subtle vertical variation
+	for y in range(size):
+		for x in range(size):
+			var v := rng.randf_range(0.82, 0.92)
+			var warm := rng.randf_range(-0.02, 0.02)
+			img.set_pixel(x, y, Color(v + warm, v - 0.01, v - 0.04))
+
+	# Horizontal dark lenticel bands (characteristic birch marks)
+	for _i in range(12):
+		var by := rng.randi_range(0, size - 1)
+		var bx_start := rng.randi_range(0, size / 2)
+		var blen := rng.randi_range(4, 16)
+		var thickness := rng.randi_range(1, 2)
+		for dx in range(blen):
+			var px := (bx_start + dx) % size
+			for dy in range(thickness):
+				var py := (by + dy) % size
+				var dark := rng.randf_range(0.12, 0.28)
+				img.set_pixel(px, py, Color(dark, dark * 0.9, dark * 0.7))
+
+	# Scattered small dark spots/patches
+	for _i in range(20):
+		var sx := rng.randi_range(0, size - 1)
+		var sy := rng.randi_range(0, size - 1)
+		var dark := rng.randf_range(0.15, 0.35)
+		img.set_pixel(sx, sy, Color(dark, dark * 0.85, dark * 0.7))
+		if rng.randf() < 0.5 and sx + 1 < size:
+			img.set_pixel(sx + 1, sy, Color(dark + 0.05, dark * 0.9, dark * 0.75))
+
+	return ImageTexture.create_from_image(img)
+
+
+# ── Per-type leaf texture generators ──────────────────────────────────────────
+
+static func _paint_ellipse(img: Image, cx: int, cy: int, rx: int, ry: int, brightness: float, rng: RandomNumberGenerator) -> void:
+	var sz := img.get_width()
+	for dy in range(-ry, ry + 1):
+		for dx in range(-rx, rx + 1):
+			var px := cx + dx
+			var py := cy + dy
+			if px < 0 or px >= sz or py < 0 or py >= sz:
+				continue
+			var nx := float(dx) / maxf(float(rx), 0.5)
+			var ny := float(dy) / maxf(float(ry), 0.5)
+			if nx * nx + ny * ny > 1.0:
+				continue
+			var edge := 1.0 - (nx * nx + ny * ny)
+			var v := brightness * (0.75 + edge * 0.25) + rng.randf_range(-0.06, 0.06)
+			v = clampf(v, 0.15, 1.0)
+			img.set_pixel(px, py, Color(v, v, v, 1.0))
+
+
+static func _punch_holes(img: Image, count: int, rng: RandomNumberGenerator) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	for _i in count:
+		var hx := rng.randi_range(3, w - 4)
+		var hy := rng.randi_range(3, h - 4)
+		var hr := rng.randi_range(1, 2)
+		for dy in range(-hr, hr + 1):
+			for dx in range(-hr, hr + 1):
+				if dx * dx + dy * dy > hr * hr:
+					continue
+				var px := hx + dx
+				var py := hy + dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, Color(0, 0, 0, 0))
+
+
+static func _gen_leaf_tex_oak() -> ImageTexture:
+	var sz := 64
+	var img := Image.create(sz, sz, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 70201
+	for _i in 35:
+		var cx := rng.randi_range(7, sz - 8)
+		var cy := rng.randi_range(7, sz - 8)
+		var lobes := rng.randi_range(3, 5)
+		var base_r := rng.randi_range(3, 5)
+		var bri := rng.randf_range(0.65, 1.0)
+		_paint_ellipse(img, cx, cy, base_r, base_r + 1, bri, rng)
+		for _l in lobes:
+			var angle := rng.randf_range(0, TAU)
+			var dist := rng.randf_range(2.0, 4.0)
+			var lx := cx + roundi(cos(angle) * dist)
+			var ly := cy + roundi(sin(angle) * dist)
+			_paint_ellipse(img, lx, ly, rng.randi_range(2, 4), rng.randi_range(2, 4), bri * rng.randf_range(0.85, 1.0), rng)
+	_punch_holes(img, 10, rng)
+	return ImageTexture.create_from_image(img)
+
+
+static func _gen_leaf_tex_birch() -> ImageTexture:
+	var sz := 64
+	var img := Image.create(sz, sz, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 81432
+	for _i in 55:
+		var cx := rng.randi_range(4, sz - 5)
+		var cy := rng.randi_range(4, sz - 5)
+		var bri := rng.randf_range(0.6, 1.0)
+		var rx := rng.randi_range(2, 4)
+		var ry := rng.randi_range(2, 5)
+		_paint_ellipse(img, cx, cy, rx, ry, bri, rng)
+	_punch_holes(img, 16, rng)
+	return ImageTexture.create_from_image(img)
+
+
+static func _gen_leaf_tex_pine() -> ImageTexture:
+	var sz := 64
+	var img := Image.create(sz, sz, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 93156
+	for _i in 60:
+		var cx := rng.randi_range(3, sz - 4)
+		var cy := rng.randi_range(3, sz - 4)
+		var bri := rng.randf_range(0.55, 0.95)
+		var length := rng.randi_range(4, 10)
+		var angle := rng.randf_range(-0.3, 0.3)
+		for s in length:
+			var px := cx + roundi(sin(angle) * float(s))
+			var py := cy + s
+			if px >= 0 and px < sz and py >= 0 and py < sz:
+				img.set_pixel(px, py, Color(bri, bri, bri, 1.0))
+				if px + 1 < sz:
+					img.set_pixel(px + 1, py, Color(bri * 0.85, bri * 0.85, bri * 0.85, 1.0))
+	_punch_holes(img, 8, rng)
+	return ImageTexture.create_from_image(img)
+
+
+static func _gen_leaf_tex_willow() -> ImageTexture:
+	var sz := 64
+	var img := Image.create(sz, sz, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 42871
+	for _i in 45:
+		var cx := rng.randi_range(4, sz - 5)
+		var cy := rng.randi_range(3, sz - 8)
+		var bri := rng.randf_range(0.6, 1.0)
+		var length := rng.randi_range(6, 14)
+		var sway := rng.randf_range(-0.15, 0.15)
+		for s in length:
+			var px := cx + roundi(sin(float(s) * 0.3 + sway) * 1.5)
+			var py := cy + s
+			if px >= 0 and px < sz and py >= 0 and py < sz:
+				img.set_pixel(px, py, Color(bri, bri, bri, 1.0))
+			if px - 1 >= 0 and py < sz and py >= 0:
+				img.set_pixel(px - 1, py, Color(bri * 0.7, bri * 0.7, bri * 0.7, 0.7))
+			if px + 1 < sz and py < sz and py >= 0:
+				img.set_pixel(px + 1, py, Color(bri * 0.7, bri * 0.7, bri * 0.7, 0.7))
+	_punch_holes(img, 6, rng)
+	return ImageTexture.create_from_image(img)
+
+
+static func _gen_leaf_tex_palm() -> ImageTexture:
+	var sz := 64
+	var img := Image.create(sz, sz, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 58923
+	for _i in 12:
+		var cx := rng.randi_range(20, sz - 20)
+		var cy := rng.randi_range(8, 20)
+		var angle := rng.randf_range(0, TAU)
+		var frond_len := rng.randi_range(14, 24)
+		var bri := rng.randf_range(0.6, 1.0)
+		for s in frond_len:
+			var t := float(s) / float(frond_len)
+			var droop := t * t * 6.0
+			var px := cx + roundi(cos(angle) * float(s))
+			var py := cy + roundi(sin(angle) * float(s) + droop)
+			if px < 0 or px >= sz or py < 0 or py >= sz:
+				continue
+			var w := roundi((1.0 - t) * 3.0) + 1
+			for dw in range(-w, w + 1):
+				var fx := px + roundi(float(dw) * sin(angle + PI * 0.5))
+				var fy := py + roundi(float(dw) * cos(angle + PI * 0.5))
+				if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
+					img.set_pixel(fx, fy, Color(bri, bri, bri, 1.0))
+	_punch_holes(img, 4, rng)
+	return ImageTexture.create_from_image(img)
+
+
+static func _gen_leaf_tex_generic() -> ImageTexture:
+	var sz := 64
+	var img := Image.create(sz, sz, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 33517
+	for _i in 40:
+		var cx := rng.randi_range(6, sz - 7)
+		var cy := rng.randi_range(6, sz - 7)
+		var rx := rng.randi_range(3, 6)
+		var ry := rng.randi_range(3, 6)
+		var bri := rng.randf_range(0.65, 1.0)
+		_paint_ellipse(img, cx, cy, rx, ry, bri, rng)
+	_punch_holes(img, 10, rng)
+	return ImageTexture.create_from_image(img)
+
+
+# Creates a unique ShaderMaterial per tree with its own color and matching texture
+static func _make_tree_leaf_mat(tex: ImageTexture, base_color: Color, rng: RandomNumberGenerator) -> ShaderMaterial:
+	if not _leaf_shader:
+		return ShaderMaterial.new()
+
+	var hue_shift := rng.randf_range(-0.06, 0.06)
+	var sat_shift := rng.randf_range(-0.08, 0.08)
+	var val_shift := rng.randf_range(-0.08, 0.08)
+	var h := fmod(base_color.h + hue_shift + 1.0, 1.0)
+	var s := clampf(base_color.s + sat_shift, 0.15, 1.0)
+	var v := clampf(base_color.v + val_shift, 0.2, 1.0)
+	var final_color := Color.from_hsv(h, s, v, base_color.a)
+
+	var mat := ShaderMaterial.new()
+	mat.shader = _leaf_shader
+	mat.set_shader_parameter("albedo_texture", tex)
+	mat.set_shader_parameter("albedo_color", final_color)
+	mat.set_shader_parameter("roughness", 0.85)
+	mat.set_shader_parameter("alpha_cutoff", 0.3)
+	mat.set_shader_parameter("wind_strength", rng.randf_range(0.65, 1.0))
+	mat.set_shader_parameter("wind_speed", rng.randf_range(1.5, 2.2))
+	mat.set_shader_parameter("wind_turbulence", rng.randf_range(0.9, 1.5))
+	return mat
+
+
+static func _try_load(path: String) -> Texture2D:
+	if ResourceLoader.exists(path):
+		return load(path) as Texture2D
+	return null
+
+
+static func _make_wind_leaf_mat(
+	tex: Texture2D, color: Color,
+	strength: float = 0.35,
+	uv_scale: Vector3 = Vector3(3.0, 3.0, 3.0)
+) -> Material:
+	if _wind_shader:
+		var mat := ShaderMaterial.new()
+		mat.shader = _wind_shader
+		if tex:
+			mat.set_shader_parameter("albedo_texture", tex)
+		mat.set_shader_parameter("albedo_color", color)
+		mat.set_shader_parameter("roughness", 0.85)
+		mat.set_shader_parameter("uv1_scale", uv_scale)
+		mat.set_shader_parameter("wind_strength", strength)
+		mat.set_shader_parameter("wind_speed", 1.2)
+		mat.set_shader_parameter("wind_turbulence", 0.6)
+		return mat
+	# Fallback to standard material if shader missing
+	var fb := StandardMaterial3D.new()
+	if tex:
+		fb.albedo_texture = tex
+	else:
+		fb.albedo_color = color
+	fb.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	fb.uv1_triplanar = true
+	fb.uv1_world_triplanar = true
+	fb.uv1_triplanar_sharpness = 1.0
+	fb.roughness = 0.85
+	fb.uv1_scale = uv_scale
+	return fb
+
+
+static func _make_triplanar_mat(tex: Texture2D, fallback_color: Color) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	if tex:
+		mat.albedo_texture = tex
+	else:
+		mat.albedo_color = fallback_color
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	mat.uv1_triplanar = true
+	mat.uv1_world_triplanar = true
+	mat.uv1_triplanar_sharpness = 1.0
+	mat.roughness = 0.85
+	return mat
+
+
+# ─── Zone Population ───────────────────────────────────────────────────────────
+
+static func populate_zone(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	world_seed_hash: int,
+	height_func: Callable,
+	microbiome: StringName = &"none",
+) -> void:
+	_ensure_textures()
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = world_seed_hash + coord.x * 73856093 + coord.y * 19349663
+
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+
+	var counts := _get_microbiome_counts(biome, microbiome)
+	var tree_n := counts[0]
+	var rock_n := counts[1]
+	var bush_n := counts[2]
+	var enemy_n := counts[3]
+
+	# Forest clustering: use noise to create dense forest pockets.
+	# ~60% of trees go into forest clusters, ~40% scatter randomly.
+	var scatter_n := int(tree_n * 0.4)
+	var cluster_budget := tree_n - scatter_n
+
+	# Random scatter (ensures trees appear outside forests too)
+	for i in scatter_n:
+		var lx := rng.randf_range(4.0, ZONE_SIZE - 4.0)
+		var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+		var h := float(height_func.call(wx, wz))
+		if h < 0.2:
+			continue
+		if is_dirt_patch(wx, wz):
+			continue
+		var h_snapped := _snap_height_to_mesh(wx, wz, height_func)
+		var obj := _create_tree(biome, rng, microbiome)
+		zone_root.add_child(obj)
+		obj.position = Vector3(lx, h_snapped, lz)
+
+	# Forest clusters: pick 1-3 cluster centers per zone via noise,
+	# then pack trees tightly around them with natural jitter.
+	var cluster_count := rng.randi_range(1, 3)
+	var trees_per_cluster: int = maxi(1, cluster_budget / cluster_count)
+	for _ci in cluster_count:
+		var cx := rng.randf_range(8.0, ZONE_SIZE - 8.0)
+		var cz := rng.randf_range(8.0, ZONE_SIZE - 8.0)
+		var cwx := origin_x + cx
+		var cwz := origin_z + cz
+		# Only place forest clusters where forest noise says so
+		var forest_n := _fbm2(cwx * 0.012 + 300.0, cwz * 0.012 + 400.0)
+		if forest_n < 0.42:
+			continue
+		var cluster_radius := rng.randf_range(8.0, 16.0)
+		for _ti in trees_per_cluster:
+			var angle := rng.randf_range(0.0, TAU)
+			var dist := rng.randf_range(0.0, cluster_radius) * sqrt(rng.randf())
+			var lx := clampf(cx + cos(angle) * dist, 4.0, ZONE_SIZE - 4.0)
+			var lz := clampf(cz + sin(angle) * dist, 4.0, ZONE_SIZE - 4.0)
+			var wx := origin_x + lx
+			var wz := origin_z + lz
+			var h := float(height_func.call(wx, wz))
+			if h < 0.2:
+				continue
+			if is_dirt_patch(wx, wz):
+				continue
+			var h_snapped := _snap_height_to_mesh(wx, wz, height_func)
+			var obj := _create_tree(biome, rng, microbiome)
+			zone_root.add_child(obj)
+			obj.position = Vector3(lx, h_snapped, lz)
+
+	for i in rock_n:
+		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+		var h := float(height_func.call(wx, wz))
+		if h < 0.2:
+			continue
+		var obj := _create_rock(rng)
+		zone_root.add_child(obj)
+		obj.position = Vector3(lx, _snap_height_to_mesh(wx, wz, height_func), lz)
+
+	var stone_n: int = rng.randi_range(1, 3)
+	for i in stone_n:
+		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+		var h := float(height_func.call(wx, wz))
+		if h < 0.2:
+			continue
+		var stone := _create_ground_stone(rng)
+		zone_root.add_child(stone)
+		stone.position = Vector3(lx, _snap_height_to_mesh(wx, wz, height_func) + 0.1, lz)
+
+	var actual_enemy_n := maxi(1, int(enemy_n * 0.3))
+	for i in actual_enemy_n:
+		var lx := rng.randf_range(8.0, ZONE_SIZE - 8.0)
+		var lz := rng.randf_range(8.0, ZONE_SIZE - 8.0)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+		var h := float(height_func.call(wx, wz))
+		if h < 0.5:
+			continue
+		var enemy := _create_enemy(biome, rng)
+		if not enemy:
+			continue
+		zone_root.add_child(enemy)
+		var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+		var spawn_y := ground_y + 0.1
+		if enemy.get("is_flying"):
+			spawn_y = ground_y + enemy.get("fly_height")
+		enemy.position = Vector3(lx, spawn_y, lz)
+
+	# Spawn cave system in hearthlands (~1 in 30 zones that have a hill)
+	if biome == &"hearthlands":
+		_try_spawn_cave(zone_root, coord, rng, origin_x, origin_z, height_func)
+
+	# Spawn horses in calm biomes (rare)
+	if biome == &"hearthlands" or biome == &"thornwood":
+		if rng.randf() < 0.15:
+			var lx := rng.randf_range(10.0, ZONE_SIZE - 10.0)
+			var lz := rng.randf_range(10.0, ZONE_SIZE - 10.0)
+			var wx := origin_x + lx
+			var wz := origin_z + lz
+			var h := float(height_func.call(wx, wz))
+			if h > 0.5:
+				var horse := _create_horse()
+				zone_root.add_child(horse)
+				horse.position = Vector3(lx, _snap_height_to_mesh(wx, wz, height_func), lz)
+
+	# Spawn fish in water areas
+	if biome == &"hearthlands":
+		var fish_count := rng.randi_range(0, 3)
+		for _fi in fish_count:
+			var lx := rng.randf_range(4.0, ZONE_SIZE - 4.0)
+			var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
+			var wx := origin_x + lx
+			var wz := origin_z + lz
+			var h := float(height_func.call(wx, wz))
+			if h < -0.5:
+				var fish := _create_fish(rng)
+				zone_root.add_child(fish)
+				fish.position = Vector3(lx, -0.1, lz)
+
+	# Scatter grass blades
+	_scatter_grass(zone_root, coord, biome, rng, height_func)
+
+	# Scatter saplings
+	_scatter_saplings(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
+
+
+# Two intersecting planes (cross) so grass is never edge-on to camera
+static func _create_grass_cross(w: float, h: float) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var normals := PackedVector3Array()
+	var indices := PackedInt32Array()
+	var half_w := w * 0.5
+	for plane_i in 2:
+		var angle := plane_i * PI * 0.5
+		var dx := cos(angle) * half_w
+		var dz := sin(angle) * half_w
+		var bi := verts.size()
+		verts.append(Vector3(-dx, 0.0, -dz))
+		verts.append(Vector3(dx, 0.0, dz))
+		verts.append(Vector3(dx, h, dz))
+		verts.append(Vector3(-dx, h, -dz))
+		uvs.append(Vector2(0, 1)); uvs.append(Vector2(1, 1))
+		uvs.append(Vector2(1, 0)); uvs.append(Vector2(0, 0))
+		for _n in 4:
+			normals.append(Vector3(0, 1, 0))
+		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
+		indices.append(bi); indices.append(bi + 2); indices.append(bi + 3)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+# ── Procedural grass texture generators (same technique as tree leaves) ────────
+
+static func _paint_grass_clump(img: Image, cx: int, base_y: int, clump_h: int,
+		clump_w: int, bri_base: float, bri_tip: float, rng: RandomNumberGenerator) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	var num_blobs := rng.randi_range(3, 6)
+	for _bi in num_blobs:
+		var t := rng.randf_range(0.0, 1.0)
+		var blob_y := base_y - int(t * clump_h)
+		var spread := int(clump_w * 0.5 * (1.0 - t * 0.6))
+		var blob_x := cx + rng.randi_range(-spread, spread)
+		var rx := maxi(2, int(clump_w * 0.3 * (1.0 - t * 0.5)))
+		var ry := maxi(2, int(clump_h * 0.15 * (1.0 - t * 0.3)))
+		var bri := lerpf(bri_base, bri_tip, t) + rng.randf_range(-0.05, 0.05)
+		for dy in range(-ry, ry + 1):
+			for dx in range(-rx, rx + 1):
+				var px := blob_x + dx
+				var py := blob_y + dy
+				if px < 0 or px >= w or py < 0 or py >= h:
+					continue
+				var nx := float(dx) / maxf(float(rx), 0.5)
+				var ny := float(dy) / maxf(float(ry), 0.5)
+				if nx * nx + ny * ny > 1.0:
+					continue
+				var edge := 1.0 - (nx * nx + ny * ny)
+				var v := clampf(bri * (0.75 + edge * 0.25) + rng.randf_range(-0.04, 0.04), 0.15, 1.0)
+				img.set_pixel(px, py, Color(v, v, v, 1.0))
+
+
+static func _paint_pointed_blade(img: Image, cx: int, base_y: int, blade_h: int,
+		blade_w: int, bri_base: float, bri_tip: float, curve: float,
+		taper: float, rng: RandomNumberGenerator) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	for dy in blade_h:
+		var y := base_y - dy
+		if y < 0 or y >= h:
+			continue
+		var t := float(dy) / float(blade_h)
+		var bw := maxi(1, int(blade_w * (1.0 - t * taper)))
+		var x_off := int(curve * dy * dy * 0.012)
+		var v := clampf(lerpf(bri_base, bri_tip, t) + rng.randf_range(-0.04, 0.04), 0.15, 1.0)
+		var col := Color(v, v, v, 1.0)
+		for dx in range(-bw / 2, bw / 2 + 1):
+			var px := cx + x_off + dx
+			if px >= 0 and px < w:
+				img.set_pixel(px, y, col)
+
+
+static func _gen_grass_variety(idx: int) -> ImageTexture:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 80000 + idx * 173
+
+	# Variety type: 0-9 leafy clumps, 10-15 pointed blades, 16-19 mixed
+	var sz_w := rng.randi_range(40, 56)
+	var sz_h := rng.randi_range(40, 64)
+	var img := Image.create(sz_w, sz_h, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+
+	if idx < 10:
+		# Leafy clump varieties — different densities and shapes
+		var clump_count := rng.randi_range(5, 12)
+		var h_min := rng.randi_range(12, 22)
+		var h_max := rng.randi_range(h_min + 8, h_min + 25)
+		var w_min := rng.randi_range(8, 14)
+		var w_max := rng.randi_range(w_min + 4, w_min + 12)
+		var bri_lo := rng.randf_range(0.3, 0.5)
+		var bri_hi := rng.randf_range(0.75, 0.95)
+		for _i in clump_count:
+			var cx := rng.randi_range(6, sz_w - 7)
+			_paint_grass_clump(img, cx, sz_h - 2,
+				rng.randi_range(h_min, h_max),
+				rng.randi_range(w_min, w_max),
+				bri_lo, bri_hi, rng)
+		_punch_holes(img, rng.randi_range(3, 8), rng)
+
+	elif idx < 16:
+		# Pointed blade varieties — spiky grass
+		var blade_count := rng.randi_range(8, 20)
+		var bri_lo := rng.randf_range(0.3, 0.5)
+		var bri_hi := rng.randf_range(0.8, 1.0)
+		var taper := rng.randf_range(0.4, 0.8)
+		for _i in blade_count:
+			var cx := rng.randi_range(4, sz_w - 5)
+			var bh := rng.randi_range(16, sz_h - 4)
+			var bw := rng.randi_range(3, 7)
+			var curve := rng.randf_range(-0.08, 0.08)
+			_paint_pointed_blade(img, cx, sz_h - 1, bh, bw, bri_lo, bri_hi, curve, taper, rng)
+
+	else:
+		# Mixed — clumps at the base with pointed tips poking out
+		var clump_count := rng.randi_range(4, 7)
+		var bri_lo := rng.randf_range(0.3, 0.45)
+		var bri_hi := rng.randf_range(0.7, 0.9)
+		for _i in clump_count:
+			var cx := rng.randi_range(6, sz_w - 7)
+			_paint_grass_clump(img, cx, sz_h - 2,
+				rng.randi_range(10, 22),
+				rng.randi_range(10, 18),
+				bri_lo, bri_hi * 0.85, rng)
+		var blade_count := rng.randi_range(6, 12)
+		for _i in blade_count:
+			var cx := rng.randi_range(4, sz_w - 5)
+			var bh := rng.randi_range(20, sz_h - 4)
+			var bw := rng.randi_range(2, 5)
+			var curve := rng.randf_range(-0.06, 0.06)
+			_paint_pointed_blade(img, cx, sz_h - 1, bh, bw, bri_lo, bri_hi, curve, 0.6, rng)
+		_punch_holes(img, rng.randi_range(2, 5), rng)
+
+	return ImageTexture.create_from_image(img)
+
+
+static func _make_grass_mat(tex: ImageTexture, color: Color) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = _grass_shader
+	mat.set_shader_parameter("albedo_texture", tex)
+	mat.set_shader_parameter("albedo_color", color)
+	mat.set_shader_parameter("alpha_cutoff", 0.4)
+	mat.set_shader_parameter("wind_strength", 0.5)
+	mat.set_shader_parameter("wind_speed", 1.5)
+	mat.set_shader_parameter("wind_turbulence", 0.8)
+	return mat
+
+
+static func _is_near_structure(wx: float, wz: float) -> bool:
+	var tree := Engine.get_main_loop() as SceneTree
+	if not tree:
+		return false
+	for s: Node3D in tree.get_nodes_in_group(&"structures"):
+		var dx := s.global_position.x - wx
+		var dz := s.global_position.z - wz
+		if dx * dx + dz * dz < 4.0:
+			return true
+	return false
+
+
+static func _scatter_grass(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	rng: RandomNumberGenerator,
+	height_func: Callable,
+) -> void:
+	if not _grass_shader or not _grass_quad_mesh:
+		return
+
+	# [texture, color, count, scale_min, scale_max, size_w, size_h]
+	var grass_types: Array = []
+	match biome:
+		&"hearthlands":
+			grass_types = [
+				[_grass_textures[0], Color(0.15, 0.42, 0.10), 40, 0.9, 1.6, 1.8, 1.2],
+				[_grass_textures[1], Color(0.12, 0.36, 0.08), 35, 0.8, 1.5, 1.7, 1.3],
+				[_grass_textures[2], Color(0.18, 0.40, 0.12), 30, 0.9, 1.7, 1.9, 1.1],
+				[_grass_textures[3], Color(0.10, 0.34, 0.10), 28, 0.8, 1.4, 1.6, 1.2],
+				[_grass_textures[5], Color(0.20, 0.38, 0.14), 25, 0.8, 1.5, 1.8, 1.0],
+				[_grass_textures[10], Color(0.14, 0.38, 0.08), 25, 1.0, 1.8, 1.6, 1.6],
+				[_grass_textures[12], Color(0.18, 0.42, 0.10), 22, 1.0, 1.7, 1.6, 1.7],
+				[_grass_textures[16], Color(0.16, 0.38, 0.10), 20, 0.9, 1.6, 1.7, 1.4],
+				[_grass_textures[18], Color(0.18, 0.36, 0.12), 15, 0.9, 1.7, 1.8, 1.2],
+			]
+		&"thornwood":
+			grass_types = [
+				[_grass_textures[0], Color(0.10, 0.30, 0.08), 30, 0.8, 1.5, 1.8, 1.2],
+				[_grass_textures[3], Color(0.08, 0.28, 0.07), 25, 0.7, 1.4, 1.6, 1.1],
+				[_grass_textures[5], Color(0.12, 0.32, 0.10), 22, 0.8, 1.5, 1.7, 1.0],
+				[_grass_textures[10], Color(0.08, 0.30, 0.08), 18, 0.8, 1.6, 1.5, 1.5],
+				[_grass_textures[16], Color(0.12, 0.30, 0.09), 18, 0.7, 1.4, 1.6, 1.2],
+			]
+		&"scorched_steppe":
+			grass_types = [
+				[_grass_textures[6], Color(0.14, 0.30, 0.08), 22, 0.8, 1.5, 1.7, 1.2],
+				[_grass_textures[9], Color(0.12, 0.28, 0.06), 18, 0.7, 1.4, 1.6, 1.1],
+				[_grass_textures[13], Color(0.16, 0.32, 0.08), 15, 0.9, 1.6, 1.5, 1.4],
+			]
+		_:
+			return
+
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+
+	for gi in grass_types.size():
+		var cfg: Array = grass_types[gi]
+		var tex: ImageTexture = cfg[0]
+		var color: Color = cfg[1]
+		var count: int = cfg[2]
+		var scale_min: float = cfg[3]
+		var scale_max: float = cfg[4]
+		var quad_w: float = cfg[5]
+		var quad_h: float = cfg[6]
+
+		if not tex:
+			continue
+
+		var mat := _make_grass_mat(tex, Color(color, 1.0))
+		mat.set_shader_parameter("wind_strength", rng.randf_range(0.3, 0.6))
+		mat.set_shader_parameter("wind_speed", rng.randf_range(1.2, 2.0))
+		mat.set_shader_parameter("wind_turbulence", rng.randf_range(0.5, 1.2))
+
+		var transforms: Array[Transform3D] = []
+		for _i in count:
+			var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
+			var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
+			var wx := origin_x + lx
+			var wz := origin_z + lz
+			var h := float(height_func.call(wx, wz))
+			if h < 0.3 or h > 40.0:
+				continue
+			if is_dirt_patch(wx, wz):
+				continue
+
+			if _is_near_structure(wx, wz):
+				continue
+			var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+			var scale := rng.randf_range(scale_min, scale_max)
+			var rot := rng.randf_range(0.0, TAU)
+
+			var sx := quad_w * scale
+			var sy := quad_h * scale
+			var sz := quad_w * scale
+			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+			transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+
+		if transforms.is_empty():
+			continue
+
+		var mm := MultiMesh.new()
+		mm.mesh = _grass_quad_mesh
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = false
+		mm.instance_count = transforms.size()
+		for idx in transforms.size():
+			mm.set_instance_transform(idx, transforms[idx])
+
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "Grass_%d" % gi
+		mmi.multimesh = mm
+		mmi.material_override = mat
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		zone_root.add_child(mmi)
+
+
+static func _scatter_saplings(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	rng: RandomNumberGenerator,
+	height_func: Callable,
+	origin_x: float,
+	origin_z: float,
+) -> void:
+	if not _leaf_shader or not _leaf_tex_generic:
+		return
+
+	var sapling_count: int
+	match biome:
+		&"hearthlands":
+			sapling_count = rng.randi_range(12, 20)
+		&"thornwood":
+			sapling_count = rng.randi_range(18, 28)
+		&"scorched_steppe":
+			sapling_count = rng.randi_range(4, 8)
+		_:
+			sapling_count = rng.randi_range(5, 10)
+
+	for _i in sapling_count:
+		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+		var h := float(height_func.call(wx, wz))
+		if h < 0.3 or h > 40.0:
+			continue
+		if is_dirt_patch(wx, wz):
+			continue
+
+		var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+		var sf := rng.randf_range(0.6, 1.4)
+		var trunk_h := 4.5 * sf
+		var trunk_r := 0.1 * sf
+
+		var is_birch_sapling := rng.randf() < 0.15
+
+		var root := StaticBody3D.new()
+		root.name = "BirchSapling" if is_birch_sapling else "Sapling"
+		root.collision_layer = 4
+		root.collision_mask = 0
+		root.add_to_group(&"interactables")
+		root.position = Vector3(lx, ground_y, lz)
+		zone_root.add_child(root)
+
+		# Collision
+		var col := CollisionShape3D.new()
+		var shape := CapsuleShape3D.new()
+		shape.radius = trunk_r * 2.0
+		shape.height = trunk_h * 0.6
+		col.shape = shape
+		col.position.y = trunk_h * 0.3
+		root.add_child(col)
+
+		# Harvestable — proportional HP (trees = 80 HP at ~15m, saplings ~4.5m)
+		root.set_meta("harvestable", true)
+		root.set_meta("hp", 15.0 * sf)
+		root.set_meta("max_hp", 15.0 * sf)
+		root.set_meta("drop_id", &"wood")
+		root.set_meta("drop_min", 1)
+		root.set_meta("drop_max", 2)
+		root.set_meta("tree_name", "Birch Sapling" if is_birch_sapling else "Sapling")
+		root.set_meta("trunk_h", trunk_h)
+
+		var trunk_mi := MeshInstance3D.new()
+		trunk_mi.name = "Trunk"
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = trunk_r * 0.5
+		cyl.bottom_radius = trunk_r
+		cyl.height = trunk_h
+		cyl.radial_segments = 5
+		cyl.rings = 1
+		trunk_mi.mesh = cyl
+		trunk_mi.set_surface_override_material(0, _mat_birch_bark if is_birch_sapling else _mat_bark)
+		trunk_mi.position.y = trunk_h * 0.5
+		trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(trunk_mi)
+
+		var leaf_color: Color
+		var leaf_tex: ImageTexture
+		if is_birch_sapling:
+			leaf_color = Color.from_hsv(rng.randf_range(0.18, 0.25), rng.randf_range(0.5, 0.65), rng.randf_range(0.55, 0.7))
+			leaf_tex = _leaf_tex_birch if _leaf_tex_birch else _leaf_tex_generic
+		else:
+			leaf_tex = _leaf_tex_generic
+			match biome:
+				&"hearthlands":
+					leaf_color = Color.from_hsv(rng.randf_range(0.25, 0.35), rng.randf_range(0.5, 0.7), rng.randf_range(0.4, 0.6))
+				&"thornwood":
+					leaf_color = Color.from_hsv(rng.randf_range(0.22, 0.32), rng.randf_range(0.4, 0.6), rng.randf_range(0.3, 0.5))
+				&"scorched_steppe":
+					leaf_color = Color.from_hsv(rng.randf_range(0.12, 0.20), rng.randf_range(0.5, 0.7), rng.randf_range(0.35, 0.5))
+				_:
+					leaf_color = Color.from_hsv(rng.randf_range(0.25, 0.35), rng.randf_range(0.45, 0.65), rng.randf_range(0.35, 0.55))
+
+		var leaf_mat := _make_tree_leaf_mat(leaf_tex, leaf_color, rng)
+
+		# Dense crown at trunk top — no bald heads
+		var crown_y := trunk_h * 0.8
+		var crown_r := 1.2 * sf
+		var crown_h := 0.6 * sf
+
+		# Inner core — tightly packed at the very top
+		for li in rng.randi_range(4, 6):
+			var leaf_mi := MeshInstance3D.new()
+			leaf_mi.name = "LC%d" % li
+			var quad := QuadMesh.new()
+			var leaf_size := rng.randf_range(2.2, 3.2) * sf
+			quad.size = Vector2(leaf_size, leaf_size)
+			leaf_mi.mesh = quad
+			leaf_mi.set_surface_override_material(0, leaf_mat)
+			leaf_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			leaf_mi.position = Vector3(
+				rng.randf_range(-crown_r * 0.4, crown_r * 0.4),
+				crown_y + rng.randf_range(-crown_h * 0.3, crown_h * 0.5),
+				rng.randf_range(-crown_r * 0.4, crown_r * 0.4))
+			leaf_mi.rotation = Vector3(
+				rng.randf_range(-0.6, 0.6),
+				rng.randf_range(0.0, TAU),
+				rng.randf_range(-0.4, 0.4))
+			root.add_child(leaf_mi)
+
+		# Outer spread
+		for li in rng.randi_range(4, 6):
+			var leaf_mi := MeshInstance3D.new()
+			leaf_mi.name = "LO%d" % li
+			var quad := QuadMesh.new()
+			var leaf_size := rng.randf_range(1.6, 2.6) * sf
+			quad.size = Vector2(leaf_size, leaf_size)
+			leaf_mi.mesh = quad
+			leaf_mi.set_surface_override_material(0, leaf_mat)
+			leaf_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var angle := rng.randf_range(0.0, TAU)
+			var r := rng.randf_range(crown_r * 0.3, crown_r)
+			leaf_mi.position = Vector3(
+				cos(angle) * r,
+				crown_y + rng.randf_range(-crown_h, crown_h * 0.3),
+				sin(angle) * r)
+			leaf_mi.rotation = Vector3(
+				rng.randf_range(-0.8, 0.8),
+				rng.randf_range(0.0, TAU),
+				rng.randf_range(-0.5, 0.5))
+			root.add_child(leaf_mi)
+
+
+static func _get_microbiome_counts(biome: StringName, micro: StringName) -> PackedInt32Array:
+	if biome == &"hearthlands" and micro != &"none":
+		# [trees, rocks, bushes, enemies]
+		match micro:
+			&"meadow":
+				return PackedInt32Array([3, 2, 6, 1])
+			&"forest":
+				return PackedInt32Array([14, 1, 3, 2])
+			&"birch_forest":
+				return PackedInt32Array([14, 1, 4, 1])
+			&"hills":
+				return PackedInt32Array([2, 4, 2, 2])
+			&"riverside":
+				return PackedInt32Array([5, 3, 8, 1])
+		return PackedInt32Array([6, 2, 4, 1])
+	return _get_biome_counts(biome)
+
+
+static func _get_biome_counts(biome: StringName) -> PackedInt32Array:
+	match biome:
+		&"hearthlands":     return PackedInt32Array([6, 2, 4, 1])
+		&"thornwood":       return PackedInt32Array([10, 1, 2, 2])
+		&"scorched_steppe": return PackedInt32Array([2, 3, 1, 3])
+		&"ocean":           return PackedInt32Array([0, 0, 0, 0])
+		_:                  return PackedInt32Array([0, 0, 0, 0])
+
+
+static func _hash12(px: float, pz: float) -> float:
+	var h := px * 127.1 + pz * 311.7
+	return fmod(abs(sin(h) * 43758.5453), 1.0)
+
+static func _vnoise(px: float, pz: float) -> float:
+	var ix := floorf(px)
+	var iz := floorf(pz)
+	var fx := px - ix
+	var fz := pz - iz
+	fx = fx * fx * (3.0 - 2.0 * fx)
+	fz = fz * fz * (3.0 - 2.0 * fz)
+	return lerpf(
+		lerpf(_hash12(ix, iz), _hash12(ix + 1.0, iz), fx),
+		lerpf(_hash12(ix, iz + 1.0), _hash12(ix + 1.0, iz + 1.0), fx),
+		fz)
+
+static func _fbm2(px: float, pz: float) -> float:
+	var v := _vnoise(px, pz) * 0.6
+	v += _vnoise(px * 2.1 + 100.0, pz * 2.1 + 100.0) * 0.4
+	return v
+
+static func is_dirt_patch(wx: float, wz: float, amount: float = 0.1) -> bool:
+	var n := _fbm2(wx * 0.018 + 500.0, wz * 0.018 + 700.0)
+	var thresh := 0.5 + (0.5 - amount) * 0.6
+	return n > thresh
+
+static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) -> float:
+	const STEP := ZONE_SIZE / 32.0
+	var gx := floorf(wx / STEP) * STEP
+	var gz := floorf(wz / STEP) * STEP
+	var fx := (wx - gx) / STEP
+	var fz := (wz - gz) / STEP
+
+	var h00 := float(height_func.call(gx, gz))
+	var h10 := float(height_func.call(gx + STEP, gz))
+	var h01 := float(height_func.call(gx, gz + STEP))
+	var h11 := float(height_func.call(gx + STEP, gz + STEP))
+
+	var h_top := lerpf(h00, h10, fx)
+	var h_bot := lerpf(h01, h11, fx)
+	return lerpf(h_top, h_bot, fz)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  TREE — 3D CylinderMesh trunk + 2D billboard leaf planes (Oathbound style)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbiome: StringName = &"none") -> StaticBody3D:
+	var root := StaticBody3D.new()
+	root.collision_layer = 4
+	root.collision_mask = 0
+	root.add_to_group(&"interactables")
+
+	var tname := _pick_tree_name(biome, rng, microbiome)
+	var is_birch := tname == "Birch"
+	var is_pine := tname == "Pine"
+	var is_willow := tname == "Willow"
+	var is_palm := false
+	var is_oak := tname == "Oak"
+
+	var sf := rng.randf_range(0.7, 1.3)
+
+	# ── Trunk ──
+	var trunk_h: float
+	var trunk_bot_r: float
+	var trunk_top_r: float
+	var bark_mat: Material
+
+	if is_birch:
+		trunk_h = 40.5 * sf
+		trunk_bot_r = 0.6 * sf
+		trunk_top_r = 0.24 * sf
+		bark_mat = _mat_birch_bark
+	elif is_pine:
+		trunk_h = 45.6 * sf
+		trunk_bot_r = 0.72 * sf
+		trunk_top_r = 0.18 * sf
+		bark_mat = _mat_bark
+	elif is_willow:
+		trunk_h = 30.45 * sf
+		trunk_bot_r = 0.88 * sf
+		trunk_top_r = 0.44 * sf
+		bark_mat = _mat_bark
+	elif is_palm:
+		trunk_h = 35.55 * sf
+		trunk_bot_r = 0.55 * sf
+		trunk_top_r = 0.33 * sf
+		bark_mat = _mat_bark
+	else:
+		trunk_h = 38.1 * sf
+		trunk_bot_r = 0.77 * sf
+		trunk_top_r = 0.31 * sf
+		bark_mat = _mat_bark
+
+	var trunk_mi := MeshInstance3D.new()
+	trunk_mi.name = "MeshInstance3D"
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = trunk_top_r
+	cyl.bottom_radius = trunk_bot_r
+	cyl.height = trunk_h
+	cyl.radial_segments = 10
+	cyl.rings = 3
+	trunk_mi.mesh = cyl
+	trunk_mi.set_surface_override_material(0, bark_mat)
+	trunk_mi.position.y = trunk_h * 0.5
+	trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	root.add_child(trunk_mi)
+
+	# ── Choose leaf texture and base color by tree family ──
+	var leaf_tex: ImageTexture
+	var base_leaf_color: Color
+
+	if is_birch:
+		leaf_tex = _leaf_tex_birch
+		base_leaf_color = Color.from_hsv(0.22, 0.55, 0.62)
+	elif is_pine:
+		leaf_tex = _leaf_tex_pine
+		base_leaf_color = Color.from_hsv(0.33, 0.65, 0.38)
+	elif is_willow:
+		leaf_tex = _leaf_tex_willow
+		base_leaf_color = Color.from_hsv(0.28, 0.50, 0.55)
+	elif is_palm:
+		leaf_tex = _leaf_tex_palm
+		base_leaf_color = Color.from_hsv(0.30, 0.55, 0.55)
+	elif is_oak:
+		leaf_tex = _leaf_tex_oak
+		base_leaf_color = Color.from_hsv(0.27, 0.60, 0.50)
+	else:
+		leaf_tex = _leaf_tex_generic
+		base_leaf_color = Color.from_hsv(0.28, 0.58, 0.48)
+
+	# Biome tinting
+	match biome:
+		&"scorched_steppe":
+			base_leaf_color = Color.from_hsv(0.18, 0.50, 0.45)
+
+	var leaf_mat := _make_tree_leaf_mat(leaf_tex, base_leaf_color, rng)
+
+	# ── Canopy geometry ──
+	var canopy_spread: float
+	var canopy_height: float
+	var canopy_base_y: float
+	var plane_count: int
+	var plane_size_base: float
+
+	if is_birch:
+		canopy_spread = 6.05 * sf
+		canopy_base_y = trunk_h * 0.38
+		plane_count = rng.randi_range(16, 22)
+		plane_size_base = 6.0 * sf
+	elif is_pine:
+		canopy_spread = 4.4 * sf
+		canopy_base_y = trunk_h * 0.2
+		plane_count = rng.randi_range(18, 26)
+		plane_size_base = 5.0 * sf
+	elif is_willow:
+		canopy_spread = 7.7 * sf
+		canopy_base_y = trunk_h * 0.35
+		plane_count = rng.randi_range(18, 24)
+		plane_size_base = 7.5 * sf
+	elif is_palm:
+		canopy_spread = 5.5 * sf
+		canopy_base_y = trunk_h * 0.7
+		plane_count = rng.randi_range(10, 14)
+		plane_size_base = 7.0 * sf
+	else:
+		canopy_spread = 6.6 * sf
+		canopy_base_y = trunk_h * 0.35
+		plane_count = rng.randi_range(16, 24)
+		plane_size_base = 6.5 * sf
+
+	# Canopy must always extend above trunk top with overshoot
+	var canopy_overshoot := 3.25 * sf
+	canopy_height = (trunk_h + canopy_overshoot) - canopy_base_y
+
+	var canopy_center_y := canopy_base_y + canopy_height * 0.5
+	var canopy_parent := Node3D.new()
+	canopy_parent.name = "Canopy"
+	canopy_parent.position.y = canopy_center_y
+	root.add_child(canopy_parent)
+
+	var leaf_xforms: Array[Transform3D] = []
+
+	# Dense inner core (larger planes, tightly packed near center)
+	var core_count := int(plane_count * 0.4)
+	for pi in core_count:
+		var this_size := plane_size_base * rng.randf_range(0.85, 1.2)
+		var core_spread := canopy_spread * 0.45
+		var core_vspread := canopy_height * 0.3
+		var pos := Vector3(
+			rng.randf_range(-core_spread, core_spread),
+			rng.randf_range(-core_vspread, core_vspread),
+			rng.randf_range(-core_spread, core_spread))
+		var rot := Vector3(
+			rng.randf_range(-0.7, 0.7),
+			rng.randf_range(0.0, TAU),
+			rng.randf_range(-0.5, 0.5))
+		var basis := Basis.from_euler(rot).scaled(Vector3(this_size, this_size, this_size))
+		leaf_xforms.append(Transform3D(basis, pos))
+
+	# Outer crown (varied sizes, full spread, gives shape)
+	var outer_count := plane_count - core_count
+	for pi in outer_count:
+		var this_size := plane_size_base * rng.randf_range(0.55, 1.1)
+		var angle := rng.randf_range(0.0, TAU)
+		var r := rng.randf_range(canopy_spread * 0.25, canopy_spread)
+		var vert := rng.randf_range(-canopy_height * 0.48, canopy_height * 0.48)
+		if is_pine:
+			r *= (1.0 - (vert + canopy_height * 0.48) / canopy_height)
+		var pos := Vector3(cos(angle) * r, vert, sin(angle) * r)
+		var rot := Vector3(
+			rng.randf_range(-0.8, 0.8),
+			rng.randf_range(0.0, TAU),
+			rng.randf_range(-0.5, 0.5))
+		var basis := Basis.from_euler(rot).scaled(Vector3(this_size, this_size, this_size))
+		leaf_xforms.append(Transform3D(basis, pos))
+
+	# Trunk-top collar
+	var trunk_top_in_canopy := trunk_h - canopy_center_y
+	var collar_count := rng.randi_range(5, 8)
+	for ci in collar_count:
+		var this_size := plane_size_base * rng.randf_range(0.7, 1.05)
+		var collar_angle := rng.randf_range(0.0, TAU)
+		var collar_r := rng.randf_range(0.0, canopy_spread * 0.5)
+		var pos := Vector3(
+			cos(collar_angle) * collar_r,
+			trunk_top_in_canopy + rng.randf_range(-1.5, 1.5) * sf,
+			sin(collar_angle) * collar_r)
+		var rot := Vector3(
+			rng.randf_range(-0.8, 0.8),
+			rng.randf_range(0.0, TAU),
+			rng.randf_range(-0.5, 0.5))
+		var basis := Basis.from_euler(rot).scaled(Vector3(this_size, this_size, this_size))
+		leaf_xforms.append(Transform3D(basis, pos))
+
+	if not leaf_xforms.is_empty():
+		var mm := MultiMesh.new()
+		mm.mesh = _leaf_unit_quad
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = false
+		mm.instance_count = leaf_xforms.size()
+		for i in leaf_xforms.size():
+			mm.set_instance_transform(i, leaf_xforms[i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "LeafMM"
+		mmi.multimesh = mm
+		mmi.material_override = leaf_mat
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		canopy_parent.add_child(mmi)
+
+	# ── Collision ──
+	var col := CollisionShape3D.new()
+	var shape := CapsuleShape3D.new()
+	shape.radius = trunk_bot_r * 1.2
+	shape.height = trunk_h * 0.8
+	col.shape = shape
+	col.position.y = trunk_h * 0.4
+	root.add_child(col)
+
+	# ── Harvestable metadata ──
+	root.set_meta("harvestable", true)
+	root.set_meta("hp", 80.0)
+	root.set_meta("max_hp", 80.0)
+	root.set_meta("drop_id", &"wood")
+	root.set_meta("drop_min", 4)
+	root.set_meta("drop_max", 8)
+	root.set_meta("tree_name", tname)
+	root.set_meta("trunk_h", trunk_h)
+
+	return root
+
+
+static func _pick_tree_name(biome: StringName, rng: RandomNumberGenerator, microbiome: StringName = &"none") -> String:
+	match biome:
+		&"hearthlands":
+			match microbiome:
+				&"birch_forest":
+					return "Birch" if rng.randf() < 0.85 else "Oak"
+				&"forest":
+					return "Birch" if rng.randf() < 0.3 else "Oak"
+				&"meadow":
+					return "Birch" if rng.randf() < 0.4 else "Oak"
+				&"riverside":
+					return "Birch" if rng.randf() < 0.5 else "Oak"
+				&"hills":
+					return "Oak" if rng.randf() < 0.7 else "Birch"
+				_:
+					return "Birch" if rng.randf() < 0.35 else "Oak"
+		&"thornwood":
+			var r := rng.randf()
+			if r < 0.4:
+				return "Pine"
+			elif r < 0.7:
+				return "Willow"
+			else:
+				return "Oak"
+		&"scorched_steppe":
+			var r := rng.randf()
+			if r < 0.5:
+				return "Oak"
+			elif r < 0.8:
+				return "Pine"
+			else:
+				return "Birch"
+		_:
+			return "Oak"
+
+
+static func _get_canopy_material(biome: StringName) -> Material:
+	match biome:
+		&"thornwood":
+			return _mat_pine_leaves
+		_:
+			return _mat_leaves
+
+
+static func _get_leaf_tex_for_biome(biome: StringName) -> ImageTexture:
+	match biome:
+		&"thornwood":
+			return _leaf_tex_pine
+		_:
+			return _leaf_tex_generic
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  3D ROCK — low-poly SphereMesh with triplanar stone texture
+# ═══════════════════════════════════════════════════════════════════════════════
+
+static func _generate_rock_mesh(seed_idx: int) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7777 + seed_idx * 131
+
+	# Base proportions vary per rock: tall pillar, flat slab, round boulder, etc.
+	var stretch := Vector3(
+		rng.randf_range(0.6, 1.6),
+		rng.randf_range(0.3, 1.4),
+		rng.randf_range(0.6, 1.6))
+
+	var segments := 8
+	var rings := 5
+	var base_radius := 0.5
+
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+
+	# Generate UV sphere vertices with noise displacement
+	for ring in range(rings + 1):
+		var v_frac := float(ring) / rings
+		var phi := v_frac * PI
+		for seg in range(segments + 1):
+			var u_frac := float(seg) / segments
+			var theta := u_frac * TAU
+
+			var nx := sin(phi) * cos(theta)
+			var ny := cos(phi)
+			var nz := sin(phi) * sin(theta)
+			var normal := Vector3(nx, ny, nz)
+
+			# Multi-frequency noise displacement for craggy look
+			var disp := 1.0
+			var n1 := sin(nx * 5.3 + float(seed_idx) * 1.7) * cos(nz * 4.1 + ny * 3.2)
+			var n2 := sin(ny * 7.9 + nx * 2.3 + float(seed_idx) * 0.9) * 0.5
+			var n3 := cos(nx * 12.0 + nz * 8.0 + float(seed_idx) * 3.1) * 0.25
+			disp += (n1 * 0.25 + n2 * 0.15 + n3 * 0.1) * rng.randf_range(0.5, 1.5)
+
+			# Flatten bottom so rocks sit on ground
+			if ny < -0.3:
+				disp *= lerpf(0.4, 1.0, (ny + 1.0) * 0.7)
+
+			var pos := normal * base_radius * disp
+			pos *= stretch
+
+			verts.append(pos)
+			normals.append(normal * stretch.normalized())
+			uvs.append(Vector2(u_frac, v_frac))
+
+	# Generate triangle indices
+	for ring in rings:
+		for seg in segments:
+			var curr := ring * (segments + 1) + seg
+			var next := curr + segments + 1
+			indices.append(curr)
+			indices.append(next)
+			indices.append(curr + 1)
+			indices.append(curr + 1)
+			indices.append(next)
+			indices.append(next + 1)
+
+	# Recompute normals from geometry — ensure they point outward
+	var computed_normals := PackedVector3Array()
+	computed_normals.resize(verts.size())
+	for i in range(0, indices.size(), 3):
+		var i0 := indices[i]
+		var i1 := indices[i + 1]
+		var i2 := indices[i + 2]
+		var face_normal := (verts[i1] - verts[i0]).cross(verts[i2] - verts[i0])
+		var center := (verts[i0] + verts[i1] + verts[i2]) / 3.0
+		if face_normal.dot(center) < 0.0:
+			face_normal = -face_normal
+		computed_normals[i0] += face_normal
+		computed_normals[i1] += face_normal
+		computed_normals[i2] += face_normal
+	for i in computed_normals.size():
+		if computed_normals[i].length_squared() < 0.001:
+			computed_normals[i] = verts[i].normalized()
+		else:
+			computed_normals[i] = computed_normals[i].normalized()
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = computed_normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+static func _create_rock(rng: RandomNumberGenerator) -> StaticBody3D:
+	var root := StaticBody3D.new()
+	root.collision_layer = 4
+	root.collision_mask = 0
+
+	var size_roll := rng.randf()
+	var sf: float
+	if size_roll < 0.5:
+		sf = rng.randf_range(0.2, 0.8)
+	elif size_roll < 0.8:
+		sf = rng.randf_range(0.8, 2.4)
+	elif size_roll < 0.95:
+		sf = rng.randf_range(2.4, 5.0)
+	else:
+		sf = rng.randf_range(5.0, 8.0)
+
+	var mesh_idx := rng.randi_range(0, _rock_meshes.size() - 1)
+
+	var rock_mi := MeshInstance3D.new()
+	rock_mi.name = "MeshInstance3D"
+	rock_mi.mesh = _rock_meshes[mesh_idx]
+	rock_mi.set_surface_override_material(0, _mat_stone)
+	rock_mi.scale = Vector3(sf, sf, sf)
+	rock_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(rock_mi)
+
+	root.rotation.y = rng.randf_range(0.0, TAU)
+	root.rotation.x = rng.randf_range(-0.15, 0.15)
+	root.rotation.z = rng.randf_range(-0.15, 0.15)
+
+	var col := CollisionShape3D.new()
+	col.shape = _rock_convex_shapes[mesh_idx]
+	col.scale = Vector3(sf, sf, sf)
+	root.add_child(col)
+
+	root.add_to_group(&"interactables")
+	root.set_meta("harvestable", true)
+	root.set_meta("hp", 15.0 + sf * 5.0)
+	root.set_meta("drop_id", &"stone")
+	root.set_meta("drop_min", maxi(3, int(sf * 1.5)))
+	root.set_meta("drop_max", maxi(6, int(sf * 2.4)))
+	root.set_meta("requires_tool", &"stone_pickaxe")
+
+	return root
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  3D BUSH — small squished SphereMesh with triplanar leaf texture
+# ═══════════════════════════════════════════════════════════════════════════════
+
+static func _create_bush(rng: RandomNumberGenerator) -> Node3D:
+	var root := Node3D.new()
+	var sf := rng.randf_range(0.4, 0.9)
+
+	var bush_mi := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.5 * sf
+	sphere.height = 0.6 * sf
+	sphere.radial_segments = 6
+	sphere.rings = 3
+	bush_mi.mesh = sphere
+	bush_mi.set_surface_override_material(0, _mat_bush_leaves)
+	bush_mi.position.y = 0.25 * sf
+	bush_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+	bush_mi.scale = Vector3(
+		rng.randf_range(0.9, 1.3),
+		rng.randf_range(0.6, 0.8),
+		rng.randf_range(0.9, 1.3)
+	)
+	bush_mi.rotation.y = rng.randf_range(0.0, TAU)
+	root.add_child(bush_mi)
+
+	return root
+
+
+static func _create_ground_stone(_rng: RandomNumberGenerator) -> Node3D:
+	var drop := _LootDrop.new()
+	drop.item_id = &"stone"
+	drop.star_level = 0
+	drop.amount = _rng.randi_range(1, 3)
+	return drop
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CREATURES — 3D-enhanced billboards with normal-map lighting + ground shadows
+# ═══════════════════════════════════════════════════════════════════════════════
+
+static func _make_creature_sprite_mat(tex: Texture2D) -> ShaderMaterial:
+	if not _creature_shader or not tex:
+		return null
+	var mat := ShaderMaterial.new()
+	mat.shader = _creature_shader
+	mat.set_shader_parameter("sprite_texture", tex)
+	return mat
+
+
+static func _add_ground_shadow(parent: Node3D, radius_x: float, radius_z: float, y_offset: float = 0.05) -> void:
+	if not _shadow_mat:
+		return
+	var shadow := MeshInstance3D.new()
+	shadow.name = "GroundShadow"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(radius_x * 2.0, radius_z * 2.0)
+	quad.orientation = PlaneMesh.FACE_Y
+	shadow.mesh = quad
+	shadow.material_override = _shadow_mat
+	shadow.position.y = y_offset
+	shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(shadow)
+
+
+static var _creature_model_paths: Dictionary = {
+	&"grizzly": "res://models/creatures/Grizzly Bear/Meshy_AI_model_Animation_Walking_withSkin.glb",
+	&"boar": "res://models/creatures/Boar/Meshy_AI_model_Animation_Walking_withSkin.glb",
+	&"lion": "res://models/creatures/Lion/Meshy_AI_model_Animation_Walking_withSkin.glb",
+	&"cyclops": "res://models/creatures/Cyclops/Cyclops.glb",
+	&"minotaur": "res://models/creatures/Minotaur/Minotaur.glb",
+	&"orc_brute": "res://models/creatures/Orc Brute/Orc+Brute.glb",
+	&"goblin": "res://models/creatures/Small Goblin/Goblin+Small.glb",
+	&"hawk": "res://models/creatures/Hawk/hawk.gltf",
+}
+
+static var _creature_model_scales: Dictionary = {
+	&"grizzly": 462.0,
+	&"boar": 800.0,
+	&"lion": 280.0,
+	&"cyclops": 5.0,
+	&"minotaur": 4.5,
+	&"orc_brute": 3.5,
+	&"goblin": 2.0,
+	&"hawk": 2.5,
+}
+
+# Tripo models face opposite to Godot's -Z forward. PI offset corrects them.
+static var _creature_yaw_offsets: Dictionary = {
+	&"cyclops": -PI / 2.0,
+	&"minotaur": -PI / 2.0,
+	&"orc_brute": -PI / 2.0,
+	&"goblin": -PI / 2.0,
+}
+
+
+static func _create_enemy(biome: StringName, rng: RandomNumberGenerator = null) -> CharacterBody3D:
+	var creature: CharacterBody3D = _CreatureAI.new()
+
+	var kind := _pick_creature_kind(biome, rng)
+	var stats := _creature_stats(kind)
+
+	# Roll creature star level (1-5 stars, weighted by rarity)
+	var star_rng := rng if rng else RandomNumberGenerator.new()
+	var creature_stars := _roll_creature_stars(star_rng)
+
+	# Scale HP and damage with stars: +40% per star
+	var star_mult := 1.0 + creature_stars * 0.4
+	creature.set("max_health", stats.hp * star_mult)
+	creature.set("attack_damage", stats.dmg * star_mult)
+	creature.set("move_speed", stats.spd)
+	creature.set("display_name", stats.name)
+	creature.set("creature_type", stats.sound)
+	creature.set("creature_kind", kind)
+	creature.set("attack_cooldown", stats.cd)
+	var _loot := _creature_loot_for(kind)
+	creature.set("loot_table", _loot.get("normal", []))
+	creature.set("rare_loot_table", _loot.get("rare", []))
+	creature.set("star_level", creature_stars)
+	if stats.has("flying") and stats.flying:
+		creature.set("is_flying", true)
+	if stats.has("passive") and stats.passive:
+		creature.set("is_passive", true)
+
+	# Try loading a 3D model for this creature kind
+	var model_path: String = _creature_model_paths.get(kind, "") as String
+	var model_loaded := false
+
+	if model_path != "" and ResourceLoader.exists(model_path):
+		var scene: PackedScene = load(model_path) as PackedScene
+		if scene:
+			var model_node := scene.instantiate()
+			model_node.name = "CreatureModel"
+			var s: float = _creature_model_scales.get(kind, 1.0) as float
+			model_node.scale = Vector3(s, s, s)
+			creature.add_child(model_node)
+			creature.set("use_3d_model", true)
+			creature.set("_model_node", model_node)
+			var yaw_off: float = _creature_yaw_offsets.get(kind, 0.0) as float
+			if yaw_off != 0.0:
+				creature.set("_model_yaw_offset", yaw_off)
+			model_loaded = true
+
+			# DEBUG: dump model structure
+			var mesh_count := 0
+			for child in model_node.find_children("*", "MeshInstance3D", true):
+				var mi: MeshInstance3D = child as MeshInstance3D
+				var surf_count := mi.mesh.get_surface_count() if mi.mesh else 0
+				var mat_info := ""
+				for si in surf_count:
+					var mat := mi.get_active_material(si)
+					mat_info += " surf%d=%s" % [si, mat.get_class() if mat else "NULL"]
+				print("[ZONE DEBUG] %s mesh '%s': visible=%s surfs=%d%s" % [kind, mi.name, mi.visible, surf_count, mat_info])
+				mesh_count += 1
+			if mesh_count == 0:
+				print("[ZONE DEBUG] %s: NO MeshInstance3D found! Children: %s" % [kind, str(_list_children_recursive(model_node))])
+			else:
+				print("[ZONE DEBUG] %s: %d meshes found, scale=%.1f" % [kind, mesh_count, s])
+
+			var anim_player := _find_anim_player(model_node)
+			if anim_player:
+				creature.set("_model_anim_player", anim_player)
+
+			var tex_path: String = _creature_texture_paths.get(kind, "") as String
+			var fallback_tex: Texture2D = null
+			if tex_path != "" and ResourceLoader.exists(tex_path):
+				fallback_tex = load(tex_path) as Texture2D
+			_fix_model_materials(model_node, fallback_tex)
+			_apply_nearest_filter_recursive(model_node)
+
+	if not model_loaded:
+		print("[ZONE] Skipping creature '%s' — no 3D model loaded" % kind)
+		creature.queue_free()
+		return null
+
+	if false:
+		var tex_dict: Dictionary = stats.tex
+		creature.set("sprite_textures", tex_dict)
+		if stats.has("walk_tex") and not stats.walk_tex.is_empty():
+			creature.set("walk_frames", stats.walk_tex)
+		if stats.has("run_tex") and not stats.run_tex.is_empty():
+			creature.set("run_frames", stats.run_tex)
+		if stats.has("atk_tex") and not stats.atk_tex.is_empty():
+			creature.set("attack_frames", stats.atk_tex)
+		if stats.has("idle_tex") and not stats.idle_tex.is_empty():
+			creature.set("idle_frames", stats.idle_tex)
+		var sprite := Sprite3D.new()
+		sprite.name = "BodySprite"
+		var initial_tex: Texture2D = tex_dict.get("south", null) as Texture2D
+		sprite.texture = initial_tex
+		sprite.pixel_size = 0.04
+		sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		sprite.transparent = true
+		sprite.shaded = true
+		sprite.double_sided = true
+		sprite.no_depth_test = false
+		sprite.position.y = stats.sprite_y
+
+		var smat := _make_creature_sprite_mat(initial_tex)
+		if smat:
+			sprite.material_override = smat
+			sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+		else:
+			sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+
+		creature.add_child(sprite)
+
+	var col_r: float = stats.col_r
+	var col_h: float = stats.col_h
+	var col_y: float = stats.col_y
+
+	_add_ground_shadow(creature, col_r * 1.6, col_r * 1.1)
+
+	var col := CollisionShape3D.new()
+	var shape := CapsuleShape3D.new()
+	shape.radius = col_r
+	shape.height = col_h
+	col.shape = shape
+	col.position.y = col_y
+	creature.add_child(col)
+
+	return creature
+
+
+static func _compute_node_aabb(node: Node3D) -> AABB:
+	var combined := AABB()
+	var first := true
+	for child in node.find_children("*", "MeshInstance3D", true):
+		var mi: MeshInstance3D = child as MeshInstance3D
+		if mi and mi.mesh:
+			var xform := _get_relative_transform(node, mi)
+			var mesh_aabb := mi.mesh.get_aabb()
+			var corners: Array[Vector3] = []
+			for ix in 2:
+				for iy in 2:
+					for iz in 2:
+						corners.append(xform * Vector3(
+							mesh_aabb.position.x + mesh_aabb.size.x * ix,
+							mesh_aabb.position.y + mesh_aabb.size.y * iy,
+							mesh_aabb.position.z + mesh_aabb.size.z * iz))
+			for ci in corners.size():
+				if first:
+					combined = AABB(corners[ci], Vector3.ZERO)
+					first = false
+				else:
+					combined = combined.expand(corners[ci])
+	return combined
+
+
+static func _get_relative_transform(root: Node3D, child: Node3D) -> Transform3D:
+	var xform := child.transform
+	var current := child.get_parent()
+	while current != null and current != root:
+		if current is Node3D:
+			xform = (current as Node3D).transform * xform
+		current = current.get_parent()
+	return xform
+
+
+static func _list_children_recursive(node: Node, depth: int = 0) -> Array:
+	var result := []
+	for child in node.get_children():
+		result.append("%s%s (%s)" % ["  ".repeat(depth), child.name, child.get_class()])
+		result.append_array(_list_children_recursive(child, depth + 1))
+	return result
+
+
+static func _find_anim_player(node: Node) -> AnimationPlayer:
+	if node is AnimationPlayer:
+		return node as AnimationPlayer
+	for child in node.get_children():
+		var found := _find_anim_player(child)
+		if found:
+			return found
+	return null
+
+
+static func _apply_nearest_filter_recursive(node: Node) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		for surf_idx in mi.mesh.get_surface_count() if mi.mesh else 0:
+			var mat := mi.get_active_material(surf_idx)
+			if mat is StandardMaterial3D:
+				(mat as StandardMaterial3D).texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	for child in node.get_children():
+		_apply_nearest_filter_recursive(child)
+
+
+## Creature basecolor texture paths (Tripo exports these alongside the GLB).
+static var _creature_texture_paths: Dictionary = {
+	&"cyclops": "res://models/creatures/Cyclops/Cyclops_armoredcreature3dmodel_basecolor.jpg",
+	&"minotaur": "res://models/creatures/Minotaur/Minotaur_Minotaur_basecolor.jpg",
+	&"orc_brute": "res://models/creatures/Orc Brute/Orc+Brute_OrcBrute_basecolor.jpg",
+	&"goblin": "res://models/creatures/Small Goblin/Goblin+Small_GoblinSmall_basecolor.jpg",
+}
+
+
+## Force-override all materials on a model with a simple StandardMaterial3D.
+## This bypasses any broken Tripo/Meshy shader materials that render invisible.
+## For models with a known basecolor texture, applies it as albedo.
+## For models without (like existing Meshy AI creatures), tries to preserve
+## the original material if it's already a working StandardMaterial3D.
+static func _fix_model_materials(node: Node, fallback_tex: Texture2D = null) -> void:
+	_fix_model_materials_inner(node, fallback_tex, fallback_tex != null)
+
+static func _fix_model_materials_inner(node: Node, fallback_tex: Texture2D, force_override: bool) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		mi.visible = true
+		if mi.mesh and force_override:
+			var new_mat := StandardMaterial3D.new()
+			new_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+			if fallback_tex:
+				new_mat.albedo_texture = fallback_tex
+			else:
+				new_mat.albedo_color = Color(0.6, 0.5, 0.4)
+			mi.material_override = new_mat
+		elif mi.mesh:
+			# For existing working models, just fix emission/transparency issues
+			for surf_idx in mi.mesh.get_surface_count():
+				var mat := mi.get_active_material(surf_idx)
+				if mat is StandardMaterial3D:
+					var smat := mat as StandardMaterial3D
+					if smat.emission_enabled:
+						if smat.emission_texture and not smat.albedo_texture:
+							smat.albedo_texture = smat.emission_texture
+						if smat.emission != Color.BLACK and smat.albedo_color == Color.BLACK:
+							smat.albedo_color = smat.emission
+						smat.emission_enabled = false
+					if smat.albedo_color.a < 0.1:
+						smat.albedo_color.a = 1.0
+					if smat.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+						smat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	for child in node.get_children():
+		_fix_model_materials_inner(child, fallback_tex, force_override)
+
+
+static func _set_visibility_range(node: Node, max_dist: float) -> void:
+	if node is GeometryInstance3D:
+		var gi := node as GeometryInstance3D
+		gi.visibility_range_end = max_dist
+		gi.visibility_range_end_margin = 5.0
+		gi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	for child in node.get_children():
+		_set_visibility_range(child, max_dist)
+
+
+static var _creature_tints: Dictionary = {
+	&"black_bear": Color(0.15, 0.12, 0.10),
+	&"boar": Color(0.40, 0.26, 0.15),
+	&"grizzly": Color(0.50, 0.33, 0.18),
+}
+
+static func _apply_creature_tint(kind: StringName, model_node: Node3D) -> void:
+	var tint: Color = _creature_tints.get(kind, Color.WHITE) as Color
+	if tint == Color.WHITE:
+		return
+	_tint_meshes_recursive(model_node, tint)
+
+static func _tint_meshes_recursive(node: Node, tint: Color) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = tint
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		mi.material_override = mat
+	for child in node.get_children():
+		_tint_meshes_recursive(child, tint)
+
+
+
+static func _create_horse() -> StaticBody3D:
+	_ensure_textures()
+	var horse := StaticBody3D.new()
+	horse.add_to_group(&"horses")
+	horse.collision_layer = 4
+	horse.collision_mask = 1
+
+	var model_loaded := false
+	var model_path := "res://models/creatures/Horse/Meshy_AI_model_Animation_Walking_withSkin.glb"
+	if ResourceLoader.exists(model_path):
+		var scene: PackedScene = load(model_path) as PackedScene
+		if scene:
+			var model_node := scene.instantiate()
+			model_node.name = "CreatureModel"
+			var s := 350.0
+			model_node.scale = Vector3(s, s, s)
+			model_node.position.y = 0.0
+			horse.add_child(model_node)
+			horse.set_meta("use_3d_model", true)
+			horse.set_meta("model_node", model_node)
+			model_loaded = true
+			var anim_player := _find_anim_player(model_node)
+			if anim_player:
+				for anim_name in anim_player.get_animation_list():
+					var anim := anim_player.get_animation(anim_name)
+					if anim:
+						for i in range(anim.get_track_count() - 1, -1, -1):
+							if anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
+								anim.remove_track(i)
+				horse.set_meta("model_anim_player", anim_player)
+			_fix_model_materials(model_node)
+			_apply_nearest_filter_recursive(model_node)
+			_set_visibility_range(model_node, 60.0)
+
+	if not model_loaded:
+		var sprite := Sprite3D.new()
+		sprite.name = "BodySprite"
+		var tex: Texture2D = _tex_horse.get("south", null) as Texture2D
+		if not tex:
+			var img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+			img.fill(Color(0.5, 0.35, 0.15))
+			tex = ImageTexture.create_from_image(img)
+		sprite.texture = tex
+		sprite.pixel_size = 0.04
+		sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		sprite.transparent = true
+		sprite.shaded = true
+		sprite.double_sided = true
+		sprite.no_depth_test = false
+		sprite.position.y = 0.8
+		var smat := _make_creature_sprite_mat(tex)
+		if smat:
+			sprite.material_override = smat
+			sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+		else:
+			sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+		horse.add_child(sprite)
+
+	_add_ground_shadow(horse, 0.7, 0.5)
+
+	horse.set_meta("sprite_textures", _tex_horse)
+	horse.set_meta("walk_frames", _tex_horse_walk)
+	horse.set_meta("run_frames", _tex_horse_run)
+
+	var col := CollisionShape3D.new()
+	var shape := CapsuleShape3D.new()
+	shape.radius = 0.5
+	shape.height = 1.4
+	col.shape = shape
+	col.position.y = 0.7
+	horse.add_child(col)
+
+	return horse
+
+
+## Roll a star level (0-5) for a creature. 0 = no stars (most common).
+## Weights: ~60% no stars, ~22% 1★, ~10% 2★, ~5% 3★, ~2% 4★, ~1% 5★
+static func _roll_creature_stars(rng: RandomNumberGenerator) -> int:
+	const WEIGHTS: Array[float] = [0.60, 0.22, 0.10, 0.05, 0.02, 0.01]
+	var roll := rng.randf() if rng else randf()
+	var cumulative := 0.0
+	for i in WEIGHTS.size():
+		cumulative += WEIGHTS[i]
+		if roll < cumulative:
+			return i
+	return 0
+
+
+## Pick a creature kind string for the given biome, using rng for variety.
+static func _pick_creature_kind(biome: StringName, rng: RandomNumberGenerator) -> StringName:
+	var roll := rng.randf() if rng else randf()
+	if roll < 0.125:
+		return &"lion"
+	elif roll < 0.250:
+		return &"cyclops"
+	elif roll < 0.375:
+		return &"minotaur"
+	elif roll < 0.500:
+		return &"orc_brute"
+	elif roll < 0.625:
+		return &"goblin"
+	elif roll < 0.750:
+		return &"grizzly"
+	elif roll < 0.875:
+		return &"hawk"
+	else:
+		return &"boar"
+	#var roll := rng.randf() if rng else randf()
+	#match biome:
+	#	&"hearthlands":
+	#		if roll < 0.06:
+	#			return &"lion"
+	#		elif roll < 0.10:
+	#			return &"seagull"
+	#		elif roll < 0.15:
+	#			return &"hawk"
+	#		elif roll < 0.22:
+	#			return &"grizzly"
+	#		elif roll < 0.30:
+	#			return &"moose"
+	#		elif roll < 0.42:
+	#			return &"black_bear"
+	#		else:
+	#			return &"boar"
+	#	&"thornwood":
+	#		if roll < 0.20:
+	#			return &"tiger"
+	#		elif roll < 0.40:
+	#			return &"mama_bear"
+	#		else:
+	#			return &"grizzly"
+	#	&"scorched_steppe":
+	#		if roll < 0.25:
+	#			return &"lion"
+	#		elif roll < 0.40:
+	#			return &"tiger"
+	#		else:
+	#			return &"hyena"
+	#	_:
+	#		return &"boar"
+
+
+## All creature stats in one place, keyed by creature kind.
+static func _creature_stats(kind: StringName) -> Dictionary:
+	# {name, hp, dmg, spd, cd, sound, tex, sprite_y, col_r, col_h, col_y}
+	match kind:
+		&"boar":
+			return {name="Boar", hp=50.0, dmg=10.0, spd=2.3, cd=2.5, sound="boar",
+				tex=_tex_boar, walk_tex=_tex_boar_walk, run_tex=_tex_boar_run,
+				sprite_y=0.6, col_r=0.35, col_h=1.2, col_y=0.6}
+		&"black_bear":
+			return {name="Black Bear", hp=90.0, dmg=18.0, spd=2.8, cd=2.2, sound="bear",
+				tex=_tex_blackbear, walk_tex=_tex_blackbear_walk, run_tex=_tex_blackbear_run, atk_tex=_tex_blackbear_attack,
+				sprite_y=0.7, col_r=0.4, col_h=1.4, col_y=0.7}
+		&"wolf":
+			return {name="Wolf", hp=70.0, dmg=15.0, spd=3.5, cd=2.0, sound="wolf",
+				tex=_tex_boar, walk_tex=_tex_boar_walk, run_tex=_tex_boar_run, atk_tex={},
+				sprite_y=0.6, col_r=0.35, col_h=1.2, col_y=0.6}
+		&"grizzly":
+			return {name="Grizzly Bear", hp=180.0, dmg=30.0, spd=2.6, cd=2.0, sound="bear",
+				tex=_tex_grizzly, walk_tex=_tex_grizzly_walk, run_tex=_tex_grizzly_run, atk_tex=_tex_grizzly_attack,
+				sprite_y=0.8, col_r=0.5, col_h=1.6, col_y=0.8}
+		&"moose":
+			return {name="Moose", hp=220.0, dmg=35.0, spd=3.0, cd=2.0, sound="bear",
+				tex=_tex_moose, walk_tex=_tex_moose_walk, run_tex=_tex_moose_run,
+				sprite_y=0.9, col_r=0.5, col_h=1.8, col_y=0.9, passive=true}
+		&"mama_bear":
+			return {name="Mama Bear", hp=250.0, dmg=40.0, spd=2.8, cd=1.8, sound="bear",
+				tex=_tex_mamabear, walk_tex=_tex_mamabear_walk, run_tex=_tex_mamabear_run,
+				sprite_y=0.8, col_r=0.5, col_h=1.6, col_y=0.8}
+		&"tiger":
+			return {name="Striped Tiger", hp=200.0, dmg=38.0, spd=3.6, cd=1.5, sound="lion",
+				tex=_tex_tiger, walk_tex=_tex_tiger_walk, run_tex=_tex_tiger_run, atk_tex=_tex_tiger_attack,
+				sprite_y=0.7, col_r=0.45, col_h=1.4, col_y=0.7}
+		&"crab":
+			return {name="Crab", hp=90.0, dmg=20.0, spd=2.6, cd=2.2, sound="boar",
+				tex=_tex_boar, sprite_y=0.6, col_r=0.35, col_h=1.2, col_y=0.6}
+		&"mountain_goat":
+			return {name="Mountain Goat", hp=110.0, dmg=25.0, spd=2.8, cd=1.8, sound="boar",
+				tex=_tex_skeleton, sprite_y=0.6, col_r=0.35, col_h=1.2, col_y=0.6}
+		&"hyena":
+			return {name="Hyena", hp=130.0, dmg=30.0, spd=3.2, cd=1.5, sound="hyena",
+				tex=_tex_boar, sprite_y=0.6, col_r=0.35, col_h=1.2, col_y=0.6}
+		&"lion":
+			return {name="Lion", hp=200.0, dmg=35.0, spd=3.4, cd=1.5, sound="lion",
+				tex=_tex_lion, walk_tex=_tex_lion_walk, run_tex=_tex_lion_run, atk_tex=_tex_lion_attack,
+				sprite_y=0.8, col_r=0.5, col_h=1.6, col_y=0.8}
+		&"hawk":
+			return {name="Hawk", hp=40.0, dmg=8.0, spd=5.5, cd=2.5, sound="hawk",
+				tex=_tex_hawk, run_tex=_tex_hawk_fly, atk_tex=_tex_hawk_attack,
+				sprite_y=0.5, col_r=0.3, col_h=0.8, col_y=0.4,
+				flying=true, passive=true}
+		&"seagull":
+			return {name="Seagull", hp=25.0, dmg=0.0, spd=4.5, cd=99.0, sound="hawk",
+				tex=_tex_seagull, run_tex=_tex_seagull_fly, atk_tex={},
+				idle_tex=_tex_seagull_idle,
+				sprite_y=0.4, col_r=0.25, col_h=0.6, col_y=0.3,
+				flying=true, passive=true}
+		&"ghoul":
+			return {name="Ghoul", hp=150.0, dmg=35.0, spd=2.6, cd=1.3, sound="lion",
+				tex=_tex_skeleton, sprite_y=0.6, col_r=0.35, col_h=1.2, col_y=0.6}
+		&"fire_imp":
+			return {name="Fire Imp", hp=170.0, dmg=40.0, spd=2.9, cd=1.2, sound="lion",
+				tex=_tex_skeleton, sprite_y=0.6, col_r=0.35, col_h=1.2, col_y=0.6}
+		&"frost_wraith":
+			return {name="Frost Wraith", hp=190.0, dmg=45.0, spd=3.1, cd=1.0, sound="lion",
+				tex=_tex_skeleton, sprite_y=0.6, col_r=0.35, col_h=1.2, col_y=0.6}
+		&"cyclops":
+			return {name="Cyclops", hp=300.0, dmg=45.0, spd=1.8, cd=2.5, sound="bear",
+				tex=_tex_boar, sprite_y=1.0, col_r=0.6, col_h=2.0, col_y=1.0}
+		&"minotaur":
+			return {name="Minotaur", hp=250.0, dmg=40.0, spd=2.4, cd=1.8, sound="bear",
+				tex=_tex_boar, sprite_y=0.9, col_r=0.55, col_h=1.8, col_y=0.9}
+		&"orc_brute":
+			return {name="Orc Brute", hp=160.0, dmg=28.0, spd=2.5, cd=2.0, sound="lion",
+				tex=_tex_boar, sprite_y=0.7, col_r=0.4, col_h=1.5, col_y=0.75}
+		&"goblin":
+			return {name="Goblin", hp=60.0, dmg=12.0, spd=3.5, cd=1.5, sound="boar",
+				tex=_tex_boar, sprite_y=0.4, col_r=0.25, col_h=0.8, col_y=0.4}
+		_:
+			return {name="Creature", hp=50.0, dmg=10.0, spd=2.0, cd=2.0, sound="boar",
+				tex=_tex_boar, sprite_y=0.6, col_r=0.35, col_h=1.2, col_y=0.6}
+
+
+static func _creature_loot_for(kind: StringName) -> Dictionary:
+	match kind:
+		# ── Animals ──────────────────────────────────────────────────────
+		&"boar":
+			return {"normal": [
+				{"id": &"leather", "min": 1, "max": 2, "chance": 0.8},
+				{"id": &"meat", "min": 1, "max": 2, "chance": 0.9},
+			], "rare": [
+				{"id": &"trophy_boar", "min": 1, "max": 1, "chance": 0.08},
+			]}
+		&"black_bear":
+			return {"normal": [
+				{"id": &"leather", "min": 2, "max": 4, "chance": 0.9},
+				{"id": &"meat", "min": 2, "max": 4, "chance": 0.85},
+				{"id": &"bone", "min": 1, "max": 2, "chance": 0.3},
+			], "rare": [
+				{"id": &"thick_hide", "min": 1, "max": 1, "chance": 0.08},
+			]}
+		&"grizzly":
+			return {"normal": [
+				{"id": &"leather", "min": 3, "max": 6, "chance": 0.9},
+				{"id": &"meat", "min": 3, "max": 5, "chance": 0.9},
+				{"id": &"bone", "min": 2, "max": 4, "chance": 0.5},
+			], "rare": [
+				{"id": &"thick_hide", "min": 1, "max": 2, "chance": 0.12},
+				{"id": &"fang", "min": 1, "max": 1, "chance": 0.06},
+			]}
+		&"wolf":
+			return {"normal": [
+				{"id": &"leather", "min": 1, "max": 3, "chance": 0.7},
+				{"id": &"meat", "min": 1, "max": 2, "chance": 0.6},
+				{"id": &"bone", "min": 1, "max": 2, "chance": 0.4},
+			], "rare": [
+				{"id": &"fang", "min": 1, "max": 1, "chance": 0.10},
+			]}
+		&"lion":
+			return {"normal": [
+				{"id": &"leather", "min": 3, "max": 5, "chance": 0.9},
+				{"id": &"meat", "min": 2, "max": 5, "chance": 0.85},
+				{"id": &"bone", "min": 2, "max": 3, "chance": 0.5},
+			], "rare": [
+				{"id": &"fang", "min": 1, "max": 2, "chance": 0.10},
+				{"id": &"thick_hide", "min": 1, "max": 1, "chance": 0.06},
+			]}
+		&"moose":
+			return {"normal": [
+				{"id": &"leather", "min": 3, "max": 6, "chance": 0.9},
+				{"id": &"meat", "min": 4, "max": 7, "chance": 0.95},
+				{"id": &"bone", "min": 2, "max": 4, "chance": 0.6},
+			], "rare": [
+				{"id": &"thick_hide", "min": 1, "max": 2, "chance": 0.10},
+			]}
+		&"mama_bear":
+			return {"normal": [
+				{"id": &"leather", "min": 4, "max": 7, "chance": 0.95},
+				{"id": &"meat", "min": 3, "max": 6, "chance": 0.9},
+				{"id": &"bone", "min": 2, "max": 5, "chance": 0.7},
+			], "rare": [
+				{"id": &"thick_hide", "min": 1, "max": 3, "chance": 0.15},
+				{"id": &"fang", "min": 1, "max": 2, "chance": 0.08},
+			]}
+		&"tiger":
+			return {"normal": [
+				{"id": &"leather", "min": 3, "max": 5, "chance": 0.9},
+				{"id": &"meat", "min": 2, "max": 5, "chance": 0.85},
+				{"id": &"bone", "min": 2, "max": 4, "chance": 0.6},
+			], "rare": [
+				{"id": &"fang", "min": 1, "max": 2, "chance": 0.10},
+				{"id": &"thick_hide", "min": 1, "max": 1, "chance": 0.08},
+			]}
+		# ── Birds / Coastal ──────────────────────────────────────────────
+		&"hawk":
+			return {"normal": [
+				{"id": &"feather", "min": 1, "max": 3, "chance": 0.9},
+				{"id": &"meat", "min": 1, "max": 1, "chance": 0.6},
+			], "rare": [
+				{"id": &"fang", "min": 1, "max": 1, "chance": 0.04},
+			]}
+		&"seagull":
+			return {"normal": [
+				{"id": &"feather", "min": 1, "max": 2, "chance": 0.8},
+				{"id": &"raw_fish", "min": 1, "max": 1, "chance": 0.3},
+			], "rare": []}
+		&"crab":
+			return {"normal": [
+				{"id": &"meat", "min": 1, "max": 3, "chance": 0.8},
+				{"id": &"flint", "min": 1, "max": 2, "chance": 0.3},
+			], "rare": []}
+		&"mountain_goat":
+			return {"normal": [
+				{"id": &"leather", "min": 1, "max": 2, "chance": 0.6},
+				{"id": &"stone", "min": 2, "max": 4, "chance": 0.5},
+			], "rare": [
+				{"id": &"thick_hide", "min": 1, "max": 1, "chance": 0.06},
+			]}
+		&"hyena":
+			return {"normal": [
+				{"id": &"bone", "min": 2, "max": 4, "chance": 0.7},
+				{"id": &"leather", "min": 1, "max": 3, "chance": 0.5},
+			], "rare": [
+				{"id": &"fang", "min": 1, "max": 1, "chance": 0.08},
+			]}
+		# ── Humanoids / Monsters (drop gold) ─────────────────────────────
+		&"goblin":
+			return {"normal": [
+				{"id": &"bone", "min": 1, "max": 2, "chance": 0.7},
+				{"id": &"flint", "min": 1, "max": 2, "chance": 0.5},
+				{"id": &"wood", "min": 1, "max": 3, "chance": 0.6},
+			], "rare": [
+				{"id": &"gold", "min": 1, "max": 3, "chance": 0.40, "no_stars": true},
+			]}
+		&"orc_brute":
+			return {"normal": [
+				{"id": &"leather", "min": 2, "max": 4, "chance": 0.8},
+				{"id": &"bone", "min": 1, "max": 3, "chance": 0.6},
+				{"id": &"stone", "min": 1, "max": 2, "chance": 0.4},
+			], "rare": [
+				{"id": &"gold", "min": 2, "max": 6, "chance": 0.50, "no_stars": true},
+				{"id": &"ancient_bone", "min": 1, "max": 1, "chance": 0.06},
+			]}
+		&"ghoul":
+			return {"normal": [
+				{"id": &"bone", "min": 2, "max": 5, "chance": 0.9},
+			], "rare": [
+				{"id": &"gold", "min": 1, "max": 4, "chance": 0.35, "no_stars": true},
+				{"id": &"trophy_skeleton", "min": 1, "max": 1, "chance": 0.08},
+				{"id": &"ancient_bone", "min": 1, "max": 1, "chance": 0.05},
+			]}
+		&"fire_imp":
+			return {"normal": [
+				{"id": &"stone", "min": 2, "max": 5, "chance": 0.7},
+				{"id": &"bone", "min": 1, "max": 3, "chance": 0.6},
+			], "rare": [
+				{"id": &"gold", "min": 2, "max": 5, "chance": 0.40, "no_stars": true},
+				{"id": &"ember_stone", "min": 1, "max": 1, "chance": 0.08},
+			]}
+		&"frost_wraith":
+			return {"normal": [
+				{"id": &"bone", "min": 2, "max": 4, "chance": 0.7},
+				{"id": &"leather", "min": 1, "max": 3, "chance": 0.5},
+			], "rare": [
+				{"id": &"gold", "min": 1, "max": 5, "chance": 0.35, "no_stars": true},
+				{"id": &"frost_shard", "min": 1, "max": 1, "chance": 0.08},
+			]}
+		&"cyclops":
+			return {"normal": [
+				{"id": &"bone", "min": 3, "max": 6, "chance": 0.9},
+				{"id": &"stone", "min": 2, "max": 5, "chance": 0.7},
+				{"id": &"leather", "min": 2, "max": 4, "chance": 0.5},
+			], "rare": [
+				{"id": &"gold", "min": 5, "max": 12, "chance": 0.55, "no_stars": true},
+				{"id": &"ancient_bone", "min": 1, "max": 2, "chance": 0.10},
+			]}
+		&"minotaur":
+			return {"normal": [
+				{"id": &"leather", "min": 3, "max": 5, "chance": 0.9},
+				{"id": &"bone", "min": 2, "max": 5, "chance": 0.7},
+				{"id": &"meat", "min": 2, "max": 4, "chance": 0.6},
+			], "rare": [
+				{"id": &"gold", "min": 4, "max": 10, "chance": 0.50, "no_stars": true},
+				{"id": &"ancient_bone", "min": 1, "max": 1, "chance": 0.08},
+				{"id": &"thick_hide", "min": 1, "max": 2, "chance": 0.06},
+			]}
+		_:
+			return {"normal": [{"id": &"wood", "min": 1, "max": 1, "chance": 0.5}], "rare": []}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  FISH (simple water sprites for seagull interaction)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+static func _create_fish(rng: RandomNumberGenerator) -> Node3D:
+	_ensure_textures()
+	var root := Node3D.new()
+	root.name = "Fish"
+	root.set_script(_FishIdle)
+	root.add_to_group(&"fish")
+
+	var model_loaded := false
+	var model_path := "res://models/creatures/fish.gltf"
+	if ResourceLoader.exists(model_path):
+		var scene: PackedScene = load(model_path) as PackedScene
+		if scene:
+			var model_node := scene.instantiate()
+			model_node.name = "CreatureModel"
+			var s := 0.8
+			model_node.scale = Vector3(s, s, s)
+			model_node.position.y = 0.1
+			root.add_child(model_node)
+			root.set_meta("use_3d_model", true)
+			model_loaded = true
+			var anim_player := _find_anim_player(model_node)
+			if anim_player and anim_player.has_animation("animation.idle"):
+				anim_player.play("animation.idle")
+			_apply_nearest_filter_recursive(model_node)
+
+	if not model_loaded:
+		var sprite := Sprite3D.new()
+		sprite.name = "BodySprite"
+		var tex: Texture2D = _tex_fish.get("south", null) as Texture2D
+		if tex:
+			sprite.texture = tex
+		else:
+			var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+			img.fill(Color(0.3, 0.5, 0.7))
+			sprite.texture = ImageTexture.create_from_image(img)
+		sprite.pixel_size = 0.02
+		sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+		sprite.transparent = true
+		sprite.shaded = true
+		sprite.double_sided = true
+		sprite.position.y = 0.15
+		root.add_child(sprite)
+
+	root.set_meta("sprite_textures", _tex_fish)
+	root.set_meta("bob_phase", rng.randf_range(0.0, TAU))
+	root.set("idle_frames", _tex_fish_idle)
+	return root
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  CAVE SPAWNING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+static func _try_spawn_cave(
+	zone_root: Node3D,
+	coord: Vector2i,
+	rng: RandomNumberGenerator,
+	origin_x: float,
+	origin_z: float,
+	height_func: Callable,
+) -> void:
+	if rng.randf() > 0.066:  # ~1 in 15 zones (2x previous rate)
+		return
+
+	# Sample the zone center to find elevated terrain (a hill)
+	var cx := origin_x + ZONE_SIZE * 0.5
+	var cz := origin_z + ZONE_SIZE * 0.5
+	var center_h := float(height_func.call(cx, cz))
+	if center_h < 5.0:
+		return  # not hilly enough
+
+	# Find the highest point in a small grid to locate the hill peak
+	var peak_x := cx
+	var peak_z := cz
+	var peak_h := center_h
+	var step := ZONE_SIZE * 0.25
+	var offsets: PackedFloat64Array = [-1.0, 0.0, 1.0]
+	for sx: float in offsets:
+		for sz: float in offsets:
+			var px := cx + sx * step
+			var pz := cz + sz * step
+			var ph := float(height_func.call(px, pz))
+			if ph > peak_h:
+				peak_h = ph
+				peak_x = px
+				peak_z = pz
+
+	if peak_h < 6.0:
+		return  # hill not tall enough for a cave
+
+	# Find the steepest downhill direction from the peak for the cave entrance
+	var best_dir := Vector3.ZERO
+	var best_drop := 0.0
+	var sample_dist := 6.0
+	for angle_i: int in 8:
+		var angle := float(angle_i) * TAU / 8.0
+		var dx := cos(angle) * sample_dist
+		var dz := sin(angle) * sample_dist
+		var sh := float(height_func.call(peak_x + dx, peak_z + dz))
+		var drop := peak_h - sh
+		if drop > best_drop:
+			best_drop = drop
+			best_dir = Vector3(dx, 0.0, dz).normalized()
+
+	if best_drop < 2.0 or best_dir.length_squared() < 0.01:
+		return  # not enough slope for a visible entrance
+
+	# Place the entrance partway down the slope from the peak
+	var entrance_wx := peak_x + best_dir.x * 5.0
+	var entrance_wz := peak_z + best_dir.z * 5.0
+	var entrance_h := _snap_height_to_mesh(entrance_wx, entrance_wz, height_func)
+
+	var entrance_pos := Vector3(
+		entrance_wx - origin_x,
+		entrance_h,
+		entrance_wz - origin_z,
+	)
+
+	var entrance := CaveGenerator.create_entrance_marker(best_dir)
+	zone_root.add_child(entrance)
+	entrance.position = entrance_pos

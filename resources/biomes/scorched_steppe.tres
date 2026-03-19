@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="BiomeData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/biome_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"scorched_steppe"
+display_name = "Scorched Steppe"
+description = "A sun-blasted savanna of tall dry grass and cracked earth. Nomadic warrior camps dot the landscape. No shade, no mercy — you are always exposed."
+min_distance_from_center = 4000.0
+max_distance_from_center = 7000.0
+min_altitude = 0.0
+max_altitude = 12.0
+generation_weight = 1.0
+ambient_color = Color(0.6, 0.5, 0.3, 1)
+fog_color = Color(0.75, 0.68, 0.55, 1)
+fog_density = 0.002
+requires_frost_resistance = false
+requires_heat_resistance = false
+has_perpetual_darkness = false
+has_poison_environment = false
+terrain_noise_amplitude = 4.0
+terrain_noise_frequency = 0.005
+terrain_color = Color(0.6, 0.5, 0.25, 1)
+tier = 5
+boss_drop_key = &"warlords_seal"
+boss_id = &"the_warlord"
+boss_summon_item = &"war_totem"
+boss_summon_count = 5

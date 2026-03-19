@@ -1,0 +1,84 @@
+[gd_scene format=3 uid="uid://bnxps0m7t4m0f"]
+
+[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="1_player"]
+[ext_resource type="Script" uid="uid://ck45ipgdamo82" path="res://scripts/world/world_generator.gd" id="2_worldgen"]
+[ext_resource type="Script" uid="uid://ugkop6ug47lv" path="res://scripts/ui/biome_label.gd" id="3_biomelabel"]
+[ext_resource type="Script" uid="uid://c7lx21y7jm2w0" path="res://scripts/world/art_unifier.gd" id="5_artunify"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
+sky_top_color = Color(0.22, 0.42, 0.78, 1)
+sky_horizon_color = Color(0.5, 0.62, 0.78, 1)
+ground_bottom_color = Color(0.12, 0.1, 0.08, 1)
+ground_horizon_color = Color(0.4, 0.45, 0.38, 1)
+sun_angle_max = 20.0
+sun_curve = 0.08
+
+[sub_resource type="Sky" id="Sky_1"]
+sky_material = SubResource("ProceduralSkyMaterial_1")
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+sky = SubResource("Sky_1")
+ambient_light_source = 2
+ambient_light_color = Color(0.38, 0.42, 0.58, 1)
+ambient_light_energy = 0.65
+tonemap_mode = 2
+tonemap_white = 5.0
+ssao_enabled = false
+glow_enabled = false
+fog_enabled = true
+fog_light_color = Color(0.65, 0.72, 0.82, 1)
+fog_sun_scatter = 0.4
+fog_density = 0.0005
+fog_aerial_perspective = 0.7
+adjustment_enabled = true
+adjustment_contrast = 1.15
+adjustment_saturation = 0.95
+
+[sub_resource type="LabelSettings" id="LabelSettings_1"]
+font_size = 22
+font_color = Color(1, 1, 1, 0.85)
+outline_size = 3
+outline_color = Color(0, 0, 0, 0.7)
+
+[node name="TestWorld" type="Node3D" unique_id=517145947]
+script = ExtResource("5_artunify")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=754404264]
+environment = SubResource("Environment_1")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=2094158486]
+transform = Transform3D(0.866, -0.383, 0.322, 0, 0.643, 0.766, -0.5, -0.663, 0.557, 0, 20, 0)
+light_color = Color(1, 0.94, 0.84, 1)
+light_energy = 1.8
+light_angular_distance = 1.0
+shadow_enabled = true
+shadow_bias = 0.04
+shadow_opacity = 0.3
+shadow_blur = 2.0
+directional_shadow_mode = 0
+directional_shadow_max_distance = 50.0
+
+[node name="WorldGenerator" type="Node3D" parent="." unique_id=584584793]
+script = ExtResource("2_worldgen")
+world_seed = "hearthlands"
+
+[node name="Player" parent="." unique_id=2132426928 instance=ExtResource("1_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+
+[node name="BiomeHUD" type="CanvasLayer" parent="." unique_id=49723321]
+layer = 10
+
+[node name="BiomeLabel" type="Label" parent="BiomeHUD" unique_id=1172725326]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -250.0
+offset_top = 15.0
+offset_right = -15.0
+offset_bottom = 45.0
+grow_horizontal = 0
+text = "Hearthlands"
+label_settings = SubResource("LabelSettings_1")
+horizontal_alignment = 2
+script = ExtResource("3_biomelabel")

@@ -1,0 +1,23 @@
+# Godot 4 generated files
+.godot/
+.import/
+*.import
+
+# Export presets (may contain signing keys)
+export_presets.cfg
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Backups
+backups/
