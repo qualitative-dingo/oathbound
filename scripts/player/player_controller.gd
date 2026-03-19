@@ -7380,6 +7380,44 @@ func _try_attack() -> void:
 	)
 
 
+func _get_build_icon(recipe_id: StringName) -> Texture2D:
+	if _building:
+		return _building.get_build_icon(recipe_id)
+	return null
+
+
+func _get_world_state_sync() -> Node:
+	var wss := get_tree().get_nodes_in_group(&"world_state_sync")
+	if not wss.is_empty():
+		return wss[0]
+	return null
+
+
+func _dismount_raft() -> void:
+	if _interaction:
+		_interaction.dismount_raft()
+
+
+func _dismount() -> void:
+	if _interaction:
+		_interaction.dismount()
+
+
+func _mount_raft(raft: Node3D) -> void:
+	if _interaction:
+		_interaction.mount_raft(raft)
+
+
+func _mount(horse: Node3D) -> void:
+	if _interaction:
+		_interaction.mount(horse)
+
+
+func _open_chest(chest_node: Node3D) -> void:
+	if _interaction:
+		_interaction.open_chest(chest_node)
+
+
 func _apply_damage_to_creature(creature: Node3D, amount: float) -> void:
 	## Apply damage to creature (host-authoritative). Client sends RPC to host.
 	if creature.has_method("take_damage"):
