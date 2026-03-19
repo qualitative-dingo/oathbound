@@ -10,14 +10,6 @@ const EQUIPMENT_SLOTS: Array[String] = ["weapon", "sword", "bow", "pickaxe", "sh
 var _local: PlayerInventory
 var _all_inventories: Dictionary = {}  # peer_id -> PlayerInventory
 
-## Backward compat for save_manager/main_menu; forwards to _local.
-var _slots: Dictionary:
-	get: return _local._slots if _local else {}
-var _order: Array:
-	get: return _local._order if _local else []
-var _equipped: Dictionary:
-	get: return _local._equipped if _local else {}
-
 
 func _ready() -> void:
 	_local = PlayerInventory.new()
@@ -132,13 +124,19 @@ func give_starting_gear() -> void:
 
 # Properties forwarded for backward-compat with save_manager / main_menu
 var _slots: Dictionary:
-	get: return _local._slots
-	set(v): _local._slots = v
+	get: return _local._slots if _local else {}
+	set(v):
+		if _local:
+			_local._slots = v
 
 var _order: Array[StringName]:
-	get: return _local._order
-	set(v): _local._order = v
+	get: return _local._order if _local else [] as Array[StringName]
+	set(v):
+		if _local:
+			_local._order = v
 
 var _equipped: Dictionary:
-	get: return _local._equipped
-	set(v): _local._equipped = v
+	get: return _local._equipped if _local else {}
+	set(v):
+		if _local:
+			_local._equipped = v
