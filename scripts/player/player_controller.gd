@@ -4375,6 +4375,25 @@ func _place_build() -> void:
 	_disable_structure_shadows(structure)
 	AudioManager.play_sfx_at("wood_thud", structure.global_position, -4.0, 0.2)
 
+	# Network sync: broadcast building placement to other clients
+	var wss := _get_world_state_sync()
+	if wss and NetworkManager.is_connected_to_game():
+		var chest_contents: Array = []
+		if build_id == &"chest" and structure.has_meta("chest_contents"):
+			chest_contents = structure.get_meta("chest_contents", [])
+		var entry := {
+			"build_id": str(build_id),
+			"px": target_pos.x,
+			"py": target_pos.y,
+			"pz": target_pos.z,
+			"ry": target_rot,
+			"chest_contents": chest_contents,
+		}
+		if NetworkManager.is_server():
+			wss.record_building_placed(build_id, target_pos, target_rot, chest_contents)
+		else:
+			wss.request_building_placed.rpc_id(1, entry)
+
 
 func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void:
 	var build_id := StringName(build_id_str)
@@ -6360,17 +6379,6 @@ func _find_world_generator() -> WorldGenerator:
 	return null
 
 
-func _get_world_state_sync() -> WorldStateSync:
-	if is_instance_valid(_cached_wss):
-		return _cached_wss
-	var nodes := get_tree().get_nodes_in_group(&"world_state_sync")
-	for n in nodes:
-		if n is WorldStateSync:
-			_cached_wss = n as WorldStateSync
-			return _cached_wss
-	return null
-
-
 # ===================================================================
 # TOOLTIP
 # ===================================================================
@@ -7594,6 +7602,18 @@ func _hit_harvestable(node: Node3D, damage: float) -> void:
 
 
 func _destroy_rock(node: Node3D) -> void:
+	# Network sync: get key before modifying node, then notify host
+	var wss := _get_world_state_sync()
+	var is_client_destroy := false
+	if wss and NetworkManager.is_connected_to_game():
+		var key := WorldStateSync.get_object_key_for_node(node)
+		if not key.is_empty():
+			if NetworkManager.is_server():
+				wss.record_object_destroyed(node)
+			else:
+				wss.request_destroy_object.rpc_id(1, key)
+				is_client_destroy = true  # Host will spawn loot; client must not
+
 	var drop_id: StringName = node.get_meta("drop_id", &"stone") as StringName
 	var drop_min: int = int(node.get_meta("drop_min", 2))
 	var drop_max: int = int(node.get_meta("drop_max", 4))
@@ -7614,51 +7634,69 @@ func _destroy_rock(node: Node3D) -> void:
 	if _has_affix(&"rich_vein") and rng.randf() < 0.10:
 		total *= 2
 	var master_miner := _has_affix(&"heavy_swing")
-	for i in total:
-		var angle := rng.randf_range(0.0, TAU)
-		var dist := rng.randf_range(0.8, 2.5)
-		var offset := Vector3(cos(angle) * dist, 0.5, sin(angle) * dist)
-		var stars := ItemDatabase.roll_star_level(rng)
-		if master_miner:
-			var reroll := ItemDatabase.roll_star_level(rng)
-			if reroll > stars:
-				stars = reroll
-			reroll = ItemDatabase.roll_star_level(rng)
-			if reroll > stars:
-				stars = reroll
-		var drop := LootDrop.new()
-		drop.item_id = drop_id
-		drop.star_level = stars
-		drop.amount = 1
-		get_tree().current_scene.add_child(drop)
-		drop.global_position = node.global_position + offset
+	var use_sync := wss and NetworkManager.is_connected_to_game() and NetworkManager.is_server()
+	if not is_client_destroy:
+		for i in total:
+			var angle := rng.randf_range(0.0, TAU)
+			var dist := rng.randf_range(0.8, 2.5)
+			var offset := Vector3(cos(angle) * dist, 0.5, sin(angle) * dist)
+			var stars := ItemDatabase.roll_star_level(rng)
+			if master_miner:
+				var reroll := ItemDatabase.roll_star_level(rng)
+				if reroll > stars:
+					stars = reroll
+				reroll = ItemDatabase.roll_star_level(rng)
+				if reroll > stars:
+					stars = reroll
+			var pos := node.global_position + offset
+			if use_sync:
+				wss.spawn_loot_synced(pos, drop_id, 1, stars)
+			else:
+				var drop := LootDrop.new()
+				drop.item_id = drop_id
+				drop.star_level = stars
+				drop.amount = 1
+				get_tree().current_scene.add_child(drop)
+				drop.global_position = pos
 
-	if rng.randf() < 0.4:
-		var flint_stars := ItemDatabase.roll_star_level(rng)
-		var flint_drop := LootDrop.new()
-		flint_drop.item_id = &"flint"
-		flint_drop.star_level = flint_stars
-		flint_drop.amount = rng.randi_range(1, 2)
-		get_tree().current_scene.add_child(flint_drop)
-		flint_drop.global_position = node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+		if rng.randf() < 0.4:
+			var flint_stars := ItemDatabase.roll_star_level(rng)
+			var flint_pos := node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			if use_sync:
+				wss.spawn_loot_synced(flint_pos, &"flint", rng.randi_range(1, 2), flint_stars)
+			else:
+				var flint_drop := LootDrop.new()
+				flint_drop.item_id = &"flint"
+				flint_drop.star_level = flint_stars
+				flint_drop.amount = rng.randi_range(1, 2)
+				get_tree().current_scene.add_child(flint_drop)
+				flint_drop.global_position = flint_pos
 
-	if _has_affix(&"vein_finder") and rng.randf() < 0.30:
-		var ore_drop := LootDrop.new()
-		ore_drop.item_id = &"copper_ore"
-		ore_drop.star_level = ItemDatabase.roll_star_level(rng)
-		ore_drop.amount = rng.randi_range(1, 2)
-		get_tree().current_scene.add_child(ore_drop)
-		ore_drop.global_position = node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+		if _has_affix(&"vein_finder") and rng.randf() < 0.30:
+			var ore_pos := node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			if use_sync:
+				wss.spawn_loot_synced(ore_pos, &"copper_ore", rng.randi_range(1, 2), ItemDatabase.roll_star_level(rng))
+			else:
+				var ore_drop := LootDrop.new()
+				ore_drop.item_id = &"copper_ore"
+				ore_drop.star_level = ItemDatabase.roll_star_level(rng)
+				ore_drop.amount = rng.randi_range(1, 2)
+				get_tree().current_scene.add_child(ore_drop)
+				ore_drop.global_position = ore_pos
 
-	if _has_affix(&"geologist") and rng.randf() < 0.20:
-		var rare_items: Array[StringName] = [&"gemstone", &"ancient_bone", &"ember_stone"]
-		var rare_id: StringName = rare_items[rng.randi_range(0, rare_items.size() - 1)]
-		var rare_drop := LootDrop.new()
-		rare_drop.item_id = rare_id
-		rare_drop.star_level = ItemDatabase.roll_star_level(rng)
-		rare_drop.amount = 1
-		get_tree().current_scene.add_child(rare_drop)
-		rare_drop.global_position = node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+		if _has_affix(&"geologist") and rng.randf() < 0.20:
+			var rare_items: Array[StringName] = [&"gemstone", &"ancient_bone", &"ember_stone"]
+			var rare_id: StringName = rare_items[rng.randi_range(0, rare_items.size() - 1)]
+			var rare_pos := node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			if use_sync:
+				wss.spawn_loot_synced(rare_pos, rare_id, 1, ItemDatabase.roll_star_level(rng))
+			else:
+				var rare_drop := LootDrop.new()
+				rare_drop.item_id = rare_id
+				rare_drop.star_level = ItemDatabase.roll_star_level(rng)
+				rare_drop.amount = 1
+				get_tree().current_scene.add_child(rare_drop)
+				rare_drop.global_position = rare_pos
 
 	AudioManager.play_sfx_at("rock_fall", node.global_position, 2.0)
 	AudioManager.play_sfx_at("stone_rubble", node.global_position, -2.0)
@@ -7682,6 +7720,18 @@ func _get_terrain_slope_dir(pos: Vector3) -> Vector3:
 
 
 func _fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = true) -> void:
+	# Network sync: get key before modifying node, then notify host
+	var wss := _get_world_state_sync()
+	var is_client_destroy := false
+	if wss and NetworkManager.is_connected_to_game():
+		var key := WorldStateSync.get_object_key_for_node(node)
+		if not key.is_empty():
+			if NetworkManager.is_server():
+				wss.record_object_destroyed(node)
+			else:
+				wss.request_destroy_object.rpc_id(1, key)
+				is_client_destroy = true  # Host will spawn loot; client must not
+
 	var drop_id: StringName = node.get_meta("drop_id", &"wood") as StringName
 	var drop_min: int = int(node.get_meta("drop_min", 2))
 	var drop_max: int = int(node.get_meta("drop_max", 4))
@@ -7745,44 +7795,59 @@ func _fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tr
 		if _has_affix(&"double_yield") and rng.randf() < 0.10:
 			log_count *= 2
 		var master_woodsman := _has_affix(&"heavy_chop")
-		for i in log_count:
-			var t := rng.randf_range(0.2, 0.9)
-			var along := fall_dir * trunk_h * t
-			var lateral := rng.randf_range(-1.5, 1.5)
-			var perp := Vector3(-fall_dir.z, 0.0, fall_dir.x)
-			var offset := along + perp * lateral + Vector3.UP * 0.5
-			var stars := ItemDatabase.roll_star_level(rng)
-			if master_woodsman:
-				var reroll := ItemDatabase.roll_star_level(rng)
-				if reroll > stars:
-					stars = reroll
-				reroll = ItemDatabase.roll_star_level(rng)
-				if reroll > stars:
-					stars = reroll
-			var drop := LootDrop.new()
-			drop.item_id = drop_id
-			drop.star_level = stars
-			drop.amount = 1
-			get_tree().current_scene.add_child(drop)
-			drop.global_position = tree_base + offset
+		var tree_wss := _get_world_state_sync()
+		var use_sync := tree_wss and NetworkManager.is_connected_to_game() and NetworkManager.is_server()
+		if not is_client_destroy:
+			for i in log_count:
+				var t := rng.randf_range(0.2, 0.9)
+				var along := fall_dir * trunk_h * t
+				var lateral := rng.randf_range(-1.5, 1.5)
+				var perp := Vector3(-fall_dir.z, 0.0, fall_dir.x)
+				var offset := along + perp * lateral + Vector3.UP * 0.5
+				var stars := ItemDatabase.roll_star_level(rng)
+				if master_woodsman:
+					var reroll := ItemDatabase.roll_star_level(rng)
+					if reroll > stars:
+						stars = reroll
+					reroll = ItemDatabase.roll_star_level(rng)
+					if reroll > stars:
+						stars = reroll
+				var pos := tree_base + offset
+				if use_sync:
+					tree_wss.spawn_loot_synced(pos, drop_id, 1, stars)
+				else:
+					var drop := LootDrop.new()
+					drop.item_id = drop_id
+					drop.star_level = stars
+					drop.amount = 1
+					get_tree().current_scene.add_child(drop)
+					drop.global_position = pos
 
-		if _has_affix(&"bark_stripper") and rng.randf() < 0.25:
-			var resin_drop := LootDrop.new()
-			resin_drop.item_id = &"resin"
-			resin_drop.star_level = ItemDatabase.roll_star_level(rng)
-			resin_drop.amount = rng.randi_range(1, 2)
-			get_tree().current_scene.add_child(resin_drop)
-			resin_drop.global_position = tree_base + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			if _has_affix(&"bark_stripper") and rng.randf() < 0.25:
+				var resin_pos := tree_base + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+				if use_sync:
+					tree_wss.spawn_loot_synced(resin_pos, &"resin", rng.randi_range(1, 2), ItemDatabase.roll_star_level(rng))
+				else:
+					var resin_drop := LootDrop.new()
+					resin_drop.item_id = &"resin"
+					resin_drop.star_level = ItemDatabase.roll_star_level(rng)
+					resin_drop.amount = rng.randi_range(1, 2)
+					get_tree().current_scene.add_child(resin_drop)
+					resin_drop.global_position = resin_pos
 
-		if _has_affix(&"sap_drinker") and rng.randf() < 0.20:
-			var rare_items: Array[StringName] = [&"amber", &"living_wood", &"fairy_dust"]
-			var rare_id: StringName = rare_items[rng.randi_range(0, rare_items.size() - 1)]
-			var rare_drop := LootDrop.new()
-			rare_drop.item_id = rare_id
-			rare_drop.star_level = ItemDatabase.roll_star_level(rng)
-			rare_drop.amount = 1
-			get_tree().current_scene.add_child(rare_drop)
-			rare_drop.global_position = tree_base + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			if _has_affix(&"sap_drinker") and rng.randf() < 0.20:
+				var rare_items: Array[StringName] = [&"amber", &"living_wood", &"fairy_dust"]
+				var rare_id: StringName = rare_items[rng.randi_range(0, rare_items.size() - 1)]
+				var rare_pos := tree_base + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+				if use_sync:
+					tree_wss.spawn_loot_synced(rare_pos, rare_id, 1, ItemDatabase.roll_star_level(rng))
+				else:
+					var rare_drop := LootDrop.new()
+					rare_drop.item_id = rare_id
+					rare_drop.star_level = ItemDatabase.roll_star_level(rng)
+					rare_drop.amount = 1
+					get_tree().current_scene.add_child(rare_drop)
+					rare_drop.global_position = rare_pos
 	)
 
 

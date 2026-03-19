@@ -129,6 +129,22 @@ func _push_away_from_stumps() -> void:
 
 
 func pickup(_player: Node3D) -> void:
+	# Multiplayer: host processes directly; client sends RPC to host
+	if NetworkManager.is_connected_to_game():
+		var loot_id: int = get_meta("loot_id", -1)
+		if loot_id >= 0:
+			var wss := _get_world_state_sync()
+			if wss:
+				if NetworkManager.is_server():
+					wss.process_host_pickup(self)
+				else:
+					wss.request_pickup.rpc_id(1, loot_id, NetworkManager.get_peer_id())
+			return
+	# Singleplayer or legacy loot without id: local pickup
+	_do_local_pickup()
+
+
+func _do_local_pickup() -> void:
 	GameEvents.item_picked_up.emit(item_id, amount)
 	var parsed := ItemDatabase.parse_star_id(item_id)
 	var base: String = str(parsed["base_id"])
@@ -169,6 +185,13 @@ func pickup(_player: Node3D) -> void:
 	get_tree().current_scene.add_child(num)
 	num.global_position = global_position + Vector3(0, 1.2, 0)
 	queue_free()
+
+
+func _get_world_state_sync() -> WorldStateSync:
+	for n in get_tree().get_nodes_in_group(&"world_state_sync"):
+		if n is WorldStateSync:
+			return n as WorldStateSync
+	return null
 
 
 func _get_display_name() -> String:
@@ -379,12 +402,26 @@ static func _spawn_single_drop(tree: SceneTree, world_pos: Vector3, id: StringNa
 			affixes = ItemDatabase.roll_affixes(stars, ItemDatabase.get_affix_slot(id))
 		composite_id = ItemDatabase.make_star_id(id, stars, affixes)
 
+	var offset := Vector3(
+		rng.randf_range(-8.0, 8.0), 0.0, rng.randf_range(-8.0, 8.0)
+	)
+	var final_pos := world_pos + offset + Vector3.UP * 0.5
+	# Multiplayer: host spawns and replicates
+	if NetworkManager.is_connected_to_game() and NetworkManager.is_server():
+		var wss := _get_wss_from_tree(tree)
+		if wss:
+			wss.spawn_loot_synced(final_pos, composite_id, qty, stars)
+			return
 	var drop := LootDrop.new()
 	drop.item_id = composite_id
 	drop.star_level = stars
 	drop.amount = qty
-	var offset := Vector3(
-		rng.randf_range(-8.0, 8.0), 0.0, rng.randf_range(-8.0, 8.0)
-	)
 	tree.current_scene.add_child(drop)
-	drop.global_position = world_pos + offset + Vector3.UP * 0.5
+	drop.global_position = final_pos
+
+
+static func _get_wss_from_tree(tree: SceneTree) -> WorldStateSync:
+	for n in tree.get_nodes_in_group(&"world_state_sync"):
+		if n is WorldStateSync:
+			return n as WorldStateSync
+	return null
