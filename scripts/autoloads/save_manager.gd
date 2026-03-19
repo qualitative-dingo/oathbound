@@ -372,7 +372,7 @@ func _migrate_missing_affixes() -> void:
 			Inventory._slots[new_id] = int(Inventory._slots[new_id]) + amount
 		else:
 			Inventory._slots[new_id] = amount
-		var idx := Inventory._order.find(old_id)
+		var idx: int = Inventory._order.find(old_id)
 		if idx >= 0:
 			Inventory._order[idx] = new_id
 		elif not Inventory._order.has(new_id):
