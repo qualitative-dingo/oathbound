@@ -11,6 +11,7 @@ signal player_disconnected(peer_id: int)
 signal connection_succeeded()
 signal connection_failed()
 signal server_started()
+signal world_info_received()
 
 var is_hosting := false
 var world_seed: String = ""
@@ -18,7 +19,11 @@ var world_name: String = ""
 var character_name: String = ""
 
 
-func host_game(port: int = DEFAULT_PORT) -> Error:
+func host_game(port: int = DEFAULT_PORT, seed_str: String = "", w_name: String = "") -> Error:
+	if seed_str != "":
+		world_seed = seed_str
+	if w_name != "":
+		world_name = w_name
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, MAX_PLAYERS)
 	if err != OK:

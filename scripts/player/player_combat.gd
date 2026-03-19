@@ -1154,6 +1154,9 @@ func get_terrain_slope_dir(pos: Vector3) -> Vector3:
 
 
 func fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = true) -> void:
+	var sync := pc._get_world_state_sync()
+	if sync:
+		sync.record_object_destroyed(node)
 	var drop_id: StringName = node.get_meta("drop_id", &"wood") as StringName
 	var drop_min: int = int(node.get_meta("drop_min", 2))
 	var drop_max: int = int(node.get_meta("drop_max", 4))

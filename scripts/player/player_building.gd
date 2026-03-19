@@ -582,6 +582,14 @@ func place_build() -> void:
 	disable_structure_shadows(structure)
 	AudioManager.play_sfx_at("wood_thud", structure.global_position, -4.0, 0.2)
 
+	# Sync to other clients in multiplayer
+	var sync := pc._get_world_state_sync()
+	if sync:
+		var chest_contents: Array = []
+		if structure.has_meta("chest_contents"):
+			chest_contents = structure.get_meta("chest_contents") as Array
+		sync.record_building_placed(build_id, structure.global_position, structure.rotation.y, chest_contents)
+
 
 func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void:
 	var build_id := StringName(build_id_str)

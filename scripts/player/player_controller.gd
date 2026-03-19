@@ -6360,6 +6360,17 @@ func _find_world_generator() -> WorldGenerator:
 	return null
 
 
+func _get_world_state_sync() -> WorldStateSync:
+	if is_instance_valid(_cached_wss):
+		return _cached_wss
+	var nodes := get_tree().get_nodes_in_group(&"world_state_sync")
+	for n in nodes:
+		if n is WorldStateSync:
+			_cached_wss = n as WorldStateSync
+			return _cached_wss
+	return null
+
+
 # ===================================================================
 # TOOLTIP
 # ===================================================================

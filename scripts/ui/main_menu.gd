@@ -253,8 +253,10 @@ func _launch_world(world_data: Dictionary) -> void:
 	get_tree().root.add_child(world_instance)
 	get_tree().current_scene = world_instance
 
-	# Defer save loading to SaveManager (survives queue_free since it's an autoload)
-	SaveManager.call_deferred("_deferred_load_save")
+	if NetworkManager.pending_host:
+		NetworkManager.call_deferred("_do_host_in_world")
+	if not skip_save_load:
+		SaveManager.call_deferred("_deferred_load_save")
 	queue_free()
 
 

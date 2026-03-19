@@ -63,6 +63,9 @@ directional_shadow_max_distance = 50.0
 script = ExtResource("2_worldgen")
 world_seed = "hearthlands"
 
+[node name="WorldStateSync" type="Node" parent="."]
+script = ExtResource("6_worldstatesync")
+
 [node name="Players" type="Node3D" parent="."]
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="Players"]

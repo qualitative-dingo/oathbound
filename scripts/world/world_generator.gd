@@ -820,3 +820,11 @@ func _check_biome_change(player_zone: Vector2i) -> void:
 func smoothstep(edge0: float, edge1: float, x: float) -> float:
 	var t := clampf((x - edge0) / (edge1 - edge0), 0.0, 1.0)
 	return t * t * (3.0 - 2.0 * t)
+
+
+func _get_world_state_sync() -> WorldStateSync:
+	var nodes := get_tree().get_nodes_in_group(&"world_state_sync")
+	for n in nodes:
+		if n is WorldStateSync:
+			return n as WorldStateSync
+	return null
