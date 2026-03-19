@@ -78,7 +78,7 @@ var _zone_biome_cache: Dictionary = {}
 var _zone_microbiome_cache: Dictionary = {}
 var _biome_materials: Dictionary = {}
 var _pending_zones: Array[Vector2i] = []
-var _player: Node3D
+var _players: Array[Node3D] = []
 var _last_player_biome: StringName = &""
 var _needs_player_placement := true
 var _global_water_plane: MeshInstance3D
@@ -155,34 +155,39 @@ func _ready() -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if not _player:
-		_player = get_tree().get_first_node_in_group(&"player")
-		if not _player:
-			return
+	_players.clear()
+	for n in get_tree().get_nodes_in_group(&"player"):
+		if n is Node3D:
+			_players.append(n)
+	if _players.is_empty():
+		return
+	var host: Node3D = _players[0]
 	if _needs_player_placement:
 		_needs_player_placement = false
-		var spawn_h := get_height_at(_player.global_position.x, _player.global_position.z)
-		_player.global_position.y = spawn_h + 2.5
-		_player.velocity = Vector3.ZERO
+		var spawn_h := get_height_at(host.global_position.x, host.global_position.z)
+		host.global_position.y = spawn_h + 2.5
+		host.velocity = Vector3.ZERO
 	else:
-		# Safety: never let player be buried underground
-		var ground := get_height_at(_player.global_position.x, _player.global_position.z)
-		if _player.global_position.y < ground - 0.5:
-			_player.global_position.y = ground + 2.0
-			_player.velocity = Vector3.ZERO
-	var player_zone := world_to_zone(_player.global_position)
-	_queue_zones_around(player_zone)
+		# Safety: never let any player be buried underground
+		for p in _players:
+			var ground := get_height_at(p.global_position.x, p.global_position.z)
+			if p.global_position.y < ground - 0.5:
+				p.global_position.y = ground + 2.0
+				p.velocity = Vector3.ZERO
+	for p in _players:
+		_queue_zones_around(world_to_zone(p.global_position))
 	_process_pending_zones()
-	_unload_distant_zones(player_zone)
-	_check_biome_change(player_zone)
-	var explore_dist_sq := (_player.global_position - _last_explore_pos).length_squared()
+	_unload_distant_zones(_players)
+	_check_biome_change(world_to_zone(host.global_position))
+	var explore_dist_sq := (host.global_position - _last_explore_pos).length_squared()
 	if explore_dist_sq > 16.0:
-		explore_around(_player.global_position, 3)
-		_last_explore_pos = _player.global_position
+		for p in _players:
+			explore_around(p.global_position, 3)
+		_last_explore_pos = host.global_position
 	if _global_water_plane:
 		# Snap to zone grid so wave vertices don't shift with player movement
-		_global_water_plane.global_position.x = floorf(_player.global_position.x / ZONE_SIZE) * ZONE_SIZE
-		_global_water_plane.global_position.z = floorf(_player.global_position.z / ZONE_SIZE) * ZONE_SIZE
+		_global_water_plane.global_position.x = floorf(host.global_position.x / ZONE_SIZE) * ZONE_SIZE
+		_global_water_plane.global_position.z = floorf(host.global_position.z / ZONE_SIZE) * ZONE_SIZE
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -546,10 +551,16 @@ func _process_pending_zones() -> void:
 			count += 1
 
 
-func _unload_distant_zones(center: Vector2i) -> void:
+func _unload_distant_zones(players: Array[Node3D]) -> void:
 	var to_remove: Array[Vector2i] = []
 	for coord in _loaded_zones:
-		if (coord - center).length() > unload_radius_zones:
+		var near_any := false
+		for p in players:
+			var pz := world_to_zone(p.global_position)
+			if (coord - pz).length() <= unload_radius_zones:
+				near_any = true
+				break
+		if not near_any:
 			to_remove.append(coord)
 	for coord in to_remove:
 		_loaded_zones[coord].queue_free()

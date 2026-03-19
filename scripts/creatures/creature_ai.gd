@@ -777,9 +777,25 @@ func _do_attack() -> void:
 		_DamageNumber.spawn(get_tree(), _target.global_position, eff_dmg, false, "enemy")
 
 
+func _get_nearest_player() -> Node3D:
+	var players := get_tree().get_nodes_in_group(&"player")
+	var nearest: Node3D = null
+	var best_dist := INF
+	for node in players:
+		var p := node as Node3D
+		if not is_instance_valid(p):
+			continue
+		var d := global_position.distance_to(p.global_position)
+		if d < best_dist:
+			best_dist = d
+			nearest = p
+	return nearest
+
+
 func _get_player() -> Node3D:
-	if not is_instance_valid(_cached_player):
-		_cached_player = get_tree().get_first_node_in_group(&"player") as Node3D
+	var nearest := _get_nearest_player()
+	if nearest != _cached_player or not is_instance_valid(_cached_player):
+		_cached_player = nearest
 	return _cached_player
 
 
@@ -788,14 +804,23 @@ func _check_aggro() -> void:
 		return
 	if is_instance_valid(_target):
 		return
-	var player := _get_player()
-	if not player:
-		return
-	var effective_aggro := aggro_range
-	if player.has_method("_has_affix") and player._has_affix(&"light_step"):
-		effective_aggro *= 0.6
-	if global_position.distance_to(player.global_position) < effective_aggro:
-		_target = player
+	var players := get_tree().get_nodes_in_group(&"player")
+	var best_target: Node3D = null
+	var best_dist := INF
+	for node in players:
+		var p := node as Node3D
+		if not is_instance_valid(p):
+			continue
+		var effective_aggro := aggro_range
+		if p.has_method("_has_affix") and p._has_affix(&"light_step"):
+			effective_aggro *= 0.6
+		var d := global_position.distance_to(p.global_position)
+		if d < effective_aggro and d < best_dist:
+			best_dist = d
+			best_target = p
+	if best_target:
+		_target = best_target
+		_cached_player = best_target
 		_state = State.CHASE
 		_combat_timer = 8.0
 		_hp_bar_visible_timer = 10.0
@@ -1013,8 +1038,9 @@ func take_damage(amount: float, source: Node3D = null) -> void:
 
 	_combat_timer = 8.0
 	_evading = false
-	if source and not is_instance_valid(_target):
+	if source and source.is_in_group(&"player"):
 		_target = source
+		_cached_player = source
 		_state = State.CHASE
 		_perch_target = null
 		_perch_settled = false
@@ -1161,8 +1187,10 @@ func _explode_and_free() -> void:
 	if not loot_table.is_empty():
 		_LootDrop.spawn_loot(get_tree(), global_position, loot_table, star_level, rare_loot_table)
 
-	var player := _get_player()
-	if player and player.has_method("_has_affix"):
+	for node in get_tree().get_nodes_in_group(&"player"):
+		var player = node
+		if not is_instance_valid(player) or not player.has_method("_has_affix"):
+			continue
 		if player._has_affix(&"adrenaline"):
 			player._adrenaline_timer = 4.0
 		if player._has_affix(&"crushing_momentum"):

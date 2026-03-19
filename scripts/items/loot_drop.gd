@@ -54,8 +54,6 @@ func _ready() -> void:
 
 var _grounded := false
 
-var _cached_player: Node3D
-
 func _process(delta: float) -> void:
 	if not _grounded:
 		_snap_to_ground()
@@ -80,19 +78,23 @@ func _process(delta: float) -> void:
 	_sprite.position.y = 0.4 + sin(_bob_time) * 0.08
 	_sprite.rotation.y += delta * 1.5
 
-	if not is_instance_valid(_cached_player):
-		var players := get_tree().get_nodes_in_group(&"player")
-		_cached_player = players[0] as Node3D if not players.is_empty() else null
-	if _cached_player:
-		var dist := global_position.distance_to(_cached_player.global_position)
-		var label_dist := 9.0 if item_id == &"stone" else 45.0
-		if _nameplate_label:
-			var show_label := dist < label_dist
-			_nameplate_label.visible = show_label
-			if _stars_label:
-				_stars_label.visible = show_label
-			if _nameplate_bg:
-				_nameplate_bg.visible = show_label
+	# Nameplate: show if ANY player is within range (use nearest player's distance)
+	var nearest_dist := INF
+	for p in get_tree().get_nodes_in_group(&"player"):
+		var node := p as Node3D
+		if not is_instance_valid(node):
+			continue
+		var d := global_position.distance_to(node.global_position)
+		if d < nearest_dist:
+			nearest_dist = d
+	var label_dist := 9.0 if item_id == &"stone" else 45.0
+	var show_label := nearest_dist < label_dist
+	if _nameplate_label:
+		_nameplate_label.visible = show_label
+		if _stars_label:
+			_stars_label.visible = show_label
+		if _nameplate_bg:
+			_nameplate_bg.visible = show_label
 
 
 func _snap_to_ground() -> void:
@@ -314,14 +316,12 @@ static func spawn_loot(tree: SceneTree, world_pos: Vector3, loot_table: Array, c
 	var qty_multiplier := 1.0 + creature_stars * 0.5
 	var extra_rolls := creature_stars
 
-	# Check player affixes for loot bonuses
+	# Check player affixes for loot bonuses — if ANY player has lucky, apply bonus
 	var affix_lucky := 0.0
-	var p_nodes := tree.get_nodes_in_group(&"player")
-	if not p_nodes.is_empty():
-		var p = p_nodes[0]
-		if p.has_method("_has_affix"):
-			if p._has_affix(&"lucky"):
-				affix_lucky = 0.05
+	for p in tree.get_nodes_in_group(&"player"):
+		if p.has_method("_has_affix") and p._has_affix(&"lucky"):
+			affix_lucky = 0.05
+			break
 
 	for entry in loot_table:
 		var id: StringName = entry.get("id", &"wood") as StringName
