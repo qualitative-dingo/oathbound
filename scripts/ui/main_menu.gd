@@ -355,10 +355,13 @@ func _on_join_failed() -> void:
 
 
 func _on_join_world_info() -> void:
+	print("[MENU-CLIENT] Received world info, loading world...")
 	_connection_status.text = "Loading world..."
 	SaveManager.start_game(_selected_character, {"id": "lan_client", "name": NetworkManager.world_name, "seed": NetworkManager.world_seed})
 	var world_data := {"seed": NetworkManager.world_seed, "name": NetworkManager.world_name}
 	_launch_world(world_data)
+	print("[MENU-CLIENT] World loaded, notifying server we are ready")
+	NetworkManager.call_deferred("notify_server_ready")
 
 
 func _launch_world(world_data: Dictionary) -> void:
@@ -373,6 +376,14 @@ func _launch_world(world_data: Dictionary) -> void:
 	var wg := world_instance.get_node_or_null("WorldGenerator")
 	if wg:
 		wg.set("world_seed", str(world_data.get("seed", "oathbound")))
+
+	# In multiplayer, remove the default single-player Player node.
+	# Players are created by NetworkManager via RPC-based spawning.
+	if NetworkManager.is_connected_to_game():
+		var default_player := world_instance.get_node_or_null("Players/Player")
+		if default_player:
+			default_player.queue_free()
+			print("[MENU] Removed default Player node for multiplayer")
 
 	get_tree().root.add_child(world_instance)
 	get_tree().current_scene = world_instance

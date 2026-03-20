@@ -153,6 +153,11 @@ func _ready() -> void:
 	]
 	AudioManager.play_music_playlist(theme_songs, 4.0)
 
+	if multiplayer.has_multiplayer_peer():
+		var csm := CreatureSyncManager.new()
+		csm.name = "CreatureSyncManager"
+		get_parent().add_child(csm, true)
+
 
 func _physics_process(_delta: float) -> void:
 	_players.clear()
@@ -669,8 +674,8 @@ func _create_global_water() -> void:
 		_global_water_plane.set_surface_override_material(0, mat)
 
 	_global_water_plane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_global_water_plane.global_position.y = WATER_LEVEL - 0.15
 	add_child(_global_water_plane)
+	_global_water_plane.global_position.y = WATER_LEVEL - 0.15
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -820,11 +825,3 @@ func _check_biome_change(player_zone: Vector2i) -> void:
 func smoothstep(edge0: float, edge1: float, x: float) -> float:
 	var t := clampf((x - edge0) / (edge1 - edge0), 0.0, 1.0)
 	return t * t * (3.0 - 2.0 * t)
-
-
-func _get_world_state_sync() -> WorldStateSync:
-	var nodes := get_tree().get_nodes_in_group(&"world_state_sync")
-	for n in nodes:
-		if n is WorldStateSync:
-			return n as WorldStateSync
-	return null

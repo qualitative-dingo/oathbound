@@ -250,7 +250,7 @@ func spawn_loot_synced(world_pos: Vector3, item_id: StringName, amount: int, sta
 	_spawn_and_replicate_loot(world_pos, item_id, amount, star_level)
 
 
-## Host processes their own pickup: grant to self and remove for everyone.
+## Host processes their own pickup: grant to self directly and remove for everyone.
 func process_host_pickup(drop: LootDrop) -> void:
 	if not NetworkManager.is_server():
 		return
@@ -258,7 +258,8 @@ func process_host_pickup(drop: LootDrop) -> void:
 	if loot_id < 0 or not _loot_registry.has(loot_id):
 		return
 	_loot_registry.erase(loot_id)
-	_grant_pickup.rpc_id(NetworkManager.get_peer_id(), loot_id, str(drop.item_id), drop.amount, drop.star_level, drop.global_position.x, drop.global_position.y, drop.global_position.z)
+	_grant_pickup(loot_id, str(drop.item_id), drop.amount, drop.star_level, drop.global_position.x, drop.global_position.y, drop.global_position.z)
+	_remove_loot(loot_id)
 	_remove_loot.rpc(loot_id)
 
 
@@ -273,6 +274,7 @@ func request_pickup(loot_id: int, peer_id: int) -> void:
 	_loot_registry.erase(loot_id)
 	var pos := drop.global_position
 	_grant_pickup.rpc_id(peer_id, loot_id, str(drop.item_id), drop.amount, drop.star_level, pos.x, pos.y, pos.z)
+	_remove_loot(loot_id)
 	_remove_loot.rpc(loot_id)
 
 
@@ -395,8 +397,170 @@ func _get_player_with_rebuild() -> Node:
 	var players := current.get_node_or_null("Players")
 	if not players:
 		return null
-	# Prefer host/authority player
 	for child in players.get_children():
 		if child.has_method(&"rebuild_structure"):
 			return child
 	return null
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Creature Sync (host → clients)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+const _CREATURE_POS_INTERVAL := 0.1
+const _CREATURE_STATE_INTERVAL := 0.2
+
+var _csync_pos_timer: float = 0.0
+var _csync_state_timer: float = 0.0
+var _csync_last_states: Dictionary = {}
+var _csync_diag: int = 0
+var _csync_recv_diag: int = 0
+
+
+var _csync_started := false
+
+func _physics_process(delta: float) -> void:
+	if not multiplayer.has_multiplayer_peer():
+		return
+	if not multiplayer.is_server():
+		return
+	if not _csync_started:
+		_csync_started = true
+		var wg := _find_world_generator()
+		print("[WSS] Creature sync started | wg=%s zones=%d path=%s" % [
+			str(wg != null),
+			wg._loaded_zones.size() if wg else 0,
+			str(get_path())])
+	_csync_pos_timer += delta
+	_csync_state_timer += delta
+	if _csync_pos_timer >= _CREATURE_POS_INTERVAL:
+		_csync_pos_timer = 0.0
+		_csync_diag += 1
+		_csync_broadcast_positions()
+	if _csync_state_timer >= _CREATURE_STATE_INTERVAL:
+		_csync_state_timer = 0.0
+		_csync_broadcast_state_changes()
+
+
+func _csync_broadcast_positions() -> void:
+	var wg := _find_world_generator()
+	if not wg:
+		return
+	var loaded: Dictionary = wg._loaded_zones
+	for coord: Vector2i in loaded:
+		var zone_root: Node = loaded[coord]
+		if not is_instance_valid(zone_root):
+			continue
+		var positions := PackedFloat32Array()
+		var rotations := PackedFloat32Array()
+		var velocities := PackedFloat32Array()
+		var count := 0
+		for child in zone_root.get_children():
+			if child is CreatureAI:
+				var creature: CreatureAI = child as CreatureAI
+				positions.append(creature.global_position.x)
+				positions.append(creature.global_position.y)
+				positions.append(creature.global_position.z)
+				rotations.append(creature.rotation.y)
+				velocities.append(creature.velocity.x)
+				velocities.append(creature.velocity.y)
+				velocities.append(creature.velocity.z)
+				count += 1
+		if count > 0:
+			if _csync_diag <= 3 or _csync_diag % 100 == 0:
+				print("[CSYNC-HOST] zone (%d,%d): %d creatures" % [coord.x, coord.y, count])
+			_csync_recv_pos.rpc(coord.x, coord.y, positions, rotations, velocities)
+
+
+func _csync_broadcast_state_changes() -> void:
+	var wg := _find_world_generator()
+	if not wg:
+		return
+	var loaded: Dictionary = wg._loaded_zones
+	for coord: Vector2i in loaded:
+		var zone_root: Node = loaded[coord]
+		if not is_instance_valid(zone_root):
+			continue
+		var indices := PackedInt32Array()
+		var states := PackedInt32Array()
+		var healths := PackedFloat32Array()
+		var idx := 0
+		for child in zone_root.get_children():
+			if child is CreatureAI:
+				var creature: CreatureAI = child as CreatureAI
+				var key := "%d_%d_%d" % [coord.x, coord.y, idx]
+				var cur_state := creature._state as int
+				var cur_hp: float = creature.current_health
+				var prev: Dictionary = _csync_last_states.get(key, {})
+				if prev.is_empty() or prev.get("state", -1) != cur_state or absf(prev.get("health", -1.0) - cur_hp) > 0.5:
+					indices.append(idx)
+					states.append(cur_state)
+					healths.append(cur_hp)
+					_csync_last_states[key] = {"state": cur_state, "health": cur_hp}
+				idx += 1
+		if not indices.is_empty():
+			_csync_recv_states.rpc(coord.x, coord.y, indices, states, healths)
+
+
+@rpc("authority", "unreliable")
+func _csync_recv_pos(zone_x: int, zone_z: int, positions: PackedFloat32Array, rotations: PackedFloat32Array, velocities: PackedFloat32Array) -> void:
+	if multiplayer.is_server():
+		return
+	_csync_recv_diag += 1
+	var wg := _find_world_generator()
+	if not wg:
+		if _csync_recv_diag <= 5:
+			print("[CSYNC-CLIENT] WorldGenerator not found!")
+		return
+	var coord := Vector2i(zone_x, zone_z)
+	var zone_root: Node = wg._loaded_zones.get(coord, null)
+	if not zone_root:
+		if _csync_recv_diag <= 5 or _csync_recv_diag % 300 == 0:
+			print("[CSYNC-CLIENT] Zone (%d,%d) NOT FOUND (recv #%d)" % [zone_x, zone_z, _csync_recv_diag])
+		return
+	var idx := 0
+	var pos_i := 0
+	for child in zone_root.get_children():
+		if child is CreatureAI:
+			var creature: CreatureAI = child as CreatureAI
+			if pos_i + 2 < positions.size():
+				var target_pos := Vector3(positions[pos_i], positions[pos_i + 1], positions[pos_i + 2])
+				if not creature._sync_initialized:
+					creature.global_position = target_pos
+					creature._sync_initialized = true
+					print("[CSYNC-CLIENT] Creature '%s' zone (%d,%d) init at %s" % [creature.name, zone_x, zone_z, str(target_pos)])
+				creature._sync_target_position = target_pos
+				creature.velocity = Vector3(velocities[pos_i], velocities[pos_i + 1], velocities[pos_i + 2])
+				creature.rotation.y = rotations[idx]
+			pos_i += 3
+			idx += 1
+	if _csync_recv_diag <= 3 or _csync_recv_diag % 300 == 0:
+		print("[CSYNC-CLIENT] Recv #%d zone (%d,%d): %d creatures" % [_csync_recv_diag, zone_x, zone_z, idx])
+
+
+@rpc("authority", "reliable")
+func _csync_recv_states(zone_x: int, zone_z: int, indices: PackedInt32Array, states: PackedInt32Array, healths: PackedFloat32Array) -> void:
+	if multiplayer.is_server():
+		return
+	var wg := _find_world_generator()
+	if not wg:
+		return
+	var coord := Vector2i(zone_x, zone_z)
+	var zone_root: Node = wg._loaded_zones.get(coord, null)
+	if not zone_root:
+		return
+	var creatures: Array[CreatureAI] = []
+	for child in zone_root.get_children():
+		if child is CreatureAI:
+			creatures.append(child)
+	for i in indices.size():
+		var ci: int = indices[i]
+		if ci < creatures.size():
+			var creature := creatures[ci]
+			var new_state: int = states[i]
+			var new_hp: float = healths[i]
+			creature.current_health = new_hp
+			if creature._state != new_state:
+				creature._state = new_state as CreatureAI.State
+				if new_state == CreatureAI.State.DEAD:
+					creature._death_visual_started = false

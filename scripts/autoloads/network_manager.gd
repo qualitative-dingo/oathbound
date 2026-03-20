@@ -35,13 +35,10 @@ func host_game(port: int = DEFAULT_PORT) -> Error:
 
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	player_connected.connect(spawn_player)
-	# 5c: despawn_player called directly in _on_peer_disconnected, not via signal
 
 	print("[NET] Server started on port %d (peer_id=%d)" % [port, multiplayer.get_unique_id()])
 	server_started.emit()
-	# Don't spawn host player here -- the world scene isn't loaded yet.
-	# The host player will be spawned by _deferred_spawn_host() after the scene loads.
+	# Host player spawned after the world scene loads
 	call_deferred("_deferred_spawn_host")
 	return OK
 
@@ -111,6 +108,10 @@ func _send_world_info(seed_str: String, w_name: String) -> void:
 func _on_peer_connected(id: int) -> void:
 	print("[NET] Peer connected: %d" % id)
 	player_connected.emit(id)
+	if is_server() and id != multiplayer.get_unique_id():
+		_send_world_info.rpc_id(id, world_seed, world_name)
+		# Spawn client player after a delay to give them time to load the world
+		_spawn_client_deferred(id)
 
 
 func _on_peer_disconnected(id: int) -> void:
@@ -126,7 +127,7 @@ func _on_peer_disconnected(id: int) -> void:
 func _on_connected_to_server() -> void:
 	print("[NET] Connected to server (my peer_id=%d)" % multiplayer.get_unique_id())
 	connection_succeeded.emit()
-	_request_world_info.rpc_id(1)
+	# World info is now auto-sent by the host in _on_peer_connected
 
 
 func _on_connection_failed() -> void:
@@ -135,8 +136,52 @@ func _on_connection_failed() -> void:
 	disconnect_game()
 
 
+var _spawned_peers: Dictionary = {}
+
+
+func _spawn_client_deferred(peer_id: int) -> void:
+	# Give client 3 seconds to load the world, then spawn their player
+	print("[NET-HOST] Will spawn client %d in 3 seconds..." % peer_id)
+	await get_tree().create_timer(3.0).timeout
+	if _spawned_peers.has(peer_id):
+		return
+	if not multiplayer.get_peers().has(peer_id):
+		print("[NET-HOST] Client %d disconnected before spawn" % peer_id)
+		return
+	print("[NET-HOST] Timer elapsed, spawning client %d" % peer_id)
+	spawn_player(peer_id)
+
+
+@rpc("any_peer", "reliable")
+func client_world_ready() -> void:
+	if not multiplayer.is_server():
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if _spawned_peers.has(sender):
+		return
+	print("[NET-HOST] Client %d reports world ready, spawning early" % sender)
+	spawn_player(sender)
+	# Also tell client to create host player representation
+	_rpc_create_player.rpc_id(sender, multiplayer.get_unique_id())
+
+
+func notify_server_ready() -> void:
+	print("[NET-CLIENT] notify_server_ready called, peer=%d" % multiplayer.get_unique_id())
+	if is_server():
+		return
+	# Wait until the Players container exists
+	var attempts := 0
+	while not _get_players_container() and attempts < 120:
+		await get_tree().process_frame
+		attempts += 1
+	if _get_players_container():
+		print("[NET-CLIENT] World ready, sending client_world_ready RPC")
+		client_world_ready.rpc_id(1)
+	else:
+		push_error("[NET-CLIENT] Players container not found after 120 frames")
+
+
 func _deferred_spawn_host() -> void:
-	# Wait for the world scene to be fully loaded with a Players container
 	var attempts := 0
 	while not _get_players_container() and attempts < 60:
 		await get_tree().process_frame
@@ -151,16 +196,42 @@ func spawn_player(peer_id: int) -> void:
 	if not players_node:
 		push_error("[NET] No Players container found; cannot spawn player %d" % peer_id)
 		return
-	# Remove default single-player Player when spawning host
+	print("[NET] spawn_player(%d): Players container at %s" % [peer_id, str(players_node.get_path())])
 	if peer_id == multiplayer.get_unique_id():
 		var default_player := players_node.get_node_or_null("Player")
 		if default_player:
 			default_player.queue_free()
+	# Create player on host
+	_create_player_node(peer_id, players_node)
+	_spawned_peers[peer_id] = true
+	# Tell the client to create their own player locally
+	if peer_id != multiplayer.get_unique_id():
+		_rpc_create_player.rpc_id(peer_id, peer_id)
+	print("[NET] Spawned player %d at height 50" % peer_id)
+
+
+func _create_player_node(peer_id: int, players_node: Node) -> void:
 	var player := PLAYER_SCENE.instantiate()
 	player.name = str(peer_id)
 	player.set_multiplayer_authority(peer_id)
-	players_node.add_child(player)
-	print("[NET] Spawned player %d" % peer_id)
+	player.position = Vector3(0, 50, 0)
+	players_node.add_child(player, true)
+
+
+@rpc("authority", "reliable")
+func _rpc_create_player(peer_id: int) -> void:
+	var players_node := _get_players_container()
+	if not players_node:
+		push_error("[NET-CLIENT] No Players container for player creation!")
+		return
+	var default_player := players_node.get_node_or_null("Player")
+	if default_player:
+		default_player.queue_free()
+	if players_node.has_node(str(peer_id)):
+		print("[NET-CLIENT] Player %d already exists, skipping" % peer_id)
+		return
+	print("[NET-CLIENT] Creating local player %d" % peer_id)
+	_create_player_node(peer_id, players_node)
 
 
 func despawn_player(peer_id: int) -> void:

@@ -218,14 +218,13 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	chest_pos.y = chamber_end.y
 	_add_cave_chest(cave_root, chest_pos, forward, rng)
 
-	# ── Enemies ──
 	var bear_pos := seg1_end + forward * 2.0
 	bear_pos.y = seg1_end.y + 0.2
-	_add_cave_enemy(cave_root, bear_pos, "grizzly")
+	_add_cave_enemy(cave_root, bear_pos, "grizzly", 0)
 
 	var lion_pos := cursor + forward * chamber_length * 0.4
 	lion_pos.y = lerpf(cursor.y, chamber_end.y, 0.4) + 0.2
-	_add_cave_enemy(cave_root, lion_pos, "lion")
+	_add_cave_enemy(cave_root, lion_pos, "lion", 1)
 
 	# ── Ambient dim light so it's not pitch black but very dark ──
 	var dim_light := OmniLight3D.new()
@@ -467,7 +466,7 @@ static func _add_cave_chest(parent: Node3D, pos: Vector3, fwd: Vector3, rng: Ran
 	parent.add_child(chest)
 
 
-static func _add_cave_enemy(parent: Node3D, pos: Vector3, creature_type: String) -> void:
+static func _add_cave_enemy(parent: Node3D, pos: Vector3, creature_type: String, idx: int = 0) -> void:
 	var stats := ZonePopulator._creature_stats(StringName(creature_type))
 	if stats.is_empty():
 		return
@@ -511,6 +510,7 @@ static func _add_cave_enemy(parent: Node3D, pos: Vector3, creature_type: String)
 	col_shape.position.y = col_y
 	enemy.add_child(col_shape)
 
+	enemy.name = "CaveCreature_%d" % idx
 	enemy.position = pos
 	parent.add_child(enemy)
 

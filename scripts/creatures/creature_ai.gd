@@ -73,6 +73,8 @@ var _perch_settled: bool = false
 var _dying_fall: bool = false
 var _death_visual_started: bool = false
 var idle_frames: Dictionary = {}
+var _sync_target_position: Vector3 = Vector3.ZERO
+var _sync_initialized: bool = false
 
 var _fish_target: Node3D = null
 var _carried_fish_sprite: Sprite3D = null
@@ -225,27 +227,8 @@ func _find_anim_player_recursive(node: Node) -> AnimationPlayer:
 
 
 func _setup_multiplayer_sync() -> void:
-	if not multiplayer.has_multiplayer_peer():
-		return
-	set_multiplayer_authority(1)
-	var sync := MultiplayerSynchronizer.new()
-	sync.name = "MultiplayerSynchronizer"
-	sync.root_path = NodePath("..")
-	var cfg := SceneReplicationConfig.new()
-	sync.replication_config = cfg
-	add_child(sync)
-	cfg.add_property(NodePath("global_position"))
-	cfg.property_set_replication_mode(NodePath("global_position"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
-	cfg.add_property(NodePath("velocity"))
-	cfg.property_set_replication_mode(NodePath("velocity"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
-	cfg.add_property(NodePath("rotation"))
-	cfg.property_set_replication_mode(NodePath("rotation"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
-	cfg.add_property(NodePath("_state"))
-	cfg.property_set_replication_mode(NodePath("_state"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
-	cfg.add_property(NodePath("current_health"))
-	cfg.property_set_replication_mode(NodePath("current_health"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
-	cfg.add_property(NodePath("_model_current_anim"))
-	cfg.property_set_replication_mode(NodePath("_model_current_anim"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	# Creature sync handled by CreatureSyncManager (batched per-zone RPCs).
+	pass
 
 
 func _ready() -> void:
@@ -272,6 +255,15 @@ func _ready() -> void:
 			if _model_anim_player:
 				var anim_list := _model_anim_player.get_animation_list()
 				_build_anim_map(anim_list)
+				var death_anim_name: String = _anim_map.get("death", "") as String
+				for anim_name in anim_list:
+					var anim := _model_anim_player.get_animation(anim_name)
+					if anim:
+						if anim_name == death_anim_name:
+							anim.loop_mode = Animation.LOOP_NONE
+						else:
+							anim.loop_mode = Animation.LOOP_LINEAR
+							_strip_root_motion(anim)
 		return
 
 	_setup_multiplayer_sync()
@@ -323,8 +315,9 @@ func _physics_process(delta: float) -> void:
 				_finish_death_on_ground()
 		return
 
-	# Non-server: skip AI, only run visual updates (position/state synced from host)
 	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		if _sync_initialized:
+			global_position = global_position.lerp(_sync_target_position, delta * 12.0)
 		_update_hit_flash(delta)
 		_update_sprite_direction()
 		_tick_animation(delta)
@@ -793,14 +786,24 @@ func drop_carried_fish() -> void:
 	_carried_fish_sprite.queue_free()
 	_carried_fish_sprite = null
 
-	var _star_rng := RandomNumberGenerator.new()
-	_star_rng.randomize()
-	var drop := _LootDrop.new()
-	drop.item_id = &"raw_fish"
-	drop.star_level = ItemDatabase.roll_star_level(_star_rng)
-	drop.amount = 1
-	get_tree().current_scene.add_child(drop)
-	drop.global_position = drop_pos
+	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		return
+	var fish_rng := RandomNumberGenerator.new()
+	fish_rng.randomize()
+	var stars := ItemDatabase.roll_star_level(fish_rng)
+	if NetworkManager.is_connected_to_game() and NetworkManager.is_server():
+		for n in get_tree().get_nodes_in_group(&"world_state_sync"):
+			var wss := n as WorldStateSync
+			if wss:
+				wss.spawn_loot_synced(drop_pos, &"raw_fish", 1, stars)
+				break
+	else:
+		var drop := _LootDrop.new()
+		drop.item_id = &"raw_fish"
+		drop.star_level = stars
+		drop.amount = 1
+		get_tree().current_scene.add_child(drop)
+		drop.global_position = drop_pos
 
 	if _state == State.CARRY_FISH or _state == State.EAT_FISH:
 		_perch_target = null
@@ -829,8 +832,12 @@ func _do_attack() -> void:
 		var eff_dmg := attack_damage
 		if _disorient_timer > 0.0:
 			eff_dmg *= 0.8
-		_target.take_damage(eff_dmg, self)
-		_DamageNumber.spawn(get_tree(), _target.global_position, eff_dmg, false, "enemy")
+		var target_peer := _target.get_multiplayer_authority()
+		if not multiplayer.has_multiplayer_peer() or target_peer == multiplayer.get_unique_id():
+			_target.take_damage(eff_dmg, self)
+			_DamageNumber.spawn(get_tree(), _target.global_position, eff_dmg, false, "enemy")
+		else:
+			deal_damage_to_player.rpc_id(target_peer, target_peer, eff_dmg)
 
 
 func _get_nearest_player() -> Node3D:
@@ -1079,6 +1086,7 @@ func _tick_3d_animation() -> void:
 func request_damage(amount: float, source_peer: int) -> void:
 	if not multiplayer.is_server():
 		return
+	print("[CREATURE] request_damage received: %.1f from peer %d on '%s'" % [amount, source_peer, name])
 	take_damage(amount, _get_player_by_peer(source_peer))
 
 

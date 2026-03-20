@@ -19,13 +19,13 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not _game_active:
 		return
-	# Only host auto-saves in multiplayer (5a)
-	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
-		return
 	_autosave_timer += delta
 	if _autosave_timer >= AUTOSAVE_INTERVAL:
 		_autosave_timer = 0.0
-		save_game()
+		if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+			_save_client_inventory()
+		else:
+			save_game()
 
 
 func _ensure_save_dir() -> void:
@@ -141,10 +141,27 @@ func start_game(character: Dictionary, world: Dictionary) -> void:
 	_update_character_last_played()
 
 
+func _save_client_inventory() -> void:
+	if current_character.is_empty() or current_world.is_empty():
+		return
+	var char_id: String = str(current_character.get("id", ""))
+	var world_id: String = str(current_world.get("id", ""))
+	var player := _get_player()
+	var save_data := {
+		"character": current_character,
+		"world": current_world,
+		"player": _serialize_player(player),
+		"inventory": _serialize_inventory(),
+		"timestamp": Time.get_datetime_string_from_system(),
+	}
+	var file := FileAccess.open(SAVE_DIR + char_id + "_" + world_id + ".json", FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(save_data, "\t"))
+
+
 func save_game() -> void:
 	if current_character.is_empty() or current_world.is_empty():
 		return
-	# Only host saves in multiplayer (5a)
 	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
 		return
 
@@ -205,7 +222,10 @@ func apply_save_data(save_data: Dictionary) -> void:
 
 func stop_game() -> void:
 	if _game_active:
-		save_game()
+		if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+			_save_client_inventory()
+		else:
+			save_game()
 		_update_character_last_played()
 	_game_active = false
 	current_character = {}
@@ -225,16 +245,70 @@ func _update_character_last_played() -> void:
 
 
 func _deferred_load_save() -> void:
-	# Wait for scene tree to fully settle before applying save
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var save_data := load_game()
+
+	# LAN clients use world ID "lan_client" which has no save file on first join.
+	# Fall back to the character's most recent save from any world so they keep
+	# their inventory / stats across sessions.
+	if save_data.is_empty() and multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+		var fallback := _load_latest_character_save()
+		if not fallback.is_empty():
+			save_data = {
+				"inventory": fallback.get("inventory", {}),
+				"player": _strip_position_from_player(fallback.get("player", {})),
+			}
+
 	if not save_data.is_empty():
 		apply_save_data(save_data)
 	else:
-		# New game: player's per-inventory is now set; give starting gear
 		Inventory.give_starting_gear()
 		GameEvents.inventory_changed.emit()
+
+	# Always start a session with full health (like Valheim)
+	var player := _get_player()
+	if player:
+		var max_hp: float = float(player.get("max_health"))
+		if max_hp > 0.0:
+			player.set("current_health", max_hp)
+			player.set("current_stamina", float(player.get("max_stamina")))
+
+
+func _load_latest_character_save() -> Dictionary:
+	var char_id: String = str(current_character.get("id", ""))
+	if char_id.is_empty():
+		return {}
+	var dir := DirAccess.open(SAVE_DIR)
+	if not dir:
+		return {}
+	var latest_data: Dictionary = {}
+	var latest_time: String = ""
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		if fname.begins_with(char_id + "_") and fname.ends_with(".json"):
+			var fpath := SAVE_DIR + fname
+			var file := FileAccess.open(fpath, FileAccess.READ)
+			if file:
+				var json := JSON.new()
+				if json.parse(file.get_as_text()) == OK:
+					var data = json.data
+					if data is Dictionary:
+						var ts: String = str(data.get("timestamp", ""))
+						if ts > latest_time:
+							latest_time = ts
+							latest_data = data
+		fname = dir.get_next()
+	dir.list_dir_end()
+	return latest_data
+
+
+func _strip_position_from_player(player_data: Dictionary) -> Dictionary:
+	var result := player_data.duplicate()
+	result.erase("position")
+	result.erase("rotation_y")
+	return result
 
 
 func _get_player() -> Node:

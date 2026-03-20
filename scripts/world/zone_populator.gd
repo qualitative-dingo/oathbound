@@ -665,6 +665,7 @@ static func populate_zone(
 		stone.position = Vector3(lx, _snap_height_to_mesh(wx, wz, height_func) + 0.1, lz)
 
 	var actual_enemy_n := maxi(1, int(enemy_n * 0.3))
+	var creature_idx := 0
 	for i in actual_enemy_n:
 		var lx := rng.randf_range(8.0, ZONE_SIZE - 8.0)
 		var lz := rng.randf_range(8.0, ZONE_SIZE - 8.0)
@@ -676,6 +677,8 @@ static func populate_zone(
 		var enemy := _create_enemy(biome, rng)
 		if not enemy:
 			continue
+		enemy.name = "Creature_%d" % creature_idx
+		creature_idx += 1
 		zone_root.add_child(enemy)
 		var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 		var spawn_y := ground_y + 0.1

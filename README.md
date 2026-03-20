@@ -1,12 +1,13 @@
 # Oathbound
 
-A 3D survival-crafting RPG built in **Godot 4** with GDScript. Explore a procedurally generated open world, harvest resources, craft gear, fight creatures, and build a base.
+A 3D survival-crafting RPG built in **Godot 4** with GDScript. Explore a procedurally generated open world, harvest resources, craft gear, fight creatures, and build a base -- solo or with friends via **LAN co-op multiplayer**.
 
 ## Tech Stack
 
 - **Engine:** Godot 4 (GDScript)
 - **Rendering:** Forward+ with custom shaders (water, foliage wind, grass billboards, leaf billboards)
 - **World Gen:** Procedural zones with biomes, rivers, lakes, and caves
+- **Networking:** ENetMultiplayerPeer (LAN), RPCs, MultiplayerSynchronizer, host-authoritative model
 - **Assets:** 32x32 pixel art icons, GLB/GLTF 3D models
 
 ## Project Structure
@@ -14,10 +15,11 @@ A 3D survival-crafting RPG built in **Godot 4** with GDScript. Explore a procedu
 ```
 Oathbound/
 ├── scripts/
-│   ├── autoloads/          # Singletons (ItemDatabase, Inventory, SaveManager, GameEvents, etc.)
-│   ├── player/             # Player controller, skills, food/comfort systems
-│   ├── creatures/          # Creature AI, fish behavior
-│   ├── items/              # LootDrop
+│   ├── autoloads/          # Singletons (ItemDatabase, Inventory, SaveManager, NetworkManager, etc.)
+│   ├── player/             # Player controller, movement, combat, building, HUD sub-modules
+│   ├── creatures/          # Creature AI (host-authoritative), fish behavior
+│   ├── items/              # LootDrop (host-authoritative pickup)
+│   ├── network/            # WorldStateSync, CreatureSyncManager, ChatManager
 │   ├── world/              # WorldGenerator, ZonePopulator, CaveGenerator, PortalSystem
 │   ├── combat/             # CombatController, DamageSystem
 │   ├── building/           # Player-built structures
@@ -30,6 +32,58 @@ Oathbound/
 ├── scenes/                 # Game scenes, UI
 └── shaders/                # Terrain, water, foliage, grass
 ```
+
+## Multiplayer Architecture
+
+Oathbound supports LAN co-op (Valheim-style) where one player hosts and others join over the local network.
+
+### Authority Model
+
+- **Host** manages world state, creature AI, loot authority, and game logic
+- **Clients** manage their own input, camera, and UI
+- **Trusted client model:** clients have authority over their own player (movement, actions) since LAN means playing with friends
+
+### Connection Flow
+
+1. Host starts `ENetMultiplayerPeer` on port 9050 via `NetworkManager` autoload
+2. Client connects to host IP, receives world seed + name via RPC
+3. Client loads the same world scene (deterministic terrain from seed)
+4. Host creates player nodes for both sides via `_create_player_node()`
+5. Host sends `_rpc_create_player` to client so each peer has both players in-tree
+
+### Player Sync
+
+- Each player node is named by peer ID (e.g. `Players/1`, `Players/2057384612`)
+- `MultiplayerSynchronizer` replicates position, rotation, animation, equipment, and display name
+- Supplemental RPC broadcast (`_broadcast_state`) runs at ~20Hz as a reliable fallback
+- Remote players interpolate toward synced positions in `_physics_process`
+- Remote players load the same 3D model, play synced animations, and show floating nameplates
+
+### Creature Sync
+
+- Creatures are generated deterministically from the world seed (same creatures on all peers)
+- Creatures have stable names (`Creature_0`, `Creature_1`, etc.) for path matching across peers
+- `CreatureSyncManager` on the host collects all creature states per zone and broadcasts:
+  - **Position/rotation/velocity** via unreliable RPC at 10Hz (batched per zone)
+  - **State changes** (idle, chase, attack, dead) and health via reliable RPC on change
+- Clients interpolate creature positions and play animations from synced velocity/state
+- Player-to-creature damage: client sends `request_damage` RPC to host; host validates and applies
+- Creature-to-player damage: host sends `deal_damage_to_player` RPC to the target client
+
+### World State Sync
+
+- Terrain and zone populations are **deterministic** -- same seed = same world
+- Only **mutations** are synced via `WorldStateSync`:
+  - Destroyed harvestables (trees, rocks) -- indexed by zone + position in group
+  - Placed buildings -- position, rotation, contents
+  - Loot drops -- host assigns `loot_id`, replicates via RPC, authoritative pickup
+- Late-joining clients request the full mutation set to catch up
+
+### Inventory
+
+- Each player has a separate `PlayerInventory` instance (not a global singleton)
+- The `Inventory` autoload exposes the **local** player's inventory for UI
+- Chest contents are synced via RPCs in `NetworkManager` (open, deposit, withdraw)
 
 ## Core Systems
 
@@ -55,6 +109,8 @@ Oathbound uses **context-based weapon switching** — the equipped weapon used d
 | Block | Right-click (with shield) | **Shield** slot |
 
 **Damage variance:** All weapon damage has a ±30% random range per hit.
+
+**Multiplayer combat:** Player damage to creatures is sent as an RPC to the host (`request_damage`), which validates and applies it. Creature damage to players is sent from the host to the target client via `deal_damage_to_player` RPC.
 
 ### Equipment Slots
 

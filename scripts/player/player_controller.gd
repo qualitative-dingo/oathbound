@@ -210,6 +210,8 @@ var _player_sprite: Node3D
 var _player_model_3d: PlayerModel3D
 var _gltf_anim_player: AnimationPlayer
 var _gltf_current_anim := ""
+var _gltf_playing_clip := ""
+var _gltf_playing_speed: float = 1.0
 var _gltf_all_meshes: Array[MeshInstance3D] = []
 var _is_lowpoly_viking := false
 var _player_yaw_offset := 0.0
@@ -279,6 +281,8 @@ var _bar_shader: Shader
 var _remote_nameplate_label: Label3D = null
 var _synced_position: Vector3 = Vector3.ZERO
 var character_display_name: String = ""
+var _rpc_sync_tick: int = 0
+var _last_broadcast_clip: String = ""
 
 # HUD references
 var _hud_root: Control
@@ -365,19 +369,32 @@ func _set_player_sprite_tex(_tex: Texture2D) -> void:
 
 
 func _ready() -> void:
+	# In multiplayer, the node name is the peer ID (set by NetworkManager).
+	# Both host and client create player nodes via _create_player_node / _rpc_create_player.
+	# Ensure authority matches the peer ID encoded in the node name.
+	if multiplayer.has_multiplayer_peer() and name.is_valid_int():
+		var peer_id := name.to_int()
+		set_multiplayer_authority(peer_id)
+		print("[PLAYER] _ready: name=%s peer_id=%d my_id=%d is_authority=%s" % [name, peer_id, multiplayer.get_unique_id(), str(is_multiplayer_authority())])
+
 	if not is_multiplayer_authority():
-		# Remote player: disable input, camera, UI; keep model visible
 		set_process_unhandled_input(false)
 		set_process_input(false)
 		if _camera_pivot:
 			_camera_pivot.queue_free()
 			_camera_pivot = null
-		_synced_position = global_position  # Initialize before first sync
+		_synced_position = global_position
+		add_to_group(&"player")
 		_setup_multiplayer_sync()
-		_setup_player_sprite()  # Model only, no HUD
+		_setup_player_sprite()
 		_setup_remote_nameplate()
-		return  # Skip HUD, floating bars, etc.
+		var anim_list: PackedStringArray = _gltf_anim_player.get_animation_list() if _gltf_anim_player else PackedStringArray()
+		print("[PLAYER] Remote peer '%s' setup complete | model=%s sprite=%s anim_player=%s anims=%s pos=%s" % [
+			name, str(_model != null), str(_player_sprite != null),
+			str(_gltf_anim_player != null), str(anim_list), str(global_position)])
+		return
 
+	print("[PLAYER] LOCAL player setup starting for peer %s (my_id=%d) pos=%s" % [name, multiplayer.get_unique_id(), str(global_position)])
 	current_health = max_health
 	current_stamina = max_stamina
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -428,9 +445,9 @@ func _ready() -> void:
 	add_child(_anim)
 	_anim.pc = self
 
-	# Per-player inventory (Phase 4a): local authority owns its own inventory
-	var my_inventory := PlayerInventory.new()
-	Inventory.set_local(my_inventory)
+	# Per-player inventory: reuse existing local inventory (already populated by
+	# SaveManager._deferred_load_save or give_starting_gear before the player node exists)
+	var my_inventory := Inventory.get_local()
 	if multiplayer.multiplayer_peer:
 		Inventory.register_inventory(multiplayer.get_unique_id(), my_inventory)
 
@@ -438,14 +455,28 @@ func _ready() -> void:
 	_setup_player_sprite()
 	if NetworkManager.is_connected_to_game():
 		character_display_name = str(SaveManager.current_character.get("name", "Unknown"))
+		call_deferred("_broadcast_display_name")
 	_setup_floating_bars()
 	_build_hud()
 	if _spring_arm:
 		_spring_arm.spring_length = min_zoom + 0.85 * (max_zoom - min_zoom)
+	# Delay camera activation by one frame to let the scene tree settle
+	call_deferred("_activate_camera")
 	_setup_movement_audio()
 	GameEvents.inventory_changed.connect(_on_inventory_changed)
 	if NetworkManager.is_connected_to_game():
 		NetworkManager.chest_contents_received.connect(_on_chest_contents_received)
+
+
+func _activate_camera() -> void:
+	if not is_multiplayer_authority():
+		return
+	var cam := get_node_or_null("CameraPivot/SpringArm3D/Camera3D") as Camera3D
+	if cam:
+		cam.make_current()
+		print("[PLAYER] Camera NOW ACTIVE for peer %s at pos %s" % [name, str(global_position)])
+	else:
+		push_error("[PLAYER] CAMERA NOT FOUND for peer %s! CameraPivot=%s SpringArm=%s" % [name, str(_camera_pivot), str(_spring_arm)])
 
 
 func _on_chest_contents_received(chest_path: String, contents: Array) -> void:
@@ -498,28 +529,37 @@ func _report_player_data_to_host() -> void:
 
 
 func _setup_multiplayer_sync() -> void:
-	var sync := MultiplayerSynchronizer.new()
-	sync.name = "MultiplayerSynchronizer"
-	sync.root_path = NodePath("..")
-	var cfg := SceneReplicationConfig.new()
-	sync.replication_config = cfg
-	add_child(sync)
-	# Unreliable: _synced_position for interpolation on remote (authority updates each frame)
-	cfg.add_property(NodePath("_synced_position"))
-	cfg.property_set_replication_mode(NodePath("_synced_position"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
-	cfg.add_property(NodePath("velocity"))
-	cfg.property_set_replication_mode(NodePath("velocity"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
-	cfg.add_property(NodePath("rotation"))
-	cfg.property_set_replication_mode(NodePath("rotation"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
-	# Reliable (REPLICATION_MODE_ON_CHANGE): animation, equipped_weapon
-	cfg.add_property(NodePath("synced_animation"))
-	cfg.property_set_replication_mode(NodePath("synced_animation"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
-	cfg.add_property(NodePath("equipped_weapon"))
-	cfg.property_set_replication_mode(NodePath("equipped_weapon"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
-	cfg.add_property(NodePath("synced_equipped"))
-	cfg.property_set_replication_mode(NodePath("synced_equipped"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
-	cfg.add_property(NodePath("character_display_name"))
-	cfg.property_set_replication_mode(NodePath("character_display_name"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+	if not multiplayer.has_multiplayer_peer():
+		return
+	var sync := get_node_or_null("MultiplayerSynchronizer") as MultiplayerSynchronizer
+	if not sync:
+		sync = MultiplayerSynchronizer.new()
+		sync.name = "MultiplayerSynchronizer"
+		sync.root_path = NodePath("..")
+		var cfg := SceneReplicationConfig.new()
+		sync.replication_config = cfg
+		cfg.add_property(NodePath(":_synced_position"))
+		cfg.property_set_replication_mode(NodePath(":_synced_position"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+		cfg.add_property(NodePath(":velocity"))
+		cfg.property_set_replication_mode(NodePath(":velocity"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+		cfg.add_property(NodePath(":rotation"))
+		cfg.property_set_replication_mode(NodePath(":rotation"), SceneReplicationConfig.REPLICATION_MODE_ALWAYS)
+		cfg.add_property(NodePath(":synced_animation"))
+		cfg.property_set_replication_mode(NodePath(":synced_animation"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+		cfg.add_property(NodePath(":equipped_weapon"))
+		cfg.property_set_replication_mode(NodePath(":equipped_weapon"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+		cfg.add_property(NodePath(":synced_equipped"))
+		cfg.property_set_replication_mode(NodePath(":synced_equipped"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+		cfg.add_property(NodePath(":character_display_name"))
+		cfg.property_set_replication_mode(NodePath(":character_display_name"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
+		sync.set_multiplayer_authority(get_multiplayer_authority())
+		add_child(sync)
+		print("[SYNC] Created MultiplayerSynchronizer for '%s' | player_auth=%d sync_auth=%d root_path='%s' resolved='%s'" % [
+			name, get_multiplayer_authority(), sync.get_multiplayer_authority(),
+			str(sync.root_path), str(sync.get_node(sync.root_path).get_path()) if sync.get_node_or_null(sync.root_path) else "UNRESOLVED"])
+	else:
+		print("[SYNC] Reusing existing MultiplayerSynchronizer for '%s' | player_auth=%d sync_auth=%d" % [
+			name, get_multiplayer_authority(), sync.get_multiplayer_authority()])
 	if not is_multiplayer_authority():
 		sync.synchronized.connect(_on_sync_received)
 
@@ -543,15 +583,76 @@ func _setup_remote_nameplate() -> void:
 	parent.add_child(_remote_nameplate_label)
 
 
+var _sync_diag_count: int = 0
+
 func _on_sync_received() -> void:
-	## Apply synced state on remote peers.
-	if _gltf_anim_player and synced_animation != "" and _gltf_anim_player.has_animation(synced_animation):
-		if _gltf_current_anim != synced_animation:
-			_gltf_current_anim = synced_animation
-			_gltf_anim_player.play(synced_animation)
+	_sync_diag_count += 1
+	if _sync_diag_count <= 3 or _sync_diag_count % 300 == 0:
+		print("[SYNC-RECV] peer '%s' sync #%d | pos=%s anim='%s' weapon='%s'" % [
+			name, _sync_diag_count, str(_synced_position), synced_animation, str(equipped_weapon)])
 	_update_equipped_weapon_model()
 	if _remote_nameplate_label and character_display_name != "":
 		_remote_nameplate_label.text = character_display_name
+
+
+@rpc("any_peer", "unreliable")
+func _broadcast_state(pos: Vector3, model_rot_y: float, vel: Vector3, anim_clip: String, anim_speed: float, weapon: StringName) -> void:
+	if is_multiplayer_authority():
+		return
+	_synced_position = pos
+	velocity = vel
+	_remote_model_target_yaw = model_rot_y
+	_remote_model_yaw_set = true
+	if anim_clip != "" and _gltf_anim_player:
+		var has_anim := _gltf_anim_player.has_animation(anim_clip)
+		if not has_anim:
+			if _gltf_playing_clip != anim_clip:
+				print("[ANIM-RECV] Animation '%s' NOT FOUND on remote player '%s'" % [anim_clip, name])
+		else:
+			var clip_changed := _gltf_playing_clip != anim_clip
+			var speed_changed := not is_equal_approx(_gltf_playing_speed, anim_speed)
+			# Re-trigger finished non-looping anims (attacks); skip for intentionally paused (idle)
+			var stopped := anim_speed > 0.01 and not _gltf_anim_player.is_playing()
+			if clip_changed or speed_changed or stopped:
+				if clip_changed:
+					print("[ANIM-RECV] Playing '%s' speed=%.1f on remote '%s'" % [anim_clip, anim_speed, name])
+				_gltf_playing_clip = anim_clip
+				_gltf_playing_speed = anim_speed
+				_gltf_current_anim = anim_clip
+				synced_animation = anim_clip
+				_gltf_anim_player.speed_scale = maxf(anim_speed, 0.001)
+				_gltf_anim_player.play(anim_clip)
+				if anim_speed <= 0.01:
+					_gltf_anim_player.seek(0.0, true)
+					_gltf_anim_player.pause()
+
+	if weapon != equipped_weapon:
+		equipped_weapon = weapon
+		_update_equipped_weapon_model()
+
+
+@rpc("any_peer", "reliable")
+func _receive_display_name(display_name: String) -> void:
+	if is_multiplayer_authority():
+		return
+	character_display_name = display_name
+	if _remote_nameplate_label:
+		_remote_nameplate_label.text = display_name
+
+
+func _broadcast_display_name() -> void:
+	if not is_multiplayer_authority() or not multiplayer.has_multiplayer_peer():
+		return
+	_receive_display_name.rpc(character_display_name)
+
+
+@rpc("any_peer", "reliable")
+func _broadcast_equipment(equipment: Dictionary) -> void:
+	if is_multiplayer_authority():
+		return
+	synced_equipped = equipment
+	_update_equipped_weapon_model()
+	call_deferred("_update_armor_visuals")
 
 
 func _on_inventory_changed() -> void:
@@ -575,8 +676,9 @@ func _on_inventory_changed() -> void:
 		if new_weapon != equipped_weapon:
 			equipped_weapon = new_weapon
 			_update_equipped_weapon_model()
-	# Phase 4c: sync full equipment state for remote players
 	synced_equipped = Inventory.get_all_equipped().duplicate()
+	if NetworkManager.is_connected_to_game() and is_multiplayer_authority():
+		_broadcast_equipment.rpc(synced_equipped)
 	_refresh_stats_panel()
 	_position_stats_panel.call_deferred()
 
@@ -804,10 +906,27 @@ func _unhandled_input(event: InputEvent) -> void:
 		_weapon_hidden = not _weapon_hidden
 
 
+var _remote_diag_timer: float = 0.0
+var _remote_model_target_yaw: float = 0.0
+var _remote_model_yaw_set: bool = false
+
 func _physics_process(delta: float) -> void:
 	if not is_multiplayer_authority():
 		global_position = global_position.lerp(_synced_position, delta * 15.0)
-		velocity = velocity.lerp(Vector3.ZERO, delta * 10.0)  # Damp velocity for visuals
+		if _gltf_anim_player:
+			_gltf_anim_player.advance(delta)
+		if _model and _remote_model_yaw_set:
+			_model.rotation.y = lerp_angle(_model.rotation.y, _remote_model_target_yaw, 0.2)
+		_remote_diag_timer += delta
+		if _remote_diag_timer >= 3.0:
+			_remote_diag_timer = 0.0
+			var anim_info := ""
+			if _gltf_anim_player:
+				anim_info = "clip='%s' playing=%s speed=%.1f" % [
+					_gltf_playing_clip, str(_gltf_anim_player.is_playing()),
+					_gltf_anim_player.speed_scale]
+			print("[REMOTE] peer '%s' | pos=%s sync=%d %s" % [
+				name, str(global_position), _sync_diag_count, anim_info])
 		return
 
 	var wants_block := Input.is_action_pressed(&"block") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _inventory_open
@@ -897,6 +1016,14 @@ func _physics_process(delta: float) -> void:
 
 	if NetworkManager.is_connected_to_game():
 		_synced_position = global_position
+		_rpc_sync_tick += 1
+		var anim_changed := _gltf_playing_clip != _last_broadcast_clip
+		if anim_changed:
+			print("[ANIM-SEND] clip changed: '%s' -> '%s' speed=%.1f" % [_last_broadcast_clip, _gltf_playing_clip, _gltf_playing_speed])
+		if _rpc_sync_tick % 3 == 0 or anim_changed:
+			_last_broadcast_clip = _gltf_playing_clip
+			var model_yaw: float = _model.rotation.y if _model else 0.0
+			_broadcast_state.rpc(global_position, model_yaw, velocity, _gltf_playing_clip, _gltf_playing_speed, equipped_weapon)
 
 	if _attack_cooldown > 0.0:
 		_attack_cooldown -= delta
@@ -1293,6 +1420,7 @@ func _setup_player_sprite() -> void:
 	_sit_idle_frames = _load_anim_set("sit-idle_%s_%d.png", 16)
 
 	if _player_textures.is_empty():
+		print("[PLAYER MODEL] peer '%s': _player_textures is EMPTY, aborting sprite setup" % name)
 		return
 
 	if _model:
@@ -8755,6 +8883,8 @@ func _gltf_play(anim_name: String) -> void:
 				if _gltf_current_anim != candidate:
 					_gltf_current_anim = candidate
 					synced_animation = candidate
+					_gltf_playing_clip = candidate
+					_gltf_playing_speed = speed
 					_gltf_anim_player.speed_scale = speed
 					_gltf_anim_player.play(candidate)
 				return
@@ -8765,17 +8895,21 @@ func _gltf_play(anim_name: String) -> void:
 				if _gltf_anim_player.has_animation(candidate):
 					if _gltf_current_anim != candidate + "_fast":
 						_gltf_current_anim = candidate + "_fast"
-						synced_animation = candidate + "_fast"
-						_gltf_anim_player.speed_scale = 1.4 if base == "walk" else 1.0
+						var spd := 1.4 if base == "walk" else 1.0
+						synced_animation = candidate
+						_gltf_playing_clip = candidate
+						_gltf_playing_speed = spd
+						_gltf_anim_player.speed_scale = spd
 						_gltf_anim_player.play(candidate)
 					return
 
-	# Fallback: single NlaTrack (old model)
 	if _gltf_anim_player.has_animation("NlaTrack"):
 		if anim_name == "idle":
 			if _gltf_current_anim != "NlaTrack_idle":
 				_gltf_current_anim = "NlaTrack_idle"
-				synced_animation = "NlaTrack_idle"
+				synced_animation = "NlaTrack"
+				_gltf_playing_clip = "NlaTrack"
+				_gltf_playing_speed = 0.0
 				_gltf_anim_player.play("NlaTrack")
 				_gltf_anim_player.seek(0.0, true)
 				_gltf_anim_player.pause()
@@ -8784,12 +8918,12 @@ func _gltf_play(anim_name: String) -> void:
 			var was_paused := _gltf_current_anim == "NlaTrack_idle"
 			_gltf_current_anim = "NlaTrack"
 			synced_animation = "NlaTrack"
+			_gltf_playing_clip = "NlaTrack"
+			var spd := 1.4 if anim_name == "run" else 1.0
+			_gltf_playing_speed = spd
 			if was_paused or not _gltf_anim_player.is_playing():
 				_gltf_anim_player.play("NlaTrack")
-			if anim_name == "run":
-				_gltf_anim_player.speed_scale = 1.4
-			else:
-				_gltf_anim_player.speed_scale = 1.0
+			_gltf_anim_player.speed_scale = spd
 			return
 
 	if not _gltf_play_warned.has(anim_name):
