@@ -40,7 +40,9 @@ func host_game(port: int = DEFAULT_PORT) -> Error:
 
 	print("[NET] Server started on port %d (peer_id=%d)" % [port, multiplayer.get_unique_id()])
 	server_started.emit()
-	spawn_player(multiplayer.get_unique_id())
+	# Don't spawn host player here -- the world scene isn't loaded yet.
+	# The host player will be spawned by _deferred_spawn_host() after the scene loads.
+	call_deferred("_deferred_spawn_host")
 	return OK
 
 
@@ -131,6 +133,15 @@ func _on_connection_failed() -> void:
 	print("[NET] Connection failed")
 	connection_failed.emit()
 	disconnect_game()
+
+
+func _deferred_spawn_host() -> void:
+	# Wait for the world scene to be fully loaded with a Players container
+	var attempts := 0
+	while not _get_players_container() and attempts < 60:
+		await get_tree().process_frame
+		attempts += 1
+	spawn_player(multiplayer.get_unique_id())
 
 
 func spawn_player(peer_id: int) -> void:
