@@ -40,6 +40,8 @@ func _apply_debug_window_layout() -> void:
 	else:
 		DisplayServer.window_set_position(Vector2i(half_w, 25))
 		DisplayServer.window_set_title("Oathbound [CLIENT]")
+	# Bring this window to front after positioning
+	DisplayServer.window_move_to_foreground()
 
 
 # --- Interaction ---
