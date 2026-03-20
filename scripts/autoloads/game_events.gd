@@ -3,20 +3,49 @@ extends Node
 ## instead of holding direct references to each other.
 
 
+const _LOCK_PATH := "user://debug_instance.lock"
+
 func _ready() -> void:
 	_apply_debug_window_layout()
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
+		# Clean up lock file when this instance exits
+		if FileAccess.file_exists(_LOCK_PATH):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(_LOCK_PATH))
+
+
 func _apply_debug_window_layout() -> void:
-	var args := OS.get_cmdline_user_args()
+	if not OS.is_debug_build():
+		return
+
+	# Determine role: explicit arg, or auto-detect via lock file
 	var role := ""
-	for arg in args:
+	for arg in OS.get_cmdline_user_args():
 		if arg == "--host":
 			role = "host"
 		elif arg == "--client":
 			role = "client"
+
 	if role == "":
-		return
+		# First instance creates the lock → host (left). Second sees it → client (right).
+		if FileAccess.file_exists(_LOCK_PATH):
+			var f := FileAccess.open(_LOCK_PATH, FileAccess.READ)
+			var ts := float(f.get_as_text().strip_edges()) if f else 0.0
+			# Stale lock (>30s old) means previous session crashed — treat as host
+			if Time.get_unix_time_from_system() - ts > 30.0:
+				role = "host"
+			else:
+				role = "client"
+		else:
+			role = "host"
+
+	if role == "host":
+		var f := FileAccess.open(_LOCK_PATH, FileAccess.WRITE)
+		if f:
+			f.store_string(str(Time.get_unix_time_from_system()))
+
 	var screen_size := DisplayServer.screen_get_size()
 	var half_w := int(screen_size.x / 2)
 	var win_h := screen_size.y - 50
