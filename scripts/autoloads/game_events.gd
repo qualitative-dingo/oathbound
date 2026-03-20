@@ -2,6 +2,33 @@ extends Node
 ## Global event bus. Systems communicate through signals here
 ## instead of holding direct references to each other.
 
+
+func _ready() -> void:
+	_apply_debug_window_layout()
+
+
+func _apply_debug_window_layout() -> void:
+	var args := OS.get_cmdline_user_args()
+	var role := ""
+	for arg in args:
+		if arg == "--host":
+			role = "host"
+		elif arg == "--client":
+			role = "client"
+	if role == "":
+		return
+	var screen_size := DisplayServer.screen_get_size()
+	var half_w := int(screen_size.x / 2)
+	var win_h := screen_size.y - 50
+	DisplayServer.window_set_size(Vector2i(half_w, win_h))
+	if role == "host":
+		DisplayServer.window_set_position(Vector2i(0, 25))
+		DisplayServer.window_set_title("Oathbound [HOST]")
+	else:
+		DisplayServer.window_set_position(Vector2i(half_w, 25))
+		DisplayServer.window_set_title("Oathbound [CLIENT]")
+
+
 # --- Interaction ---
 signal interaction_focus_changed(interactable: Node3D)
 signal interaction_focus_lost()
