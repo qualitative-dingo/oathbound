@@ -37,8 +37,6 @@ MCPGameBridge="res://addons/godot_mcp/game_bridge/mcp_game_bridge.gd"
 
 window/size/viewport_width=1440
 window/size/viewport_height=900
-window/size/mode=0
-window/size/resizable=true
 window/stretch/mode="canvas_items"
 
 [editor_plugins]

@@ -38,9 +38,10 @@ func _ready() -> void:
 	_music_player.volume_db = -2.0
 	add_child(_music_player)
 
+	# Default music volume to 0% for testing — drag the slider up in-game to hear it
 	var music_idx := AudioServer.get_bus_index(&"Music")
 	if music_idx >= 0:
-		AudioServer.set_bus_mute(music_idx, true)
+		AudioServer.set_bus_volume_db(music_idx, linear_to_db(0.0))
 
 	_preload_sounds()
 
