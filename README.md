@@ -50,40 +50,48 @@ Oathbound supports LAN co-op (Valheim-style) where one player hosts and others j
 3. Client loads the same world scene (deterministic terrain from seed)
 4. Host creates player nodes for both sides via `_create_player_node()`
 5. Host sends `_rpc_create_player` to client so each peer has both players in-tree
+6. `MultiplayerSpawner` is **not used** — player replication is handled entirely via direct RPCs to avoid runtime `_spawnable_scene_count: 0` issues
 
 ### Player Sync
 
 - Each player node is named by peer ID (e.g. `Players/1`, `Players/2057384612`)
 - `MultiplayerSynchronizer` replicates position, rotation, animation, equipment, and display name
-- Supplemental RPC broadcast (`_broadcast_state`) runs at ~20Hz as a reliable fallback
+- Primary animation/position sync uses `_broadcast_state` RPC at ~20Hz with immediate sends on animation changes (catches transient attack animations)
 - Remote players interpolate toward synced positions in `_physics_process`
-- Remote players load the same 3D model, play synced animations, and show floating nameplates
+- Remote players load the same 3D model (GLTF), play synced animations via manual `AnimationPlayer.advance()`, and show floating nameplates
+- Model facing (yaw) is synced separately via `_remote_model_target_yaw` and interpolated with `lerp_angle`
+- Attack animations use `is_playing()` detection to restart finished non-looping clips on the receiver
 
 ### Creature Sync
 
 - Creatures are generated deterministically from the world seed (same creatures on all peers)
-- Creatures have stable names (`Creature_0`, `Creature_1`, etc.) for path matching across peers
-- `CreatureSyncManager` on the host collects all creature states per zone and broadcasts:
-  - **Position/rotation/velocity** via unreliable RPC at 10Hz (batched per zone)
+- Creatures have stable names (`Creature_0`, `Creature_1`, etc.) for consistent node paths across peers
+- Creature sync is handled by `WorldStateSync` (a scene-defined node with guaranteed RPC path consistency, replacing the earlier dynamic `CreatureSyncManager`):
+  - **Position/rotation/velocity** via unreliable RPC at ~10Hz (batched per loaded zone)
   - **State changes** (idle, chase, attack, dead) and health via reliable RPC on change
-- Clients interpolate creature positions and play animations from synced velocity/state
+- Clients interpolate creature positions toward `_sync_target_position` and strip root motion from animations to prevent model displacement
 - Player-to-creature damage: client sends `request_damage` RPC to host; host validates and applies
 - Creature-to-player damage: host sends `deal_damage_to_player` RPC to the target client
 
 ### World State Sync
 
-- Terrain and zone populations are **deterministic** -- same seed = same world
+- Terrain and zone populations are **deterministic** — same seed = same world
 - Only **mutations** are synced via `WorldStateSync`:
-  - Destroyed harvestables (trees, rocks) -- indexed by zone + position in group
-  - Placed buildings -- position, rotation, contents
-  - Loot drops -- host assigns `loot_id`, replicates via RPC, authoritative pickup
+  - Destroyed harvestables (trees, rocks) — indexed by zone + position in group
+  - Placed buildings — position, rotation, contents
+  - Loot drops — host assigns `loot_id`, replicates via RPC, authoritative pickup
 - Late-joining clients request the full mutation set to catch up
+- Loot pickup is host-authoritative: host calls `_grant_pickup` locally and broadcasts `_remove_loot` to clients (avoiding `call_local` RPC pitfalls)
 
-### Inventory
+### Save System & Inventory
 
 - Each player has a separate `PlayerInventory` instance (not a global singleton)
 - The `Inventory` autoload exposes the **local** player's inventory for UI
 - Chest contents are synced via RPCs in `NetworkManager` (open, deposit, withdraw)
+- **Host** auto-saves full game state (world, player, inventory) every 10 seconds
+- **Clients** auto-save their own inventory and player stats to a `lan_client` save file (periodic + on disconnect)
+- On session start, clients with no LAN save fall back to their character's most recent save from any world to preserve inventory across sessions
+- Health and stamina are always reset to max on session start (prevents spawning at low HP from stale saves)
 
 ## Core Systems
 
@@ -554,3 +562,8 @@ A slope speed penalty (up to 40% reduction on steep slopes) is applied during no
 - Attack animations override walk/run animations when the player is moving and attacking simultaneously
 - Attack animation speed is synchronized to the player's actual attack speed via `speed_scale`
 - Context-based weapon switching selects the correct animation based on equipped weapon and target type
+- 3D models use `AnimationPlayer` in **manual** callback mode — `advance(delta)` is called explicitly in `_physics_process` for both local and remote players
+- NlaTrack-based models have their tracks renamed to logical names (`chop`, `kick`, `walk`, `run`, `stand`, etc.) via `_rename_nla_tracks()`
+- Root motion position tracks are stripped from all animations (`_strip_root_motion`) to prevent model displacement from the collision body
+- Custom attack animations (`axe_swing`, `sword_slash`, `club_smash`) are procedurally rebuilt with explicit bone keyframes when the base animation exists in the model
+- **Multiplayer sync:** the local player broadcasts `_gltf_playing_clip` and `_gltf_playing_speed` via RPC; remote players play the clip with matching speed and detect finished non-looping animations to handle repeated attacks

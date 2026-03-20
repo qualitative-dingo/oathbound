@@ -38,6 +38,10 @@ func _ready() -> void:
 	_music_player.volume_db = -2.0
 	add_child(_music_player)
 
+	var music_idx := AudioServer.get_bus_index(&"Music")
+	if music_idx >= 0:
+		AudioServer.set_bus_mute(music_idx, true)
+
 	_preload_sounds()
 
 
