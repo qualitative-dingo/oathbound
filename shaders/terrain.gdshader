@@ -18,7 +18,7 @@ uniform float dirt_patch_amount : hint_range(0.0, 0.5) = 0.1;
 uniform vec3 dirt_color : source_color = vec3(0.35, 0.28, 0.16);
 
 group_uniforms paths;
-uniform vec3 path_color : source_color = vec3(0.30, 0.20, 0.10);
+uniform vec3 path_color : source_color = vec3(0.22, 0.14, 0.07);
 uniform float path_roughness : hint_range(0.0, 1.0) = 0.7;
 
 float hash12(vec2 p) {
@@ -94,7 +94,7 @@ void fragment() {
 
 	float n_large = fbm2(world_pos.xz * 0.012);
 	float n_med   = fbm2(world_pos.xz * 0.04 + vec2(50.0, 80.0));
-	float brightness = 0.45 + n_large * 0.2 + n_med * 0.12;
+	float brightness = 0.38 + n_large * 0.18 + n_med * 0.10;
 	brightness = mix(1.0, brightness, variation_strength);
 	albedo *= brightness;
 
@@ -119,7 +119,7 @@ void fragment() {
 	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2;
 	albedo *= (1.0 - ao_mask);
 
-	float ground_shadow = flat_w * 0.18 * (1.0 - dirt_mask) * (1.0 - pm);
+	float ground_shadow = flat_w * 0.22 * (1.0 - dirt_mask) * (1.0 - pm);
 	albedo *= (1.0 - ground_shadow);
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.5);

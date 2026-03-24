@@ -13,7 +13,7 @@ uniform float slope_start : hint_range(0.0, 1.0) = 0.25;
 uniform float cliff_start : hint_range(0.0, 1.0) = 0.55;
 
 uniform vec3 origin_shift;
-uniform vec3 path_color : source_color = vec3(0.30, 0.20, 0.10);
+uniform vec3 path_color : source_color = vec3(0.22, 0.14, 0.07);
 
 varying float v_path_mask;
 varying float v_brightness;
@@ -25,7 +25,7 @@ void vertex() {
 
 void fragment() {
 	float pm = smoothstep(0.2, 0.7, v_path_mask);
-	vec3 ground = vec3(0.15, 0.35, 0.10) * tint_color * v_brightness;
+	vec3 ground = vec3(0.10, 0.28, 0.07) * tint_color * v_brightness;
 	ALBEDO = mix(ground, path_color, pm);
 	ROUGHNESS = mix(0.85, 0.7, pm);
 }
