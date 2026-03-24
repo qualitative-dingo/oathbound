@@ -1664,7 +1664,7 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 	if _source and _source != pc and _source.is_in_group(&"player"):
 		if not NetworkManager.pvp_enabled:
 			return
-	if _source and _source.has_method("take_damage"):
+	if _source and _source.has_method("take_damage") and not _source.is_in_group(&"player"):
 		pc._set_target_creature(_source)
 
 	var pre_vel := pc.velocity

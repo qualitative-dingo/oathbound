@@ -3765,12 +3765,16 @@ func _update_target_hud(delta: float) -> void:
 
 
 func _set_target_creature(creature: Node3D) -> void:
+	if not is_multiplayer_authority():
+		return
 	if creature == _target_creature and _target_hud_timer > 0.0:
 		_target_hud_timer = 5.0
 		return
 	_target_creature = creature
 	_target_hud_timer = 5.0
 
+	if not _target_hud_name:
+		return
 	var dname: String = creature.get("display_name") if creature.get("display_name") != null else "Unknown"
 	var stars: int = creature.get("star_level") if creature.get("star_level") != null else 0
 	_target_hud_name.text = dname
@@ -9706,7 +9710,7 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 	if _source and _source != self and _source.is_in_group(&"player"):
 		if not NetworkManager.pvp_enabled:
 			return
-	if _source and _source.has_method("take_damage"):
+	if _source and _source.has_method("take_damage") and not _source.is_in_group(&"player"):
 		_set_target_creature(_source)
 
 	var pre_vel := velocity
