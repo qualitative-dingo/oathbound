@@ -2,8 +2,9 @@ extends Node
 ## SteamManager autoload — initializes the Steamworks SDK, pumps callbacks,
 ## and handles Steam friend-list join requests / command-line lobby invites.
 ##
-## Must be loaded BEFORE NetworkManager in the autoload order so that
-## Steam is ready when NetworkManager checks `SteamManager.is_steam_ready`.
+## All access to the Steam singleton goes through the `_s` variable so the
+## script parses cleanly in standard Godot (where the Steam class doesn't exist).
+## Must be loaded BEFORE NetworkManager in the autoload order.
 
 const _DEBUG_LOG := false
 
@@ -13,26 +14,31 @@ var is_steam_ready := false
 var steam_id: int = 0
 var steam_name: String = ""
 
+## The Steam singleton, accessed dynamically so this script loads in any editor.
+var _s: Object = null
+
 
 func _ready() -> void:
-	if not ClassDB.class_exists(&"Steam"):
+	if not Engine.has_singleton("Steam"):
 		push_warning("[STEAM] GodotSteam not available — Steam features disabled")
 		return
 
-	var init: Dictionary = Steam.steamInit()
+	_s = Engine.get_singleton("Steam")
+	var init: Dictionary = _s.steamInit()
 	if _DEBUG_LOG:
 		print("[STEAM] steamInit result: %s" % str(init))
 
 	if init.get("status", -1) != 1:
 		push_warning("[STEAM] Steam init failed: %s" % init.get("verbal", "unknown"))
+		_s = null
 		return
 
 	is_steam_ready = true
-	steam_id = Steam.getSteamID()
-	steam_name = Steam.getPersonaName()
+	steam_id = _s.getSteamID()
+	steam_name = _s.getPersonaName()
 
-	Steam.join_requested.connect(_on_join_requested)
-	Steam.lobby_chat_update.connect(_on_lobby_chat_update)
+	_s.join_requested.connect(_on_join_requested)
+	_s.lobby_chat_update.connect(_on_lobby_chat_update)
 
 	if _DEBUG_LOG:
 		print("[STEAM] Initialized — id=%d name=%s" % [steam_id, steam_name])
@@ -41,30 +47,33 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if is_steam_ready:
-		Steam.run_callbacks()
+	if is_steam_ready and _s:
+		_s.run_callbacks()
+
+
+func get_steam() -> Object:
+	return _s
 
 
 func _on_join_requested(this_lobby_id: int, friend_id: int) -> void:
-	var friend_name: String = Steam.getFriendPersonaName(friend_id) if is_steam_ready else str(friend_id)
+	var friend_name: String = _s.getFriendPersonaName(friend_id) if _s else str(friend_id)
 	if _DEBUG_LOG:
 		print("[STEAM] Join requested — lobby=%d from=%s" % [this_lobby_id, friend_name])
 	join_lobby_requested.emit(this_lobby_id)
 
 
 func _on_lobby_chat_update(_this_lobby_id: int, change_id: int, _making_change_id: int, chat_state: int) -> void:
-	if not is_steam_ready:
+	if not _s:
 		return
-	var changer_name: String = Steam.getFriendPersonaName(change_id)
-	match chat_state:
-		Steam.CHAT_MEMBER_STATE_CHANGE_ENTERED:
-			if _DEBUG_LOG: print("[STEAM] %s joined the lobby" % changer_name)
-		Steam.CHAT_MEMBER_STATE_CHANGE_LEFT:
-			if _DEBUG_LOG: print("[STEAM] %s left the lobby" % changer_name)
-		Steam.CHAT_MEMBER_STATE_CHANGE_KICKED:
-			if _DEBUG_LOG: print("[STEAM] %s was kicked" % changer_name)
-		Steam.CHAT_MEMBER_STATE_CHANGE_BANNED:
-			if _DEBUG_LOG: print("[STEAM] %s was banned" % changer_name)
+	var changer_name: String = _s.getFriendPersonaName(change_id)
+	if chat_state == 0x0001:
+		if _DEBUG_LOG: print("[STEAM] %s joined the lobby" % changer_name)
+	elif chat_state == 0x0002:
+		if _DEBUG_LOG: print("[STEAM] %s left the lobby" % changer_name)
+	elif chat_state == 0x0008:
+		if _DEBUG_LOG: print("[STEAM] %s was kicked" % changer_name)
+	elif chat_state == 0x0010:
+		if _DEBUG_LOG: print("[STEAM] %s was banned" % changer_name)
 
 
 func _check_command_line() -> void:

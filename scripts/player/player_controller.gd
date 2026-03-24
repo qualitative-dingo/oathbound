@@ -348,7 +348,7 @@ var _player_list_visible: bool = false
 var _inventory_panel: PanelContainer
 var _inventory_grid: GridContainer
 var _cached_grouped: Array = []
-var _equip_bar: HBoxContainer
+var _equip_bar: Control
 var _equip_bar_slots: Dictionary = {}
 var _equip_bar_icons: Dictionary = {}
 var _equip_bar_ghost: Dictionary = {}
@@ -4317,17 +4317,12 @@ func _build_inventory_panel(root: Control) -> void:
 func _build_equip_bar(parent: VBoxContainer) -> void:
 	var sep := HSeparator.new()
 	var sep_style := StyleBoxFlat.new()
-	sep_style.bg_color = Color(0.4, 0.35, 0.25, 0.6)
-	sep_style.content_margin_top = 1
-	sep_style.content_margin_bottom = 1
+	sep_style.bg_color = Color(0.5, 0.42, 0.28, 0.8)
+	sep_style.content_margin_top = 4
+	sep_style.content_margin_bottom = 4
 	sep.add_theme_stylebox_override("separator", sep_style)
 	parent.add_child(sep)
 
-	_equip_bar = HBoxContainer.new()
-	_equip_bar.add_theme_constant_override("separation", 4)
-	_equip_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
-
-	const SLOT_ORDER: Array[String] = ["weapon", "sword", "bow", "pickaxe", "shield", "chest", "legs", "feet"]
 	const GHOST_ICONS := {
 		"weapon": "res://textures/items/stone_axe.png",
 		"sword": "res://textures/items/stone_sword.png",
@@ -4339,17 +4334,54 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 		"feet": "res://textures/items/leather_boots.png",
 	}
 	const SLOT_LABELS := {
-		"weapon": "Axe",
-		"sword": "Sword",
-		"bow": "Bow",
+		"weapon": "Woodaxe",
+		"sword": "Melee",
+		"bow": "Ranged",
 		"pickaxe": "Pick",
 		"shield": "Shield",
 		"chest": "Chest",
 		"legs": "Legs",
 		"feet": "Boots",
 	}
+	const TOOL_SLOTS: Array[String] = ["weapon", "pickaxe"]
+	const EQUIP_SLOTS: Array[String] = ["sword", "bow", "shield", "chest", "legs", "feet"]
 
-	for slot_name in SLOT_ORDER:
+	var wrapper := PanelContainer.new()
+	var wrapper_style := StyleBoxFlat.new()
+	wrapper_style.bg_color = Color(0.06, 0.055, 0.04, 0.5)
+	wrapper_style.set_corner_radius_all(4)
+	wrapper_style.set_content_margin_all(6)
+	wrapper.add_theme_stylebox_override("panel", wrapper_style)
+
+	var equip_vbox := VBoxContainer.new()
+	equip_vbox.add_theme_constant_override("separation", 4)
+
+	var tools_lbl := Label.new()
+	tools_lbl.text = "TOOLS"
+	tools_lbl.add_theme_color_override("font_color", Color(0.6, 0.55, 0.4))
+	tools_lbl.add_theme_font_size_override("font_size", 11)
+	equip_vbox.add_child(tools_lbl)
+
+	var tools_row := HBoxContainer.new()
+	tools_row.add_theme_constant_override("separation", 4)
+	equip_vbox.add_child(tools_row)
+
+	var equip_lbl := Label.new()
+	equip_lbl.text = "EQUIPMENT"
+	equip_lbl.add_theme_color_override("font_color", Color(0.6, 0.55, 0.4))
+	equip_lbl.add_theme_font_size_override("font_size", 11)
+	equip_vbox.add_child(equip_lbl)
+
+	var equip_row := HBoxContainer.new()
+	equip_row.add_theme_constant_override("separation", 4)
+	equip_vbox.add_child(equip_row)
+
+	var all_slots: Array[String] = []
+	all_slots.append_array(TOOL_SLOTS)
+	all_slots.append_array(EQUIP_SLOTS)
+	for slot_name in all_slots:
+		var target_row: HBoxContainer = tools_row if slot_name in TOOL_SLOTS else equip_row
+
 		var slot_col := VBoxContainer.new()
 		slot_col.add_theme_constant_override("separation", 2)
 
@@ -4404,9 +4436,11 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 		lbl.custom_minimum_size.x = 60
 		slot_col.add_child(lbl)
 
-		_equip_bar.add_child(slot_col)
+		target_row.add_child(slot_col)
 
-	parent.add_child(_equip_bar)
+	wrapper.add_child(equip_vbox)
+	parent.add_child(wrapper)
+	_equip_bar = wrapper
 
 
 func _refresh_equip_bar() -> void:
@@ -4486,7 +4520,7 @@ func _on_equip_bar_hover(slot_name: String) -> void:
 	if eq_id != &"":
 		_show_tooltip_for_item(eq_id)
 	else:
-		const SLOT_LABELS := {"weapon": "Axe", "sword": "Sword", "bow": "Bow", "pickaxe": "Pickaxe", "shield": "Shield", "chest": "Chest Armor", "legs": "Leg Armor", "feet": "Boots"}
+		const SLOT_LABELS := {"weapon": "Woodaxe", "sword": "Melee", "bow": "Ranged", "pickaxe": "Pickaxe", "shield": "Shield", "chest": "Chest Armor", "legs": "Leg Armor", "feet": "Boots"}
 		var hint: String = SLOT_LABELS.get(slot_name, slot_name)
 		if _tooltip_label and _tooltip_panel:
 			_tooltip_label.text = "[color=#888888]Empty %s slot[/color]" % hint
