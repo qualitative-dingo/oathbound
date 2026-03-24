@@ -1184,7 +1184,7 @@ func _init_biome_materials() -> void:
 			mat.set_shader_parameter("tint_color", Vector3(tint.r, tint.g, tint.b))
 			mat.set_shader_parameter("texture_scale", tex_scale)
 			mat.set_shader_parameter("origin_shift", origin_shift)
-			mat.set_shader_parameter("path_color", Vector3(0.22, 0.14, 0.07))
+			mat.set_shader_parameter("path_color", Vector3(0.18, 0.11, 0.05))
 			_biome_materials[biome_id] = mat
 		else:
 			# Fallback if shader fails to load

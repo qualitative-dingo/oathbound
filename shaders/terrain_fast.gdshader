@@ -13,7 +13,7 @@ uniform float slope_start : hint_range(0.0, 1.0) = 0.25;
 uniform float cliff_start : hint_range(0.0, 1.0) = 0.55;
 
 uniform vec3 origin_shift;
-uniform vec3 path_color : source_color = vec3(0.22, 0.14, 0.07);
+uniform vec3 path_color : source_color = vec3(0.18, 0.11, 0.05);
 
 varying float v_path_mask;
 varying float v_brightness;

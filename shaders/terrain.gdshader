@@ -18,8 +18,8 @@ uniform float dirt_patch_amount : hint_range(0.0, 0.5) = 0.1;
 uniform vec3 dirt_color : source_color = vec3(0.35, 0.28, 0.16);
 
 group_uniforms paths;
-uniform vec3 path_color : source_color = vec3(0.22, 0.14, 0.07);
-uniform float path_roughness : hint_range(0.0, 1.0) = 0.7;
+uniform vec3 path_color : source_color = vec3(0.18, 0.11, 0.05);
+uniform float path_roughness : hint_range(0.0, 1.0) = 0.92;
 
 float hash12(vec2 p) {
 	float h = dot(p, vec2(127.1, 311.7));
@@ -110,11 +110,13 @@ void fragment() {
 	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w;
 	albedo = mix(albedo, dirt_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), dirt_mask);
 
-	// Clay paths from vertex color R channel
+	// Clay paths from vertex color R channel — blend dirt texture with path tint
 	float pm = smoothstep(0.2, 0.7, v_path_mask) * flat_w;
-	vec3 path_tex = path_color * (0.9 + vnoise(world_pos.xz * 0.15 + vec2(900.0, 400.0)) * 0.15);
-	path_tex *= (0.92 + vnoise(world_pos.xz * 0.5) * 0.08);
-	albedo = mix(albedo, path_tex, pm);
+	vec3 dirt_detail = col_slope * 0.6 + col_flat * 0.15;
+	vec3 path_base = path_color * dirt_detail * 4.0;
+	path_base *= (0.85 + vnoise(world_pos.xz * 0.12 + vec2(900.0, 400.0)) * 0.2);
+	path_base *= (0.9 + fbm2(world_pos.xz * 0.06 + vec2(150.0, 250.0)) * 0.15);
+	albedo = mix(albedo, path_base, pm);
 
 	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2;
 	albedo *= (1.0 - ao_mask);
