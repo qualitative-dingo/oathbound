@@ -32,9 +32,10 @@ func apply_gravity(delta: float) -> void:
 	else:
 		pc._is_swimming = false
 		if not pc.is_on_floor():
-			pc.velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity", 9.8) * pc.gravity_multiplier * delta
+			var grav_mult := pc.fall_gravity_multiplier if pc.velocity.y < 0.0 else pc.gravity_multiplier
+			pc.velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity", 9.8) * grav_mult * delta
 		if pc._mounted:
-			pc.velocity.y = clampf(pc.velocity.y, -10.0, 1.0)
+			pc.velocity.y = clampf(pc.velocity.y, -18.0, 1.0)
 
 
 func snap_to_ground() -> void:

@@ -12,6 +12,7 @@ const _DEBUG_LOG := false
 @export var deceleration: float = 65.0
 @export var jump_velocity: float = 9.9
 @export var gravity_multiplier: float = 2.34
+@export var fall_gravity_multiplier: float = 3.2
 @export var air_control: float = 0.3
 @export var dodge_speed: float = 12.0
 @export var dodge_duration: float = 0.3
@@ -1240,9 +1241,10 @@ func _apply_gravity(delta: float) -> void:
 	else:
 		_is_swimming = false
 		if not is_on_floor():
-			velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity", 9.8) * gravity_multiplier * delta
+			var grav_mult := fall_gravity_multiplier if velocity.y < 0.0 else gravity_multiplier
+			velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity", 9.8) * grav_mult * delta
 		if _mounted:
-			velocity.y = clampf(velocity.y, -12.0, jump_velocity)
+			velocity.y = clampf(velocity.y, -18.0, jump_velocity)
 
 
 func _snap_to_ground() -> void:

@@ -320,7 +320,7 @@ func _physics_process(delta: float) -> void:
 				_spawn_loot_and_play_ground_death()
 			return
 		if _dying_fall:
-			velocity.y -= GRAVITY * delta
+			velocity.y -= 25.0 * delta
 			velocity.x = move_toward(velocity.x, 0.0, 2.0 * delta)
 			velocity.z = move_toward(velocity.z, 0.0, 2.0 * delta)
 			move_and_slide()
@@ -1243,7 +1243,7 @@ func _die() -> void:
 		_dying_fall = true
 		is_flying = false
 		collision_mask = 1
-		velocity = Vector3(velocity.x * 0.3, -2.0, velocity.z * 0.3)
+		velocity = Vector3(velocity.x * 0.3, -0.5, velocity.z * 0.3)
 		if use_3d_model and _model_node:
 			_tint_model_meshes_flash(true)
 			var tween := create_tween()
