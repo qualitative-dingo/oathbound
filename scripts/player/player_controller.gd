@@ -457,7 +457,7 @@ func _ready() -> void:
 	add_to_group(&"player")
 	collision_layer = 2
 	collision_mask = 1 | 4 | 8
-	floor_snap_length = 1.0
+	floor_snap_length = 0.3
 	floor_max_angle = deg_to_rad(55.0)
 	_respawn_grace = 3.0
 
@@ -1075,15 +1075,19 @@ func _physics_process(delta: float) -> void:
 
 		if was_in_air and is_on_floor():
 			var height_fallen := _fall_start_y - global_position.y
-			if _prev_velocity_y < -14.0 and height_fallen > 3.5:
-				var fall_speed := absf(_prev_velocity_y)
-				var fall_dmg := (fall_speed - 14.0) * 3.0
+			if height_fallen > 5.0:
+				# True damage: 1 dmg/unit beyond 5u safe zone, only featherfall reduces
+				var fall_dmg := (height_fallen - 5.0) * 1.0
 				if _has_affix(&"featherfall"):
 					fall_dmg *= (1.0 - _affix_val(&"featherfall"))
-				if _has_affix(&"light_step"):
-					fall_dmg *= (1.0 - _affix_val(&"light_step"))
-				if fall_dmg > 1.0:
-					take_damage(fall_dmg)
+				if fall_dmg > 0.5:
+					current_health = maxf(current_health - fall_dmg, 0.0)
+					_hp_pulse = 1.0
+					_health_regen_timer = health_regen_delay
+					GameEvents.player_health_changed.emit(current_health, max_health)
+					DamageNumber.spawn(get_tree(), global_position + Vector3.UP * 2.0, fall_dmg, false, "enemy")
+					if current_health <= 0.0:
+						_on_death()
 		elif not was_in_air and not is_on_floor():
 			_fall_start_y = global_position.y
 		_prev_velocity_y = velocity.y
@@ -1092,7 +1096,7 @@ func _physics_process(delta: float) -> void:
 			var y_drop := pre_move_pos.y - global_position.y
 			if y_drop > 2.0:
 				global_position.y = pre_move_pos.y - 2.0
-				velocity.y = maxf(velocity.y, -10.0)
+				velocity.y = maxf(velocity.y, -12.0)
 			var space := get_world_3d().direct_space_state
 			if space:
 				var check_from := Vector3(global_position.x, global_position.y + 3.0, global_position.z)
@@ -1226,7 +1230,7 @@ func _apply_gravity(delta: float) -> void:
 		if not is_on_floor():
 			velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity", 9.8) * gravity_multiplier * delta
 		if _mounted:
-			velocity.y = clampf(velocity.y, -10.0, jump_velocity)
+			velocity.y = clampf(velocity.y, -12.0, jump_velocity)
 
 
 func _snap_to_ground() -> void:
@@ -1266,25 +1270,18 @@ func _clamp_to_terrain() -> void:
 	var result := space.intersect_ray(query)
 
 	if result.is_empty():
-		if _last_safe_position != Vector3.ZERO and global_position.y < _last_safe_position.y - 12.0:
-			global_position = _last_safe_position
-			velocity = Vector3.ZERO
 		return
 
 	var surface_y: float = result["position"].y
 	var below_surface := surface_y - global_position.y
+	# Don't snap upward when airborne — let gravity work
+	if not is_on_floor():
+		return
 	var snap_threshold := 0.05 if _mounted else 0.15
 	var max_snap := 1.5 if _mounted else 2.0
 	if below_surface > snap_threshold and below_surface < max_snap:
 		global_position.y = surface_y + 0.15
 		velocity.y = maxf(velocity.y, 0.0)
-
-	if global_position.y >= surface_y - 0.5 and global_position.y <= surface_y + 3.0:
-		_safe_pos_timer += dt
-		var save_interval := 0.1 if _mounted else 0.25
-		if _safe_pos_timer > save_interval:
-			_safe_pos_timer = 0.0
-			_last_safe_position = global_position
 
 
 func _handle_jump() -> void:
@@ -1322,6 +1319,10 @@ func _step_up_move_and_slide() -> void:
 	var saved_pos := global_position
 
 	move_and_slide()
+
+	# If we left the floor (walked off an edge), let gravity take over — don't retry
+	if not is_on_floor():
+		return
 
 	var moved := Vector2(global_position.x - saved_pos.x, global_position.z - saved_pos.z).length()
 	var wanted := flat_vel.length() * get_physics_process_delta_time()
