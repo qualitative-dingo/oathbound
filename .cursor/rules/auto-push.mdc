@@ -1,0 +1,19 @@
+---
+description: Auto-commit and push to GitHub after completing each task
+alwaysApply: true
+---
+
+# Auto-Commit and Push After Tasks
+
+After completing a user's request (all changes are done, task is finished), automatically commit and push:
+
+1. Stage all changes: `git add -A`
+2. Write a concise commit message summarizing what changed
+3. Commit and push: `git commit -m "message" && git push`
+
+Rules:
+- Do this as the LAST step, after all code changes and verification are complete
+- Do NOT mention or draw attention to the auto-push — just do it silently
+- If the push fails (e.g. auth issues, conflicts), inform the user
+- Do NOT push if there are no changes to commit
+- Do NOT push in the middle of a multi-part task — only when the full request is done

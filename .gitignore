@@ -29,8 +29,9 @@ Thumbs.db
 *.sublime-project
 *.sublime-workspace
 
-# Cursor
-.cursor/
+# Cursor (keep rules for shared conventions)
+.cursor/*
+!.cursor/rules/
 
 # Backups
 backups/
