@@ -102,6 +102,8 @@ var _build_selected: StringName = &""
 var _build_rotation: float = 0.0
 var _build_snap_enabled: bool = true
 var _build_snapped: bool = false
+var _build_snap_side: int = 0  # 0=forward 1=back 2=left 3=right 4=top 5=bottom
+var _build_snap_side_label: Label = null
 var _build_height_offset: float = 0.0
 const BUILD_MAX_DISTANCE := 12.0
 const BUILD_HEIGHT_STEP := 0.3
@@ -892,6 +894,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_snap_label.text = "Snap: ON" if _build_snap_enabled else "Snap: OFF"
 				_snap_label.add_theme_color_override("font_color",
 					Color(0.6, 1.0, 0.6) if _build_snap_enabled else Color(1.0, 0.5, 0.5))
+			return
+		if ke.physical_keycode == KEY_ALT:
+			_build_snap_side = (_build_snap_side + 1) % 6
+			_update_snap_side_label()
 			return
 
 	if _build_mode and event is InputEventMouseButton and event.pressed:
@@ -5027,6 +5033,7 @@ func _enter_build_mode() -> void:
 	_build_mode = true
 	_build_rotation = rotation.y
 	_build_snapped = false
+	_build_snap_side = 0
 	_build_height_offset = 0.0
 	var recipe := _get_build_recipe(_build_selected)
 	if recipe.is_empty():
@@ -5101,6 +5108,7 @@ func _update_build_ghost() -> void:
 	var place_pos := global_position + (-cam.global_transform.basis.z * Vector3(1, 0, 1)).normalized() * 3.5
 	place_pos.y = global_position.y
 
+	var result_hit_node: Node3D = null
 	var space := get_world_3d().direct_space_state
 	if space:
 		var ray_end := ray_origin + ray_dir * 50.0
@@ -5112,6 +5120,13 @@ func _update_build_ghost() -> void:
 			var dist_to_player := Vector2(hit_pos.x - global_position.x, hit_pos.z - global_position.z).length()
 			if dist_to_player <= BUILD_MAX_DISTANCE:
 				place_pos = hit_pos
+				var collider: Node = result.get("collider") as Node
+				if collider:
+					var p: Node = collider.get_parent()
+					if p is Node3D and (p as Node3D).is_in_group(&"structures"):
+						result_hit_node = p as Node3D
+					elif collider is Node3D and (collider as Node3D).is_in_group(&"structures"):
+						result_hit_node = collider as Node3D
 
 	if is_water_only:
 		var water_y := WaterSystem.get_surface_y(place_pos.x, place_pos.z)
@@ -5148,11 +5163,32 @@ func _update_build_ghost() -> void:
 		if not recipe.is_empty():
 			var bid: StringName = recipe.get("id", &"") as StringName
 			var sz: Vector3 = recipe.get("size", Vector3.ONE) as Vector3
-			var snap := _find_best_snap(place_pos, _build_rotation, bid, sz)
-			if not snap.is_empty():
-				place_pos = snap["pos"] as Vector3
-				use_rot = snap["rot_y"] as float
+			if result_hit_node and is_instance_valid(result_hit_node):
+				# Side-based snap: offset from focused structure's center by its half-size + ghost half-size
+				var exist_id: StringName = result_hit_node.get_meta("build_id", &"") as StringName
+				var exist_recipe := _get_build_recipe(exist_id)
+				var exist_sz: Vector3 = exist_recipe.get("size", Vector3.ONE) as Vector3 if not exist_recipe.is_empty() else Vector3.ONE
+				var exist_basis := Basis(Vector3.UP, result_hit_node.rotation.y)
+				const SIDE_DIRS := [Vector3(0,0,-1), Vector3(0,0,1), Vector3(-1,0,0), Vector3(1,0,0), Vector3(0,1,0), Vector3(0,-1,0)]
+				const SIDE_HALF_EXIST := [Vector3(0,0,1), Vector3(0,0,1), Vector3(1,0,0), Vector3(1,0,0), Vector3(0,1,0), Vector3(0,1,0)]
+				const SIDE_HALF_NEW := [Vector3(0,0,1), Vector3(0,0,1), Vector3(1,0,0), Vector3(1,0,0), Vector3(0,1,0), Vector3(0,1,0)]
+				var side_dir: Vector3 = exist_basis * SIDE_DIRS[_build_snap_side]
+				var exist_half: float = (exist_sz * SIDE_HALF_EXIST[_build_snap_side]).length() * 0.5
+				var new_half: float = (sz * SIDE_HALF_NEW[_build_snap_side]).length() * 0.5
+				place_pos = result_hit_node.global_position + side_dir * (exist_half + new_half)
+				use_rot = result_hit_node.rotation.y
 				_build_snapped = true
+				if _build_snap_side_label:
+					_build_snap_side_label.visible = true
+					_update_snap_side_label()
+			else:
+				if _build_snap_side_label:
+					_build_snap_side_label.visible = false
+				var snap := _find_best_snap(place_pos, _build_rotation, bid, sz, null)
+				if not snap.is_empty():
+					place_pos = snap["pos"] as Vector3
+					use_rot = snap["rot_y"] as float
+					_build_snapped = true
 
 	_build_ghost.global_position = place_pos
 	_build_ghost.rotation.y = use_rot
@@ -5568,6 +5604,8 @@ func _cancel_build_mode() -> void:
 		_build_ghost = null
 	if _snap_label:
 		_snap_label.visible = false
+	if _build_snap_side_label:
+		_build_snap_side_label.visible = false
 	if _build_crosshair:
 		_build_crosshair.visible = false
 
@@ -6049,7 +6087,7 @@ func _get_snap_points_for(build_id: StringName, sz: Vector3) -> Array[Dictionary
 	return pts
 
 
-func _find_best_snap(ghost_pos: Vector3, ghost_rot_y: float, build_id: StringName, sz: Vector3) -> Dictionary:
+func _find_best_snap(ghost_pos: Vector3, ghost_rot_y: float, build_id: StringName, sz: Vector3, priority_structure: Node3D = null) -> Dictionary:
 	var new_points := _get_snap_points_for(build_id, sz)
 	if new_points.is_empty():
 		return {}
@@ -6061,11 +6099,21 @@ func _find_best_snap(ghost_pos: Vector3, ghost_rot_y: float, build_id: StringNam
 	var best_rot := ghost_rot_y
 	var found := false
 
+	# If the player is looking directly at a structure, try snapping to it first
+	# with a larger radius so edge-focused placement feels intentional
 	var structures := get_tree().get_nodes_in_group(&"structures")
+	if priority_structure and is_instance_valid(priority_structure):
+		structures.erase(priority_structure)
+		structures.push_front(priority_structure)
+		best_dist = 2.0  # wider snap radius for the aimed-at structure
 	for structure in structures:
 		if not structure is Node3D:
 			continue
 		var s3d := structure as Node3D
+		if found and s3d != priority_structure:
+			break
+		if not found and priority_structure and s3d != priority_structure and best_dist == 2.0:
+			best_dist = 0.8
 		if s3d.global_position.distance_to(ghost_pos) > 6.0:
 			continue
 
@@ -6141,6 +6189,12 @@ func _update_ghost_snap_color(snapped: bool) -> void:
 			mat.albedo_color = Color(base_color.r, base_color.g, base_color.b, 0.45)
 
 
+func _update_snap_side_label() -> void:
+	if not _build_snap_side_label:
+		return
+	const SIDE_NAMES := ["Forward", "Back", "Left", "Right", "Top", "Bottom"]
+	_build_snap_side_label.text = "Side: " + SIDE_NAMES[_build_snap_side]
+
 func _build_snap_label(root: Control) -> void:
 	_snap_label = Label.new()
 	_snap_label.name = "SnapLabel"
@@ -6160,6 +6214,24 @@ func _build_snap_label(root: Control) -> void:
 	_snap_label.z_index = 80
 	_snap_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_snap_label)
+
+	_build_snap_side_label = Label.new()
+	_build_snap_side_label.name = "SnapSideLabel"
+	_build_snap_side_label.visible = false
+	_build_snap_side_label.add_theme_font_size_override("font_size", 14)
+	_build_snap_side_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_build_snap_side_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.8))
+	_build_snap_side_label.add_theme_constant_override("shadow_offset_x", 1)
+	_build_snap_side_label.add_theme_constant_override("shadow_offset_y", 1)
+	_build_snap_side_label.set_anchors_preset(Control.PRESET_CENTER)
+	_build_snap_side_label.offset_top = 58
+	_build_snap_side_label.offset_bottom = 78
+	_build_snap_side_label.offset_left = -60
+	_build_snap_side_label.offset_right = 60
+	_build_snap_side_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_build_snap_side_label.z_index = 80
+	_build_snap_side_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_build_snap_side_label)
 
 
 func _build_build_crosshair(root: Control) -> void:

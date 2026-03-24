@@ -32,12 +32,12 @@ WeatherSystem="*res://scripts/autoloads/weather_system.gd"
 SteamManager="*res://scripts/autoloads/steam_manager.gd"
 NetworkManager="*res://scripts/autoloads/network_manager.gd"
 ChatManager="*res://scripts/network/chat_manager.gd"
+
 [display]
 
 window/size/viewport_width=1920
 window/size/viewport_height=1080
 window/size/mode=3
-window/size/resizable=true
 window/stretch/mode="canvas_items"
 
 [editor_plugins]
