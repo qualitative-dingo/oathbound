@@ -484,6 +484,43 @@ func tick_arrows(delta: float) -> void:
 				stick_arrow(arrow)
 				break
 
+		# PvP arrow hits
+		if not arrow.get_meta("hit", false) and NetworkManager.pvp_enabled:
+			for p_node: Node in pc.get_tree().get_nodes_in_group(&"player"):
+				var other := p_node as CharacterBody3D
+				if not other or other == pc:
+					continue
+				if other.get("current_health") != null and float(other.current_health) <= 0.0:
+					continue
+				var p_radius := 0.5
+				var p_height := 1.8
+				var p_y_offset := 0.9
+				var p_bottom := other.global_position.y + p_y_offset - p_height * 0.5
+				var p_top := other.global_position.y + p_y_offset + p_height * 0.5
+				var p_hit_margin := p_radius + 0.3
+				var p_did_hit := false
+				var p_hit_pos := new_pos
+				for si in step_count + 1:
+					var t := float(si) / float(step_count)
+					var sample := old_pos.lerp(new_pos, t)
+					var clamped_y := clampf(sample.y, p_bottom, p_top)
+					var closest_axis := Vector3(other.global_position.x, clamped_y, other.global_position.z)
+					if sample.distance_to(closest_axis) < p_hit_margin:
+						p_did_hit = true
+						p_hit_pos = sample
+						break
+				if p_did_hit:
+					arrow.global_position = p_hit_pos
+					pc._apply_damage_to_player(other, dmg)
+					_DamageNumber.spawn(pc.get_tree(), other.global_position + Vector3.UP * 1.5, dmg, false, "auto")
+					if kb > 0.0:
+						var kb_dir := (other.global_position - p_hit_pos).normalized()
+						kb_dir.y = 0.0
+						other.velocity += kb_dir * kb * 0.1
+					arrow.set_meta("hit", true)
+					stick_arrow(arrow)
+					break
+
 		if not arrow.get_meta("hit", false):
 			for fish_node: Node in pc.get_tree().get_nodes_in_group(&"carried_fish"):
 				var fish := fish_node as Node3D
@@ -1045,6 +1082,46 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 			kb_dir.y = 0.0
 			(best_enemy as CharacterBody3D).velocity += kb_dir * kb * 0.1
 
+	# PvP melee hits
+	if NetworkManager.pvp_enabled:
+		var best_pvp: Node3D = null
+		var best_pvp_dist := INF
+		for node: Node in pc.get_tree().get_nodes_in_group(&"player"):
+			var other := node as CharacterBody3D
+			if not other or other == pc:
+				continue
+			if other.get("current_health") != null and float(other.current_health) <= 0.0:
+				continue
+			var to_other: Vector3 = other.global_position - check_origin
+			to_other.y = 0.0
+			var dist: float = to_other.length()
+			if dist > wpn_range:
+				continue
+			var dir_to: Vector3 = to_other.normalized()
+			var dot: float = dir_to.dot(fwd_flat)
+			if dot < cone_threshold:
+				continue
+			if single_target:
+				if dist < best_pvp_dist:
+					best_pvp_dist = dist
+					best_pvp = other
+			else:
+				pc._apply_damage_to_player(other, dmg)
+				_DamageNumber.spawn(pc.get_tree(), other.global_position + Vector3.UP * 1.0, dmg, did_crit, hit_type)
+				hit_something = true
+				if kb > 0.0:
+					var kb_dir: Vector3 = (other.global_position - pc.global_position).normalized()
+					kb_dir.y = 0.0
+					other.velocity += kb_dir * kb * 0.1
+		if single_target and best_pvp:
+			pc._apply_damage_to_player(best_pvp, dmg)
+			_DamageNumber.spawn(pc.get_tree(), best_pvp.global_position + Vector3.UP * 1.0, dmg, did_crit, hit_type)
+			hit_something = true
+			if kb > 0.0 and best_pvp is CharacterBody3D:
+				var kb_dir: Vector3 = (best_pvp.global_position - pc.global_position).normalized()
+				kb_dir.y = 0.0
+				(best_pvp as CharacterBody3D).velocity += kb_dir * kb * 0.1
+
 	for enemy in hit_enemies:
 		if not is_instance_valid(enemy):
 			continue
@@ -1584,6 +1661,9 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		return
 	if pc._is_dodging:
 		return
+	if _source and _source != pc and _source.is_in_group(&"player"):
+		if not NetworkManager.pvp_enabled:
+			return
 	if _source and _source.has_method("take_damage"):
 		pc._set_target_creature(_source)
 

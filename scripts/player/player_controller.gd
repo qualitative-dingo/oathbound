@@ -2897,6 +2897,43 @@ func _tick_arrows(delta: float) -> void:
 					_stick_arrow(arrow)
 				break
 
+		# PvP arrow hits
+		if not arrow.get_meta("hit", false) and NetworkManager.pvp_enabled:
+			for p_node: Node in get_tree().get_nodes_in_group(&"player"):
+				var other := p_node as CharacterBody3D
+				if not other or other == self:
+					continue
+				if other.get("current_health") != null and float(other.current_health) <= 0.0:
+					continue
+				var p_radius := 0.5
+				var p_height := 1.8
+				var p_y_offset := 0.9
+				var p_bottom := other.global_position.y + p_y_offset - p_height * 0.5
+				var p_top := other.global_position.y + p_y_offset + p_height * 0.5
+				var p_hit_margin := p_radius + 0.3
+				var p_did_hit := false
+				var p_hit_pos := new_pos
+				for si in step_count + 1:
+					var t := float(si) / float(step_count)
+					var sample := old_pos.lerp(new_pos, t)
+					var clamped_y := clampf(sample.y, p_bottom, p_top)
+					var closest_axis := Vector3(other.global_position.x, clamped_y, other.global_position.z)
+					if sample.distance_to(closest_axis) < p_hit_margin:
+						p_did_hit = true
+						p_hit_pos = sample
+						break
+				if p_did_hit:
+					arrow.global_position = p_hit_pos
+					_apply_damage_to_player(other, dmg)
+					_DamageNumber.spawn(get_tree(), other.global_position + Vector3.UP * 1.5, dmg, false, "auto")
+					if kb > 0.0:
+						var kb_dir := (other.global_position - p_hit_pos).normalized()
+						kb_dir.y = 0.0
+						other.velocity += kb_dir * kb * 0.1
+					arrow.set_meta("hit", true)
+					_stick_arrow(arrow)
+					break
+
 		if not arrow.get_meta("hit", false):
 			for fish_node: Node in all_fish:
 				var fish := fish_node as Node3D
@@ -3401,6 +3438,25 @@ func _build_pause_menu() -> void:
 	_pause_mode_options.item_selected.connect(_on_display_mode_selected)
 	mode_row.add_child(_pause_mode_options)
 	vbox.add_child(mode_row)
+
+	var pvp_row := HBoxContainer.new()
+	pvp_row.add_theme_constant_override("separation", 10)
+	pvp_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var pvp_label := Label.new()
+	pvp_label.text = "Enable PvP"
+	pvp_label.add_theme_font_size_override("font_size", 14)
+	pvp_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
+	pvp_row.add_child(pvp_label)
+	var pvp_check := CheckButton.new()
+	pvp_check.button_pressed = NetworkManager.pvp_enabled
+	pvp_check.disabled = not NetworkManager.is_server()
+	pvp_check.toggled.connect(func(on: bool) -> void:
+		NetworkManager.set_pvp_enabled(on)
+	)
+	pvp_row.add_child(pvp_check)
+	if not NetworkManager.is_connected_to_game():
+		pvp_row.visible = false
+	vbox.add_child(pvp_row)
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 6)
@@ -8502,6 +8558,18 @@ func _apply_damage_to_creature(creature: Node3D, amount: float) -> void:
 		creature.take_damage(amount, self)
 
 
+func _apply_damage_to_player(target: Node3D, amount: float) -> void:
+	if not target.has_method("take_damage"):
+		return
+	if not NetworkManager.pvp_enabled:
+		return
+	var target_peer := target.get_multiplayer_authority()
+	if not NetworkManager.is_connected_to_game() or target_peer == multiplayer.get_unique_id():
+		target.take_damage(amount, self)
+	else:
+		NetworkManager.request_pvp_damage(target_peer, amount)
+
+
 func _echoing_blade_hit(positions: Array[Vector3], echo_dmg: float) -> void:
 	const ECHO_RADIUS := 2.5
 	var already_hit: Array[Node3D] = []
@@ -8631,6 +8699,46 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 			var kb_dir: Vector3 = (best_enemy.global_position - global_position).normalized()
 			kb_dir.y = 0.0
 			(best_enemy as CharacterBody3D).velocity += kb_dir * kb * 0.1
+
+	# PvP melee hits
+	if NetworkManager.pvp_enabled:
+		var best_pvp: Node3D = null
+		var best_pvp_dist := INF
+		for node: Node in get_tree().get_nodes_in_group(&"player"):
+			var other := node as CharacterBody3D
+			if not other or other == self:
+				continue
+			if other.get("current_health") != null and float(other.current_health) <= 0.0:
+				continue
+			var to_other: Vector3 = other.global_position - check_origin
+			to_other.y = 0.0
+			var dist: float = to_other.length()
+			if dist > wpn_range:
+				continue
+			var dir_to: Vector3 = to_other.normalized()
+			var dot: float = dir_to.dot(fwd_flat)
+			if dot < cone_threshold:
+				continue
+			if single_target:
+				if dist < best_pvp_dist:
+					best_pvp_dist = dist
+					best_pvp = other
+			else:
+				_apply_damage_to_player(other, dmg)
+				_DamageNumber.spawn(get_tree(), other.global_position + Vector3.UP * 1.0, dmg, did_crit, hit_type)
+				hit_something = true
+				if kb > 0.0:
+					var kb_dir: Vector3 = (other.global_position - global_position).normalized()
+					kb_dir.y = 0.0
+					other.velocity += kb_dir * kb * 0.1
+		if single_target and best_pvp:
+			_apply_damage_to_player(best_pvp, dmg)
+			_DamageNumber.spawn(get_tree(), best_pvp.global_position + Vector3.UP * 1.0, dmg, did_crit, hit_type)
+			hit_something = true
+			if kb > 0.0 and best_pvp is CharacterBody3D:
+				var kb_dir: Vector3 = (best_pvp.global_position - global_position).normalized()
+				kb_dir.y = 0.0
+				(best_pvp as CharacterBody3D).velocity += kb_dir * kb * 0.1
 
 	# Post-hit affix procs
 	for enemy in hit_enemies:
@@ -9575,6 +9683,9 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		return
 	if _is_dodging:
 		return
+	if _source and _source != self and _source.is_in_group(&"player"):
+		if not NetworkManager.pvp_enabled:
+			return
 	if _source and _source.has_method("take_damage"):
 		_set_target_creature(_source)
 

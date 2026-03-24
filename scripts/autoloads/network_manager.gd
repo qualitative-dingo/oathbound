@@ -24,6 +24,7 @@ var steam_lobby_id: int = 0
 var world_seed: String = ""
 var world_name: String = ""
 var character_name: String = ""
+var pvp_enabled := false
 
 var _player_data_cache: Dictionary = {}
 
@@ -215,6 +216,7 @@ func _cleanup_old_session() -> void:
 	_player_data_cache.clear()
 	is_hosting = false
 	use_steam = false
+	pvp_enabled = false
 
 
 func disconnect_game() -> void:
@@ -573,3 +575,58 @@ func _serialize_inventory_from(inv: PlayerInventory) -> Dictionary:
 		eq[slot] = String(inv.get_equipped(slot))
 	result["equipped"] = eq
 	return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PvP
+# ═══════════════════════════════════════════════════════════════════════════════
+
+func set_pvp_enabled(enabled: bool) -> void:
+	pvp_enabled = enabled
+	if is_connected_to_game():
+		_sync_pvp.rpc(enabled)
+
+
+@rpc("authority", "reliable", "call_local")
+func _sync_pvp(enabled: bool) -> void:
+	pvp_enabled = enabled
+
+
+func request_pvp_damage(target_peer: int, amount: float) -> void:
+	if not pvp_enabled:
+		return
+	if not is_connected_to_game():
+		return
+	if is_server():
+		_server_apply_pvp_damage(multiplayer.get_unique_id(), target_peer, amount)
+	else:
+		_rpc_request_pvp_damage.rpc_id(1, target_peer, amount)
+
+
+@rpc("any_peer", "reliable")
+func _rpc_request_pvp_damage(target_peer: int, amount: float) -> void:
+	if not multiplayer.is_server():
+		return
+	if not pvp_enabled:
+		return
+	var source_peer := multiplayer.get_remote_sender_id()
+	_server_apply_pvp_damage(source_peer, target_peer, amount)
+
+
+func _server_apply_pvp_damage(source_peer: int, target_peer: int, amount: float) -> void:
+	var clamped := clampf(amount, 0.0, 9999.0)
+	if target_peer == multiplayer.get_unique_id():
+		var target := _get_player_by_peer(target_peer)
+		var source := _get_player_by_peer(source_peer)
+		if target and target.has_method("take_damage"):
+			target.take_damage(clamped, source)
+	else:
+		_rpc_deal_pvp_damage.rpc_id(target_peer, clamped, source_peer)
+
+
+@rpc("authority", "reliable")
+func _rpc_deal_pvp_damage(amount: float, source_peer: int) -> void:
+	var target := _get_player_by_peer(multiplayer.get_unique_id())
+	var source := _get_player_by_peer(source_peer)
+	if target and target.has_method("take_damage"):
+		target.take_damage(amount, source)
