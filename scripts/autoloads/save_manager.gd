@@ -1,4 +1,7 @@
 extends Node
+
+const _DEBUG_LOG := false
+
 ## Handles saving and loading game state: player data, inventory, world info.
 
 const SAVE_DIR := "user://saves/"
@@ -319,8 +322,12 @@ func _serialize_player(player: Node) -> Dictionary:
 	if not player:
 		return {}
 	var p := player as CharacterBody3D
+	var wp := p.global_position
+	var wgs := get_tree().get_nodes_in_group(&"world_generator")
+	if not wgs.is_empty() and wgs[0].has_method(&"get_world_position"):
+		wp = wgs[0].get_world_position(p)
 	return {
-		"position": {"x": p.global_position.x, "y": p.global_position.y, "z": p.global_position.z},
+		"position": {"x": wp.x, "y": wp.y, "z": wp.z},
 		"rotation_y": p.rotation.y,
 		"health": p.get("current_health"),
 		"stamina": p.get("current_stamina"),
@@ -348,7 +355,10 @@ func _deserialize_player(player: Node, data: Dictionary) -> void:
 		if not wgs.is_empty() and wgs[0].has_method(&"get_height_at"):
 			var ground_y: float = wgs[0].get_height_at(saved_pos.x, saved_pos.z)
 			saved_pos.y = maxf(saved_pos.y, ground_y + 1.5)
-		p.global_position = saved_pos
+		if not wgs.is_empty() and wgs[0].has_method(&"world_to_scene_pos"):
+			p.global_position = wgs[0].world_to_scene_pos(saved_pos)
+		else:
+			p.global_position = saved_pos
 		p.velocity = Vector3.ZERO
 	if data.has("rotation_y"):
 		p.rotation.y = float(data["rotation_y"])
@@ -410,7 +420,8 @@ func _deserialize_inventory(data: Dictionary) -> void:
 	if not eq_data.is_empty():
 		var migrated_eq: Dictionary = {}
 		for slot: String in eq_data.keys():
-			migrated_eq[slot] = _migrate_item_id(StringName(str(eq_data[slot])))
+			var mid := _migrate_item_id(StringName(str(eq_data[slot])))
+			migrated_eq[slot] = _migrate_replaced_affixes(mid)
 		Inventory.set_equipped_from_save(migrated_eq)
 	GameEvents.inventory_changed.emit()
 
@@ -428,13 +439,15 @@ func _migrate_item_id(old_id: StringName) -> StringName:
 	var rolled: Array[StringName] = ItemDatabase.roll_affixes(stars, ItemDatabase.get_affix_slot(parsed["base_id"]))
 	if rolled.is_empty():
 		return old_id
-	return ItemDatabase.make_star_id(parsed["base_id"], stars, rolled)
+	var rolls: Dictionary = ItemDatabase.roll_affix_magnitudes(rolled)
+	return ItemDatabase.make_star_id(parsed["base_id"], stars, rolled, rolls)
 
 
 func _migrate_missing_affixes() -> void:
 	var remap: Dictionary = {}
 	for old_id: StringName in Inventory._slots.keys():
 		var new_id := _migrate_item_id(old_id)
+		new_id = _migrate_replaced_affixes(new_id)
 		if new_id != old_id:
 			remap[old_id] = new_id
 
@@ -451,6 +464,34 @@ func _migrate_missing_affixes() -> void:
 			Inventory._order[idx] = new_id
 		elif not Inventory._order.has(new_id):
 			Inventory._order.append(new_id)
+
+
+const _AFFIX_REPLACEMENTS := {&"piercing": &"bouncing_shot"}
+
+func _migrate_replaced_affixes(item_id: StringName) -> StringName:
+	var parsed := ItemDatabase.parse_star_id(item_id)
+	var affixes: Array = parsed.get("affixes", [])
+	if affixes.is_empty():
+		return item_id
+	var changed := false
+	var new_affixes: Array[StringName] = []
+	var new_rolls: Dictionary = parsed.get("affix_rolls", {}).duplicate()
+	for a: StringName in affixes:
+		if _AFFIX_REPLACEMENTS.has(a):
+			var replacement: StringName = _AFFIX_REPLACEMENTS[a]
+			new_affixes.append(replacement)
+			var old_roll: float = new_rolls.get(a, randf())
+			new_rolls.erase(a)
+			new_rolls[replacement] = old_roll
+			changed = true
+		else:
+			new_affixes.append(a)
+	if not changed:
+		return item_id
+	var int_rolls: Dictionary = {}
+	for key: StringName in new_rolls:
+		int_rolls[key] = int(clampf(float(new_rolls[key]) * 100.0, 0.0, 100.0))
+	return ItemDatabase.make_star_id(parsed["base_id"], parsed["stars"], new_affixes, int_rolls)
 
 
 func _serialize_structures() -> Array:
@@ -495,13 +536,17 @@ func _deserialize_structures(data: Array) -> void:
 		var build_id: String = d.get("build_id", "")
 		if build_id.is_empty():
 			continue
-		var pos := Vector3(
+		var world_pos := Vector3(
 			float(d.get("px", 0.0)),
 			float(d.get("py", 0.0)),
 			float(d.get("pz", 0.0)),
 		)
+		var wgs2 := get_tree().get_nodes_in_group(&"world_generator")
+		var scene_pos := world_pos
+		if not wgs2.is_empty() and wgs2[0].has_method(&"world_to_scene_pos"):
+			scene_pos = wgs2[0].world_to_scene_pos(world_pos)
 		var rot_y: float = float(d.get("ry", 0.0))
-		player.rebuild_structure(build_id, pos, rot_y)
+		player.rebuild_structure(build_id, scene_pos, rot_y)
 		if d.has("chest_contents"):
 			var raw: Array = d["chest_contents"] as Array
 			var restored: Array = []
@@ -576,4 +621,4 @@ func save_disconnected_player(peer_id: int, char_id: String, player_data: Dictio
 	var file := FileAccess.open(save_path, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(data, "\t"))
-		print("[SAVE] Saved disconnected player %s (peer %d)" % [char_id, peer_id])
+		if _DEBUG_LOG: print("[SAVE] Saved disconnected player %s (peer %d)" % [char_id, peer_id])

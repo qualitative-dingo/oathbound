@@ -158,15 +158,26 @@ func get_grouped_item_list() -> Array:
 	return result
 
 
+func _scan_slots_by_star(base_id: StringName, min_star: int, max_star: int) -> Dictionary:
+	var by_star: Dictionary = {}
+	for slot_id: StringName in _slots.keys():
+		var parsed := ItemDatabase.parse_star_id(slot_id)
+		if parsed["base_id"] == base_id:
+			var s := int(parsed["stars"])
+			if s >= min_star and s <= max_star:
+				by_star[s] = {"key": slot_id, "qty": int(_slots[slot_id])}
+	return by_star
+
+
 func preview_consume_any_star(base_id: StringName, amount: int) -> Dictionary:
+	var by_star := _scan_slots_by_star(base_id, 0, 5)
 	var result: Dictionary = {}
 	var remaining := amount
 	for star_level in range(6):
 		if remaining <= 0:
 			break
-		var check_id := ItemDatabase.make_star_id(base_id, star_level)
-		if _slots.has(check_id):
-			var available: int = int(_slots[check_id])
+		if by_star.has(star_level):
+			var available: int = by_star[star_level]["qty"]
 			var take := mini(available, remaining)
 			remaining -= take
 			if take > 0:
@@ -177,21 +188,22 @@ func preview_consume_any_star(base_id: StringName, amount: int) -> Dictionary:
 func remove_item_any_star(base_id: StringName, amount: int) -> bool:
 	if not has_item_any_star(base_id, amount):
 		return false
+	var by_star := _scan_slots_by_star(base_id, 0, 5)
 	var remaining := amount
 	for star_level in range(6):
 		if remaining <= 0:
 			break
-		var check_id := ItemDatabase.make_star_id(base_id, star_level)
-		if _slots.has(check_id):
-			var available: int = int(_slots[check_id])
+		if by_star.has(star_level):
+			var slot_key: StringName = by_star[star_level]["key"]
+			var available: int = by_star[star_level]["qty"]
 			var take := mini(available, remaining)
 			remaining -= take
 			available -= take
 			if available <= 0:
-				_slots.erase(check_id)
-				_order.erase(check_id)
+				_slots.erase(slot_key)
+				_order.erase(slot_key)
 			else:
-				_slots[check_id] = available
+				_slots[slot_key] = available
 	if remaining <= 0:
 		changed.emit()
 		GameEvents.inventory_changed.emit()
@@ -201,11 +213,9 @@ func remove_item_any_star(base_id: StringName, amount: int) -> bool:
 
 func get_amount_capped_star(base_id: StringName, max_star: int, min_star: int = 0) -> int:
 	var total := 0
-	for slot_id: StringName in _slots.keys():
-		var parsed := ItemDatabase.parse_star_id(slot_id)
-		var s := int(parsed["stars"])
-		if parsed["base_id"] == base_id and s >= min_star and s <= max_star:
-			total += int(_slots[slot_id])
+	var by_star := _scan_slots_by_star(base_id, min_star, max_star)
+	for s: int in by_star.keys():
+		total += int(by_star[s]["qty"])
 	return total
 
 
@@ -214,15 +224,15 @@ func has_item_capped_star(base_id: StringName, amount: int, max_star: int, min_s
 
 
 func preview_consume_capped_star(base_id: StringName, amount: int, max_star: int, min_star: int = 0, prefer_low: bool = false) -> Dictionary:
+	var by_star := _scan_slots_by_star(base_id, min_star, max_star)
 	var result: Dictionary = {}
 	var remaining := amount
 	if prefer_low:
 		for star_level in range(min_star, max_star + 1):
 			if remaining <= 0:
 				break
-			var check_id := ItemDatabase.make_star_id(base_id, star_level)
-			if _slots.has(check_id):
-				var available: int = int(_slots[check_id])
+			if by_star.has(star_level):
+				var available: int = by_star[star_level]["qty"]
 				var take := mini(available, remaining)
 				remaining -= take
 				if take > 0:
@@ -231,9 +241,8 @@ func preview_consume_capped_star(base_id: StringName, amount: int, max_star: int
 		for star_level in range(max_star, min_star - 1, -1):
 			if remaining <= 0:
 				break
-			var check_id := ItemDatabase.make_star_id(base_id, star_level)
-			if _slots.has(check_id):
-				var available: int = int(_slots[check_id])
+			if by_star.has(star_level):
+				var available: int = by_star[star_level]["qty"]
 				var take := mini(available, remaining)
 				remaining -= take
 				if take > 0:
@@ -244,6 +253,7 @@ func preview_consume_capped_star(base_id: StringName, amount: int, max_star: int
 func remove_item_capped_star(base_id: StringName, amount: int, max_star: int, min_star: int = 0, prefer_low: bool = false) -> bool:
 	if not has_item_capped_star(base_id, amount, max_star, min_star):
 		return false
+	var by_star := _scan_slots_by_star(base_id, min_star, max_star)
 	var remaining := amount
 	var star_range: Array[int] = []
 	if prefer_low:
@@ -255,17 +265,17 @@ func remove_item_capped_star(base_id: StringName, amount: int, max_star: int, mi
 	for star_level in star_range:
 		if remaining <= 0:
 			break
-		var check_id := ItemDatabase.make_star_id(base_id, star_level)
-		if _slots.has(check_id):
-			var available: int = int(_slots[check_id])
+		if by_star.has(star_level):
+			var slot_key: StringName = by_star[star_level]["key"]
+			var available: int = by_star[star_level]["qty"]
 			var take := mini(available, remaining)
 			remaining -= take
 			available -= take
 			if available <= 0:
-				_slots.erase(check_id)
-				_order.erase(check_id)
+				_slots.erase(slot_key)
+				_order.erase(slot_key)
 			else:
-				_slots[check_id] = available
+				_slots[slot_key] = available
 	if remaining <= 0:
 		changed.emit()
 		GameEvents.inventory_changed.emit()

@@ -43,7 +43,6 @@ func toggle_inventory() -> void:
 func close_inventory() -> void:
 	pc._inventory_open = false
 	cancel_drag()
-	cancel_equip_progress()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if pc._inventory_panel:
 		pc._inventory_panel.visible = false
@@ -626,6 +625,7 @@ func show_tooltip_for_item(item_id: StringName) -> void:
 
 	# Affixes section
 	var tip_affixes: Array = parsed_tip.get("affixes", [])
+	var tip_rolls: Dictionary = parsed_tip.get("affix_rolls", {})
 	if not tip_affixes.is_empty():
 		text += "\n\n[color=#666666]───────────────[/color]"
 		for affix_id in tip_affixes:
@@ -633,7 +633,8 @@ func show_tooltip_for_item(item_id: StringName) -> void:
 			if affix_data.is_empty():
 				continue
 			var affix_name: String = affix_data.get("name", str(affix_id)) as String
-			var affix_desc: String = affix_data.get("description", "") as String
+			var roll: float = float(tip_rolls.get(affix_id, 0.5))
+			var affix_desc: String = ItemDatabase.format_affix_description(affix_id, roll)
 			text += "\n[color=#ffd700]%s[/color]" % affix_name
 			if affix_desc != "":
 				text += "\n[color=#aaaaaa]%s[/color]" % affix_desc
@@ -851,6 +852,7 @@ func refresh_crafting_ui() -> void:
 		icon_rect.custom_minimum_size = Vector2(36, 36)
 		icon_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
 		icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon_rect.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var icon_tex: Texture2D = ItemDatabase.get_icon(item_id)
 		if icon_tex:
 			icon_rect.texture = icon_tex
@@ -879,7 +881,7 @@ func refresh_crafting_ui() -> void:
 			var req_data: Dictionary = ItemDatabase.get_item(req_id)
 			var req_name: String = req_data.get("name", str(req_id)) as String
 			var have: int = Inventory.get_amount_capped_star(req_id, hand_max, 0) if not hand_is_equip else Inventory.get_amount_any_star(req_id)
-			var have_color := "aaffaa" if have >= req_amt else "ff6666"
+			var have_color := "aaffaa" if (have >= req_amt or Inventory.has_free_craft()) else "ff6666"
 			if cost_text != "":
 				cost_text += "  "
 			cost_text += "[color=#%s]%s %d/%d[/color]" % [have_color, req_name, have, req_amt]

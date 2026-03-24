@@ -58,8 +58,18 @@ vec3 triplanar(sampler2D tex, vec3 wpos, vec3 blend, float scale) {
 	return col;
 }
 
+uniform vec3 origin_shift;
+
+varying vec3 v_world_pos;
+
+void vertex() {
+	// Scene-space position (small thanks to floating origin) + origin_shift = true world position.
+	// Vertex transforms use small scene coords (GPU-friendly), but texturing needs stable world coords.
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
+}
+
 void fragment() {
-	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec3 world_pos = v_world_pos;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 
 	vec3 blend = abs(world_normal);

@@ -19,6 +19,8 @@ extends Node3D
 ##   - Terrain generated once per zone on first visit, then cached.
 
 const _ZonePopulator := preload("res://scripts/world/zone_populator.gd")
+const _ZonePool := preload("res://scripts/world/zone_pool.gd")
+const _DebugPortal := preload("res://scripts/interactables/debug_portal.gd")
 
 signal zone_loaded(coord: Vector2i)
 signal zone_unloaded(coord: Vector2i)
@@ -34,7 +36,7 @@ const ZONE_SIZE := 64.0
 @export_group("Loading")
 @export var load_radius_zones: int = 2
 @export var unload_radius_zones: int = 3
-const MAX_ZONES_PER_FRAME := 1
+const MAX_ZONES_PER_FRAME := 2  # can be higher now since builds happen off-thread
 const MESH_RESOLUTION := 32
 
 @export_group("Terrain")
@@ -50,8 +52,6 @@ var _seed_hash: int
 var _continent_noise: FastNoiseLite
 var _mountain_noise: FastNoiseLite
 var _detail_noise: FastNoiseLite
-var _biome_temp_noise: FastNoiseLite
-var _biome_moisture_noise: FastNoiseLite
 var _color_noise: FastNoiseLite
 var _microbiome_noise: FastNoiseLite
 var _microbiome_secondary: FastNoiseLite
@@ -69,6 +69,58 @@ const _D8DIST := [1.0, 1.414, 1.0, 1.414, 1.0, 1.414, 1.0, 1.414]
 var _ws_dim: int = 0
 var _ws_accum: PackedFloat32Array
 
+# ─── Floating Origin ──────────────────────────────────────────────────────────
+# Periodically re-centers the scene around the player so the GPU always works
+# with small coordinate values.  Prevents precision/performance degradation at
+# large world coordinates (confirmed: solid-green shader still 25 FPS at 5 km
+# from origin, 60 FPS when terrain hidden — vertex transforms are the culprit).
+
+var origin_shift := Vector3.ZERO          ## Cumulative world-space offset applied to the scene
+const ORIGIN_SHIFT_THRESHOLD := 512.0     ## Shift when player scene-pos exceeds this (lower = sooner, safer for GPU precision)
+
+func get_world_position(node: Node3D) -> Vector3:
+	return node.global_position + origin_shift
+
+func get_world_position_vec(scene_pos: Vector3) -> Vector3:
+	return scene_pos + origin_shift
+
+func world_to_scene_pos(world_pos: Vector3) -> Vector3:
+	return world_pos - origin_shift
+
+func get_height_at_scene(sx: float, sz: float) -> float:
+	return get_height_at(sx + origin_shift.x, sz + origin_shift.z)
+
+func _check_origin_shift() -> void:
+	if _players.is_empty():
+		return
+	var scene_pos := _players[0].global_position
+	if absf(scene_pos.x) < ORIGIN_SHIFT_THRESHOLD and absf(scene_pos.z) < ORIGIN_SHIFT_THRESHOLD:
+		return
+	var world_pos := scene_pos + origin_shift
+	var new_origin := Vector3(
+		floorf(world_pos.x / ZONE_SIZE) * ZONE_SIZE,
+		0.0,
+		floorf(world_pos.z / ZONE_SIZE) * ZONE_SIZE)
+	var delta := new_origin - origin_shift
+	if delta.length_squared() < ZONE_SIZE * ZONE_SIZE:
+		return
+	var root := get_tree().current_scene
+	for child in root.get_children():
+		if child is Node3D:
+			child.global_position -= delta
+	origin_shift = new_origin
+	_sync_origin_shift_to_shaders()
+	print("[FLOATING ORIGIN] Shifted by (%.0f, 0, %.0f), total offset now (%.0f, 0, %.0f)" % [
+		delta.x, delta.z, origin_shift.x, origin_shift.z])
+
+
+func _sync_origin_shift_to_shaders() -> void:
+	for biome_id in _biome_materials:
+		var mat: ShaderMaterial = _biome_materials[biome_id] as ShaderMaterial
+		if mat:
+			mat.set_shader_parameter("origin_shift", origin_shift)
+	_ZonePopulator.origin_shift = origin_shift
+
 # ─── Zone Management ──────────────────────────────────────────────────────────
 
 var _loaded_zones: Dictionary = {}
@@ -84,6 +136,16 @@ var _needs_player_placement := true
 var _global_water_plane: MeshInstance3D
 var _last_explore_pos := Vector3(INF, INF, INF)
 var _zone_water_cache: Dictionary = {}
+
+# Terrain mesh cache: avoids rebuilding ArrayMesh + ConcavePolygonShape3D on zone revisit
+var _terrain_mesh_cache: Dictionary = {}  # Vector2i → Array (mesh arrays)
+var _terrain_shape_cache: Dictionary = {}  # Vector2i → ConcavePolygonShape3D
+const _MAX_TERRAIN_CACHE := 100
+
+# Threaded zone generation
+var _gen_mutex := Mutex.new()
+var _gen_ready_queue: Array = []           # [{coord, arrays, shape}] — filled by workers
+var _gen_in_flight: Dictionary = {}        # coord → true — zones currently being built on threads
 
 const SUB_CHUNK_RES := 4
 
@@ -134,6 +196,15 @@ func get_sub_chunk_explore_fraction(zone_x: int, zone_z: int) -> float:
 
 
 func _ready() -> void:
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
+	Engine.max_fps = 60
+	_ZonePool.flush_all()
+	_finalize_backlog.clear()
+	_populate_backlog.clear()
+	_gen_ready_queue.clear()
+	_gen_in_flight.clear()
+	_terrain_mesh_cache.clear()
+	_terrain_shape_cache.clear()
 	_seed_hash = world_seed.hash()
 	add_to_group(&"world_generator")
 	_init_noise_layers()
@@ -156,43 +227,104 @@ func _ready() -> void:
 	if multiplayer.has_multiplayer_peer():
 		var csm := CreatureSyncManager.new()
 		csm.name = "CreatureSyncManager"
-		get_parent().add_child(csm, true)
+		get_parent().call_deferred("add_child", csm, true)
 
 
-func _physics_process(_delta: float) -> void:
+var _diag_timer := 0.0
+var _perf_max_queue_ms := 0.0
+var _perf_max_pending_ms := 0.0
+var _perf_max_unload_ms := 0.0
+var _perf_max_explore_ms := 0.0
+var _perf_max_total_ms := 0.0
+var _perf_pending_size_max := 0
+
+func _physics_process(delta: float) -> void:
+	var t0 := Time.get_ticks_usec()
+
+	_diag_timer -= delta
+	if _diag_timer <= 0.0:
+		_diag_timer = 5.0
+		var tree := get_tree()
+		var total_nodes := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+		var orphans := Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+		var objects := Performance.get_monitor(Performance.OBJECT_COUNT)
+		var draw_calls := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+		var vram_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_VIDEO_MEM_USED) / (1024.0 * 1024.0)
+		var buf_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_BUFFER_MEM_USED) / (1024.0 * 1024.0)
+		var tex_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TEXTURE_MEM_USED) / (1024.0 * 1024.0)
+		var process_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		var physics_ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+		var n_enemies := tree.get_nodes_in_group(&"enemies").size()
+		var n_interactables := tree.get_nodes_in_group(&"interactables").size()
+		var n_loot := tree.get_nodes_in_group(&"loot").size()
+		var n_structures := tree.get_nodes_in_group(&"structures").size()
+		print("[PERF DIAG] FPS=%d nodes=%d objects=%d draws=%d vram=%.1fMB buf=%.1fMB tex=%.1fMB proc=%.1fms phys=%.1fms zones=%d enemies=%d interact=%d loot=%d explored=%d sub=%d tcache=%d bg=%d mesh_q=%d pop_q=%d %s" % [
+			Engine.get_frames_per_second(), int(total_nodes), int(objects),
+			int(draw_calls), vram_mb, buf_mb, tex_mb, process_ms, physics_ms,
+			_loaded_zones.size(), n_enemies, n_interactables, n_loot,
+			_explored_zones.size(), _explored_sub_chunks.size(),
+			_terrain_mesh_cache.size(), _gen_in_flight.size(),
+			_finalize_backlog.size(), _populate_backlog.size(),
+			_ZonePool.get_pool_stats()])
+		print("[PERF DETAIL] wg_total=%.2fms queue=%.2fms pending=%.2fms unload=%.2fms explore=%.2fms pending_q=%d origin_shift=(%.0f,%.0f)" % [
+			_perf_max_total_ms, _perf_max_queue_ms, _perf_max_pending_ms,
+			_perf_max_unload_ms, _perf_max_explore_ms, _perf_pending_size_max,
+			origin_shift.x, origin_shift.z])
+		_perf_max_queue_ms = 0.0
+		_perf_max_pending_ms = 0.0
+		_perf_max_unload_ms = 0.0
+		_perf_max_explore_ms = 0.0
+		_perf_max_total_ms = 0.0
+		_perf_pending_size_max = 0
+
 	_players.clear()
 	for n in get_tree().get_nodes_in_group(&"player"):
 		if n is Node3D:
 			_players.append(n)
 	if _players.is_empty():
 		return
+	_check_origin_shift()
 	var host: Node3D = _players[0]
+	var host_wp := get_world_position(host)
 	if _needs_player_placement:
 		_needs_player_placement = false
-		var spawn_h := get_height_at(host.global_position.x, host.global_position.z)
+		var spawn_h := get_height_at(host_wp.x, host_wp.z)
 		host.global_position.y = spawn_h + 2.5
 		host.velocity = Vector3.ZERO
 	else:
-		# Safety: never let any player be buried underground
 		for p in _players:
-			var ground := get_height_at(p.global_position.x, p.global_position.z)
+			var wp := get_world_position(p)
+			var ground := get_height_at(wp.x, wp.z)
 			if p.global_position.y < ground - 0.5:
 				p.global_position.y = ground + 2.0
 				p.velocity = Vector3.ZERO
+
+	var t1 := Time.get_ticks_usec()
 	for p in _players:
-		_queue_zones_around(world_to_zone(p.global_position))
+		_queue_zones_around(world_to_zone(get_world_position(p)))
+	var t2 := Time.get_ticks_usec()
 	_process_pending_zones()
+	var t3 := Time.get_ticks_usec()
 	_unload_distant_zones(_players)
-	_check_biome_change(world_to_zone(host.global_position))
-	var explore_dist_sq := (host.global_position - _last_explore_pos).length_squared()
+	var t4 := Time.get_ticks_usec()
+	_update_zone_lods(_players, delta)
+	_check_biome_change(world_to_zone(host_wp))
+	var explore_dist_sq := (host_wp - _last_explore_pos).length_squared()
 	if explore_dist_sq > 16.0:
 		for p in _players:
-			explore_around(p.global_position, 3)
-		_last_explore_pos = host.global_position
+			explore_around(get_world_position(p), 3)
+		_last_explore_pos = host_wp
 	if _global_water_plane:
-		# Snap to zone grid so wave vertices don't shift with player movement
 		_global_water_plane.global_position.x = floorf(host.global_position.x / ZONE_SIZE) * ZONE_SIZE
 		_global_water_plane.global_position.z = floorf(host.global_position.z / ZONE_SIZE) * ZONE_SIZE
+	var t5 := Time.get_ticks_usec()
+
+	_perf_max_queue_ms = maxf(_perf_max_queue_ms, float(t2 - t1) / 1000.0)
+	_perf_max_pending_ms = maxf(_perf_max_pending_ms, float(t3 - t2) / 1000.0)
+	_perf_max_unload_ms = maxf(_perf_max_unload_ms, float(t4 - t3) / 1000.0)
+	_perf_max_explore_ms = maxf(_perf_max_explore_ms, float(t5 - t4) / 1000.0)
+	_perf_max_total_ms = maxf(_perf_max_total_ms, float(t5 - t0) / 1000.0)
+	_perf_pending_size_max = maxi(_perf_pending_size_max, _pending_zones.size())
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -220,17 +352,6 @@ func _init_noise_layers() -> void:
 	_detail_noise.frequency = detail_frequency
 	_detail_noise.fractal_octaves = 1
 
-	_biome_temp_noise = FastNoiseLite.new()
-	_biome_temp_noise.seed = _seed_hash + 3000
-	_biome_temp_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_biome_temp_noise.frequency = 0.002
-	_biome_temp_noise.fractal_octaves = 2
-
-	_biome_moisture_noise = FastNoiseLite.new()
-	_biome_moisture_noise.seed = _seed_hash + 4000
-	_biome_moisture_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_biome_moisture_noise.frequency = 0.0025
-	_biome_moisture_noise.fractal_octaves = 2
 
 	_color_noise = FastNoiseLite.new()
 	_color_noise.seed = _seed_hash + 9000
@@ -495,28 +616,13 @@ func _determine_biome(zone: Vector2i) -> StringName:
 	var center := zone_to_world_center(zone)
 	var dist := Vector2(center.x, center.z).length()
 	var altitude := get_height_at(center.x, center.z)
-	var temp := _biome_temp_noise.get_noise_2d(center.x, center.z)
-	var moisture := _biome_moisture_noise.get_noise_2d(center.x, center.z)
 	var dist_norm := dist / world_radius
 
 	var biome: StringName
-
 	if dist_norm > 0.9 or (altitude < -2.0 and dist_norm > 0.3):
 		biome = &"ocean"
-	elif dist_norm < 0.35:
-		biome = &"hearthlands"
-	elif dist_norm < 0.65:
-		if temp < -0.05:
-			biome = &"thornwood"
-		else:
-			biome = &"hearthlands"
 	else:
-		if temp < -0.1:
-			biome = &"thornwood"
-		elif temp > 0.1 and moisture < 0.1:
-			biome = &"scorched_steppe"
-		else:
-			biome = &"hearthlands"
+		biome = &"hearthlands"
 
 	_zone_biome_cache[zone] = biome
 	return biome
@@ -532,14 +638,53 @@ func _generate_spawn_area() -> void:
 		for z in range(spawn_zone.y - 1, spawn_zone.y + 2):
 			var coord := Vector2i(x, z)
 			if coord not in _loaded_zones:
-				_generate_zone(coord)
+				var arrays := _build_zone_mesh(coord)
+				var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+				var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+				var faces := PackedVector3Array()
+				faces.resize(indices.size())
+				for i in indices.size():
+					faces[i] = verts[indices[i]]
+				var shape := ConcavePolygonShape3D.new()
+				shape.set_faces(faces)
+				_terrain_mesh_cache[coord] = arrays
+				_terrain_shape_cache[coord] = shape
+				_finalize_zone(coord, arrays, shape)
+	# Spawn area must be fully populated before the player lands
+	while not _populate_backlog.is_empty():
+		var pitem: Dictionary = _populate_backlog.pop_front()
+		var pcoord: Vector2i = pitem["coord"]
+		var zone_root = pitem["zone_root"]
+		if is_instance_valid(zone_root):
+			_ZonePopulator.populate_zone(zone_root, pcoord, pitem["biome"], _seed_hash, get_height_at, pitem["micro"])
+			_update_zone_lod(zone_root, float((pcoord - spawn_zone).length()))
+			zone_loaded.emit(pcoord)
+
+	_spawn_debug_portals()
+
+
+const _PORTAL_FAR_X := 5120.0
+const _PORTAL_FAR_Z := 5120.0
+
+func _spawn_debug_portals() -> void:
+	var spawn_x := 25.0
+	var spawn_z := 20.0
+	var spawn_y := get_height_at(spawn_x, spawn_z) + 0.5
+	var pos_a := Vector3(spawn_x, spawn_y, spawn_z)
+
+	var far_y := get_height_at(_PORTAL_FAR_X, _PORTAL_FAR_Z)
+	if far_y < 0.5:
+		far_y = 2.0
+	var pos_b := Vector3(_PORTAL_FAR_X, far_y + 0.5, _PORTAL_FAR_Z)
+
+	_DebugPortal.create_portal_pair(self, pos_a, self, pos_b)
 
 
 func _queue_zones_around(center: Vector2i) -> void:
 	for x in range(center.x - load_radius_zones, center.x + load_radius_zones + 1):
 		for z in range(center.y - load_radius_zones, center.y + load_radius_zones + 1):
 			var coord := Vector2i(x, z)
-			if coord in _loaded_zones or coord in _pending_zones:
+			if coord in _loaded_zones or coord in _pending_zones or coord in _gen_in_flight:
 				continue
 			var world_center := zone_to_world_center(coord)
 			if Vector2(world_center.x, world_center.z).length() > world_radius * 1.1:
@@ -547,64 +692,261 @@ func _queue_zones_around(center: Vector2i) -> void:
 			_pending_zones.append(coord)
 
 
-func _process_pending_zones() -> void:
-	var count := 0
-	while count < MAX_ZONES_PER_FRAME and not _pending_zones.is_empty():
-		var coord: Vector2i = _pending_zones.pop_front()
-		if coord not in _loaded_zones:
-			_generate_zone(coord)
-			count += 1
+var _finalize_backlog: Array = []   # zones ready for mesh setup
+var _populate_backlog: Array = []   # zones with mesh ready, waiting for object spawning
 
+func _is_in_load_range(coord: Vector2i) -> bool:
+	for p in _players:
+		var pz := world_to_zone(get_world_position(p))
+		if float((coord - pz).length()) <= unload_radius_zones + 1:
+			return true
+	return false
+
+
+func _process_pending_zones() -> void:
+	# 1. Collect completed background builds — discard stale ones immediately
+	_gen_mutex.lock()
+	var ready := _gen_ready_queue.duplicate()
+	_gen_ready_queue.clear()
+	_gen_mutex.unlock()
+
+	for item in ready:
+		var coord: Vector2i = item["coord"]
+		_gen_in_flight.erase(coord)
+		if not _terrain_mesh_cache.has(coord):
+			_terrain_mesh_cache[coord] = item["arrays"]
+			_terrain_shape_cache[coord] = item["shape"]
+		if _is_in_load_range(coord):
+			_finalize_backlog.append(item)
+
+	_evict_terrain_cache()
+
+	# 2. Populate one zone's objects (spread across 4 frames per zone)
+	while not _populate_backlog.is_empty():
+		var pitem: Dictionary = _populate_backlog[0]
+		var pcoord: Vector2i = pitem["coord"]
+		var zone_root = pitem["zone_root"]  # untyped — may be freed between frames
+		if not is_instance_valid(zone_root) or not _is_in_load_range(pcoord):
+			_populate_backlog.pop_front()
+			continue
+		var phase: int = pitem.get("phase", 0)
+		var biome: StringName = pitem["biome"]
+		var micro: StringName = pitem["micro"]
+		var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
+		if done:
+			_populate_backlog.pop_front()
+			var min_dist := 999.0
+			for p in _players:
+				var pz := world_to_zone(get_world_position(p))
+				var d := float((pcoord - pz).length())
+				if d < min_dist:
+					min_dist = d
+			_update_zone_lod(zone_root, min_dist)
+			zone_loaded.emit(pcoord)
+		else:
+			pitem["phase"] = phase + 1
+		return  # don't finalize mesh AND populate on the same frame
+
+	# 3. Finalize up to 2 zones' meshes per frame
+	var finalized := 0
+	while finalized < 2 and not _finalize_backlog.is_empty():
+		var item: Dictionary = _finalize_backlog.pop_front()
+		var coord: Vector2i = item["coord"]
+		if not _is_in_load_range(coord):
+			continue
+		if coord not in _loaded_zones:
+			_finalize_zone(coord, item["arrays"], item["shape"])
+			finalized += 1
+
+	# 4. Submit new zone builds — stop if backlog is already large
+	if _finalize_backlog.size() + _gen_in_flight.size() > 30:
+		return
+	var submitted := 0
+	while submitted < MAX_ZONES_PER_FRAME and not _pending_zones.is_empty():
+		var coord: Vector2i = _pending_zones.pop_front()
+		if coord in _loaded_zones or coord in _gen_in_flight:
+			continue
+		if _terrain_mesh_cache.has(coord):
+			var cached_arrays: Array = _terrain_mesh_cache[coord]
+			var cached_shape: ConcavePolygonShape3D = _terrain_shape_cache.get(coord)
+			_finalize_backlog.append({"coord": coord, "arrays": cached_arrays, "shape": cached_shape})
+			submitted += 1
+			continue
+		_gen_in_flight[coord] = true
+		WorkerThreadPool.add_task(_bg_build_zone.bind(coord))
+		submitted += 1
+
+
+func _evict_terrain_cache() -> void:
+	if _terrain_mesh_cache.size() <= _MAX_TERRAIN_CACHE:
+		return
+	var player_zone := world_to_zone(get_world_position(_players[0])) if not _players.is_empty() else Vector2i.ZERO
+	var keep_r := unload_radius_zones + 2.0
+	var to_evict: Array[Vector2i] = []
+	for coord: Vector2i in _terrain_mesh_cache:
+		if float((coord - player_zone).length()) > keep_r:
+			to_evict.append(coord)
+	for coord in to_evict:
+		_terrain_mesh_cache.erase(coord)
+		_terrain_shape_cache.erase(coord)
+
+
+const _MAX_UNLOADS_PER_FRAME := 2
 
 func _unload_distant_zones(players: Array[Node3D]) -> void:
 	var to_remove: Array[Vector2i] = []
 	for coord in _loaded_zones:
 		var near_any := false
 		for p in players:
-			var pz := world_to_zone(p.global_position)
-			if (coord - pz).length() <= unload_radius_zones:
+			var pz := world_to_zone(get_world_position(p))
+			if float((coord - pz).length()) <= unload_radius_zones:
 				near_any = true
 				break
 		if not near_any:
 			to_remove.append(coord)
+	var unloaded := 0
 	for coord in to_remove:
-		_loaded_zones[coord].queue_free()
+		if unloaded >= _MAX_UNLOADS_PER_FRAME:
+			break
+		var zone_node: Node = _loaded_zones[coord]
+		if zone_node is StaticBody3D:
+			_ZonePool.recycle_zone(zone_node as StaticBody3D)
+		else:
+			zone_node.queue_free()
 		_loaded_zones.erase(coord)
 		_zone_biome_cache.erase(coord)
 		_zone_microbiome_cache.erase(coord)
 		_zone_water_cache.erase(coord)
+		unloaded += 1
 		zone_unloaded.emit(coord)
 
 
-func _generate_zone(coord: Vector2i) -> void:
-	var zone_root := StaticBody3D.new()
-	zone_root.name = "Zone_%d_%d" % [coord.x, coord.y]
-	zone_root.collision_layer = 1
+var _lod_timer := 0.0
+const _LOD_INTERVAL := 0.5
 
-	var biome := _determine_biome(coord)
-	var mesh_instance := MeshInstance3D.new()
-	var collision := CollisionShape3D.new()
+func _update_zone_lods(players: Array[Node3D], delta: float) -> void:
+	_lod_timer -= delta
+	if _lod_timer > 0.0:
+		return
+	_lod_timer = _LOD_INTERVAL
+	var nearest_pz := world_to_zone(get_world_position(players[0])) if not players.is_empty() else Vector2i.ZERO
+	for coord in _loaded_zones:
+		var min_dist := 999.0
+		for p in players:
+			var pz := world_to_zone(get_world_position(p))
+			var d := float((coord - pz).length())
+			if d < min_dist:
+				min_dist = d
+		var zone_node: Node3D = _loaded_zones[coord]
+		if is_instance_valid(zone_node):
+			_update_zone_lod(zone_node, min_dist)
 
+
+func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
+	var zone_meta_key := &"lod_level"
+	var new_lod: int = 0 if zone_dist <= 1.0 else (1 if zone_dist <= 2.5 else 2)
+	var old_lod: int = zone_node.get_meta(zone_meta_key, -1)
+	if new_lod == old_lod:
+		return
+	zone_node.set_meta(zone_meta_key, new_lod)
+	for child in zone_node.get_children():
+		if not is_instance_valid(child):
+			continue
+		var cname: String = child.name
+		if cname == "TerrainMesh" or cname == "TerrainCol":
+			continue
+		if cname.begins_with("Grass_") or cname.begins_with("Sapling"):
+			child.visible = new_lod <= 1
+
+
+## Runs on a WorkerThreadPool thread — pure computation, no scene access.
+func _bg_build_zone(coord: Vector2i) -> void:
 	var arrays := _build_zone_mesh(coord)
-	var arr_mesh := ArrayMesh.new()
-	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	arr_mesh.surface_set_material(0, _biome_materials.get(biome, _biome_materials[&"hearthlands"]))
+	# Build ConcavePolygonShape3D from raw arrays (no ArrayMesh needed)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var faces := PackedVector3Array()
+	faces.resize(indices.size())
+	for i in indices.size():
+		faces[i] = verts[indices[i]]
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(faces)
 
-	mesh_instance.mesh = arr_mesh
-	collision.shape = arr_mesh.create_trimesh_shape()
+	_gen_mutex.lock()
+	_gen_ready_queue.append({"coord": coord, "arrays": arrays, "shape": shape})
+	_gen_mutex.unlock()
 
-	zone_root.add_child(mesh_instance)
-	zone_root.add_child(collision)
-	add_child(zone_root)
 
-	zone_root.global_position = Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE)
+## Main-thread only: creates scene nodes from pre-computed mesh data + shape.
+func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D) -> void:
+	if coord in _loaded_zones:
+		return
+	var biome := _determine_biome(coord)
+	var biome_mat: Material = _biome_materials.get(biome, _biome_materials[&"hearthlands"])
+
+	var zone_root := _ZonePool.get_zone_root() as StaticBody3D
+	if zone_root:
+		zone_root.name = "Zone_%d_%d" % [coord.x, coord.y]
+		var mi := zone_root.get_node_or_null("TerrainMesh") as MeshInstance3D
+		var col := zone_root.get_node_or_null("TerrainCol") as CollisionShape3D
+
+		var arr_mesh: ArrayMesh = mi.mesh as ArrayMesh if mi and mi.mesh is ArrayMesh else null
+		if arr_mesh:
+			arr_mesh.clear_surfaces()
+		else:
+			arr_mesh = ArrayMesh.new()
+		arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		arr_mesh.surface_set_material(0, biome_mat)
+
+		if mi:
+			mi.mesh = arr_mesh
+		else:
+			mi = MeshInstance3D.new()
+			mi.name = "TerrainMesh"
+			mi.mesh = arr_mesh
+			zone_root.add_child(mi)
+		mi.visible = not _terrain_hidden
+
+		if shape:
+			if col:
+				col.shape = shape
+			else:
+				col = CollisionShape3D.new()
+				col.name = "TerrainCol"
+				col.shape = shape
+				zone_root.add_child(col)
+		add_child(zone_root)
+	else:
+		zone_root = StaticBody3D.new()
+		zone_root.name = "Zone_%d_%d" % [coord.x, coord.y]
+		zone_root.collision_layer = 1
+		var arr_mesh := ArrayMesh.new()
+		arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		arr_mesh.surface_set_material(0, biome_mat)
+		var mesh_instance := MeshInstance3D.new()
+		mesh_instance.name = "TerrainMesh"
+		mesh_instance.mesh = arr_mesh
+		mesh_instance.visible = not _terrain_hidden
+		var collision := CollisionShape3D.new()
+		collision.name = "TerrainCol"
+		if shape:
+			collision.shape = shape
+		zone_root.add_child(mesh_instance)
+		zone_root.add_child(collision)
+		add_child(zone_root)
+
+	zone_root.global_position = world_to_scene_pos(Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE))
 	_loaded_zones[coord] = zone_root
 	_explored_zones[coord] = true
 
+	# Queue object spawning for the NEXT frame to keep this frame light
 	var micro := _determine_microbiome(coord)
-	_ZonePopulator.populate_zone(zone_root, coord, biome, _seed_hash, get_height_at, micro)
-
-	zone_loaded.emit(coord)
+	_populate_backlog.append({
+		"coord": coord,
+		"zone_root": zone_root,
+		"biome": biome,
+		"micro": micro,
+	})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -743,8 +1085,35 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 #  MATERIALS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+var _terrain_shader_fancy: Shader
+var _terrain_shader_fast: Shader
+
+var _terrain_hidden := false
+
+func set_terrain_visible(vis: bool) -> void:
+	_terrain_hidden = not vis
+	for coord in _loaded_zones:
+		var zone_node: Node = _loaded_zones[coord]
+		if is_instance_valid(zone_node):
+			var mi := zone_node.get_node_or_null("TerrainMesh") as MeshInstance3D
+			if mi:
+				mi.visible = vis
+
+
+func set_fast_terrain_shader(fast: bool) -> void:
+	var target := _terrain_shader_fast if fast else _terrain_shader_fancy
+	if not target:
+		return
+	for biome_id in _biome_materials:
+		var mat: ShaderMaterial = _biome_materials[biome_id] as ShaderMaterial
+		if mat:
+			mat.shader = target
+
+
 func _init_biome_materials() -> void:
-	var terrain_shader := load("res://shaders/terrain.gdshader") as Shader
+	_terrain_shader_fancy = load("res://shaders/terrain.gdshader") as Shader
+	_terrain_shader_fast = load("res://shaders/terrain_fast.gdshader") as Shader
+	var terrain_shader := _terrain_shader_fancy
 
 	# Shared slope/cliff textures (used by every biome)
 	var dirt_tex := _load_tex("res://textures/terrain/dirt.png")
@@ -758,8 +1127,6 @@ func _init_biome_materials() -> void:
 	# Per-biome: [flat_texture_name, tint_color, tex_scale]
 	var biome_cfg: Dictionary = {
 		&"hearthlands":     ["grass",        Color(1.0, 1.0, 1.0),  0.5],
-		&"thornwood":       ["forest_floor", Color(0.85, 0.9, 0.75), 0.5],
-		&"scorched_steppe": ["dirt",         Color(1.0, 0.9, 0.7),  0.5],
 		&"ocean":           ["sand",         Color(0.3, 0.5, 0.7),  0.5],
 	}
 
@@ -782,6 +1149,7 @@ func _init_biome_materials() -> void:
 				mat.set_shader_parameter("tex_cliff", stone_tex)
 			mat.set_shader_parameter("tint_color", Vector3(tint.r, tint.g, tint.b))
 			mat.set_shader_parameter("texture_scale", tex_scale)
+			mat.set_shader_parameter("origin_shift", origin_shift)
 			_biome_materials[biome_id] = mat
 		else:
 			# Fallback if shader fails to load
@@ -806,12 +1174,9 @@ func _load_tex(path: String) -> Texture2D:
 
 
 func _get_biome_terrain_color(biome: StringName) -> Color:
-	match biome:
-		&"hearthlands":     return Color(0.40, 0.55, 0.22)
-		&"thornwood":       return Color(0.14, 0.25, 0.10)
-		&"scorched_steppe": return Color(0.60, 0.50, 0.25)
-		&"ocean":           return Color(0.08, 0.18, 0.38)
-		_:                  return Color(0.3, 0.3, 0.3)
+	if biome == &"ocean":
+		return Color(0.08, 0.18, 0.38)
+	return Color(0.40, 0.55, 0.22)
 
 
 func _check_biome_change(player_zone: Vector2i) -> void:

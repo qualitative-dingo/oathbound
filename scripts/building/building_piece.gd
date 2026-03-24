@@ -1,5 +1,11 @@
 class_name BuildingPiece
 extends StaticBody3D
+
+func _get_world_pos() -> Vector3:
+	var wgs := get_tree().get_nodes_in_group(&"world_generator")
+	if not wgs.is_empty() and wgs[0].has_method(&"get_world_position"):
+		return wgs[0].get_world_position(self)
+	return global_position
 ## A placed building piece with structural integrity.
 ##
 ## The stability system works like pressure flowing from ground upward.
@@ -183,7 +189,7 @@ func serialize() -> Dictionary:
 		"piece_type": piece_type,
 		"material_type": material_type,
 		"piece_name": piece_name,
-		"position": var_to_str(global_position),
+		"position": var_to_str(_get_world_pos()),
 		"rotation": var_to_str(global_rotation),
 		"current_hp": current_hp,
 	}

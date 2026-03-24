@@ -25,112 +25,117 @@ const RARITY_NAMES: Array[String] = [
 # tier: 1 = common weight, 2 = rare (half weight)
 const AFFIXES: Dictionary = {
 	# ── Axe affixes (woodcutting) ────────────────────────────────────────
-	&"lumberjack":      {"name": "Lumberjack",      "slot": "axe", "tier": 1, "description": "+40% wood drops from trees"},
-	&"splitter":        {"name": "Splitter",         "slot": "axe", "tier": 1, "description": "Trees fall 30% faster"},
+	# min/max = the actual value range; description uses %s for the displayed value
+	&"lumberjack":      {"name": "Lumberjack",      "slot": "axe", "tier": 1, "min": 0.30, "max": 0.50, "fmt": "+%.0f%% wood drops from trees", "pct": true, "description": "+40% wood drops from trees"},
+	&"splitter":        {"name": "Splitter",         "slot": "axe", "tier": 1, "min": 0.22, "max": 0.38, "fmt": "Trees fall %.0f%% faster", "pct": true, "description": "Trees fall 30% faster"},
 	&"deep_cut":        {"name": "Deep Cut",         "slot": "axe", "tier": 1, "description": "Trees take 1 fewer hit to fell"},
-	&"bark_stripper":   {"name": "Bark Stripper",    "slot": "axe", "tier": 1, "description": "25% chance to get bonus resin from trees"},
-	&"double_yield":    {"name": "Double Yield",     "slot": "axe", "tier": 2, "description": "10% chance to double wood drops"},
+	&"bark_stripper":   {"name": "Bark Stripper",    "slot": "axe", "tier": 1, "min": 0.18, "max": 0.32, "fmt": "%.0f%% chance to get bonus resin from trees", "pct": true, "description": "25% chance to get bonus resin from trees"},
+	&"double_yield":    {"name": "Double Yield",     "slot": "axe", "tier": 2, "min": 0.07, "max": 0.13, "fmt": "%.0f%% chance to double wood drops", "pct": true, "description": "10% chance to double wood drops"},
 	&"timber_cleave":   {"name": "Timber Cleave",    "slot": "axe", "tier": 1, "description": "Can hit up to 3 trees per swing instead of 2"},
-	&"sharpened_edge":  {"name": "Frenzied Chop",    "slot": "axe", "tier": 2, "description": "25% chance per swing to land 2 extra hits on the tree"},
+	&"sharpened_edge":  {"name": "Frenzied Chop",    "slot": "axe", "tier": 2, "min": 0.18, "max": 0.32, "fmt": "%.0f%% chance per swing to land 2 extra hits on the tree", "pct": true, "description": "25% chance per swing to land 2 extra hits on the tree"},
 	&"heavy_chop":      {"name": "Master Woodsman",  "slot": "axe", "tier": 1, "description": "Trees drop higher star-quality wood"},
-	&"rapid_chop":      {"name": "Rapid Chop",       "slot": "axe", "tier": 1, "description": "12% faster axe swing speed"},
+	&"rapid_chop":      {"name": "Rapid Chop",       "slot": "axe", "tier": 1, "min": 0.09, "max": 0.15, "fmt": "%.0f%% faster axe swing speed", "pct": true, "description": "12% faster axe swing speed"},
 	&"sap_drinker":     {"name": "Ancient Grove",    "slot": "axe", "tier": 2, "description": "Trees have a chance to drop rare materials (amber, living wood, fairy dust)"},
 	# ── Pickaxe affixes (mining) ─────────────────────────────────────────
-	&"prospector":      {"name": "Prospector",       "slot": "pickaxe", "tier": 1, "description": "+40% stone drops from rocks"},
-	&"vein_finder":     {"name": "Vein Finder",      "slot": "pickaxe", "tier": 2, "description": "30% chance for bonus ore from rocks"},
-	&"precision_strike":{"name": "Frenzied Mining",    "slot": "pickaxe", "tier": 2, "description": "25% chance per swing to land 2 extra hits on the rock"},
+	&"prospector":      {"name": "Prospector",       "slot": "pickaxe", "tier": 1, "min": 0.30, "max": 0.50, "fmt": "+%.0f%% stone drops from rocks", "pct": true, "description": "+40% stone drops from rocks"},
+	&"vein_finder":     {"name": "Vein Finder",      "slot": "pickaxe", "tier": 2, "min": 0.22, "max": 0.38, "fmt": "%.0f%% chance for bonus ore from rocks", "pct": true, "description": "30% chance for bonus ore from rocks"},
+	&"precision_strike":{"name": "Frenzied Mining",    "slot": "pickaxe", "tier": 2, "min": 0.18, "max": 0.32, "fmt": "%.0f%% chance per swing to land 2 extra hits on the rock", "pct": true, "description": "25% chance per swing to land 2 extra hits on the rock"},
 	&"stone_breaker":   {"name": "Stone Breaker",    "slot": "pickaxe", "tier": 1, "description": "Rocks take 1 fewer hit to break"},
-	&"efficient_miner": {"name": "Efficient Miner",  "slot": "pickaxe", "tier": 1, "description": "-20% stamina cost when mining"},
-	&"rich_vein":       {"name": "Rich Vein",        "slot": "pickaxe", "tier": 2, "description": "10% chance to double stone drops"},
+	&"efficient_miner": {"name": "Efficient Miner",  "slot": "pickaxe", "tier": 1, "min": 0.15, "max": 0.25, "fmt": "-%.0f%% stamina cost when mining", "pct": true, "description": "-20% stamina cost when mining"},
+	&"rich_vein":       {"name": "Rich Vein",        "slot": "pickaxe", "tier": 2, "min": 0.07, "max": 0.13, "fmt": "%.0f%% chance to double stone drops", "pct": true, "description": "10% chance to double stone drops"},
 	&"heavy_swing":     {"name": "Master Miner",     "slot": "pickaxe", "tier": 1, "description": "Rocks drop higher star-quality stone"},
-	&"quick_strike":    {"name": "Quick Strike",     "slot": "pickaxe", "tier": 1, "description": "12% faster pickaxe swing speed"},
-	&"ore_seeker":      {"name": "Ore Seeker",       "slot": "pickaxe", "tier": 1, "description": "+30% copper ore drops"},
+	&"quick_strike":    {"name": "Quick Strike",     "slot": "pickaxe", "tier": 1, "min": 0.09, "max": 0.15, "fmt": "%.0f%% faster pickaxe swing speed", "pct": true, "description": "12% faster pickaxe swing speed"},
+	&"ore_seeker":      {"name": "Ore Seeker",       "slot": "pickaxe", "tier": 1, "min": 0.22, "max": 0.38, "fmt": "+%.0f%% copper ore drops", "pct": true, "description": "+30% copper ore drops"},
 	&"geologist":       {"name": "Deep Earth",       "slot": "pickaxe", "tier": 2, "description": "Rocks have a chance to drop rare materials (gemstones, ancient bone, ember stone)"},
 	# ── Sword affixes (melee combat) ─────────────────────────────────────
-	&"windfury":        {"name": "Windfury",         "slot": "sword", "tier": 2, "description": "30% chance on hit to trigger 2 extra attacks"},
-	&"lifesteal":       {"name": "Lifesteal",        "slot": "sword", "tier": 1, "description": "Heal for 8% of damage dealt"},
-	&"firebrand":       {"name": "Firebrand",        "slot": "sword", "tier": 1, "description": "15% chance to deal bonus fire damage (50% weapon dmg)"},
-	&"frostbite":       {"name": "Frostbite",        "slot": "sword", "tier": 1, "description": "20% chance to slow enemy by 40% for 3s"},
-	&"venomous":        {"name": "Venomous",         "slot": "sword", "tier": 1, "description": "12% chance to poison (3% max HP/s for 4s)"},
-	&"stunning_blow":   {"name": "Stunning Blow",    "slot": "sword", "tier": 2, "description": "8% chance to stun enemy for 1.5s"},
-	&"executioner":     {"name": "Executioner",      "slot": "sword", "tier": 1, "description": "+30% damage to enemies below 30% HP"},
-	&"berserker":       {"name": "Berserker",        "slot": "sword", "tier": 1, "description": "+1% damage per 2% missing health (up to +50%)"},
-	&"sharpened":       {"name": "Sharpened",        "slot": "sword", "tier": 1, "description": "+10% critical hit chance"},
-	&"savage":          {"name": "Savage",            "slot": "sword", "tier": 1, "description": "+40% critical hit damage"},
-	&"rapid_strikes":   {"name": "Rapid Strikes",    "slot": "sword", "tier": 1, "description": "12% faster attack speed"},
+	&"windfury":        {"name": "Windfury",         "slot": "sword", "tier": 2, "min": 0.22, "max": 0.38, "fmt": "%.0f%% chance on hit to trigger 2 extra attacks", "pct": true, "description": "30% chance on hit to trigger 2 extra attacks"},
+	&"lifesteal":       {"name": "Lifesteal",        "slot": "sword", "tier": 1, "min": 0.06, "max": 0.10, "fmt": "Heal for %.0f%% of damage dealt", "pct": true, "description": "Heal for 8% of damage dealt"},
+	&"firebrand":       {"name": "Firebrand",        "slot": "sword", "tier": 1, "min": 0.11, "max": 0.19, "fmt": "%.0f%% chance to deal bonus fire damage (50%% weapon dmg)", "pct": true, "description": "15% chance to deal bonus fire damage (50% weapon dmg)"},
+	&"frostbite":       {"name": "Frostbite",        "slot": "sword", "tier": 1, "min": 0.15, "max": 0.25, "fmt": "%.0f%% chance to slow enemy by 40%% for 3s", "pct": true, "description": "20% chance to slow enemy by 40% for 3s"},
+	&"venomous":        {"name": "Venomous",         "slot": "sword", "tier": 1, "min": 0.09, "max": 0.15, "fmt": "%.0f%% chance to poison (3%% max HP/s for 4s)", "pct": true, "description": "12% chance to poison (3% max HP/s for 4s)"},
+	&"stunning_blow":   {"name": "Stunning Blow",    "slot": "sword", "tier": 2, "min": 0.06, "max": 0.10, "fmt": "%.0f%% chance to stun enemy for 1.5s", "pct": true, "description": "8% chance to stun enemy for 1.5s"},
+	&"executioner":     {"name": "Executioner",      "slot": "sword", "tier": 1, "min": 0.22, "max": 0.38, "fmt": "+%.0f%% damage to enemies below 30%% HP", "pct": true, "description": "+30% damage to enemies below 30% HP"},
+	&"berserker":       {"name": "Berserker",        "slot": "sword", "tier": 1, "min": 0.38, "max": 0.62, "fmt": "Up to +%.0f%% damage based on missing health", "pct": true, "description": "+1% damage per 2% missing health (up to +50%)"},
+	&"sharpened":       {"name": "Sharpened",        "slot": "sword", "tier": 1, "min": 7.0, "max": 13.0, "fmt": "+%.0f%% critical hit chance", "pct": false, "description": "+10% critical hit chance"},
+	&"savage":          {"name": "Savage",            "slot": "sword", "tier": 1, "min": 0.30, "max": 0.50, "fmt": "+%.0f%% critical hit damage", "pct": true, "description": "+40% critical hit damage"},
+	&"rapid_strikes":   {"name": "Rapid Strikes",    "slot": "sword", "tier": 1, "min": 0.09, "max": 0.15, "fmt": "%.0f%% faster attack speed", "pct": true, "description": "12% faster attack speed"},
 	&"cleaving":        {"name": "Cleaving",         "slot": "sword", "tier": 1, "description": "Melee attacks hit in a wider arc"},
-	&"momentum":        {"name": "Momentum",         "slot": "sword", "tier": 1, "description": "Each hit within 3s adds +4% damage (max 5 stacks)"},
-	&"reaching":        {"name": "Reaching",         "slot": "sword", "tier": 1, "description": "+20% melee attack range"},
-	&"chain_lightning": {"name": "Chain Lightning",  "slot": "sword", "tier": 2, "description": "10% chance to arc lightning to a nearby enemy for 40% damage"},
-	&"bane":            {"name": "Bane",              "slot": "sword", "tier": 2, "description": "8% chance to deal double damage"},
-	&"siphon":          {"name": "Siphon",            "slot": "sword", "tier": 1, "description": "Restore 3 stamina per hit"},
-	&"runic":           {"name": "Runic",             "slot": "sword", "tier": 2, "description": "12% chance to trigger AoE for 25% weapon damage"},
+	&"momentum":        {"name": "Momentum",         "slot": "sword", "tier": 1, "min": 0.03, "max": 0.05, "fmt": "Each hit within 3s adds +%.1f%% damage (max 5 stacks)", "pct": true, "description": "Each hit within 3s adds +4% damage (max 5 stacks)"},
+	&"reaching":        {"name": "Reaching",         "slot": "sword", "tier": 1, "min": 0.15, "max": 0.25, "fmt": "+%.0f%% melee attack range", "pct": true, "description": "+20% melee attack range"},
+	&"chain_lightning": {"name": "Chain Lightning",  "slot": "sword", "tier": 2, "min": 0.07, "max": 0.13, "fmt": "%.0f%% chance to arc lightning to a nearby enemy for 40%% damage", "pct": true, "description": "10% chance to arc lightning to a nearby enemy for 40% damage"},
+	&"bane":            {"name": "Bane",              "slot": "sword", "tier": 2, "min": 0.06, "max": 0.10, "fmt": "%.0f%% chance to deal double damage", "pct": true, "description": "8% chance to deal double damage"},
+	&"siphon":          {"name": "Siphon",            "slot": "sword", "tier": 1, "min": 2.0, "max": 4.0, "fmt": "Restore %.0f stamina per hit", "pct": false, "description": "Restore 3 stamina per hit"},
+	&"runic":           {"name": "Runic",             "slot": "sword", "tier": 2, "min": 0.09, "max": 0.15, "fmt": "%.0f%% chance to trigger AoE for 25%% weapon damage", "pct": true, "description": "12% chance to trigger AoE for 25% weapon damage"},
 	# ── Bow affixes (ranged combat) ──────────────────────────────────────
-	&"precision":       {"name": "Precision",        "slot": "bow", "tier": 1, "description": "+20% headshot damage"},
-	&"multishot":       {"name": "Multishot",        "slot": "bow", "tier": 2, "description": "20% chance to fire 2 arrows"},
-	&"piercing":        {"name": "Piercing",         "slot": "bow", "tier": 2, "description": "Arrows pierce through the first target"},
-	&"sniper":          {"name": "Sniper",            "slot": "bow", "tier": 1, "description": "+25% damage at long range (>15 units)"},
-	&"rapid_draw":      {"name": "Rapid Draw",       "slot": "bow", "tier": 1, "description": "15% faster bow draw speed"},
-	&"poison_tip":      {"name": "Poison Tip",       "slot": "bow", "tier": 1, "description": "Arrows apply poison (2% max HP/s for 4s)"},
-	&"frost_arrow":     {"name": "Frost Arrow",      "slot": "bow", "tier": 1, "description": "Arrows slow target by 35% for 3s"},
-	&"explosive":       {"name": "Explosive",        "slot": "bow", "tier": 2, "description": "10% chance for arrows to deal AoE damage on impact"},
-	&"steady_aim":      {"name": "Steady Aim",       "slot": "bow", "tier": 1, "description": "+12% crit chance while standing still"},
-	&"quiver_mastery":  {"name": "Quiver Mastery",   "slot": "bow", "tier": 1, "description": "15% chance to fire a bonus arrow on each shot"},
+	&"precision":       {"name": "Precision",        "slot": "bow", "tier": 1, "min": 0.16, "max": 0.24, "fmt": "+%.0f%% headshot damage", "pct": true, "description": "+20% headshot damage"},
+	# multishot: REMOVED
+	&"bouncing_shot":   {"name": "Bouncing Shot",    "slot": "bow", "tier": 2, "min": 0.28, "max": 0.38, "fmt": "%.0f%% chance for arrows to bounce to a nearby enemy", "pct": true, "description": "33% chance for arrows to bounce to a nearby enemy"},
+	&"sniper":          {"name": "Sniper",            "slot": "bow", "tier": 1, "min": 0.19, "max": 0.31, "fmt": "+%.0f%% damage at long range (>15 units)", "pct": true, "description": "+25% damage at long range (>15 units)"},
+	&"rapid_draw":      {"name": "Rapid Draw",       "slot": "bow", "tier": 1, "min": 0.11, "max": 0.19, "fmt": "%.0f%% faster bow draw speed", "pct": true, "description": "15% faster bow draw speed"},
+	&"poison_tip":      {"name": "Poison Tip",       "slot": "bow", "tier": 1, "min": 0.015, "max": 0.025, "fmt": "Arrows apply poison (%.1f%% max HP/s for 4s)", "pct": true, "description": "Arrows apply poison (2% max HP/s for 4s)"},
+	&"frost_arrow":     {"name": "Frost Arrow",      "slot": "bow", "tier": 1, "min": 0.28, "max": 0.42, "fmt": "Arrows slow target by %.0f%% for 3s", "pct": true, "description": "Arrows slow target by 35% for 3s"},
+	&"explosive":       {"name": "Explosive",        "slot": "bow", "tier": 2, "min": 0.07, "max": 0.13, "fmt": "%.0f%% chance for arrows to deal AoE damage on impact", "pct": true, "description": "10% chance for arrows to deal AoE damage on impact"},
+	&"steady_aim":      {"name": "Steady Aim",       "slot": "bow", "tier": 1, "min": 9.0, "max": 15.0, "fmt": "+%.0f%% crit chance while standing still", "pct": false, "description": "+12% crit chance while standing still"},
+	&"echoing_shot":    {"name": "Echoing Shot",     "slot": "bow", "tier": 1, "min": 0.38, "max": 0.46, "fmt": "%.0f%% chance to fire a bonus arrow", "pct": true, "description": "42% chance to fire a bonus arrow"},
+	&"heatseeking":     {"name": "Heatseeking",      "slot": "bow", "tier": 2, "description": "Arrows home toward nearby enemies in their trajectory"},
+	&"quickdraw":       {"name": "Quickdraw",         "slot": "bow", "tier": 1, "min": 0.25, "max": 0.41, "fmt": "%.0f%% faster bow draw speed", "pct": true, "description": "33% faster bow draw speed"},
+	# echoing_shot (phantom arrow): REMOVED — replaced by new echoing_shot (was quiver_mastery)
 	# ── Chest armor affixes ──────────────────────────────────────────────
-	&"vitality":        {"name": "Vitality",         "slot": "chest", "tier": 1, "description": "+15 max health"},
-	&"fortified":       {"name": "Fortified",        "slot": "chest", "tier": 1, "description": "+8% damage reduction"},
-	&"iron_skin":       {"name": "Iron Skin",        "slot": "chest", "tier": 2, "description": "8% chance to completely negate damage"},
-	&"thorns":          {"name": "Thorns",           "slot": "chest", "tier": 1, "description": "Reflect 15% of damage taken to attacker"},
-	&"second_wind":     {"name": "Second Wind",      "slot": "chest", "tier": 2, "description": "When hit below 20% HP, heal 20% HP (45s cooldown)"},
-	&"undying":         {"name": "Undying",           "slot": "chest", "tier": 2, "description": "On death, revive with 10% HP (300s cooldown)"},
-	&"bulwark":         {"name": "Bulwark",          "slot": "chest", "tier": 1, "description": "+3 flat armor"},
-	&"regenerator":     {"name": "Regenerator",      "slot": "chest", "tier": 2, "description": "+1.0 HP/s even during combat"},
-	&"guardian":        {"name": "Guardian",         "slot": "chest", "tier": 1, "description": "Block reduces damage to 20% instead of 30%"},
-	&"battle_hardened": {"name": "Battle Hardened",  "slot": "chest", "tier": 1, "description": "+5% damage reduction per nearby enemy (max 3)"},
+	&"vitality":        {"name": "Vitality",         "slot": "chest", "tier": 1, "min": 10.0, "max": 20.0, "fmt": "+%.0f max health", "pct": false, "description": "+15 max health"},
+	&"fortified":       {"name": "Fortified",        "slot": "chest", "tier": 1, "min": 0.06, "max": 0.10, "fmt": "+%.0f%% damage reduction", "pct": true, "description": "+8% damage reduction"},
+	&"iron_skin":       {"name": "Iron Skin",        "slot": "chest", "tier": 2, "min": 0.06, "max": 0.10, "fmt": "%.0f%% chance to negate most damage", "pct": true, "description": "8% chance to negate most damage"},
+	&"thorns":          {"name": "Thorns",           "slot": "chest", "tier": 1, "min": 0.11, "max": 0.19, "fmt": "Reflect %.0f%% of damage taken to attacker", "pct": true, "description": "Reflect 15% of damage taken to attacker"},
+	&"second_wind":     {"name": "Second Wind",      "slot": "chest", "tier": 2, "min": 0.15, "max": 0.25, "fmt": "When hit below 20%% HP, heal %.0f%% HP (45s cooldown)", "pct": true, "description": "When hit below 20% HP, heal 20% HP (45s cooldown)"},
+	&"undying":         {"name": "Undying",           "slot": "chest", "tier": 2, "min": 0.07, "max": 0.13, "fmt": "On death, revive with %.0f%% HP (300s cooldown)", "pct": true, "description": "On death, revive with 10% HP (300s cooldown)"},
+	&"bulwark":         {"name": "Bulwark",          "slot": "chest", "tier": 1, "min": 2.0, "max": 4.0, "fmt": "+%.0f flat armor", "pct": false, "description": "+3 flat armor"},
+	&"regenerator":     {"name": "Regenerator",      "slot": "chest", "tier": 2, "min": 0.7, "max": 1.3, "fmt": "+%.1f HP/s even during combat", "pct": false, "description": "+1.0 HP/s even during combat"},
+	&"guardian":        {"name": "Guardian",         "slot": "chest", "tier": 1, "min": 0.75, "max": 0.85, "fmt": "Blocking grants %.0f%% damage reduction (base 70%%)", "pct": true, "description": "Block reduces damage to 20% instead of 30%"},
+	&"battle_hardened": {"name": "Battle Hardened",  "slot": "chest", "tier": 1, "min": 0.04, "max": 0.06, "fmt": "+%.0f%% damage reduction per nearby enemy (max 3)", "pct": true, "description": "+5% damage reduction per nearby enemy (max 3)"},
 	# ── Legs armor affixes ───────────────────────────────────────────────
-	&"endurance":       {"name": "Endurance",        "slot": "legs", "tier": 1, "description": "+20 max stamina"},
-	&"resilience":      {"name": "Resilience",       "slot": "legs", "tier": 1, "description": "+25% stamina regeneration rate"},
+	&"endurance":       {"name": "Endurance",        "slot": "legs", "tier": 1, "min": 15.0, "max": 25.0, "fmt": "+%.0f max stamina", "pct": false, "description": "+20 max stamina"},
+	&"resilience":      {"name": "Resilience",       "slot": "legs", "tier": 1, "min": 0.19, "max": 0.31, "fmt": "+%.0f%% stamina regeneration rate", "pct": true, "description": "+25% stamina regeneration rate"},
 	&"steadfast":       {"name": "Steadfast",        "slot": "legs", "tier": 1, "description": "Immune to knockback"},
-	&"thick_skinned":   {"name": "Thick Skinned",    "slot": "legs", "tier": 2, "description": "First hit in combat deals 30% less damage (10s cooldown)"},
-	&"last_stand":      {"name": "Last Stand",       "slot": "legs", "tier": 1, "description": "+25% damage reduction below 25% HP"},
-	&"fleet":           {"name": "Fleet",            "slot": "legs", "tier": 1, "description": "Sprint stamina cost reduced by 25%"},
-	&"rejuvenation":    {"name": "Rejuvenation",     "slot": "legs", "tier": 1, "description": "+30% health regeneration rate"},
-	&"quick_recovery":  {"name": "Quick Recovery",   "slot": "legs", "tier": 1, "description": "Health regen starts 2s sooner after damage"},
-	&"lucky":           {"name": "Lucky",            "slot": "legs", "tier": 1, "description": "+5% rare drop chance from creatures"},
-	&"tenacity":        {"name": "Tenacity",         "slot": "legs", "tier": 1, "description": "Cannot be slowed below 60% base speed"},
+	&"thick_skinned":   {"name": "Thick Skinned",    "slot": "legs", "tier": 2, "min": 0.22, "max": 0.38, "fmt": "First hit in combat deals %.0f%% less damage (10s cooldown)", "pct": true, "description": "First hit in combat deals 30% less damage (10s cooldown)"},
+	&"last_stand":      {"name": "Last Stand",       "slot": "legs", "tier": 1, "min": 0.19, "max": 0.31, "fmt": "+%.0f%% damage reduction below 25%% HP", "pct": true, "description": "+25% damage reduction below 25% HP"},
+	&"fleet":           {"name": "Fleet",            "slot": "legs", "tier": 1, "min": 0.19, "max": 0.31, "fmt": "Sprint stamina cost reduced by %.0f%%", "pct": true, "description": "Sprint stamina cost reduced by 25%"},
+	&"rejuvenation":    {"name": "Rejuvenation",     "slot": "legs", "tier": 1, "min": 0.22, "max": 0.38, "fmt": "+%.0f%% health regeneration rate", "pct": true, "description": "+30% health regeneration rate"},
+	&"quick_recovery":  {"name": "Quick Recovery",   "slot": "legs", "tier": 1, "min": 1.5, "max": 2.5, "fmt": "Health regen starts %.1fs sooner after damage", "pct": false, "description": "Health regen starts 2s sooner after damage"},
+	&"lucky":           {"name": "Lucky",            "slot": "legs", "tier": 1, "min": 0.03, "max": 0.07, "fmt": "+%.0f%% rare drop chance from creatures", "pct": true, "description": "+5% rare drop chance from creatures"},
+	&"tenacity":        {"name": "Tenacity",         "slot": "legs", "tier": 1, "min": 0.50, "max": 0.70, "fmt": "Cannot be slowed below %.0f%% base speed", "pct": true, "description": "Cannot be slowed below 60% base speed"},
 	# ── Mace affixes (heavy melee / crowd control) ──────────────────────
-	&"skull_crusher":    {"name": "Skull Crusher",    "slot": "mace", "tier": 1, "description": "+25% damage to stunned enemies"},
-	&"concussive":       {"name": "Concussive",       "slot": "mace", "tier": 1, "description": "20% chance to disorient enemies, reducing their damage by 20% for 3s"},
-	&"bone_breaker":     {"name": "Bone Breaker",     "slot": "mace", "tier": 2, "description": "10% chance to shred enemy armor by 30% for 5s"},
-	&"earthshaker":      {"name": "Earthshaker",      "slot": "mace", "tier": 2, "description": "12% chance for ground slam AoE on hit (30% weapon dmg)"},
-	&"brutal_force":     {"name": "Brutal Force",     "slot": "mace", "tier": 1, "description": "+25% knockback distance"},
-	&"staggering":       {"name": "Staggering",       "slot": "mace", "tier": 1, "description": "18% chance to interrupt enemy attacks"},
-	&"relentless_fury":  {"name": "Relentless Fury",  "slot": "mace", "tier": 1, "description": "Each consecutive hit adds +5% damage (max 5 stacks, resets after 3s)"},
-	&"iron_will":        {"name": "Iron Will",        "slot": "mace", "tier": 1, "description": "+10% damage reduction while attacking"},
-	&"crushing_momentum":{"name": "Crushing Momentum","slot": "mace", "tier": 1, "description": "On kill, +20% attack speed for 4s"},
-	&"thunderclap":      {"name": "Thunderclap",      "slot": "mace", "tier": 2, "description": "8% chance to deal lightning damage to all enemies within 3 units (25% weapon dmg)"},
+	&"skull_crusher":    {"name": "Skull Crusher",    "slot": "mace", "tier": 1, "min": 0.19, "max": 0.31, "fmt": "+%.0f%% damage to stunned enemies", "pct": true, "description": "+25% damage to stunned enemies"},
+	&"concussive":       {"name": "Concussive",       "slot": "mace", "tier": 1, "min": 0.15, "max": 0.25, "fmt": "%.0f%% chance to disorient enemies for 3s", "pct": true, "description": "20% chance to disorient enemies, reducing their damage by 20% for 3s"},
+	&"bone_breaker":     {"name": "Bone Breaker",     "slot": "mace", "tier": 2, "min": 0.07, "max": 0.13, "fmt": "%.0f%% chance to shred enemy armor by 30%% for 5s", "pct": true, "description": "10% chance to shred enemy armor by 30% for 5s"},
+	&"earthshaker":      {"name": "Earthshaker",      "slot": "mace", "tier": 2, "min": 0.09, "max": 0.15, "fmt": "%.0f%% chance for ground slam AoE on hit (30%% weapon dmg)", "pct": true, "description": "12% chance for ground slam AoE on hit (30% weapon dmg)"},
+	&"echoing_blade":    {"name": "Echoing Blade",    "slot": "mace", "tier": 1, "min": 0.19, "max": 0.31, "fmt": "Ghost swing follows 0.5s later for %.0f%% damage", "pct": true, "description": "After a heavy attack, a ghost swing follows 0.5s later for 25% damage"},
+	&"staggering":       {"name": "Staggering",       "slot": "mace", "tier": 1, "min": 0.13, "max": 0.23, "fmt": "%.0f%% chance to interrupt enemy attacks", "pct": true, "description": "18% chance to interrupt enemy attacks"},
+	&"relentless_fury":  {"name": "Relentless Fury",  "slot": "mace", "tier": 1, "min": 0.04, "max": 0.06, "fmt": "Each consecutive hit adds +%.1f%% damage (max 5 stacks)", "pct": true, "description": "Each consecutive hit adds +5% damage (max 5 stacks, resets after 3s)"},
+	&"iron_will":        {"name": "Iron Will",        "slot": "mace", "tier": 1, "min": 0.07, "max": 0.13, "fmt": "+%.0f%% damage reduction while attacking", "pct": true, "description": "+10% damage reduction while attacking"},
+	&"crushing_momentum":{"name": "Crushing Momentum","slot": "mace", "tier": 1, "min": 0.15, "max": 0.25, "fmt": "On kill, +%.0f%% attack speed for 4s", "pct": true, "description": "On kill, +20% attack speed for 4s"},
+	&"thunderclap":      {"name": "Thunderclap",      "slot": "mace", "tier": 2, "min": 0.06, "max": 0.10, "fmt": "%.0f%% chance to deal lightning AoE (25%% weapon dmg)", "pct": true, "description": "8% chance to deal lightning damage to all enemies within 3 units (25% weapon dmg)"},
 	# ── Shield affixes (blocking / defense) ──────────────────────────────
-	&"shield_wall":      {"name": "Shield Wall",      "slot": "shield", "tier": 1, "description": "+15% block chance"},
-	&"retaliation":      {"name": "Retaliation",      "slot": "shield", "tier": 1, "description": "After blocking, next attack deals +30% damage for 3s"},
-	&"fortress":         {"name": "Fortress",         "slot": "shield", "tier": 2, "description": "+5 flat armor while shield is equipped"},
-	&"deflection":       {"name": "Deflection",       "slot": "shield", "tier": 1, "description": "15% chance to deflect projectiles"},
+	&"shield_wall":      {"name": "Shield Wall",      "slot": "shield", "tier": 1, "min": 0.11, "max": 0.19, "fmt": "+%.0f%% block chance", "pct": true, "description": "+15% block chance"},
+	&"retaliation":      {"name": "Retaliation",      "slot": "shield", "tier": 1, "min": 0.22, "max": 0.38, "fmt": "After blocking, next attack deals +%.0f%% damage for 3s", "pct": true, "description": "After blocking, next attack deals +30% damage for 3s"},
+	&"fortress":         {"name": "Fortress",         "slot": "shield", "tier": 2, "min": 3.0, "max": 7.0, "fmt": "+%.0f flat armor while shield is equipped", "pct": false, "description": "+5 flat armor while shield is equipped"},
+	&"deflection":       {"name": "Deflection",       "slot": "shield", "tier": 1, "min": 0.11, "max": 0.19, "fmt": "%.0f%% chance to deflect projectiles", "pct": true, "description": "15% chance to deflect projectiles"},
 	&"steadfast_guard":  {"name": "Steadfast Guard",  "slot": "shield", "tier": 1, "description": "Blocking no longer costs stamina"},
-	&"aegis":            {"name": "Aegis",             "slot": "shield", "tier": 2, "description": "10% chance when hit to absorb 15% max HP as a damage shield for 5s"},
-	&"stalwart":         {"name": "Stalwart",          "slot": "shield", "tier": 1, "description": "-30% knockback received"},
-	&"rally_cry":        {"name": "Rally Cry",         "slot": "shield", "tier": 1, "description": "+2 HP/s while shield is equipped"},
-	&"shield_bash":      {"name": "Shield Bash",       "slot": "shield", "tier": 1, "description": "25% chance when blocking to stun attacker for 1s"},
+	&"aegis":            {"name": "Aegis",             "slot": "shield", "tier": 2, "min": 0.07, "max": 0.13, "fmt": "%.0f%% chance when hit to absorb 15%% max HP as shield for 5s", "pct": true, "description": "10% chance when hit to absorb 15% max HP as a damage shield for 5s"},
+	&"stalwart":         {"name": "Stalwart",          "slot": "shield", "tier": 1, "min": 0.22, "max": 0.38, "fmt": "-%.0f%% knockback received", "pct": true, "description": "-30% knockback received"},
+	&"rally_cry":        {"name": "Rally Cry",         "slot": "shield", "tier": 1, "min": 1.5, "max": 2.5, "fmt": "+%.1f HP/s while shield is equipped", "pct": false, "description": "+2 HP/s while shield is equipped"},
+	&"shield_bash":      {"name": "Shield Bash",       "slot": "shield", "tier": 1, "min": 0.19, "max": 0.31, "fmt": "%.0f%% chance when blocking to stun attacker for 1s", "pct": true, "description": "25% chance when blocking to stun attacker for 1s"},
 	&"unbreakable":      {"name": "Unbreakable",       "slot": "shield", "tier": 2, "description": "When below 25% HP, blocking absorbs 100% of damage"},
 	# ── Boots armor affixes ──────────────────────────────────────────────
-	&"swiftness":       {"name": "Swiftness",       "slot": "feet", "tier": 1, "description": "+10% movement speed"},
-	&"aquatic":         {"name": "Aquatic",          "slot": "feet", "tier": 1, "description": "+30% swim speed"},
-	&"warmth":          {"name": "Warmth",           "slot": "feet", "tier": 1, "description": "Reduce swim stamina cost by 40%"},
-	&"featherfall":     {"name": "Featherfall",      "slot": "feet", "tier": 1, "description": "Reduce fall damage by 50%"},
-	&"evasion":         {"name": "Evasion",          "slot": "feet", "tier": 2, "description": "5% chance to auto-dodge an attack"},
-	&"adrenaline":      {"name": "Adrenaline",       "slot": "feet", "tier": 1, "description": "On kill, +15% movement speed for 4s"},
+	&"swiftness":       {"name": "Swiftness",       "slot": "feet", "tier": 1, "min": 0.07, "max": 0.13, "fmt": "+%.0f%% movement speed", "pct": true, "description": "+10% movement speed"},
+	&"aquatic":         {"name": "Aquatic",          "slot": "feet", "tier": 1, "min": 0.22, "max": 0.38, "fmt": "+%.0f%% swim speed", "pct": true, "description": "+30% swim speed"},
+	&"warmth":          {"name": "Warmth",           "slot": "feet", "tier": 1, "min": 0.30, "max": 0.50, "fmt": "Reduce swim stamina cost by %.0f%%", "pct": true, "description": "Reduce swim stamina cost by 40%"},
+	&"featherfall":     {"name": "Featherfall",      "slot": "feet", "tier": 1, "min": 0.38, "max": 0.62, "fmt": "Reduce fall damage by %.0f%%", "pct": true, "description": "Reduce fall damage by 50%"},
+	&"evasion":         {"name": "Evasion",          "slot": "feet", "tier": 2, "min": 0.04, "max": 0.06, "fmt": "%.0f%% chance to auto-dodge an attack", "pct": true, "description": "5% chance to auto-dodge an attack"},
+	&"adrenaline":      {"name": "Adrenaline",       "slot": "feet", "tier": 1, "min": 0.11, "max": 0.19, "fmt": "On kill, +%.0f%% movement speed for 4s", "pct": true, "description": "On kill, +15% movement speed for 4s"},
 	&"sure_footed":     {"name": "Sure-Footed",      "slot": "feet", "tier": 1, "description": "No movement speed penalty on slopes"},
-	&"light_step":      {"name": "Light Step",       "slot": "feet", "tier": 1, "description": "-30% fall damage and silent movement"},
-	&"trailblazer":     {"name": "Trailblazer",      "slot": "feet", "tier": 1, "description": "+15% movement speed in water"},
-	&"nimble":          {"name": "Nimble",            "slot": "feet", "tier": 2, "description": "+8% dodge chance while sprinting"},
+	&"light_step":      {"name": "Light Step",       "slot": "feet", "tier": 1, "min": 0.22, "max": 0.38, "fmt": "-%.0f%% fall damage and silent movement", "pct": true, "description": "-30% fall damage and silent movement"},
+	&"trailblazer":     {"name": "Trailblazer",      "slot": "feet", "tier": 1, "min": 0.11, "max": 0.19, "fmt": "+%.0f%% movement speed in water", "pct": true, "description": "+15% movement speed in water"},
+	&"nimble":          {"name": "Nimble",            "slot": "feet", "tier": 2, "min": 0.06, "max": 0.10, "fmt": "+%.0f%% dodge chance while sprinting", "pct": true, "description": "+8% dodge chance while sprinting"},
+	&"double_jump":     {"name": "Double Jump",       "slot": "feet", "tier": 2, "description": "Perform one additional jump while mid-air"},
 }
 
 static func _get_affix_pool(affix_slot: String) -> Array[StringName]:
@@ -144,9 +149,10 @@ static func _get_affix_pool(affix_slot: String) -> Array[StringName]:
 
 static func roll_affixes(stars: int, affix_slot: String) -> Array[StringName]:
 	var count := 0
-	if stars == 3: count = 1
-	elif stars == 4: count = 2
-	elif stars >= 5: count = 3
+	if stars == 2: count = 1
+	elif stars == 3: count = 2
+	elif stars == 4: count = 3
+	elif stars >= 5: count = 5
 	if count == 0:
 		return []
 	var pool := _get_affix_pool(affix_slot)
@@ -179,6 +185,29 @@ static func roll_affixes(stars: int, affix_slot: String) -> Array[StringName]:
 
 static func get_affix_data(affix_id: StringName) -> Dictionary:
 	return AFFIXES.get(affix_id, {})
+
+
+static func get_affix_value(affix_id: StringName, roll: float, fallback: float = -1.0) -> float:
+	var data: Dictionary = AFFIXES.get(affix_id, {})
+	if not data.has("min"):
+		return fallback
+	return lerpf(float(data["min"]), float(data["max"]), clampf(roll, 0.0, 1.0))
+
+
+static func format_affix_description(affix_id: StringName, roll: float) -> String:
+	var data: Dictionary = AFFIXES.get(affix_id, {})
+	if not data.has("fmt"):
+		return str(data.get("description", ""))
+	var val := get_affix_value(affix_id, roll)
+	var display_val: float = val * 100.0 if data.get("pct", false) else val
+	return str(data["fmt"]) % display_val
+
+
+static func roll_affix_magnitudes(affixes: Array[StringName]) -> Dictionary:
+	var rolls := {}
+	for a in affixes:
+		rolls[a] = randi_range(0, 100)
+	return rolls
 
 
 func get_affix_slot(item_id: StringName) -> String:
@@ -245,14 +274,18 @@ func get_icon(id: StringName) -> Texture2D:
 
 # --- Star rarity helpers ---
 
-static func make_star_id(base_id: StringName, stars: int, affixes: Array[StringName] = []) -> StringName:
+static func make_star_id(base_id: StringName, stars: int, affixes: Array[StringName] = [], affix_rolls: Dictionary = {}) -> StringName:
 	if stars <= 0 and affixes.is_empty():
 		return base_id
 	var result := str(base_id) + ":" + str(maxi(stars, 0))
 	if not affixes.is_empty():
 		var sorted_affixes := affixes.duplicate()
 		sorted_affixes.sort()
-		result += ":" + ",".join(sorted_affixes)
+		var parts: PackedStringArray = []
+		for a in sorted_affixes:
+			var roll_val: int = int(affix_rolls.get(a, 50))
+			parts.append(str(a) + "@" + str(clampi(roll_val, 0, 100)))
+		result += ":" + ",".join(parts)
 	return StringName(result)
 
 
@@ -260,23 +293,34 @@ static func parse_star_id(composite_id: StringName) -> Dictionary:
 	var s := str(composite_id)
 	var colon := s.find(":")
 	if colon < 0:
-		return {"base_id": composite_id, "stars": 0, "affixes": [] as Array[StringName]}
+		return {"base_id": composite_id, "stars": 0, "affixes": [] as Array[StringName], "affix_rolls": {}}
 	var base_id := StringName(s.substr(0, colon))
 	var rest := s.substr(colon + 1)
 	var colon2 := rest.find(":")
 	if colon2 < 0:
 		if rest.is_valid_int():
-			return {"base_id": base_id, "stars": int(rest), "affixes": [] as Array[StringName]}
-		return {"base_id": composite_id, "stars": 0, "affixes": [] as Array[StringName]}
+			return {"base_id": base_id, "stars": int(rest), "affixes": [] as Array[StringName], "affix_rolls": {}}
+		return {"base_id": composite_id, "stars": 0, "affixes": [] as Array[StringName], "affix_rolls": {}}
 	var stars_str := rest.substr(0, colon2)
 	var affix_str := rest.substr(colon2 + 1)
 	var affixes: Array[StringName] = []
+	var affix_rolls := {}
 	for a in affix_str.split(","):
-		if not a.is_empty():
-			affixes.append(StringName(a))
+		if a.is_empty():
+			continue
+		var at_pos := a.find("@")
+		if at_pos >= 0:
+			var affix_name := StringName(a.substr(0, at_pos))
+			var roll_int := int(a.substr(at_pos + 1))
+			affixes.append(affix_name)
+			affix_rolls[affix_name] = clampf(float(roll_int) / 100.0, 0.0, 1.0)
+		else:
+			var affix_name := StringName(a)
+			affixes.append(affix_name)
+			affix_rolls[affix_name] = randf()
 	if stars_str.is_valid_int():
-		return {"base_id": base_id, "stars": int(stars_str), "affixes": affixes}
-	return {"base_id": composite_id, "stars": 0, "affixes": [] as Array[StringName]}
+		return {"base_id": base_id, "stars": int(stars_str), "affixes": affixes, "affix_rolls": affix_rolls}
+	return {"base_id": composite_id, "stars": 0, "affixes": [] as Array[StringName], "affix_rolls": {}}
 
 
 static func roll_star_level(rng: RandomNumberGenerator) -> int:
@@ -396,13 +440,14 @@ func craft_item_at(item_id: StringName, _station: String, max_star: int = 5, min
 	var recipe: Array = recipe_var if recipe_var is Array else []
 	if recipe.is_empty():
 		return &""
-	for ingredient in recipe:
-		if not ingredient is Dictionary:
-			continue
-		var req_id: StringName = StringName(str(ingredient.get("item_id", "")))
-		var req_amount: int = int(ingredient.get("amount", 0))
-		if not Inventory.has_item_capped_star(req_id, req_amount, max_star, min_star):
-			return &""
+	if not Inventory.has_free_craft():
+		for ingredient in recipe:
+			if not ingredient is Dictionary:
+				continue
+			var req_id: StringName = StringName(str(ingredient.get("item_id", "")))
+			var req_amount: int = int(ingredient.get("amount", 0))
+			if not Inventory.has_item_capped_star(req_id, req_amount, max_star, min_star):
+				return &""
 
 	var item_type: String = str(data.get("type", "material"))
 	var is_equipment := item_type in ["weapon", "armor"]
@@ -410,19 +455,22 @@ func craft_item_at(item_id: StringName, _station: String, max_star: int = 5, min
 	if is_equipment:
 		crafted_stars = roll_crafting_star(compute_recipe_star_avg(recipe, max_star, min_star, prefer_low))
 
-	for ingredient in recipe:
-		if not ingredient is Dictionary:
-			continue
-		var req_id: StringName = StringName(str(ingredient.get("item_id", "")))
-		var req_amount: int = int(ingredient.get("amount", 0))
-		Inventory.remove_item_capped_star(req_id, req_amount, max_star, min_star, prefer_low)
+	if not Inventory.has_free_craft():
+		for ingredient in recipe:
+			if not ingredient is Dictionary:
+				continue
+			var req_id: StringName = StringName(str(ingredient.get("item_id", "")))
+			var req_amount: int = int(ingredient.get("amount", 0))
+			Inventory.remove_item_capped_star(req_id, req_amount, max_star, min_star, prefer_low)
 
 	var crafted_affixes: Array[StringName] = []
-	if is_equipment and crafted_stars >= 3:
+	var crafted_rolls: Dictionary = {}
+	if is_equipment and crafted_stars >= 2:
 		crafted_affixes = roll_affixes(crafted_stars, get_affix_slot(item_id))
+		crafted_rolls = roll_affix_magnitudes(crafted_affixes)
 
 	var amount: int = int(data.get("craft_amount", 1))
-	var output_id := make_star_id(item_id, crafted_stars, crafted_affixes) if is_equipment and (crafted_stars > 0 or not crafted_affixes.is_empty()) else item_id
+	var output_id := make_star_id(item_id, crafted_stars, crafted_affixes, crafted_rolls) if is_equipment and (crafted_stars > 0 or not crafted_affixes.is_empty()) else item_id
 	Inventory.add_item(output_id, amount)
 	return output_id
 
@@ -433,6 +481,8 @@ func can_craft(item_id: StringName, max_star: int = 5, min_star: int = 0) -> boo
 	var recipe: Array = recipe_var if recipe_var is Array else []
 	if recipe.is_empty():
 		return false
+	if Inventory.has_free_craft():
+		return true
 	for ingredient in recipe:
 		if not ingredient is Dictionary:
 			continue
@@ -455,16 +505,66 @@ func craft_item(item_id: StringName) -> StringName:
 	var crafted_stars := 0
 	if is_equipment:
 		crafted_stars = roll_crafting_star(compute_recipe_star_avg(recipe))
-	for ingredient: Dictionary in recipe:
-		var req_id: StringName = StringName(ingredient.get("item_id", ""))
-		var req_amount: int = int(ingredient.get("amount", 0))
-		Inventory.remove_item_capped_star(req_id, req_amount, eff_max, eff_min, not is_equipment)
+	if not Inventory.has_free_craft():
+		for ingredient: Dictionary in recipe:
+			var req_id: StringName = StringName(ingredient.get("item_id", ""))
+			var req_amount: int = int(ingredient.get("amount", 0))
+			Inventory.remove_item_capped_star(req_id, req_amount, eff_max, eff_min, not is_equipment)
 	var crafted_affixes: Array[StringName] = []
-	if is_equipment and crafted_stars >= 3:
+	var crafted_rolls: Dictionary = {}
+	if is_equipment and crafted_stars >= 2:
 		crafted_affixes = roll_affixes(crafted_stars, get_affix_slot(item_id))
-	var output_id := make_star_id(item_id, crafted_stars, crafted_affixes) if is_equipment and (crafted_stars > 0 or not crafted_affixes.is_empty()) else item_id
+		crafted_rolls = roll_affix_magnitudes(crafted_affixes)
+	var output_id := make_star_id(item_id, crafted_stars, crafted_affixes, crafted_rolls) if is_equipment and (crafted_stars > 0 or not crafted_affixes.is_empty()) else item_id
 	Inventory.add_item(output_id, 1)
 	return output_id
+
+
+func _spawn_oath_item(base_id: StringName, affix_slot: String) -> void:
+	var all_affixes: Array[StringName] = _get_affix_pool(affix_slot)
+	var god_rolls := {}
+	for a in all_affixes:
+		god_rolls[a] = 100
+	var god_id := make_star_id(base_id, 5, all_affixes, god_rolls)
+	Inventory.add_item(god_id, 1)
+
+func spawn_god_sword() -> void:
+	_spawn_oath_item(&"god_sword", "sword")
+
+func spawn_god_bow() -> void:
+	_spawn_oath_item(&"god_bow", "bow")
+
+func spawn_god_axe() -> void:
+	_spawn_oath_item(&"god_axe", "axe")
+
+func spawn_god_pickaxe() -> void:
+	_spawn_oath_item(&"god_pickaxe", "pickaxe")
+
+func spawn_god_mace() -> void:
+	_spawn_oath_item(&"god_mace", "mace")
+
+func spawn_god_shield() -> void:
+	_spawn_oath_item(&"god_shield", "shield")
+
+func spawn_god_chest() -> void:
+	_spawn_oath_item(&"god_chest", "chest")
+
+func spawn_god_legs() -> void:
+	_spawn_oath_item(&"god_legs", "legs")
+
+func spawn_god_boots() -> void:
+	_spawn_oath_item(&"god_boots", "feet")
+
+func spawn_all_oath_gear() -> void:
+	spawn_god_sword()
+	spawn_god_bow()
+	spawn_god_axe()
+	spawn_god_pickaxe()
+	spawn_god_mace()
+	spawn_god_shield()
+	spawn_god_chest()
+	spawn_god_legs()
+	spawn_god_boots()
 
 
 func _register_defaults() -> void:
@@ -843,6 +943,81 @@ func _register_defaults() -> void:
 		"icon": "res://textures/items/steel_sword.png",
 	})
 
+	# --- Developer Oath Gear (all affixes for that slot, spawned via chat commands) ---
+	register_item(&"god_sword", {
+		"name": "Oathbreaker", "type": "weapon", "hands": "1h", "armor_slot": "sword",
+		"weapon_class": "sword",
+		"damage": 55.0, "attack_speed": 0.7, "range": 3.5,
+		"stamina_cost": 5.0, "knockback": 40.0,
+		"description": "A blade forged in developer tears. Every sword affix known to mortals hums within its edge.",
+		"icon": "res://textures/items/steel_sword.png",
+		"quality_color": Color(1.0, 0.84, 0.0), "quality_name": "Godly",
+	})
+	register_item(&"god_bow", {
+		"name": "Oathgun", "type": "weapon", "hands": "2h", "armor_slot": "bow",
+		"weapon_class": "bow",
+		"damage": 40.0, "attack_speed": 0.9, "range": 75.0,
+		"stamina_cost": 4.0, "knockback": 30.0,
+		"description": "A bow that bends light itself. Every bow affix known to mortals sings along its string.",
+		"icon": "res://textures/items/longbow.png",
+		"quality_color": Color(1.0, 0.84, 0.0), "quality_name": "Godly",
+	})
+	register_item(&"god_axe", {
+		"name": "Oathcleaver", "type": "weapon", "hands": "2h", "armor_slot": "weapon",
+		"weapon_class": "axe",
+		"damage": 45.0, "attack_speed": 1.0, "range": 3.5,
+		"stamina_cost": 5.0, "knockback": 45.0,
+		"description": "An axe that fells forests in a single thought. Every axe affix pulses through its head.",
+		"icon": "res://textures/items/steel_axe.png",
+		"quality_color": Color(1.0, 0.84, 0.0), "quality_name": "Godly",
+	})
+	register_item(&"god_pickaxe", {
+		"name": "Oathpick", "type": "weapon", "hands": "1h", "armor_slot": "pickaxe",
+		"weapon_class": "pickaxe",
+		"damage": 28.0, "attack_speed": 0.8, "range": 3.0,
+		"stamina_cost": 4.0, "knockback": 35.0,
+		"description": "A pickaxe that drinks mountains dry. Every mining affix known to mortals rings in its strike.",
+		"icon": "res://textures/items/steel_pickaxe.png",
+		"quality_color": Color(1.0, 0.84, 0.0), "quality_name": "Godly",
+	})
+	register_item(&"god_mace", {
+		"name": "Oathcrusher", "type": "weapon", "hands": "1h", "armor_slot": "sword",
+		"weapon_class": "mace",
+		"damage": 60.0, "attack_speed": 1.2, "range": 2.8,
+		"stamina_cost": 6.0, "knockback": 50.0,
+		"description": "A mace that shatters the laws of physics. Every mace affix thunders within its head.",
+		"icon": "res://textures/items/steel_mace.png",
+		"quality_color": Color(1.0, 0.84, 0.0), "quality_name": "Godly",
+	})
+	register_item(&"god_shield", {
+		"name": "Oathguard", "type": "armor", "hands": "1h", "armor_slot": "shield",
+		"armor": 40.0, "knockback": 40.0,
+		"description": "A shield that blocks the concept of damage itself. Every shield affix wards its face.",
+		"icon": "res://textures/items/steel_shield.png",
+		"quality_color": Color(1.0, 0.84, 0.0), "quality_name": "Godly",
+	})
+	register_item(&"god_chest", {
+		"name": "Oathplate", "type": "armor", "armor_slot": "chest",
+		"armor": 28.0,
+		"description": "Armor woven from pure willpower. Every chest affix reinforces its plates.",
+		"icon": "res://textures/items/steel_chest.png",
+		"quality_color": Color(1.0, 0.84, 0.0), "quality_name": "Godly",
+	})
+	register_item(&"god_legs", {
+		"name": "Oathcuisses", "type": "armor", "armor_slot": "legs",
+		"armor": 20.0,
+		"description": "Cuisses that make the wearer tireless. Every legs affix flows through their links.",
+		"icon": "res://textures/items/steel_legs.png",
+		"quality_color": Color(1.0, 0.84, 0.0), "quality_name": "Godly",
+	})
+	register_item(&"god_boots", {
+		"name": "Oathstriders", "type": "armor", "armor_slot": "feet",
+		"armor": 14.0,
+		"description": "Boots that outrun time itself. Every boots affix propels each step.",
+		"icon": "res://textures/items/steel_boots.png",
+		"quality_color": Color(1.0, 0.84, 0.0), "quality_name": "Godly",
+	})
+
 	# --- Advanced Bows ---
 	register_item(&"hunting_bow", {
 		"name": "Hunting Bow", "type": "weapon", "hands": "2h", "armor_slot": "bow",
@@ -971,7 +1146,7 @@ func _register_defaults() -> void:
 		"fit_rotation": Vector3(0.0, -90.0, 0.0),
 	})
 	register_item(&"iron_legs", {
-		"name": "Iron Greaves", "type": "armor", "armor_slot": "legs",
+		"name": "Iron Cuisses", "type": "armor", "armor_slot": "legs",
 		"armor": 12.0,
 		"description": "Solid iron leg plates. Heavy but reliable.",
 		"model": "res://models/armor/leather+pants+3d+model.glb",
@@ -981,7 +1156,7 @@ func _register_defaults() -> void:
 		"fit_rotation": Vector3(0.0, -90.0, 0.0),
 	})
 	register_item(&"steel_legs", {
-		"name": "Steel Greaves", "type": "armor", "armor_slot": "legs",
+		"name": "Steel Cuisses", "type": "armor", "armor_slot": "legs",
 		"armor": 20.0,
 		"description": "Polished steel leg armor with ornate engravings.",
 		"model": "res://models/armor/leather+pants+3d+model.glb",

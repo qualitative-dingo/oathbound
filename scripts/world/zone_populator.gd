@@ -1,5 +1,8 @@
 class_name ZonePopulator
 extends RefCounted
+
+const _DEBUG_LOG := false
+
 ## Deterministically scatters proper 3D objects into zones.
 ##
 ## Trees = CylinderMesh trunk + SphereMesh canopy (Oathbound-style low-poly).
@@ -10,9 +13,25 @@ extends RefCounted
 
 const _CreatureAI := preload("res://scripts/creatures/creature_ai.gd")
 const _LootDrop := preload("res://scripts/items/loot_drop.gd")
+const _VillageGenerator := preload("res://scripts/world/village_generator.gd")
 const _FishIdle := preload("res://scripts/creatures/fish_idle.gd")
+const _ZonePool := preload("res://scripts/world/zone_pool.gd")
 
 const ZONE_SIZE := 64.0
+
+# ─── Floating origin offset (set by WorldGenerator on each origin shift) ──────
+static var origin_shift := Vector3.ZERO
+
+# ─── Debug toggles (set by DebugPanel to skip spawning categories) ────────────
+static var debug_skip_trees := false
+static var debug_skip_rocks := false
+static var debug_skip_saplings := false
+static var debug_skip_grass := false
+static var debug_skip_creatures := false
+static var debug_skip_villages := false
+static var debug_skip_stones := false
+static var debug_skip_fish := false
+static var debug_skip_horses := false
 
 # ─── Shared materials ──────────────────────────────────────────────────────────
 
@@ -486,28 +505,26 @@ static func _gen_leaf_tex_generic() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-# Creates a unique ShaderMaterial per tree with its own color and matching texture
+static var _cached_leaf_mats: Dictionary = {}
+
 static func _make_tree_leaf_mat(tex: ImageTexture, base_color: Color, rng: RandomNumberGenerator) -> ShaderMaterial:
 	if not _leaf_shader:
 		return ShaderMaterial.new()
 
-	var hue_shift := rng.randf_range(-0.06, 0.06)
-	var sat_shift := rng.randf_range(-0.08, 0.08)
-	var val_shift := rng.randf_range(-0.08, 0.08)
-	var h := fmod(base_color.h + hue_shift + 1.0, 1.0)
-	var s := clampf(base_color.s + sat_shift, 0.15, 1.0)
-	var v := clampf(base_color.v + val_shift, 0.2, 1.0)
-	var final_color := Color.from_hsv(h, s, v, base_color.a)
+	var cache_key := str(tex.get_rid().get_id()) + "_" + str(base_color.to_html())
+	if _cached_leaf_mats.has(cache_key):
+		return _cached_leaf_mats[cache_key]
 
 	var mat := ShaderMaterial.new()
 	mat.shader = _leaf_shader
 	mat.set_shader_parameter("albedo_texture", tex)
-	mat.set_shader_parameter("albedo_color", final_color)
+	mat.set_shader_parameter("albedo_color", base_color)
 	mat.set_shader_parameter("roughness", 0.85)
 	mat.set_shader_parameter("alpha_cutoff", 0.3)
-	mat.set_shader_parameter("wind_strength", rng.randf_range(0.65, 1.0))
-	mat.set_shader_parameter("wind_speed", rng.randf_range(1.5, 2.2))
-	mat.set_shader_parameter("wind_turbulence", rng.randf_range(0.9, 1.5))
+	mat.set_shader_parameter("wind_strength", 0.82)
+	mat.set_shader_parameter("wind_speed", 1.85)
+	mat.set_shader_parameter("wind_turbulence", 1.2)
+	_cached_leaf_mats[cache_key] = mat
 	return mat
 
 
@@ -565,18 +582,24 @@ static func _make_triplanar_mat(tex: Texture2D, fallback_color: Color) -> Standa
 
 # ─── Zone Population ───────────────────────────────────────────────────────────
 
-static func populate_zone(
+## Populate a zone in two phases to spread the work across frames.
+## phase=0: villages + trees + rocks + stones (heavy: many add_child for StaticBody3D)
+## phase=1: creatures + horses + fish + grass + saplings (lighter)
+## Returns true when ALL phases are done.
+static func populate_zone_phase(
 	zone_root: Node3D,
 	coord: Vector2i,
 	biome: StringName,
 	world_seed_hash: int,
 	height_func: Callable,
-	microbiome: StringName = &"none",
-) -> void:
+	microbiome: StringName,
+	phase: int,
+) -> bool:
 	_ensure_textures()
 
+	var base_seed: int = world_seed_hash + coord.x * 73856093 + coord.y * 19349663
 	var rng := RandomNumberGenerator.new()
-	rng.seed = world_seed_hash + coord.x * 73856093 + coord.y * 19349663
+	rng.seed = base_seed + phase * 999331
 
 	var origin_x: float = coord.x * ZONE_SIZE
 	var origin_z: float = coord.y * ZONE_SIZE
@@ -587,141 +610,194 @@ static func populate_zone(
 	var bush_n := counts[2]
 	var enemy_n := counts[3]
 
-	# Forest clustering: use noise to create dense forest pockets.
-	# ~60% of trees go into forest clusters, ~40% scatter randomly.
-	var scatter_n := int(tree_n * 0.4)
-	var cluster_budget := tree_n - scatter_n
+	if phase == 0:
+		# ── Phase 0: villages + scatter trees ──
+		if not debug_skip_villages:
+			if biome == &"hearthlands":
+				_VillageGenerator.try_spawn_village(zone_root, coord, rng, origin_x, origin_z, height_func)
+			if coord == Vector2i(0, 0):
+				_VillageGenerator.force_spawn_village(zone_root, 20.0, 20.0, height_func)
 
-	# Random scatter (ensures trees appear outside forests too)
-	for i in scatter_n:
-		var lx := rng.randf_range(4.0, ZONE_SIZE - 4.0)
-		var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
-		var wx := origin_x + lx
-		var wz := origin_z + lz
-		var h := float(height_func.call(wx, wz))
-		if h < 0.2:
-			continue
-		if is_dirt_patch(wx, wz):
-			continue
-		var h_snapped := _snap_height_to_mesh(wx, wz, height_func)
-		var obj := _create_tree(biome, rng, microbiome)
-		zone_root.add_child(obj)
-		obj.position = Vector3(lx, h_snapped, lz)
+		var structs := (Engine.get_main_loop() as SceneTree).get_nodes_in_group(&"structures") if Engine.get_main_loop() else []
+		var scatter_n := int(tree_n * 0.4)
 
-	# Forest clusters: pick 1-3 cluster centers per zone via noise,
-	# then pack trees tightly around them with natural jitter.
-	var cluster_count := rng.randi_range(1, 3)
-	var trees_per_cluster: int = maxi(1, cluster_budget / cluster_count)
-	for _ci in cluster_count:
-		var cx := rng.randf_range(8.0, ZONE_SIZE - 8.0)
-		var cz := rng.randf_range(8.0, ZONE_SIZE - 8.0)
-		var cwx := origin_x + cx
-		var cwz := origin_z + cz
-		# Only place forest clusters where forest noise says so
-		var forest_n := _fbm2(cwx * 0.012 + 300.0, cwz * 0.012 + 400.0)
-		if forest_n < 0.42:
-			continue
-		var cluster_radius := rng.randf_range(8.0, 16.0)
-		for _ti in trees_per_cluster:
-			var angle := rng.randf_range(0.0, TAU)
-			var dist := rng.randf_range(0.0, cluster_radius) * sqrt(rng.randf())
-			var lx := clampf(cx + cos(angle) * dist, 4.0, ZONE_SIZE - 4.0)
-			var lz := clampf(cz + sin(angle) * dist, 4.0, ZONE_SIZE - 4.0)
-			var wx := origin_x + lx
-			var wz := origin_z + lz
-			var h := float(height_func.call(wx, wz))
-			if h < 0.2:
-				continue
-			if is_dirt_patch(wx, wz):
-				continue
-			var h_snapped := _snap_height_to_mesh(wx, wz, height_func)
-			var obj := _create_tree(biome, rng, microbiome)
-			zone_root.add_child(obj)
-			obj.position = Vector3(lx, h_snapped, lz)
+		if not debug_skip_trees:
+			for i in scatter_n:
+				var lx := rng.randf_range(4.0, ZONE_SIZE - 4.0)
+				var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
+				var wx := origin_x + lx
+				var wz := origin_z + lz
+				var h := float(height_func.call(wx, wz))
+				if h < 0.2:
+					continue
+				if is_dirt_patch(wx, wz):
+					continue
+				if _is_near_structure(wx, wz, 4.0, structs):
+					continue
+				var obj := _create_tree(biome, rng, microbiome)
+				zone_root.add_child(obj)
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				obj.position = Vector3(lx, ground_y - 1.5, lz)
 
-	for i in rock_n:
-		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
-		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
-		var wx := origin_x + lx
-		var wz := origin_z + lz
-		var h := float(height_func.call(wx, wz))
-		if h < 0.2:
-			continue
-		var obj := _create_rock(rng)
-		zone_root.add_child(obj)
-		obj.position = Vector3(lx, _snap_height_to_mesh(wx, wz, height_func), lz)
+		return false
 
-	var stone_n: int = rng.randi_range(1, 3)
-	for i in stone_n:
-		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
-		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
-		var wx := origin_x + lx
-		var wz := origin_z + lz
-		var h := float(height_func.call(wx, wz))
-		if h < 0.2:
-			continue
-		var stone := _create_ground_stone(rng)
-		zone_root.add_child(stone)
-		stone.position = Vector3(lx, _snap_height_to_mesh(wx, wz, height_func) + 0.1, lz)
+	if phase == 1:
+		# ── Phase 1: cluster trees + rocks + stones ──
+		var structs := (Engine.get_main_loop() as SceneTree).get_nodes_in_group(&"structures") if Engine.get_main_loop() else []
+		var cluster_budget := tree_n - int(tree_n * 0.4)
 
-	var actual_enemy_n := maxi(1, int(enemy_n * 0.3))
-	var creature_idx := 0
-	for i in actual_enemy_n:
-		var lx := rng.randf_range(8.0, ZONE_SIZE - 8.0)
-		var lz := rng.randf_range(8.0, ZONE_SIZE - 8.0)
-		var wx := origin_x + lx
-		var wz := origin_z + lz
-		var h := float(height_func.call(wx, wz))
-		if h < 0.5:
-			continue
-		var enemy := _create_enemy(biome, rng)
-		if not enemy:
-			continue
-		enemy.name = "Creature_%d" % creature_idx
-		creature_idx += 1
-		zone_root.add_child(enemy)
-		var ground_y := _snap_height_to_mesh(wx, wz, height_func)
-		var spawn_y := ground_y + 0.1
-		if enemy.get("is_flying"):
-			spawn_y = ground_y + enemy.get("fly_height")
-		enemy.position = Vector3(lx, spawn_y, lz)
+		if not debug_skip_trees:
+			var cluster_count := rng.randi_range(1, 3)
+			var trees_per_cluster: int = maxi(1, cluster_budget / cluster_count)
+			for _ci in cluster_count:
+				var cx := rng.randf_range(8.0, ZONE_SIZE - 8.0)
+				var cz := rng.randf_range(8.0, ZONE_SIZE - 8.0)
+				var cwx := origin_x + cx
+				var cwz := origin_z + cz
+				var forest_n := _fbm2(cwx * 0.012 + 300.0, cwz * 0.012 + 400.0)
+				if forest_n < 0.42:
+					continue
+				var cluster_radius := rng.randf_range(8.0, 16.0)
+				for _ti in trees_per_cluster:
+					var angle := rng.randf_range(0.0, TAU)
+					var dist := rng.randf_range(0.0, cluster_radius) * sqrt(rng.randf())
+					var lx := clampf(cx + cos(angle) * dist, 4.0, ZONE_SIZE - 4.0)
+					var lz := clampf(cz + sin(angle) * dist, 4.0, ZONE_SIZE - 4.0)
+					var wx := origin_x + lx
+					var wz := origin_z + lz
+					var h := float(height_func.call(wx, wz))
+					if h < 0.2:
+						continue
+					if is_dirt_patch(wx, wz):
+						continue
+					if _is_near_structure(wx, wz, 4.0, structs):
+						continue
+					var obj := _create_tree(biome, rng, microbiome)
+					zone_root.add_child(obj)
+					var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+					obj.position = Vector3(lx, ground_y - 1.5, lz)
 
-	# Spawn cave system in hearthlands (~1 in 30 zones that have a hill)
-	if biome == &"hearthlands":
-		_try_spawn_cave(zone_root, coord, rng, origin_x, origin_z, height_func)
+		if not debug_skip_rocks:
+			for i in rock_n:
+				var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+				var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+				var wx := origin_x + lx
+				var wz := origin_z + lz
+				var h := float(height_func.call(wx, wz))
+				if h < 0.2:
+					continue
+				if _is_near_structure(wx, wz, 4.0, structs):
+					continue
+				var obj := _create_rock(rng)
+				zone_root.add_child(obj)
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				obj.position = Vector3(lx, ground_y, lz)
 
-	# Spawn horses in calm biomes (rare)
-	if biome == &"hearthlands" or biome == &"thornwood":
-		if rng.randf() < 0.15:
-			var lx := rng.randf_range(10.0, ZONE_SIZE - 10.0)
-			var lz := rng.randf_range(10.0, ZONE_SIZE - 10.0)
-			var wx := origin_x + lx
-			var wz := origin_z + lz
-			var h := float(height_func.call(wx, wz))
-			if h > 0.5:
-				var horse := _create_horse()
-				zone_root.add_child(horse)
-				horse.position = Vector3(lx, _snap_height_to_mesh(wx, wz, height_func), lz)
+		if not debug_skip_stones:
+			var stone_n: int = rng.randi_range(1, 3)
+			for i in stone_n:
+				var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+				var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+				var wx := origin_x + lx
+				var wz := origin_z + lz
+				var h := float(height_func.call(wx, wz))
+				if h < 0.2:
+					continue
+				if _is_near_structure(wx, wz, 4.0, structs):
+					continue
+				var stone := _create_ground_stone(rng)
+				zone_root.add_child(stone)
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				stone.position = Vector3(lx, ground_y + 0.1, lz)
 
-	# Spawn fish in water areas
-	if biome == &"hearthlands":
-		var fish_count := rng.randi_range(0, 3)
-		for _fi in fish_count:
-			var lx := rng.randf_range(4.0, ZONE_SIZE - 4.0)
-			var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
-			var wx := origin_x + lx
-			var wz := origin_z + lz
-			var h := float(height_func.call(wx, wz))
-			if h < -0.5:
-				var fish := _create_fish(rng)
-				zone_root.add_child(fish)
-				fish.position = Vector3(lx, -0.1, lz)
+		return false
 
-	# Scatter grass blades
-	_scatter_grass(zone_root, coord, biome, rng, height_func)
+	if phase == 2:
+		# ── Phase 2: creatures + caves + horses + fish ──
+		if not debug_skip_creatures:
+			var actual_enemy_n := maxi(1, int(enemy_n * 0.3))
+			var creature_idx := 0
+			for i in actual_enemy_n:
+				var lx := rng.randf_range(8.0, ZONE_SIZE - 8.0)
+				var lz := rng.randf_range(8.0, ZONE_SIZE - 8.0)
+				var wx := origin_x + lx
+				var wz := origin_z + lz
+				var h := float(height_func.call(wx, wz))
+				if h < 0.5:
+					continue
+				var enemy := _create_enemy(biome, rng)
+				if not enemy:
+					continue
+				enemy.name = "Creature_%d" % creature_idx
+				creature_idx += 1
+				zone_root.add_child(enemy)
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				var spawn_y := ground_y + 0.1
+				if enemy.get("is_flying"):
+					spawn_y = ground_y + enemy.get("fly_height")
+				enemy.position = Vector3(lx, spawn_y, lz)
 
-	# Scatter saplings
-	_scatter_saplings(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
+		if biome == &"hearthlands":
+			_try_spawn_cave(zone_root, coord, rng, origin_x, origin_z, height_func)
+
+		if not debug_skip_horses:
+			var _has_saved_horses := not _get_saved_horses().is_empty()
+			if biome == &"hearthlands":
+				if rng.randf() < 0.15:
+					var lx := rng.randf_range(10.0, ZONE_SIZE - 10.0)
+					var lz := rng.randf_range(10.0, ZONE_SIZE - 10.0)
+					var wx := origin_x + lx
+					var wz := origin_z + lz
+					var h := float(height_func.call(wx, wz))
+					if h > 0.5:
+						if _has_saved_horses:
+							rng.randf()
+						else:
+							var horse := _create_horse(rng)
+							zone_root.add_child(horse)
+							var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+							horse.position = Vector3(lx, ground_y, lz)
+							horse.set_meta("spawn_zone", coord)
+
+			_restore_saved_horses_in_zone(zone_root, coord, height_func)
+
+		if not debug_skip_fish:
+			if biome == &"hearthlands":
+				var fish_count := rng.randi_range(0, 3)
+				for _fi in fish_count:
+					var lx := rng.randf_range(4.0, ZONE_SIZE - 4.0)
+					var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
+					var wx := origin_x + lx
+					var wz := origin_z + lz
+					var h := float(height_func.call(wx, wz))
+					if h < -0.5:
+						var fish := _create_fish(rng)
+						zone_root.add_child(fish)
+						fish.position = Vector3(lx, -0.1, lz)
+
+		return false
+
+	# ── Phase 3: grass + saplings ──
+	if not debug_skip_grass:
+		_scatter_grass(zone_root, coord, biome, rng, height_func)
+
+	if not debug_skip_saplings:
+		_scatter_saplings(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
+
+	return true
+
+
+## Legacy single-call populate for spawn area (runs synchronously)
+static func populate_zone(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	world_seed_hash: int,
+	height_func: Callable,
+	microbiome: StringName = &"none",
+) -> void:
+	for p in 4:
+		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
 
 
 # Two intersecting planes (cross) so grass is never edge-on to camera
@@ -870,7 +946,13 @@ static func _gen_grass_variety(idx: int) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+static var _cached_grass_mats: Dictionary = {}
+
 static func _make_grass_mat(tex: ImageTexture, color: Color) -> ShaderMaterial:
+	var cache_key := str(tex.get_rid().get_id()) + "_" + color.to_html()
+	if _cached_grass_mats.has(cache_key):
+		return _cached_grass_mats[cache_key]
+
 	var mat := ShaderMaterial.new()
 	mat.shader = _grass_shader
 	mat.set_shader_parameter("albedo_texture", tex)
@@ -879,17 +961,35 @@ static func _make_grass_mat(tex: ImageTexture, color: Color) -> ShaderMaterial:
 	mat.set_shader_parameter("wind_strength", 0.5)
 	mat.set_shader_parameter("wind_speed", 1.5)
 	mat.set_shader_parameter("wind_turbulence", 0.8)
+	_cached_grass_mats[cache_key] = mat
 	return mat
 
 
-static func _is_near_structure(wx: float, wz: float) -> bool:
-	var tree := Engine.get_main_loop() as SceneTree
-	if not tree:
-		return false
-	for s: Node3D in tree.get_nodes_in_group(&"structures"):
-		var dx := s.global_position.x - wx
-		var dz := s.global_position.z - wz
-		if dx * dx + dz * dz < 4.0:
+static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, cached_structures: Array = []) -> bool:
+	var structs: Array = cached_structures
+	if structs.is_empty():
+		var tree := Engine.get_main_loop() as SceneTree
+		if not tree:
+			return false
+		structs = tree.get_nodes_in_group(&"structures")
+	for s: Node3D in structs:
+		var sp := s.global_position
+		# sp is scene-space; wx/wz are world-space. Convert sp to world-space.
+		var dx := (sp.x + origin_shift.x) - wx
+		var dz := (sp.z + origin_shift.z) - wz
+		var dist_sq := dx * dx + dz * dz
+		var r_sq := min_dist_sq
+		if s.has_meta("footprint_radius"):
+			var r: float = float(s.get_meta("footprint_radius"))
+			r_sq = maxf(r_sq, r * r)
+		else:
+			for child in s.get_children():
+				if child is CollisionShape3D and child.shape is BoxShape3D:
+					var sz: Vector3 = (child.shape as BoxShape3D).size
+					var half := maxf(sz.x, sz.z) * 0.5 + 1.5
+					r_sq = maxf(r_sq, half * half)
+					break
+		if dist_sq < r_sq:
 			return true
 	return false
 
@@ -906,35 +1006,14 @@ static func _scatter_grass(
 
 	# [texture, color, count, scale_min, scale_max, size_w, size_h]
 	var grass_types: Array = []
-	match biome:
-		&"hearthlands":
-			grass_types = [
-				[_grass_textures[0], Color(0.15, 0.42, 0.10), 40, 0.9, 1.6, 1.8, 1.2],
-				[_grass_textures[1], Color(0.12, 0.36, 0.08), 35, 0.8, 1.5, 1.7, 1.3],
-				[_grass_textures[2], Color(0.18, 0.40, 0.12), 30, 0.9, 1.7, 1.9, 1.1],
-				[_grass_textures[3], Color(0.10, 0.34, 0.10), 28, 0.8, 1.4, 1.6, 1.2],
-				[_grass_textures[5], Color(0.20, 0.38, 0.14), 25, 0.8, 1.5, 1.8, 1.0],
-				[_grass_textures[10], Color(0.14, 0.38, 0.08), 25, 1.0, 1.8, 1.6, 1.6],
-				[_grass_textures[12], Color(0.18, 0.42, 0.10), 22, 1.0, 1.7, 1.6, 1.7],
-				[_grass_textures[16], Color(0.16, 0.38, 0.10), 20, 0.9, 1.6, 1.7, 1.4],
-				[_grass_textures[18], Color(0.18, 0.36, 0.12), 15, 0.9, 1.7, 1.8, 1.2],
-			]
-		&"thornwood":
-			grass_types = [
-				[_grass_textures[0], Color(0.10, 0.30, 0.08), 30, 0.8, 1.5, 1.8, 1.2],
-				[_grass_textures[3], Color(0.08, 0.28, 0.07), 25, 0.7, 1.4, 1.6, 1.1],
-				[_grass_textures[5], Color(0.12, 0.32, 0.10), 22, 0.8, 1.5, 1.7, 1.0],
-				[_grass_textures[10], Color(0.08, 0.30, 0.08), 18, 0.8, 1.6, 1.5, 1.5],
-				[_grass_textures[16], Color(0.12, 0.30, 0.09), 18, 0.7, 1.4, 1.6, 1.2],
-			]
-		&"scorched_steppe":
-			grass_types = [
-				[_grass_textures[6], Color(0.14, 0.30, 0.08), 22, 0.8, 1.5, 1.7, 1.2],
-				[_grass_textures[9], Color(0.12, 0.28, 0.06), 18, 0.7, 1.4, 1.6, 1.1],
-				[_grass_textures[13], Color(0.16, 0.32, 0.08), 15, 0.9, 1.6, 1.5, 1.4],
-			]
-		_:
-			return
+	if biome != &"hearthlands":
+		return
+	grass_types = [
+		[_grass_textures[0], Color(0.15, 0.42, 0.10), 60, 0.9, 1.6, 1.8, 1.2],
+		[_grass_textures[2], Color(0.18, 0.40, 0.12), 55, 0.9, 1.7, 1.9, 1.1],
+		[_grass_textures[10], Color(0.14, 0.38, 0.08), 50, 1.0, 1.8, 1.6, 1.6],
+		[_grass_textures[16], Color(0.16, 0.38, 0.10), 40, 0.9, 1.6, 1.7, 1.4],
+	]
 
 	var origin_x: float = coord.x * ZONE_SIZE
 	var origin_z: float = coord.y * ZONE_SIZE
@@ -953,9 +1032,6 @@ static func _scatter_grass(
 			continue
 
 		var mat := _make_grass_mat(tex, Color(color, 1.0))
-		mat.set_shader_parameter("wind_strength", rng.randf_range(0.3, 0.6))
-		mat.set_shader_parameter("wind_speed", rng.randf_range(1.2, 2.0))
-		mat.set_shader_parameter("wind_turbulence", rng.randf_range(0.5, 1.2))
 
 		var transforms: Array[Transform3D] = []
 		for _i in count:
@@ -984,17 +1060,25 @@ static func _scatter_grass(
 		if transforms.is_empty():
 			continue
 
-		var mm := MultiMesh.new()
-		mm.mesh = _grass_quad_mesh
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = false
-		mm.instance_count = transforms.size()
+		var mmi := _ZonePool.get_grass_mmi() as MultiMeshInstance3D
+		if not mmi:
+			mmi = MultiMeshInstance3D.new()
+
+		var mm: MultiMesh = mmi.multimesh
+		if mm:
+			mm.instance_count = 0
+			mm.instance_count = transforms.size()
+		else:
+			mm = MultiMesh.new()
+			mm.mesh = _grass_quad_mesh
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_colors = false
+			mm.instance_count = transforms.size()
+			mmi.multimesh = mm
 		for idx in transforms.size():
 			mm.set_instance_transform(idx, transforms[idx])
 
-		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "Grass_%d" % gi
-		mmi.multimesh = mm
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		zone_root.add_child(mmi)
@@ -1012,16 +1096,7 @@ static func _scatter_saplings(
 	if not _leaf_shader or not _leaf_tex_generic:
 		return
 
-	var sapling_count: int
-	match biome:
-		&"hearthlands":
-			sapling_count = rng.randi_range(12, 20)
-		&"thornwood":
-			sapling_count = rng.randi_range(18, 28)
-		&"scorched_steppe":
-			sapling_count = rng.randi_range(4, 8)
-		_:
-			sapling_count = rng.randi_range(5, 10)
+	var sapling_count: int = rng.randi_range(12, 20)
 
 	for _i in sapling_count:
 		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
@@ -1033,6 +1108,8 @@ static func _scatter_saplings(
 			continue
 		if is_dirt_patch(wx, wz):
 			continue
+		if _is_near_structure(wx, wz):
+			continue
 
 		var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 		var sf := rng.randf_range(0.6, 1.4)
@@ -1040,6 +1117,16 @@ static func _scatter_saplings(
 		var trunk_r := 0.1 * sf
 
 		var is_birch_sapling := rng.randf() < 0.15
+
+		var pooled_sapling := _ZonePool.get_sapling_node()
+		if pooled_sapling:
+			pooled_sapling.name = "BirchSapling" if is_birch_sapling else "Sapling"
+			pooled_sapling.collision_mask = 0
+			pooled_sapling.set_meta("hp", 15.0 * sf)
+			pooled_sapling.set_meta("max_hp", 15.0 * sf)
+			pooled_sapling.position = Vector3(lx, ground_y, lz)
+			zone_root.add_child(pooled_sapling)
+			continue
 
 		var root := StaticBody3D.new()
 		root.name = "BirchSapling" if is_birch_sapling else "Sapling"
@@ -1049,7 +1136,6 @@ static func _scatter_saplings(
 		root.position = Vector3(lx, ground_y, lz)
 		zone_root.add_child(root)
 
-		# Collision
 		var col := CollisionShape3D.new()
 		var shape := CapsuleShape3D.new()
 		shape.radius = trunk_r * 2.0
@@ -1058,7 +1144,6 @@ static func _scatter_saplings(
 		col.position.y = trunk_h * 0.3
 		root.add_child(col)
 
-		# Harvestable — proportional HP (trees = 80 HP at ~15m, saplings ~4.5m)
 		root.set_meta("harvestable", true)
 		root.set_meta("hp", 15.0 * sf)
 		root.set_meta("max_hp", 15.0 * sf)
@@ -1089,64 +1174,58 @@ static func _scatter_saplings(
 			leaf_tex = _leaf_tex_birch if _leaf_tex_birch else _leaf_tex_generic
 		else:
 			leaf_tex = _leaf_tex_generic
-			match biome:
-				&"hearthlands":
-					leaf_color = Color.from_hsv(rng.randf_range(0.25, 0.35), rng.randf_range(0.5, 0.7), rng.randf_range(0.4, 0.6))
-				&"thornwood":
-					leaf_color = Color.from_hsv(rng.randf_range(0.22, 0.32), rng.randf_range(0.4, 0.6), rng.randf_range(0.3, 0.5))
-				&"scorched_steppe":
-					leaf_color = Color.from_hsv(rng.randf_range(0.12, 0.20), rng.randf_range(0.5, 0.7), rng.randf_range(0.35, 0.5))
-				_:
-					leaf_color = Color.from_hsv(rng.randf_range(0.25, 0.35), rng.randf_range(0.45, 0.65), rng.randf_range(0.35, 0.55))
+			leaf_color = Color.from_hsv(rng.randf_range(0.25, 0.35), rng.randf_range(0.5, 0.7), rng.randf_range(0.4, 0.6))
 
 		var leaf_mat := _make_tree_leaf_mat(leaf_tex, leaf_color, rng)
 
-		# Dense crown at trunk top — no bald heads
 		var crown_y := trunk_h * 0.8
 		var crown_r := 1.2 * sf
 		var crown_h := 0.6 * sf
 
-		# Inner core — tightly packed at the very top
+		var leaf_xforms: Array[Transform3D] = []
+
 		for li in rng.randi_range(4, 6):
-			var leaf_mi := MeshInstance3D.new()
-			leaf_mi.name = "LC%d" % li
-			var quad := QuadMesh.new()
 			var leaf_size := rng.randf_range(2.2, 3.2) * sf
-			quad.size = Vector2(leaf_size, leaf_size)
-			leaf_mi.mesh = quad
-			leaf_mi.set_surface_override_material(0, leaf_mat)
-			leaf_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			leaf_mi.position = Vector3(
+			var pos := Vector3(
 				rng.randf_range(-crown_r * 0.4, crown_r * 0.4),
 				crown_y + rng.randf_range(-crown_h * 0.3, crown_h * 0.5),
 				rng.randf_range(-crown_r * 0.4, crown_r * 0.4))
-			leaf_mi.rotation = Vector3(
+			var rot := Vector3(
 				rng.randf_range(-0.6, 0.6),
 				rng.randf_range(0.0, TAU),
 				rng.randf_range(-0.4, 0.4))
-			root.add_child(leaf_mi)
+			var basis := Basis.from_euler(rot).scaled(Vector3(leaf_size, leaf_size, leaf_size))
+			leaf_xforms.append(Transform3D(basis, pos))
 
-		# Outer spread
 		for li in rng.randi_range(4, 6):
-			var leaf_mi := MeshInstance3D.new()
-			leaf_mi.name = "LO%d" % li
-			var quad := QuadMesh.new()
 			var leaf_size := rng.randf_range(1.6, 2.6) * sf
-			quad.size = Vector2(leaf_size, leaf_size)
-			leaf_mi.mesh = quad
-			leaf_mi.set_surface_override_material(0, leaf_mat)
-			leaf_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			var angle := rng.randf_range(0.0, TAU)
 			var r := rng.randf_range(crown_r * 0.3, crown_r)
-			leaf_mi.position = Vector3(
+			var pos := Vector3(
 				cos(angle) * r,
 				crown_y + rng.randf_range(-crown_h, crown_h * 0.3),
 				sin(angle) * r)
-			leaf_mi.rotation = Vector3(
+			var rot := Vector3(
 				rng.randf_range(-0.8, 0.8),
 				rng.randf_range(0.0, TAU),
 				rng.randf_range(-0.5, 0.5))
-			root.add_child(leaf_mi)
+			var basis := Basis.from_euler(rot).scaled(Vector3(leaf_size, leaf_size, leaf_size))
+			leaf_xforms.append(Transform3D(basis, pos))
+
+		if not leaf_xforms.is_empty():
+			var mm := MultiMesh.new()
+			mm.mesh = _leaf_unit_quad
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_colors = false
+			mm.instance_count = leaf_xforms.size()
+			for i in leaf_xforms.size():
+				mm.set_instance_transform(i, leaf_xforms[i])
+			var mmi := MultiMeshInstance3D.new()
+			mmi.name = "LeafMM"
+			mmi.multimesh = mm
+			mmi.material_override = leaf_mat
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			root.add_child(mmi)
 
 
 static func _get_microbiome_counts(biome: StringName, micro: StringName) -> PackedInt32Array:
@@ -1168,12 +1247,9 @@ static func _get_microbiome_counts(biome: StringName, micro: StringName) -> Pack
 
 
 static func _get_biome_counts(biome: StringName) -> PackedInt32Array:
-	match biome:
-		&"hearthlands":     return PackedInt32Array([6, 2, 4, 1])
-		&"thornwood":       return PackedInt32Array([10, 1, 2, 2])
-		&"scorched_steppe": return PackedInt32Array([2, 3, 1, 3])
-		&"ocean":           return PackedInt32Array([0, 0, 0, 0])
-		_:                  return PackedInt32Array([0, 0, 0, 0])
+	if biome == &"hearthlands":
+		return PackedInt32Array([6, 2, 4, 1])
+	return PackedInt32Array([0, 0, 0, 0])
 
 
 static func _hash12(px: float, pz: float) -> float:
@@ -1214,9 +1290,10 @@ static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) ->
 	var h01 := float(height_func.call(gx, gz + STEP))
 	var h11 := float(height_func.call(gx + STEP, gz + STEP))
 
-	var h_top := lerpf(h00, h10, fx)
-	var h_bot := lerpf(h01, h11, fx)
-	return lerpf(h_top, h_bot, fz)
+	# Match the terrain mesh triangulation (diagonal from h10 to h01)
+	if fx + fz <= 1.0:
+		return h00 + (h10 - h00) * fx + (h01 - h00) * fz
+	return h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1224,6 +1301,13 @@ static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) ->
 # ═══════════════════════════════════════════════════════════════════════════════
 
 static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbiome: StringName = &"none") -> StaticBody3D:
+	var pooled := _ZonePool.get_tree_node()
+	if pooled:
+		pooled.set_meta("hp", 80.0)
+		pooled.set_meta("max_hp", 80.0)
+		pooled.collision_mask = 0
+		return pooled
+
 	var root := StaticBody3D.new()
 	root.collision_layer = 4
 	root.collision_mask = 0
@@ -1307,11 +1391,6 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		leaf_tex = _leaf_tex_generic
 		base_leaf_color = Color.from_hsv(0.28, 0.58, 0.48)
 
-	# Biome tinting
-	match biome:
-		&"scorched_steppe":
-			base_leaf_color = Color.from_hsv(0.18, 0.50, 0.45)
-
 	var leaf_mat := _make_tree_leaf_mat(leaf_tex, base_leaf_color, rng)
 
 	# ── Canopy geometry ──
@@ -1324,7 +1403,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	if is_birch:
 		canopy_spread = 6.05 * sf
 		canopy_base_y = trunk_h * 0.38
-		plane_count = rng.randi_range(16, 22)
+		plane_count = rng.randi_range(32, 44)
 		plane_size_base = 6.0 * sf
 	elif is_pine:
 		canopy_spread = 4.4 * sf
@@ -1341,6 +1420,11 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		canopy_base_y = trunk_h * 0.7
 		plane_count = rng.randi_range(10, 14)
 		plane_size_base = 7.0 * sf
+	elif is_oak:
+		canopy_spread = 6.6 * sf
+		canopy_base_y = trunk_h * 0.25
+		plane_count = rng.randi_range(48, 72)
+		plane_size_base = 6.5 * sf
 	else:
 		canopy_spread = 6.6 * sf
 		canopy_base_y = trunk_h * 0.35
@@ -1448,56 +1532,28 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	return root
 
 
-static func _pick_tree_name(biome: StringName, rng: RandomNumberGenerator, microbiome: StringName = &"none") -> String:
-	match biome:
-		&"hearthlands":
-			match microbiome:
-				&"birch_forest":
-					return "Birch" if rng.randf() < 0.85 else "Oak"
-				&"forest":
-					return "Birch" if rng.randf() < 0.3 else "Oak"
-				&"meadow":
-					return "Birch" if rng.randf() < 0.4 else "Oak"
-				&"riverside":
-					return "Birch" if rng.randf() < 0.5 else "Oak"
-				&"hills":
-					return "Oak" if rng.randf() < 0.7 else "Birch"
-				_:
-					return "Birch" if rng.randf() < 0.35 else "Oak"
-		&"thornwood":
-			var r := rng.randf()
-			if r < 0.4:
-				return "Pine"
-			elif r < 0.7:
-				return "Willow"
-			else:
-				return "Oak"
-		&"scorched_steppe":
-			var r := rng.randf()
-			if r < 0.5:
-				return "Oak"
-			elif r < 0.8:
-				return "Pine"
-			else:
-				return "Birch"
+static func _pick_tree_name(_biome: StringName, rng: RandomNumberGenerator, microbiome: StringName = &"none") -> String:
+	match microbiome:
+		&"birch_forest":
+			return "Birch" if rng.randf() < 0.85 else "Oak"
+		&"forest":
+			return "Birch" if rng.randf() < 0.3 else "Oak"
+		&"meadow":
+			return "Birch" if rng.randf() < 0.4 else "Oak"
+		&"riverside":
+			return "Birch" if rng.randf() < 0.5 else "Oak"
+		&"hills":
+			return "Oak" if rng.randf() < 0.7 else "Birch"
 		_:
-			return "Oak"
+			return "Birch" if rng.randf() < 0.35 else "Oak"
 
 
-static func _get_canopy_material(biome: StringName) -> Material:
-	match biome:
-		&"thornwood":
-			return _mat_pine_leaves
-		_:
-			return _mat_leaves
+static func _get_canopy_material(_biome: StringName) -> Material:
+	return _mat_leaves
 
 
-static func _get_leaf_tex_for_biome(biome: StringName) -> ImageTexture:
-	match biome:
-		&"thornwood":
-			return _leaf_tex_pine
-		_:
-			return _leaf_tex_generic
+static func _get_leaf_tex_for_biome(_biome: StringName) -> ImageTexture:
+	return _leaf_tex_generic
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1598,6 +1654,13 @@ static func _generate_rock_mesh(seed_idx: int) -> ArrayMesh:
 
 
 static func _create_rock(rng: RandomNumberGenerator) -> StaticBody3D:
+	var pooled := _ZonePool.get_rock_node()
+	if pooled:
+		var sf := rng.randf_range(0.2, 8.0)
+		pooled.set_meta("hp", 15.0 + sf * 5.0)
+		pooled.collision_mask = 0
+		return pooled
+
 	var root := StaticBody3D.new()
 	root.collision_layer = 4
 	root.collision_mask = 0
@@ -1685,12 +1748,18 @@ static func _create_ground_stone(_rng: RandomNumberGenerator) -> Node3D:
 #  CREATURES — 3D-enhanced billboards with normal-map lighting + ground shadows
 # ═══════════════════════════════════════════════════════════════════════════════
 
+static var _cached_creature_mats: Dictionary = {}
+
 static func _make_creature_sprite_mat(tex: Texture2D) -> ShaderMaterial:
 	if not _creature_shader or not tex:
 		return null
+	var tex_id := tex.get_rid().get_id()
+	if _cached_creature_mats.has(tex_id):
+		return _cached_creature_mats[tex_id]
 	var mat := ShaderMaterial.new()
 	mat.shader = _creature_shader
 	mat.set_shader_parameter("sprite_texture", tex)
+	_cached_creature_mats[tex_id] = mat
 	return mat
 
 
@@ -1796,12 +1865,12 @@ static func _create_enemy(biome: StringName, rng: RandomNumberGenerator = null) 
 				for si in surf_count:
 					var mat := mi.get_active_material(si)
 					mat_info += " surf%d=%s" % [si, mat.get_class() if mat else "NULL"]
-				print("[ZONE DEBUG] %s mesh '%s': visible=%s surfs=%d%s" % [kind, mi.name, mi.visible, surf_count, mat_info])
+				if _DEBUG_LOG: print("[ZONE DEBUG] %s mesh '%s': visible=%s surfs=%d%s" % [kind, mi.name, mi.visible, surf_count, mat_info])
 				mesh_count += 1
 			if mesh_count == 0:
-				print("[ZONE DEBUG] %s: NO MeshInstance3D found! Children: %s" % [kind, str(_list_children_recursive(model_node))])
+				if _DEBUG_LOG: print("[ZONE DEBUG] %s: NO MeshInstance3D found! Children: %s" % [kind, str(_list_children_recursive(model_node))])
 			else:
-				print("[ZONE DEBUG] %s: %d meshes found, scale=%.1f" % [kind, mesh_count, s])
+				if _DEBUG_LOG: print("[ZONE DEBUG] %s: %d meshes found, scale=%.1f" % [kind, mesh_count, s])
 
 			var anim_player := _find_anim_player(model_node)
 			if anim_player:
@@ -1815,7 +1884,7 @@ static func _create_enemy(biome: StringName, rng: RandomNumberGenerator = null) 
 			_apply_nearest_filter_recursive(model_node)
 
 	if not model_loaded:
-		print("[ZONE] Skipping creature '%s' — no 3D model loaded" % kind)
+		if _DEBUG_LOG: print("[ZONE] Skipping creature '%s' — no 3D model loaded" % kind)
 		creature.queue_free()
 		return null
 
@@ -2017,12 +2086,17 @@ static func _tint_meshes_recursive(node: Node, tint: Color) -> void:
 
 
 
-static func _create_horse() -> StaticBody3D:
+static func _create_horse(rng: RandomNumberGenerator = null, override_stars: int = -1) -> StaticBody3D:
 	_ensure_textures()
 	var horse := StaticBody3D.new()
 	horse.add_to_group(&"horses")
 	horse.collision_layer = 4
 	horse.collision_mask = 1
+
+	var star_level := override_stars if override_stars >= 0 else (_roll_creature_stars(rng) if rng else 0)
+	horse.set_meta("star_level", star_level)
+	var base_stamina := 100.0 + star_level * 20.0
+	horse.set_meta("max_stamina", base_stamina)
 
 	var model_loaded := false
 	var model_path := "res://models/creatures/Horse/Meshy_AI_model_Animation_Walking_withSkin.glb"
@@ -2090,6 +2164,61 @@ static func _create_horse() -> StaticBody3D:
 	col.shape = shape
 	col.position.y = 0.7
 	horse.add_child(col)
+
+	var label_fs := 48
+	var label_px := 0.009
+	var has_stars := star_level > 0
+	var star_str := (" " + "★".repeat(star_level)) if has_stars else ""
+
+	var name_lbl := Label3D.new()
+	name_lbl.name = "HorseNameplate"
+	name_lbl.text = "Horse"
+	name_lbl.font_size = label_fs
+	name_lbl.pixel_size = label_px
+	name_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	name_lbl.no_depth_test = false
+	name_lbl.modulate = Color.WHITE
+	name_lbl.outline_modulate = Color(0, 0, 0, 0.95)
+	name_lbl.outline_size = 12
+	name_lbl.render_priority = 1
+	if has_stars:
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	else:
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+	var stars_lbl: Label3D = null
+	if has_stars:
+		stars_lbl = Label3D.new()
+		stars_lbl.name = "HorseStarsLabel"
+		stars_lbl.text = star_str
+		stars_lbl.font_size = label_fs
+		stars_lbl.pixel_size = label_px
+		stars_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		stars_lbl.no_depth_test = false
+		stars_lbl.modulate = ItemDatabase.get_rarity_color(star_level)
+		stars_lbl.outline_modulate = Color(0, 0, 0, 0.95)
+		stars_lbl.outline_size = 12
+		stars_lbl.render_priority = 1
+		stars_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+
+	var ui_root := Node3D.new()
+	ui_root.name = "HorseNameplateRoot"
+	ui_root.position.y = 5.0
+
+	if has_stars:
+		var font: Font = name_lbl.font if name_lbl.font else ThemeDB.fallback_font
+		var name_w := font.get_string_size("Horse", HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs).x * label_px
+		var star_w := font.get_string_size(star_str, HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs).x * label_px
+		var em := float(label_fs) * label_px
+		var junction_x := (name_w - star_w) * 0.5 + em * 0.22
+		name_lbl.position = Vector3(junction_x, 0.0, 0)
+		stars_lbl.position = Vector3(junction_x, 0.0, 0)
+		ui_root.add_child(stars_lbl)
+	else:
+		name_lbl.position.y = 0.0
+	ui_root.add_child(name_lbl)
+
+	horse.add_child(ui_root)
 
 	return horse
 
@@ -2334,7 +2463,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 		&"mountain_goat":
 			return {"normal": [
 				{"id": &"leather", "min": 1, "max": 2, "chance": 0.6},
-				{"id": &"stone", "min": 2, "max": 4, "chance": 0.5},
+				{"id": &"bone", "min": 1, "max": 2, "chance": 0.5},
 			], "rare": [
 				{"id": &"thick_hide", "min": 1, "max": 1, "chance": 0.06},
 			]}
@@ -2350,7 +2479,6 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 			return {"normal": [
 				{"id": &"bone", "min": 1, "max": 2, "chance": 0.7},
 				{"id": &"flint", "min": 1, "max": 2, "chance": 0.5},
-				{"id": &"wood", "min": 1, "max": 3, "chance": 0.6},
 			], "rare": [
 				{"id": &"gold", "min": 1, "max": 3, "chance": 0.40, "no_stars": true},
 			]}
@@ -2358,7 +2486,6 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 			return {"normal": [
 				{"id": &"leather", "min": 2, "max": 4, "chance": 0.8},
 				{"id": &"bone", "min": 1, "max": 3, "chance": 0.6},
-				{"id": &"stone", "min": 1, "max": 2, "chance": 0.4},
 			], "rare": [
 				{"id": &"gold", "min": 2, "max": 6, "chance": 0.50, "no_stars": true},
 				{"id": &"ancient_bone", "min": 1, "max": 1, "chance": 0.06},
@@ -2373,7 +2500,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 			]}
 		&"fire_imp":
 			return {"normal": [
-				{"id": &"stone", "min": 2, "max": 5, "chance": 0.7},
+				{"id": &"flint", "min": 2, "max": 4, "chance": 0.7},
 				{"id": &"bone", "min": 1, "max": 3, "chance": 0.6},
 			], "rare": [
 				{"id": &"gold", "min": 2, "max": 5, "chance": 0.40, "no_stars": true},
@@ -2390,7 +2517,6 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 		&"cyclops":
 			return {"normal": [
 				{"id": &"bone", "min": 3, "max": 6, "chance": 0.9},
-				{"id": &"stone", "min": 2, "max": 5, "chance": 0.7},
 				{"id": &"leather", "min": 2, "max": 4, "chance": 0.5},
 			], "rare": [
 				{"id": &"gold", "min": 5, "max": 12, "chance": 0.55, "no_stars": true},
@@ -2407,7 +2533,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 				{"id": &"thick_hide", "min": 1, "max": 2, "chance": 0.06},
 			]}
 		_:
-			return {"normal": [{"id": &"wood", "min": 1, "max": 1, "chance": 0.5}], "rare": []}
+			return {"normal": [{"id": &"bone", "min": 1, "max": 1, "chance": 0.5}], "rare": []}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2537,3 +2663,39 @@ static func _try_spawn_cave(
 	var entrance := CaveGenerator.create_entrance_marker(best_dir)
 	zone_root.add_child(entrance)
 	entrance.position = entrance_pos
+
+
+static func _get_saved_horses() -> Array:
+	var tree := Engine.get_main_loop() as SceneTree
+	if not tree:
+		return []
+	var wss_nodes := tree.get_nodes_in_group(&"world_state_sync")
+	if wss_nodes.is_empty():
+		return []
+	var wss: Node = wss_nodes[0]
+	if wss.has_method(&"get_saved_horses"):
+		return wss.get_saved_horses()
+	return []
+
+
+static func _restore_saved_horses_in_zone(zone_root: Node, coord: Vector2i, height_func: Callable) -> void:
+	var saved := _get_saved_horses()
+	if saved.is_empty():
+		return
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+	for entry in saved:
+		var hx: float = float(entry.get("x", 0.0))
+		var hz: float = float(entry.get("z", 0.0))
+		var zx := int(floorf(hx / ZONE_SIZE))
+		var zz := int(floorf(hz / ZONE_SIZE))
+		if zx != coord.x or zz != coord.y:
+			continue
+		var star: int = int(entry.get("star_level", 0))
+		var horse := _create_horse(null, star)
+		horse.set_meta("spawn_zone", coord)
+		zone_root.add_child(horse)
+		var local_x := hx - origin_x
+		var local_z := hz - origin_z
+		var snap_y := _snap_height_to_mesh(hx, hz, height_func)
+		horse.position = Vector3(local_x, snap_y, local_z)

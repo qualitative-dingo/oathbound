@@ -1,14 +1,16 @@
 class_name PlayerController
 extends CharacterBody3D
 
+const _DEBUG_LOG := false
+
 # --- Movement tuning ---
 @export_group("Movement")
-@export var walk_speed: float = 4.0
-@export var sprint_speed: float = 7.0
+@export var walk_speed: float = 6.24
+@export var sprint_speed: float = 9.24
 @export var crouch_speed: float = 2.0
 @export var acceleration: float = 55.0
 @export var deceleration: float = 65.0
-@export var jump_velocity: float = 8.25
+@export var jump_velocity: float = 9.9
 @export var gravity_multiplier: float = 2.34
 @export var air_control: float = 0.3
 @export var dodge_speed: float = 12.0
@@ -17,7 +19,7 @@ extends CharacterBody3D
 
 # --- Stamina ---
 @export_group("Stamina")
-@export var max_stamina: float = 100.0
+@export var max_stamina: float = 115.0
 @export var stamina_regen_rate: float = 15.0
 @export var stamina_regen_delay: float = 1.5
 @export var sprint_stamina_cost: float = 12.0
@@ -48,12 +50,14 @@ var _health_regen_timer: float = 0.0
 var _is_sprinting: bool = false
 var _is_crouching: bool = false
 var _is_blocking: bool = false
+var _double_jump_used: bool = false
 var _auto_run: bool = false
 var _walk_mode: bool = false
 var _weapon_hidden: bool = false
 var _attack_cooldown: float = 0.0
 var _inventory_open: bool = false
 var _map_open: bool = false
+var _map_disabled: bool = false
 var _map_zoom: float = 40.0
 var _map_zoom_target: float = 40.0
 const MAP_ZOOM_MIN := 8.0
@@ -81,6 +85,7 @@ var _undying_cooldown: float = 0.0
 var _adrenaline_timer: float = 0.0
 var _regenerator_active: bool = false
 var _prev_velocity_y: float = 0.0
+var _fall_start_y: float = 0.0
 var _retaliation_timer: float = 0.0
 var _crushing_momentum_timer: float = 0.0
 var _aegis_shield: float = 0.0
@@ -97,6 +102,9 @@ var _build_selected: StringName = &""
 var _build_rotation: float = 0.0
 var _build_snap_enabled: bool = true
 var _build_snapped: bool = false
+var _build_height_offset: float = 0.0
+const BUILD_MAX_DISTANCE := 12.0
+const BUILD_HEIGHT_STEP := 0.3
 var _snap_label: Label
 var _build_crosshair: Control
 var _build_menu_panel: PanelContainer
@@ -107,14 +115,18 @@ var _workbench_open: bool = false
 var _workbench_category: String = "Tools"
 var _workbench_tab_buttons: Array[Button] = []
 var _workbench_quality_tier: String = "low"
+var _workbench_tier_slider: HSlider
 var _workbench_tier_row: HBoxContainer
-var _workbench_tier_buttons: Array[Button] = []
+var _workbench_tier_labels: Array[Label] = []
 var _workbench_tier_info_panel: PanelContainer
 var _workbench_auto_discard_star: int = -1
 var _workbench_discard_btn: Button
-var _workbench_preview_on: bool = true
-var _workbench_preview_btn: Button
 var _workbench_preview_panel: PanelContainer
+var _workbench_selected_id: StringName = &""
+var _workbench_craft_btn: Button
+var _workbench_equip_filter: String = "All"
+var _workbench_equip_filter_row: HBoxContainer
+var _workbench_equip_filter_buttons: Array[Button] = []
 var _interact_prompt: Label
 var _world_name_label: Label
 var _fps_label: Label
@@ -128,6 +140,10 @@ var _chest_node: Node3D
 # Mounting
 var _mounted: bool = false
 var _mount_node: Node3D
+var _mount_star_level: int = 0
+var _mount_stamina: float = 100.0
+var _mount_max_stamina: float = 100.0
+var _mount_stamina_regen_timer: float = 0.0
 var _on_raft: bool = false
 var _raft_node: Node3D = null
 var _raft_paddle_timer: float = 0.0
@@ -135,7 +151,19 @@ var _raft_paddle_side: bool = false  # false=left, true=right
 var _last_safe_position: Vector3 = Vector3.ZERO
 var _safe_pos_timer: float = 0.0
 var _respawn_grace: float = 0.0
-const MOUNT_SPEED_MULT := 2.0
+const MOUNT_SPEED_MULT_BASE := 2.0
+const MOUNT_SPEED_PER_STAR := 0.2
+const MOUNT_STAMINA_COST := 14.0
+const MOUNT_STAMINA_REGEN_RATE := 18.0
+const MOUNT_STAMINA_REGEN_DELAY := 1.2
+
+# Flight mode (debug): 150% of a 5-star horse sprint speed
+var flight_mode: bool = true
+const FLIGHT_SPEED := 34.65
+
+
+func _get_mount_speed_mult() -> float:
+	return MOUNT_SPEED_MULT_BASE + _mount_star_level * MOUNT_SPEED_PER_STAR
 var _horse_walk_frames: Dictionary = {}  # {dir -> Array[Texture2D]}
 var _horse_run_frames: Dictionary = {}   # {dir -> Array[Texture2D]}
 var _horse_anim_idx: int = 0
@@ -160,7 +188,7 @@ var _gallop_normal_stream: AudioStream
 var _bow_drawing: bool = false
 var _bow_tension: float = 0.0
 var _bow_creak_player: AudioStreamPlayer3D = null
-const BOW_MAX_DRAW_TIME := 1.8
+const BOW_MAX_DRAW_TIME := 1.2
 const BOW_MIN_DAMAGE_MULT := 0.2
 const BOW_MAX_DAMAGE_MULT := 2.0
 const BOW_RETICLE_MAX_RADIUS := 60.0
@@ -180,6 +208,13 @@ const SWIM_SPRINT_SPEED := 4.5
 const BUOYANCY_FORCE := 12.0
 const WATER_DAMPING := 4.0
 const SWIM_STAMINA_COST := 6.0
+
+# Swim fatigue / drowning
+var _swim_fatigue: float = 0.0
+const SWIM_FATIGUE_MAX: float = 15.0
+const SWIM_FATIGUE_RECOVER_RATE: float = 5.0
+var _swim_fatigue_bar: MeshInstance3D
+var _swim_fatigue_pulse: float = 0.0
 
 # Jump animation
 var _is_jumping := false
@@ -276,6 +311,7 @@ const _LootDrop := preload("res://scripts/items/loot_drop.gd")
 var _bar_anchor: Node3D
 var _hp_bar: MeshInstance3D
 var _stam_bar: MeshInstance3D
+var _mount_stam_bar: MeshInstance3D
 var _hp_pulse: float = 0.0
 var _bar_shader: Shader
 var _remote_nameplate_label: Label3D = null
@@ -288,6 +324,7 @@ var _last_broadcast_clip: String = ""
 var _hud_root: Control
 var _pause_overlay: CanvasLayer
 var _pause_open := false
+var _debug_panel: Node  # DebugPanel (CanvasLayer)
 var _target_hud_panel: PanelContainer
 var _target_hud_name: Label
 var _target_hud_stars: Label
@@ -300,6 +337,9 @@ var _chat_panel: PanelContainer
 var _chat_log: VBoxContainer
 var _chat_input: LineEdit
 var _chat_focused: bool = false
+var _chat_scroll: ScrollContainer
+var _chat_fade_timer: float = 0.0
+var _chat_visible: bool = false
 var _player_list_panel: PanelContainer
 var _player_list_visible: bool = false
 var _inventory_panel: PanelContainer
@@ -349,6 +389,8 @@ var _minimap_weather_label: Label
 var _minimap_time_label: Label
 var _minimap_refresh_timer := 0.0
 var _minimap_needs_refresh := true
+var _minimap_paused := false
+var _minimap_outer: Control
 
 ## Phase 5: Report player data to host for save on disconnect
 const _REPORT_DATA_INTERVAL := 8.0
@@ -375,7 +417,7 @@ func _ready() -> void:
 	if multiplayer.has_multiplayer_peer() and name.is_valid_int():
 		var peer_id := name.to_int()
 		set_multiplayer_authority(peer_id)
-		print("[PLAYER] _ready: name=%s peer_id=%d my_id=%d is_authority=%s" % [name, peer_id, multiplayer.get_unique_id(), str(is_multiplayer_authority())])
+		if _DEBUG_LOG: print("[PLAYER] _ready: name=%s peer_id=%d my_id=%d is_authority=%s" % [name, peer_id, multiplayer.get_unique_id(), str(is_multiplayer_authority())])
 
 	if not is_multiplayer_authority():
 		set_process_unhandled_input(false)
@@ -388,13 +430,14 @@ func _ready() -> void:
 		_setup_multiplayer_sync()
 		_setup_player_sprite()
 		_setup_remote_nameplate()
+		_setup_floating_bars()
 		var anim_list: PackedStringArray = _gltf_anim_player.get_animation_list() if _gltf_anim_player else PackedStringArray()
-		print("[PLAYER] Remote peer '%s' setup complete | model=%s sprite=%s anim_player=%s anims=%s pos=%s" % [
+		if _DEBUG_LOG: print("[PLAYER] Remote peer '%s' setup complete | model=%s sprite=%s anim_player=%s anims=%s pos=%s" % [
 			name, str(_model != null), str(_player_sprite != null),
 			str(_gltf_anim_player != null), str(anim_list), str(global_position)])
 		return
 
-	print("[PLAYER] LOCAL player setup starting for peer %s (my_id=%d) pos=%s" % [name, multiplayer.get_unique_id(), str(global_position)])
+	if _DEBUG_LOG: print("[PLAYER] LOCAL player setup starting for peer %s (my_id=%d) pos=%s" % [name, multiplayer.get_unique_id(), str(global_position)])
 	current_health = max_health
 	current_stamina = max_stamina
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -460,8 +503,9 @@ func _ready() -> void:
 	_build_hud()
 	if _spring_arm:
 		_spring_arm.spring_length = min_zoom + 0.85 * (max_zoom - min_zoom)
-	# Delay camera activation by one frame to let the scene tree settle
+	# Delay camera activation and terrain snap by one frame to let the scene tree settle
 	call_deferred("_activate_camera")
+	call_deferred("_snap_to_terrain")
 	_setup_movement_audio()
 	GameEvents.inventory_changed.connect(_on_inventory_changed)
 	if NetworkManager.is_connected_to_game():
@@ -474,9 +518,25 @@ func _activate_camera() -> void:
 	var cam := get_node_or_null("CameraPivot/SpringArm3D/Camera3D") as Camera3D
 	if cam:
 		cam.make_current()
-		print("[PLAYER] Camera NOW ACTIVE for peer %s at pos %s" % [name, str(global_position)])
+		if _DEBUG_LOG: print("[PLAYER] Camera NOW ACTIVE for peer %s at pos %s" % [name, str(global_position)])
 	else:
 		push_error("[PLAYER] CAMERA NOT FOUND for peer %s! CameraPivot=%s SpringArm=%s" % [name, str(_camera_pivot), str(_spring_arm)])
+
+
+func _snap_to_terrain() -> void:
+	if not is_multiplayer_authority():
+		return
+	var wg := _find_world_generator()
+	if wg:
+		var terrain_y: float = wg.get_height_at_scene(global_position.x, global_position.z) + 0.5
+		if global_position.y > terrain_y + 5.0:
+			global_position.y = terrain_y
+			velocity = Vector3.ZERO
+			if _DEBUG_LOG: print("[PLAYER] Snapped to terrain at Y=%.1f (was too high)" % terrain_y)
+	else:
+		global_position.y = 0.5
+		velocity = Vector3.ZERO
+		if _DEBUG_LOG: print("[PLAYER] No WorldGenerator found, defaulting to Y=0.5")
 
 
 func _on_chest_contents_received(chest_path: String, contents: Array) -> void:
@@ -502,8 +562,12 @@ func _exit_tree() -> void:
 func _report_player_data_to_host() -> void:
 	## Phase 5: Report our player and inventory data to host for save on disconnect.
 	var char_id: String = str(SaveManager.current_character.get("id", ""))
+	var wp := global_position
+	var wg := _find_world_generator()
+	if wg:
+		wp = wg.get_world_position(self)
 	var player_data := {
-		"position": {"x": global_position.x, "y": global_position.y, "z": global_position.z},
+		"position": {"x": wp.x, "y": wp.y, "z": wp.z},
 		"rotation_y": rotation.y,
 		"health": current_health,
 		"stamina": current_stamina,
@@ -554,11 +618,11 @@ func _setup_multiplayer_sync() -> void:
 		cfg.property_set_replication_mode(NodePath(":character_display_name"), SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE)
 		sync.set_multiplayer_authority(get_multiplayer_authority())
 		add_child(sync)
-		print("[SYNC] Created MultiplayerSynchronizer for '%s' | player_auth=%d sync_auth=%d root_path='%s' resolved='%s'" % [
+		if _DEBUG_LOG: print("[SYNC] Created MultiplayerSynchronizer for '%s' | player_auth=%d sync_auth=%d root_path='%s' resolved='%s'" % [
 			name, get_multiplayer_authority(), sync.get_multiplayer_authority(),
 			str(sync.root_path), str(sync.get_node(sync.root_path).get_path()) if sync.get_node_or_null(sync.root_path) else "UNRESOLVED"])
 	else:
-		print("[SYNC] Reusing existing MultiplayerSynchronizer for '%s' | player_auth=%d sync_auth=%d" % [
+		if _DEBUG_LOG: print("[SYNC] Reusing existing MultiplayerSynchronizer for '%s' | player_auth=%d sync_auth=%d" % [
 			name, get_multiplayer_authority(), sync.get_multiplayer_authority()])
 	if not is_multiplayer_authority():
 		sync.synchronized.connect(_on_sync_received)
@@ -566,7 +630,6 @@ func _setup_multiplayer_sync() -> void:
 
 func _setup_remote_nameplate() -> void:
 	## Floating Label3D above remote players showing character name.
-	var parent := _model if _model else self
 	_remote_nameplate_label = Label3D.new()
 	_remote_nameplate_label.name = "RemoteNameplate"
 	_remote_nameplate_label.text = character_display_name if character_display_name != "" else "Player"
@@ -579,8 +642,8 @@ func _setup_remote_nameplate() -> void:
 	_remote_nameplate_label.outline_modulate = Color(0, 0, 0, 0.9)
 	_remote_nameplate_label.outline_size = 6
 	_remote_nameplate_label.render_priority = 1
-	_remote_nameplate_label.position = Vector3(0.0, 2.2, 0.0)
-	parent.add_child(_remote_nameplate_label)
+	_remote_nameplate_label.position = Vector3(0.0, 4.5, 0.0)
+	add_child(_remote_nameplate_label)
 
 
 var _sync_diag_count: int = 0
@@ -588,7 +651,7 @@ var _sync_diag_count: int = 0
 func _on_sync_received() -> void:
 	_sync_diag_count += 1
 	if _sync_diag_count <= 3 or _sync_diag_count % 300 == 0:
-		print("[SYNC-RECV] peer '%s' sync #%d | pos=%s anim='%s' weapon='%s'" % [
+		if _DEBUG_LOG: print("[SYNC-RECV] peer '%s' sync #%d | pos=%s anim='%s' weapon='%s'" % [
 			name, _sync_diag_count, str(_synced_position), synced_animation, str(equipped_weapon)])
 	_update_equipped_weapon_model()
 	if _remote_nameplate_label and character_display_name != "":
@@ -596,18 +659,24 @@ func _on_sync_received() -> void:
 
 
 @rpc("any_peer", "unreliable")
-func _broadcast_state(pos: Vector3, model_rot_y: float, vel: Vector3, anim_clip: String, anim_speed: float, weapon: StringName) -> void:
+func _broadcast_state(pos: Vector3, model_rot_y: float, vel: Vector3, anim_clip: String, anim_speed: float, weapon: StringName, hp: float = -1.0, hp_max: float = -1.0, stam: float = -1.0, stam_max: float = -1.0) -> void:
 	if is_multiplayer_authority():
 		return
-	_synced_position = pos
+	var _wg := _find_world_generator()
+	_synced_position = _wg.world_to_scene_pos(pos) if _wg else pos
 	velocity = vel
 	_remote_model_target_yaw = model_rot_y
 	_remote_model_yaw_set = true
+	if hp_max > 0.0:
+		current_health = hp
+		max_health = hp_max
+		current_stamina = stam
+		max_stamina = stam_max
 	if anim_clip != "" and _gltf_anim_player:
 		var has_anim := _gltf_anim_player.has_animation(anim_clip)
 		if not has_anim:
 			if _gltf_playing_clip != anim_clip:
-				print("[ANIM-RECV] Animation '%s' NOT FOUND on remote player '%s'" % [anim_clip, name])
+				if _DEBUG_LOG: print("[ANIM-RECV] Animation '%s' NOT FOUND on remote player '%s'" % [anim_clip, name])
 		else:
 			var clip_changed := _gltf_playing_clip != anim_clip
 			var speed_changed := not is_equal_approx(_gltf_playing_speed, anim_speed)
@@ -615,7 +684,7 @@ func _broadcast_state(pos: Vector3, model_rot_y: float, vel: Vector3, anim_clip:
 			var stopped := anim_speed > 0.01 and not _gltf_anim_player.is_playing()
 			if clip_changed or speed_changed or stopped:
 				if clip_changed:
-					print("[ANIM-RECV] Playing '%s' speed=%.1f on remote '%s'" % [anim_clip, anim_speed, name])
+					if _DEBUG_LOG: print("[ANIM-RECV] Playing '%s' speed=%.1f on remote '%s'" % [anim_clip, anim_speed, name])
 				_gltf_playing_clip = anim_clip
 				_gltf_playing_speed = anim_speed
 				_gltf_current_anim = anim_clip
@@ -715,7 +784,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			_gltf_anim_player.play(track_name)
 			_gltf_anim_player.speed_scale = 1.0
 			var anim := _gltf_anim_player.get_animation(track_name)
-			print("[ANIM DEBUG] Playing #%d: %s (%.2fs)" % [_nla_debug_index, track_name, anim.length if anim else 0.0])
+			if _DEBUG_LOG: print("[ANIM DEBUG] Playing #%d: %s (%.2fs)" % [_nla_debug_index, track_name, anim.length if anim else 0.0])
+			return
+
+	# F3 toggles debug panel
+	if event is InputEventKey and (event as InputEventKey).pressed:
+		var ke := event as InputEventKey
+		if ke.physical_keycode == KEY_F3:
+			_ensure_debug_panel()
+			_debug_panel.toggle_panel()
+			get_viewport().set_input_as_handled()
 			return
 
 	# Alt+F4 or Cmd+F4 always quits immediately
@@ -725,7 +803,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_tree().quit()
 			return
 
-	if event.is_action_pressed(&"chat") and _chat_input and not _chat_focused and NetworkManager.is_connected_to_game():
+	if event.is_action_pressed(&"chat") and _chat_input and not _chat_focused:
 		_chat_input.grab_focus()
 		_chat_focused = true
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -798,6 +876,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if _build_mode and event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
+		if mb.ctrl_pressed:
+			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_build_height_offset += BUILD_HEIGHT_STEP
+				return
+			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_build_height_offset -= BUILD_HEIGHT_STEP
+				return
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 			if _build_snapped:
 				_build_rotation -= deg_to_rad(90.0)
@@ -911,12 +996,14 @@ var _remote_model_target_yaw: float = 0.0
 var _remote_model_yaw_set: bool = false
 
 func _physics_process(delta: float) -> void:
+	var _phys_t0 := Time.get_ticks_usec()
 	if not is_multiplayer_authority():
 		global_position = global_position.lerp(_synced_position, delta * 15.0)
 		if _gltf_anim_player:
 			_gltf_anim_player.advance(delta)
 		if _model and _remote_model_yaw_set:
 			_model.rotation.y = lerp_angle(_model.rotation.y, _remote_model_target_yaw, 0.2)
+		_update_floating_bars(delta)
 		_remote_diag_timer += delta
 		if _remote_diag_timer >= 3.0:
 			_remote_diag_timer = 0.0
@@ -925,7 +1012,7 @@ func _physics_process(delta: float) -> void:
 				anim_info = "clip='%s' playing=%s speed=%.1f" % [
 					_gltf_playing_clip, str(_gltf_anim_player.is_playing()),
 					_gltf_anim_player.speed_scale]
-			print("[REMOTE] peer '%s' | pos=%s sync=%d %s" % [
+			if _DEBUG_LOG: print("[REMOTE] peer '%s' | pos=%s sync=%d %s" % [
 				name, str(global_position), _sync_diag_count, anim_info])
 		return
 
@@ -940,67 +1027,75 @@ func _physics_process(delta: float) -> void:
 		_tick_bow_draw(delta, false)
 	_is_crouching = Input.is_action_pressed(&"crouch")
 
-	if not _on_raft:
-		_apply_gravity(delta)
-
-	if _respawn_grace > 0.0 and velocity.y > 0.0:
-		velocity.y = 0.0
-
-	if _on_raft:
-		pass
-	elif _is_dodging:
-		_tick_dodge(delta)
+	if flight_mode:
+		_handle_flight(delta)
 	else:
-		_handle_jump()
-		_handle_movement(delta)
+		if not _on_raft:
+			_apply_gravity(delta)
 
-	if _mounted:
-		var flat_spd := Vector2(velocity.x, velocity.z).length()
-		var max_mount_spd := sprint_speed * MOUNT_SPEED_MULT * 1.1
-		if flat_spd > max_mount_spd:
-			var scale_f := max_mount_spd / flat_spd
-			velocity.x *= scale_f
-			velocity.z *= scale_f
+		if _respawn_grace > 0.0 and velocity.y > 0.0:
+			velocity.y = 0.0
 
-	var pre_move_pos := global_position
-	var was_in_air := not is_on_floor()
-	if not _on_raft:
-		_step_up_move_and_slide()
+		if _on_raft:
+			pass
+		elif _is_dodging:
+			_tick_dodge(delta)
+		else:
+			_handle_jump()
+			_handle_movement(delta)
 
-	if was_in_air and is_on_floor() and _prev_velocity_y < -12.0:
-		var fall_speed := absf(_prev_velocity_y)
-		var fall_dmg := (fall_speed - 12.0) * 3.0
-		if _has_affix(&"featherfall"):
-			fall_dmg *= 0.5
-		if _has_affix(&"light_step"):
-			fall_dmg *= 0.7
-		if fall_dmg > 1.0:
-			take_damage(fall_dmg)
-	_prev_velocity_y = velocity.y
+		if _mounted:
+			var flat_spd := Vector2(velocity.x, velocity.z).length()
+			var max_mount_spd := sprint_speed * _get_mount_speed_mult() * 1.1
+			if flat_spd > max_mount_spd:
+				var scale_f := max_mount_spd / flat_spd
+				velocity.x *= scale_f
+				velocity.z *= scale_f
 
-	if _mounted and not _in_cave:
-		var y_drop := pre_move_pos.y - global_position.y
-		if y_drop > 2.0:
-			global_position.y = pre_move_pos.y - 2.0
-			velocity.y = maxf(velocity.y, -10.0)
-		var space := get_world_3d().direct_space_state
-		if space:
-			var check_from := Vector3(global_position.x, global_position.y + 3.0, global_position.z)
-			var check_to := Vector3(global_position.x, global_position.y - 10.0, global_position.z)
-			var q := PhysicsRayQueryParameters3D.create(check_from, check_to, 1)
-			q.exclude = [get_rid()]
-			var r := space.intersect_ray(q)
-			if not r.is_empty():
-				var surf: float = r["position"].y
-				if global_position.y < surf - 0.3 and surf - global_position.y < 3.0:
-					global_position.y = surf + 0.15
-					velocity.y = 0.0
+		var pre_move_pos := global_position
+		var was_in_air := not is_on_floor()
+		if not _on_raft:
+			_step_up_move_and_slide()
 
-	if not _on_raft:
-		_clamp_to_terrain()
+		if was_in_air and is_on_floor():
+			var height_fallen := _fall_start_y - global_position.y
+			if _prev_velocity_y < -14.0 and height_fallen > 3.5:
+				var fall_speed := absf(_prev_velocity_y)
+				var fall_dmg := (fall_speed - 14.0) * 3.0
+				if _has_affix(&"featherfall"):
+					fall_dmg *= (1.0 - _affix_val(&"featherfall"))
+				if _has_affix(&"light_step"):
+					fall_dmg *= (1.0 - _affix_val(&"light_step"))
+				if fall_dmg > 1.0:
+					take_damage(fall_dmg)
+		elif not was_in_air and not is_on_floor():
+			_fall_start_y = global_position.y
+		_prev_velocity_y = velocity.y
+
+		if _mounted and not _in_cave:
+			var y_drop := pre_move_pos.y - global_position.y
+			if y_drop > 2.0:
+				global_position.y = pre_move_pos.y - 2.0
+				velocity.y = maxf(velocity.y, -10.0)
+			var space := get_world_3d().direct_space_state
+			if space:
+				var check_from := Vector3(global_position.x, global_position.y + 3.0, global_position.z)
+				var check_to := Vector3(global_position.x, global_position.y - 10.0, global_position.z)
+				var q := PhysicsRayQueryParameters3D.create(check_from, check_to, 1)
+				q.exclude = [get_rid()]
+				var r := space.intersect_ray(q)
+				if not r.is_empty():
+					var surf: float = r["position"].y
+					if global_position.y < surf - 0.3 and surf - global_position.y < 3.0:
+						global_position.y = surf + 0.15
+						velocity.y = 0.0
+
+		if not _on_raft:
+			_clamp_to_terrain()
 	_handle_stamina(delta)
 	_handle_health_regen(delta)
 	_tick_affix_timers(delta)
+	_tick_swim_fatigue(delta)
 	_rotate_model()
 	_update_target_hud(delta)
 	_tick_attack_animation(delta)
@@ -1019,11 +1114,17 @@ func _physics_process(delta: float) -> void:
 		_rpc_sync_tick += 1
 		var anim_changed := _gltf_playing_clip != _last_broadcast_clip
 		if anim_changed:
-			print("[ANIM-SEND] clip changed: '%s' -> '%s' speed=%.1f" % [_last_broadcast_clip, _gltf_playing_clip, _gltf_playing_speed])
+			if _DEBUG_LOG: print("[ANIM-SEND] clip changed: '%s' -> '%s' speed=%.1f" % [_last_broadcast_clip, _gltf_playing_clip, _gltf_playing_speed])
 		if _rpc_sync_tick % 3 == 0 or anim_changed:
 			_last_broadcast_clip = _gltf_playing_clip
 			var model_yaw: float = _model.rotation.y if _model else 0.0
-			_broadcast_state.rpc(global_position, model_yaw, velocity, _gltf_playing_clip, _gltf_playing_speed, equipped_weapon)
+			var _wg := _find_world_generator()
+			var net_pos := global_position
+			if _wg:
+				net_pos = _wg.get_world_position(self)
+			_broadcast_state.rpc(net_pos, model_yaw, velocity, _gltf_playing_clip, _gltf_playing_speed, equipped_weapon, current_health, max_health, current_stamina, max_stamina)
+		if _rpc_sync_tick % 300 == 5 and character_display_name != "":
+			_broadcast_display_name()
 
 	if _attack_cooldown > 0.0:
 		_attack_cooldown -= delta
@@ -1051,27 +1152,36 @@ func _physics_process(delta: float) -> void:
 	_loot_check_timer -= delta
 	if _loot_check_timer <= 0.0:
 		_loot_check_timer = 0.1
-		var px := global_position.x
-		var py := global_position.y
-		var pz := global_position.z
-		for loot_node: Node in get_tree().get_nodes_in_group(&"loot"):
-			var loot := loot_node as Node3D
-			if not loot or not loot.has_method("pickup"):
-				continue
-			if "pickup_grace" in loot and loot.pickup_grace > 0.0:
-				continue
-			var lp := loot.global_position
-			var dx := px - lp.x
-			var dz := pz - lp.z
-			if dx * dx + dz * dz < 4.28:
-				var dy := py - lp.y
-				if dx * dx + dy * dy + dz * dz < 4.28:
-					loot.pickup(self)
+		var flat_spd := Vector2(velocity.x, velocity.z).length()
+		if flat_spd < 0.3:
+			pass
+		else:
+			var px := global_position.x
+			var py := global_position.y
+			var pz := global_position.z
+			var my_peer := multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 0
+			for loot_node: Node in get_tree().get_nodes_in_group(&"loot"):
+				var loot := loot_node as Node3D
+				if not loot or not loot.has_method("pickup"):
+					continue
+				if "pickup_grace" in loot and loot.pickup_grace > 0.0:
+					if "drop_owner_peer" in loot and loot.drop_owner_peer == my_peer:
+						continue
+				var lp := loot.global_position
+				var dx := px - lp.x
+				var dz := pz - lp.z
+				if dx * dx + dz * dz < 4.28:
+					var dy := py - lp.y
+					if dx * dx + dy * dy + dz * dz < 4.28:
+						loot.pickup(self)
 
 	_interact_check_timer -= delta
 	if _interact_check_timer <= 0.0:
 		_interact_check_timer = 0.15
 		_interaction.update_interact_prompt()
+
+	var _phys_ms := float(Time.get_ticks_usec() - _phys_t0) / 1000.0
+	_pc_proc_max_physics = maxf(_pc_proc_max_physics, _phys_ms)
 
 
 # ===================================================================
@@ -1100,7 +1210,7 @@ func _apply_gravity(delta: float) -> void:
 		if not is_on_floor():
 			velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity", 9.8) * gravity_multiplier * delta
 		if _mounted:
-			velocity.y = clampf(velocity.y, -10.0, 1.0)
+			velocity.y = clampf(velocity.y, -10.0, jump_velocity)
 
 
 func _snap_to_ground() -> void:
@@ -1162,18 +1272,26 @@ func _clamp_to_terrain() -> void:
 
 
 func _handle_jump() -> void:
+	if _chat_focused:
+		return
+	if is_on_floor():
+		_double_jump_used = false
 	if _is_swimming:
-		# In water: hold jump to swim upward
 		if Input.is_action_pressed(&"jump") and _can_spend_stamina(0.1):
 			velocity.y = lerpf(velocity.y, 3.0, 0.15)
 			var swim_cost := SWIM_STAMINA_COST
 			if _has_affix(&"warmth"):
-				swim_cost *= 0.6
+				swim_cost *= (1.0 - _affix_val(&"warmth"))
 			_spend_stamina(swim_cost * get_physics_process_delta_time())
 		return
-	if Input.is_action_just_pressed(&"jump") and is_on_floor() and not _is_blocking and not _mounted:
-		velocity.y = jump_velocity
-		_start_jump_animation()
+	if Input.is_action_just_pressed(&"jump") and not _is_blocking:
+		if is_on_floor():
+			velocity.y = jump_velocity
+			_start_jump_animation()
+		elif not _double_jump_used and _has_affix(&"double_jump"):
+			_double_jump_used = true
+			velocity.y = jump_velocity * 0.85
+			_start_jump_animation()
 
 
 const STEP_HEIGHT := 0.35
@@ -1213,7 +1331,37 @@ func _step_up_move_and_slide() -> void:
 			global_position.y = saved_pos.y
 
 
+func _handle_flight(delta: float) -> void:
+	var input_dir := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
+	var cam: Camera3D = _spring_arm.get_child(0) if _spring_arm and _spring_arm.get_child_count() > 0 else null
+	var cam_basis: Basis = cam.global_transform.basis if cam else _camera_pivot.global_transform.basis
+	var forward := -cam_basis.z
+	var right := cam_basis.x
+	var move_dir := right * input_dir.x + forward * (-input_dir.y)
+	if Input.is_action_pressed(&"jump"):
+		move_dir.y += 1.0
+	if Input.is_action_pressed(&"crouch"):
+		move_dir.y -= 1.0
+	if move_dir.length() > 0.01:
+		move_dir = move_dir.normalized()
+	var speed := FLIGHT_SPEED
+	if Input.is_action_pressed(&"sprint"):
+		speed *= 2.0
+	velocity = Vector3.ZERO
+	global_position += move_dir * speed * delta
+	var wg_nodes := get_tree().get_nodes_in_group(&"world_generator")
+	if not wg_nodes.is_empty() and wg_nodes[0].has_method(&"get_height_at_scene"):
+		var ground_y: float = wg_nodes[0].get_height_at_scene(global_position.x, global_position.z)
+		if global_position.y < ground_y + 0.5:
+			global_position.y = ground_y + 0.5
+
+
 func _handle_movement(delta: float) -> void:
+	if _chat_focused:
+		_is_sprinting = false
+		velocity.x = move_toward(velocity.x, 0.0, deceleration * delta)
+		velocity.z = move_toward(velocity.z, 0.0, deceleration * delta)
+		return
 	var input_dir := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
 	if _auto_run:
 		if input_dir.length_squared() > 0.01:
@@ -1237,7 +1385,7 @@ func _handle_movement(delta: float) -> void:
 	if _is_swimming:
 		speed = SWIM_SPRINT_SPEED if _is_sprinting else SWIM_SPEED
 		if _has_affix(&"aquatic"):
-			speed *= 1.3
+			speed *= (1.0 + _affix_val(&"aquatic"))
 	elif _is_crouching:
 		speed = crouch_speed
 	elif _is_sprinting:
@@ -1245,15 +1393,15 @@ func _handle_movement(delta: float) -> void:
 	elif _walk_mode:
 		speed = walk_speed * 0.55
 	if _mounted:
-		speed *= MOUNT_SPEED_MULT
+		speed *= _get_mount_speed_mult()
 	if _has_affix(&"swiftness"):
-		speed *= 1.1
+		speed *= (1.0 + _affix_val(&"swiftness"))
 	if _is_swimming and _has_affix(&"trailblazer"):
-		speed *= 1.15
+		speed *= (1.0 + _affix_val(&"trailblazer"))
 	if _adrenaline_timer > 0.0:
 		speed *= 1.15
 	if _has_affix(&"tenacity"):
-		speed = maxf(speed, walk_speed * 0.6)
+		speed = maxf(speed, walk_speed * _affix_val(&"tenacity"))
 	if not _is_swimming and is_on_floor() and not _has_affix(&"sure_footed"):
 		var floor_n := get_floor_normal()
 		if floor_n.y < 0.95 and floor_n.y > 0.3:
@@ -1296,21 +1444,33 @@ func _tick_dodge(delta: float) -> void:
 
 
 func _handle_stamina(delta: float) -> void:
+	var prev_stamina := current_stamina
 	if _is_blocking and not _has_affix(&"steadfast_guard"):
 		_spend_stamina(3.0 * delta)
-	if _is_sprinting:
+	if _is_sprinting and _mounted:
+		_mount_stamina_regen_timer = MOUNT_STAMINA_REGEN_DELAY
+		_mount_stamina = maxf(_mount_stamina - MOUNT_STAMINA_COST * delta, 0.0)
+		if _mount_stamina <= 0.0:
+			_is_sprinting = false
+	elif _is_sprinting and not _mounted:
 		var sprint_cost := sprint_stamina_cost
 		if _has_affix(&"fleet"):
-			sprint_cost *= 0.75
+			sprint_cost *= (1.0 - _affix_val(&"fleet"))
 		_spend_stamina(sprint_cost * delta)
 	else:
 		_stamina_regen_timer -= delta
 		if _stamina_regen_timer <= 0.0:
 			var regen := stamina_regen_rate
 			if _has_affix(&"resilience"):
-				regen *= 1.25
+				regen *= (1.0 + _affix_val(&"resilience"))
 			current_stamina = minf(current_stamina + regen * delta, max_stamina)
-	GameEvents.player_stamina_changed.emit(current_stamina, max_stamina)
+	if _mounted:
+		if not _is_sprinting:
+			_mount_stamina_regen_timer -= delta
+			if _mount_stamina_regen_timer <= 0.0:
+				_mount_stamina = minf(_mount_stamina + MOUNT_STAMINA_REGEN_RATE * delta, _mount_max_stamina)
+	if not is_equal_approx(current_stamina, prev_stamina):
+		GameEvents.player_stamina_changed.emit(current_stamina, max_stamina)
 
 
 func _can_spend_stamina(amount: float) -> bool:
@@ -1353,9 +1513,21 @@ func _setup_floating_bars() -> void:
 	_bar_anchor.add_child(_hp_bar)
 
 	_stam_bar = _make_shader_bar(BAR_W, STAM_H,
-		Color(0.05, 0.2, 0.5), Color(0.15, 0.7, 0.9))
+		Color(0.35, 0.25, 0.05), Color(0.95, 0.75, 0.15))
 	_stam_bar.position = Vector3(0.0, -(BAR_H * 0.5 + STAM_H * 0.5 + GAP), 0.0)
 	_bar_anchor.add_child(_stam_bar)
+
+	_mount_stam_bar = _make_shader_bar(BAR_W, STAM_H,
+		Color(0.05, 0.35, 0.10), Color(0.15, 0.85, 0.25))
+	_mount_stam_bar.position = Vector3(0.0, -(BAR_H * 0.5 + STAM_H * 1.5 + GAP * 2.0), 0.0)
+	_mount_stam_bar.visible = false
+	_bar_anchor.add_child(_mount_stam_bar)
+
+	_swim_fatigue_bar = _make_shader_bar(BAR_W, STAM_H,
+		Color(0.05, 0.15, 0.45), Color(0.15, 0.55, 0.95))
+	_swim_fatigue_bar.position = Vector3(0.0, -(BAR_H * 0.5 + STAM_H * 0.5 + GAP) - (STAM_H + GAP), 0.0)
+	_swim_fatigue_bar.visible = false
+	_bar_anchor.add_child(_swim_fatigue_bar)
 
 
 func _make_shader_bar(w: float, h: float, col_a: Color, col_b: Color) -> MeshInstance3D:
@@ -1392,15 +1564,37 @@ func _update_floating_bars(delta: float) -> void:
 	_hp_pulse = move_toward(_hp_pulse, 0.0, delta * 3.0)
 
 	if _hp_bar:
+		_hp_bar.visible = true
 		var mat: ShaderMaterial = _hp_bar.get_surface_override_material(0) as ShaderMaterial
 		if mat:
 			mat.set_shader_parameter("fill_ratio", clampf(current_health / max_health, 0.0, 1.0))
 			mat.set_shader_parameter("pulse", _hp_pulse)
 
 	if _stam_bar:
-		var mat: ShaderMaterial = _stam_bar.get_surface_override_material(0) as ShaderMaterial
-		if mat:
-			mat.set_shader_parameter("fill_ratio", clampf(current_stamina / max_stamina, 0.0, 1.0))
+		_stam_bar.visible = not _mounted
+		if not _mounted:
+			var mat: ShaderMaterial = _stam_bar.get_surface_override_material(0) as ShaderMaterial
+			if mat:
+				mat.set_shader_parameter("fill_ratio", clampf(current_stamina / max_stamina, 0.0, 1.0))
+
+	if _mount_stam_bar:
+		_mount_stam_bar.visible = _mounted
+		if _mounted:
+			_mount_stam_bar.position.y = _stam_bar.position.y if _stam_bar else -0.12
+			var mmat: ShaderMaterial = _mount_stam_bar.get_surface_override_material(0) as ShaderMaterial
+			if mmat:
+				mmat.set_shader_parameter("fill_ratio", clampf(_mount_stamina / _mount_max_stamina, 0.0, 1.0))
+
+	_swim_fatigue_pulse = move_toward(_swim_fatigue_pulse, 0.0, delta * 3.0)
+	if _swim_fatigue_bar:
+		var show_fatigue := _swim_fatigue > 0.0 and current_health > 0.0
+		_swim_fatigue_bar.visible = show_fatigue
+		if show_fatigue:
+			var remaining := clampf(1.0 - _swim_fatigue / SWIM_FATIGUE_MAX, 0.0, 1.0)
+			var fmat: ShaderMaterial = _swim_fatigue_bar.get_surface_override_material(0) as ShaderMaterial
+			if fmat:
+				fmat.set_shader_parameter("fill_ratio", remaining)
+				fmat.set_shader_parameter("pulse", _swim_fatigue_pulse)
 
 
 # ===================================================================
@@ -1420,7 +1614,7 @@ func _setup_player_sprite() -> void:
 	_sit_idle_frames = _load_anim_set("sit-idle_%s_%d.png", 16)
 
 	if _player_textures.is_empty():
-		print("[PLAYER MODEL] peer '%s': _player_textures is EMPTY, aborting sprite setup" % name)
+		if _DEBUG_LOG: print("[PLAYER MODEL] peer '%s': _player_textures is EMPTY, aborting sprite setup" % name)
 		return
 
 	if _model:
@@ -1454,7 +1648,7 @@ func _setup_player_sprite() -> void:
 		_player_sprite.position.y = _base_sprite_y
 		if _model:
 			_model.add_child(_player_sprite)
-		print("[PLAYER MODEL] Loaded %s — scale=%.2f" % [gltf_path.get_file(), s])
+		if _DEBUG_LOG: print("[PLAYER MODEL] Loaded %s — scale=%.2f" % [gltf_path.get_file(), s])
 		_gltf_anim_player = _find_anim_player(_player_sprite)
 		if _gltf_anim_player:
 			_gltf_anim_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
@@ -1462,7 +1656,7 @@ func _setup_player_sprite() -> void:
 			if not is_tripo_barbarian:
 				_load_external_animations()
 			var anim_list := _gltf_anim_player.get_animation_list()
-			print("[PLAYER MODEL] Available animations: ", anim_list)
+			if _DEBUG_LOG: print("[PLAYER MODEL] Available animations: ", anim_list)
 			var non_looping := [
 				"jump", "standing_jump", "punch", "punch_alt", "kick",
 				"sword_slash", "spin_attack", "jump_attack", "heavy_swing",
@@ -1495,7 +1689,7 @@ func _setup_player_sprite() -> void:
 			_apply_oathbound_shader()
 			_enhance_character_model()
 		else:
-			print("[PLAYER MODEL] Tripo model — skipping Blockbench shaders")
+			if _DEBUG_LOG: print("[PLAYER MODEL] Tripo model — skipping Blockbench shaders")
 		call_deferred("_update_equipped_weapon_model")
 		call_deferred("_update_armor_visuals")
 	else:
@@ -1618,7 +1812,7 @@ func _update_armor_visuals() -> void:
 		var sy := armor_scale * fit_scale.y
 		var sz := armor_scale * xz_auto * fit_scale.z
 		instance.scale = Vector3(sx, sy, sz)
-		print("[ARMOR %s] aabb=%s height=%.4f width=%.4f armor_scale=%.4f xz_auto=%.4f shoulder_w=%.4f torso_h=%.4f final_scale=%s" % [slot, aabb, model_height, maxf(aabb.size.x, aabb.size.z), armor_scale, xz_auto, shoulder_width, torso_height, instance.scale])
+		if _DEBUG_LOG: print("[ARMOR %s] aabb=%s height=%.4f width=%.4f armor_scale=%.4f xz_auto=%.4f shoulder_w=%.4f torso_h=%.4f final_scale=%s" % [slot, aabb, model_height, maxf(aabb.size.x, aabb.size.z), armor_scale, xz_auto, shoulder_width, torso_height, instance.scale])
 
 		var bname: String = bone_target.get(slot, "mixamorig_Hips") as String
 		var bone_idx := skel.find_bone(bname)
@@ -2008,6 +2202,38 @@ func _tick_idle_animation(delta: float) -> void:
 		_idle_frame_timer = _IDLE_FRAME_DURATION
 
 
+func _tick_swim_fatigue(delta: float) -> void:
+	if current_health <= 0.0:
+		return
+	var in_water := _is_swimming and not _on_raft
+	if in_water:
+		if _mounted:
+			_interaction.force_dismount()
+		_swim_fatigue += delta
+		if _swim_fatigue >= SWIM_FATIGUE_MAX * 0.75:
+			_swim_fatigue_pulse = 1.0
+		if _swim_fatigue >= SWIM_FATIGUE_MAX:
+			_swim_fatigue = SWIM_FATIGUE_MAX
+			current_health = 0.0
+			GameEvents.player_health_changed.emit(current_health, max_health)
+			var drown_num := DamageNumber.new()
+			drown_num.text = "Drowned!"
+			drown_num.font_size = 26
+			drown_num.pixel_size = 0.01
+			drown_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			drown_num.no_depth_test = true
+			drown_num.modulate = Color(0.3, 0.6, 1.0)
+			drown_num.outline_modulate = Color.BLACK
+			drown_num.outline_size = 6
+			drown_num._velocity = Vector3(0, 2.5, 0)
+			get_tree().current_scene.add_child(drown_num)
+			drown_num.global_position = global_position + Vector3.UP * 2.5
+			_on_death()
+	else:
+		if _swim_fatigue > 0.0:
+			_swim_fatigue = maxf(_swim_fatigue - SWIM_FATIGUE_RECOVER_RATE * delta, 0.0)
+
+
 func _tick_swim_visual(delta: float) -> void:
 	if not _player_sprite:
 		return
@@ -2158,7 +2384,11 @@ func _tick_bow_draw(delta: float, holding_draw: bool) -> void:
 				_draw_weapon()
 			_show_bow_reticle()
 			_start_bow_creak()
-		var draw_mult := 1.15 if _has_affix(&"rapid_draw") else 1.0
+		var draw_mult := 1.0
+		if _has_affix(&"quickdraw"):
+			draw_mult += _affix_val(&"quickdraw")
+		if _has_affix(&"rapid_draw"):
+			draw_mult += _affix_val(&"rapid_draw")
 		_bow_tension = minf(_bow_tension + delta * draw_mult, BOW_MAX_DRAW_TIME)
 		_update_bow_creak(delta)
 		_update_bow_draw_sprite()
@@ -2179,9 +2409,16 @@ func _start_bow_creak() -> void:
 	var stream := AudioManager.get_random_stream("bow_creak")
 	if not stream:
 		return
+	var draw_mult := 1.0
+	if _has_affix(&"quickdraw"):
+		draw_mult += _affix_val(&"quickdraw")
+	if _has_affix(&"rapid_draw"):
+		draw_mult += _affix_val(&"rapid_draw")
+	var draw_duration := BOW_MAX_DRAW_TIME / draw_mult
+	var sound_length := stream.get_length()
 	_bow_creak_player.stream = stream
 	_bow_creak_player.volume_db = -4.0
-	_bow_creak_player.pitch_scale = 1.0
+	_bow_creak_player.pitch_scale = sound_length / draw_duration if draw_duration > 0.01 else 1.0
 	_bow_creak_player.global_position = global_position
 	_bow_creak_player.play()
 
@@ -2250,68 +2487,180 @@ func _fire_bow() -> void:
 	var crit_chance := 5.0 + base_dexterity * 0.5
 	var crit_dmg_mult := (150.0 + base_strength * 2.0) / 100.0
 	if affixes.has(&"steady_aim") and velocity.length() < 0.5:
-		crit_chance += 12.0
+		crit_chance += _affix_val(&"steady_aim")
 	if randf() < crit_chance / 100.0:
 		final_damage *= crit_dmg_mult
 
+	var base_wpn_damage: float = float(bow_data.get("damage", 8.0))
 	var arrow_speed := lerpf(8.0, 32.0, tension_pct)
 	if affixes.has(&"rapid_draw"):
-		arrow_speed *= 1.15
+		arrow_speed *= (1.0 + _affix_val(&"rapid_draw"))
 	var launch_dir := aim_dir + Vector3.UP * lerpf(0.08, 0.02, tension_pct)
-	_spawn_arrow(spawn_pos, launch_dir.normalized() * arrow_speed, final_damage, wpn_knockback, tension_pct)
+	var bow_parsed: Dictionary = ItemDatabase.parse_star_id(bow_id)
+	var bow_stars: int = int(bow_parsed.get("stars", 0))
+	var bow_qcolor: Variant = bow_data.get("quality_color", null)
+	_spawn_arrow(spawn_pos, launch_dir.normalized() * arrow_speed, final_damage, wpn_knockback, tension_pct, bow_stars, bow_qcolor)
 	AudioManager.play_sfx_at("arrow_swoosh", spawn_pos, -2.0)
 
-	if affixes.has(&"multishot") and randf() < 0.20:
-		var offset_dir := cam_right * 0.3
-		_spawn_arrow(spawn_pos + offset_dir, launch_dir.normalized() * arrow_speed, final_damage, wpn_knockback, tension_pct)
-		AudioManager.play_sfx_at("arrow_swoosh", spawn_pos, -4.0)
-	if affixes.has(&"quiver_mastery") and randf() < 0.15:
-		var offset_dir := cam_right * -0.3
-		_spawn_arrow(spawn_pos + offset_dir, launch_dir.normalized() * arrow_speed, final_damage, wpn_knockback, tension_pct)
+	if affixes.has(&"echoing_shot"):
+		var echo_chance: float = _affix_val(&"echoing_shot")
+		var offset_sign := 1.0
+		while randf() < echo_chance:
+			var echo_dmg := base_wpn_damage * randf_range(0.7, 1.3) * damage_mult
+			if randf() < crit_chance / 100.0:
+				echo_dmg *= crit_dmg_mult
+			var offset_dir := cam_right * (0.3 * offset_sign)
+			_spawn_arrow(spawn_pos + offset_dir, launch_dir.normalized() * arrow_speed, echo_dmg, wpn_knockback, tension_pct, bow_stars, bow_qcolor)
+			AudioManager.play_sfx_at("arrow_swoosh", spawn_pos, -4.0)
+			offset_sign *= -1.0
 
 
-func _spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float, tension_pct: float = 1.0) -> void:
+func _arrow_aura_color(_stars: int, _qcol: Variant) -> Color:
+	return Color(0.55, 0.1, 0.9)
+
+
+func _make_aura_mat(col: Color, alpha: float, energy: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.albedo_color = Color(col.r, col.g, col.b, alpha)
+	m.emission_enabled = true
+	m.emission = col
+	m.emission_energy_multiplier = energy
+	m.no_depth_test = true
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	return m
+
+
+func _spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float, tension_pct: float = 1.0, bow_stars: int = 0, quality_color: Variant = null) -> void:
 	var arrow := Node3D.new()
 	arrow.name = "Arrow"
-	arrow.global_position = origin
 
-	# Use a thin MeshInstance3D box so the arrow is always visible in 3D space
+	var is_legendary := bow_stars >= 4
+	var aura_col := _arrow_aura_color(bow_stars, quality_color)
+
 	var mesh_inst := MeshInstance3D.new()
 	mesh_inst.name = "ArrowMesh"
 	var box := BoxMesh.new()
 	box.size = Vector3(0.05, 0.05, 0.8)
 	mesh_inst.mesh = box
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.45, 0.3, 0.12)
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if is_legendary:
+		mat.albedo_color = aura_col
+		mat.emission_enabled = true
+		mat.emission = aura_col
+		mat.emission_energy_multiplier = 8.0
+	else:
+		mat.albedo_color = Color(0.45, 0.3, 0.12)
 	mesh_inst.set_surface_override_material(0, mat)
 	arrow.add_child(mesh_inst)
 
-	# Arrowhead — small darker tip
 	var tip_inst := MeshInstance3D.new()
 	tip_inst.name = "Tip"
 	var tip_mesh := BoxMesh.new()
 	tip_mesh.size = Vector3(0.08, 0.08, 0.12)
 	tip_inst.mesh = tip_mesh
 	var tip_mat := StandardMaterial3D.new()
-	tip_mat.albedo_color = Color(0.3, 0.3, 0.3)
 	tip_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if is_legendary:
+		tip_mat.albedo_color = Color(1.0, 1.0, 0.9)
+		tip_mat.emission_enabled = true
+		tip_mat.emission = aura_col
+		tip_mat.emission_energy_multiplier = 12.0
+	else:
+		tip_mat.albedo_color = Color(0.3, 0.3, 0.3)
 	tip_inst.set_surface_override_material(0, tip_mat)
 	tip_inst.position.z = -0.42
 	arrow.add_child(tip_inst)
 
-	# Fletching — small lighter tail
 	var fletch_inst := MeshInstance3D.new()
 	fletch_inst.name = "Fletch"
 	var fletch_mesh := BoxMesh.new()
 	fletch_mesh.size = Vector3(0.1, 0.1, 0.1)
 	fletch_inst.mesh = fletch_mesh
 	var fletch_mat := StandardMaterial3D.new()
-	fletch_mat.albedo_color = Color(0.8, 0.8, 0.75)
 	fletch_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if is_legendary:
+		fletch_mat.albedo_color = aura_col
+		fletch_mat.emission_enabled = true
+		fletch_mat.emission = aura_col
+		fletch_mat.emission_energy_multiplier = 6.0
+	else:
+		fletch_mat.albedo_color = Color(0.8, 0.8, 0.75)
 	fletch_inst.set_surface_override_material(0, fletch_mat)
 	fletch_inst.position.z = 0.38
 	arrow.add_child(fletch_inst)
+
+	if is_legendary:
+		var light := OmniLight3D.new()
+		light.name = "AuraLight"
+		light.light_color = aura_col
+		light.light_energy = 5.0
+		light.omni_range = 4.0
+		light.omni_attenuation = 1.5
+		light.shadow_enabled = false
+		arrow.add_child(light)
+
+		var core := MeshInstance3D.new()
+		core.name = "AuraCore"
+		var cq := QuadMesh.new()
+		cq.size = Vector2(0.5, 0.5)
+		core.mesh = cq
+		core.set_surface_override_material(0, _make_aura_mat(aura_col, 0.8, 16.0))
+		arrow.add_child(core)
+
+		var mid := MeshInstance3D.new()
+		mid.name = "AuraMid"
+		var mq := QuadMesh.new()
+		mq.size = Vector2(1.0, 1.0)
+		mid.mesh = mq
+		mid.set_surface_override_material(0, _make_aura_mat(aura_col, 0.4, 10.0))
+		arrow.add_child(mid)
+
+		var outer := MeshInstance3D.new()
+		outer.name = "AuraOuter"
+		var oq := QuadMesh.new()
+		oq.size = Vector2(1.75, 1.75)
+		outer.mesh = oq
+		outer.set_surface_override_material(0, _make_aura_mat(aura_col, 0.15, 6.0))
+		arrow.add_child(outer)
+
+		var trail := GPUParticles3D.new()
+		trail.name = "AuraTrail"
+		trail.amount = 30
+		trail.lifetime = 0.5
+		trail.explosiveness = 0.0
+		trail.one_shot = false
+		trail.local_coords = false
+		trail.visibility_aabb = AABB(Vector3(-4, -4, -4), Vector3(8, 8, 8))
+		var pmesh := QuadMesh.new()
+		pmesh.size = Vector2(0.18, 0.18)
+		trail.draw_pass_1 = pmesh
+		var pmat := ParticleProcessMaterial.new()
+		pmat.direction = Vector3(0, 0, 0)
+		pmat.spread = 25.0
+		pmat.initial_velocity_min = 0.2
+		pmat.initial_velocity_max = 0.6
+		pmat.gravity = Vector3.ZERO
+		pmat.damping_min = 3.0
+		pmat.damping_max = 6.0
+		pmat.scale_min = 0.4
+		pmat.scale_max = 1.2
+		pmat.color = Color(aura_col.r, aura_col.g, aura_col.b, 1.0)
+		var grad := Gradient.new()
+		grad.colors = PackedColorArray([Color(aura_col, 1.0), Color(aura_col, 0.0)])
+		grad.offsets = PackedFloat32Array([0.0, 1.0])
+		var cramp := GradientTexture1D.new()
+		cramp.gradient = grad
+		pmat.color_ramp = cramp
+		pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+		pmat.emission_sphere_radius = 0.1
+		trail.process_material = pmat
+		trail.material_override = _make_aura_mat(aura_col, 0.9, 12.0)
+		arrow.add_child(trail)
 
 	arrow.set_meta("velocity", vel)
 	arrow.set_meta("damage", damage)
@@ -2322,13 +2671,51 @@ func _spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float
 	arrow.add_to_group(&"arrows")
 
 	get_tree().current_scene.add_child(arrow)
+	arrow.global_position = origin
 
 
 const ARROW_GRAVITY := 9.8
 const ARROW_MAX_LIFETIME := 5.0
+const HEATSEEK_RADIUS := 12.0
+const HEATSEEK_CONE_DOT := 0.4
+const HEATSEEK_TURN_SPEED := 4.5
+const BOUNCE_SEARCH_RADIUS := 12.0
+
+
+func _find_bounce_target(arrow: Node3D, hit_enemy: Node3D, all_enemies: Array[Node]) -> Node3D:
+	var best: Node3D = null
+	var best_dist := BOUNCE_SEARCH_RADIUS
+	for e_node: Node in all_enemies:
+		var e := e_node as Node3D
+		if not e or e == hit_enemy:
+			continue
+		if e.has_method("is_dead") and e.is_dead():
+			continue
+		var d := arrow.global_position.distance_to(e.global_position)
+		if d < best_dist:
+			best_dist = d
+			best = e
+	return best
+
+
+func _bounce_arrow_to(arrow: Node3D, target: Node3D) -> void:
+	var speed: float = (arrow.get_meta("velocity") as Vector3).length()
+	speed = maxf(speed, 12.0)
+	var target_center := target.global_position + Vector3.UP * 0.8
+	var dir := (target_center - arrow.global_position).normalized()
+	arrow.set_meta("velocity", dir * speed)
+	arrow.set_meta("lifetime", 0.0)
 
 func _tick_arrows(delta: float) -> void:
-	for node: Node in get_tree().get_nodes_in_group(&"arrows"):
+	var arrow_nodes := get_tree().get_nodes_in_group(&"arrows")
+	if arrow_nodes.is_empty():
+		return
+	var do_heatseek := _has_affix(&"heatseeking")
+	var all_enemies := get_tree().get_nodes_in_group(&"enemies")
+	var all_fish := get_tree().get_nodes_in_group(&"carried_fish")
+	var all_interactables := get_tree().get_nodes_in_group(&"interactables")
+	var arrow_wg := _find_world_generator()
+	for node: Node in arrow_nodes:
 		var arrow := node as Node3D
 		if not arrow or arrow.get_meta("hit", false):
 			continue
@@ -2337,6 +2724,31 @@ func _tick_arrows(delta: float) -> void:
 		var t_pct: float = arrow.get_meta("tension", 1.0) as float
 		var gravity := lerpf(ARROW_GRAVITY * 2.0, ARROW_GRAVITY * 0.4, t_pct)
 		vel.y -= gravity * delta
+
+		if do_heatseek:
+			var speed := vel.length()
+			if speed > 1.0:
+				var fwd := vel / speed
+				var best_enemy: Node3D = null
+				var best_dot := HEATSEEK_CONE_DOT
+				for e: Node in all_enemies:
+					var enemy := e as Node3D
+					if not enemy or not is_instance_valid(enemy):
+						continue
+					if enemy.has_method("is_dead") and enemy.is_dead():
+						continue
+					var to_e := (enemy.global_position + Vector3.UP * 0.8) - arrow.global_position
+					var dist := to_e.length()
+					if dist > HEATSEEK_RADIUS or dist < 0.5:
+						continue
+					var d := fwd.dot(to_e / dist)
+					if d > best_dot:
+						best_dot = d
+						best_enemy = enemy
+				if best_enemy:
+					var desired := ((best_enemy.global_position + Vector3.UP * 0.8) - arrow.global_position).normalized()
+					vel = (fwd.lerp(desired, HEATSEEK_TURN_SPEED * delta)).normalized() * speed
+
 		arrow.set_meta("velocity", vel)
 
 		var old_pos := arrow.global_position
@@ -2350,7 +2762,11 @@ func _tick_arrows(delta: float) -> void:
 		var lifetime: float = arrow.get_meta("lifetime") as float + delta
 		arrow.set_meta("lifetime", lifetime)
 
-		if arrow.global_position.y < 0.1:
+		var terrain_y := 0.0
+		if arrow_wg:
+			terrain_y = arrow_wg.get_height_at_scene(arrow.global_position.x, arrow.global_position.z)
+		if arrow.global_position.y < terrain_y + 0.1:
+			arrow.global_position.y = terrain_y + 0.05
 			arrow.set_meta("hit", true)
 			_stick_arrow(arrow)
 			continue
@@ -2365,9 +2781,11 @@ func _tick_arrows(delta: float) -> void:
 		var travel := new_pos - old_pos
 		var travel_len := travel.length()
 		var step_count := maxi(1, ceili(travel_len / 0.4))
-		for enemy_node: Node in get_tree().get_nodes_in_group(&"enemies"):
+		for enemy_node: Node in all_enemies:
 			var enemy := enemy_node as Node3D
 			if not enemy:
+				continue
+			if enemy.has_method("is_dead") and enemy.is_dead():
 				continue
 			var cap_radius := 0.5
 			var cap_height := 1.6
@@ -2404,51 +2822,54 @@ func _tick_arrows(delta: float) -> void:
 				arrow.global_position = hit_pos
 				var hit_height := hit_pos.y - enemy.global_position.y
 				var is_headshot := hit_height > cap_height * 0.7
-				var head_mult := 1.3
-				if is_headshot and _has_affix(&"precision"):
-					head_mult = 1.5
-				var final_dmg := dmg * head_mult if is_headshot else dmg
-				# Sniper: bonus damage at long range
+				var hit_bonus := 0.0
+				if is_headshot:
+					hit_bonus += _affix_val(&"precision") if _has_affix(&"precision") else 0.3
 				if _has_affix(&"sniper"):
 					var dist_to_enemy := global_position.distance_to(enemy.global_position)
 					if dist_to_enemy > 15.0:
-						final_dmg *= 1.25
+						hit_bonus += _affix_val(&"sniper")
+				var final_dmg := dmg * (1.0 + hit_bonus)
 				if enemy.has_method("take_damage"):
 					_apply_damage_to_creature(enemy, final_dmg)
 					_set_target_creature(enemy)
-					_DamageNumber.spawn(get_tree(), enemy.global_position + Vector3.UP * 1.5, final_dmg, is_headshot)
-				# Bow-specific affix procs
-				if _has_affix(&"frost_arrow") and randf() < 0.35 and enemy.has_method("apply_slow"):
+					_DamageNumber.spawn(get_tree(), enemy.global_position + Vector3.UP * 1.5, final_dmg, is_headshot, "auto")
+				if _has_affix(&"frost_arrow") and randf() < _affix_val(&"frost_arrow") and enemy.has_method("apply_slow"):
 					enemy.apply_slow(0.65, 3.0)
 				if _has_affix(&"poison_tip") and randf() < 0.30 and enemy.has_method("apply_poison"):
 					var mhp: float = float(enemy.get("max_health")) if enemy.get("max_health") != null else 100.0
-					enemy.apply_poison(mhp * 0.02, 4.0, self)
-				# Explosive: AoE on impact
-				if _has_affix(&"explosive") and randf() < 0.10:
+					enemy.apply_poison(mhp * _affix_val(&"poison_tip"), 4.0, self)
+				if _has_affix(&"explosive") and randf() < _affix_val(&"explosive"):
 					var aoe_dmg := dmg * 0.4
-					for aoe_node: Node in get_tree().get_nodes_in_group(&"enemies"):
+					for aoe_node: Node in all_enemies:
 						var aoe_e := aoe_node as Node3D
 						if not aoe_e or aoe_e == enemy:
+							continue
+						if aoe_e.has_method("is_dead") and aoe_e.is_dead():
 							continue
 						if enemy.global_position.distance_to(aoe_e.global_position) < 4.0:
 							if aoe_e.has_method("take_damage"):
 								_apply_damage_to_creature(aoe_e, aoe_dmg)
-								_DamageNumber.spawn(get_tree(), aoe_e.global_position + Vector3.UP * 1.0, aoe_dmg)
+								_DamageNumber.spawn(get_tree(), aoe_e.global_position + Vector3.UP * 1.0, aoe_dmg, false, "ability")
 				if kb > 0.0 and enemy is CharacterBody3D:
 					var kb_dir := (enemy.global_position - hit_pos).normalized()
 					kb_dir.y = 0.0
 					(enemy as CharacterBody3D).velocity += kb_dir * kb * 0.1
-				# Piercing: skip marking hit on first target
-				var pierce_count: int = arrow.get_meta("pierce_count", 0) as int
-				if _has_affix(&"piercing") and pierce_count < 1:
-					arrow.set_meta("pierce_count", pierce_count + 1)
+				# Bouncing Shot: redirect arrow toward nearest other enemy
+				if _has_affix(&"bouncing_shot") and randf() < _affix_val(&"bouncing_shot"):
+					var bounce_target := _find_bounce_target(arrow, enemy, all_enemies)
+					if bounce_target:
+						_bounce_arrow_to(arrow, bounce_target)
+					else:
+						arrow.set_meta("hit", true)
+						_stick_arrow(arrow)
 				else:
 					arrow.set_meta("hit", true)
 					_stick_arrow(arrow)
 				break
 
 		if not arrow.get_meta("hit", false):
-			for fish_node: Node in get_tree().get_nodes_in_group(&"carried_fish"):
+			for fish_node: Node in all_fish:
 				var fish := fish_node as Node3D
 				if not fish:
 					continue
@@ -2461,12 +2882,12 @@ func _tick_arrows(delta: float) -> void:
 					break
 
 		if not arrow.get_meta("hit", false):
-			for res_node: Node in get_tree().get_nodes_in_group(&"interactables"):
+			for res_node: Node in all_interactables:
 				var obj := res_node as Node3D
 				if not obj:
 					continue
 				if arrow.global_position.distance_to(obj.global_position + Vector3.UP * 0.5) < 1.5:
-					if obj.has_meta("harvestable"):
+					if obj.has_meta("harvestable") and obj.get_meta("drop_id", &"") != &"wood":
 						arrow.set_meta("hit", true)
 						_hit_harvestable(obj, dmg)
 						_stick_arrow(arrow)
@@ -2475,6 +2896,28 @@ func _tick_arrows(delta: float) -> void:
 
 func _stick_arrow(arrow: Node3D) -> void:
 	arrow.remove_from_group(&"arrows")
+	for n in ["AuraLight", "AuraCore", "AuraMid", "AuraOuter", "AuraTrail"]:
+		var child := arrow.get_node_or_null(n)
+		if child:
+			child.queue_free()
+	var shaft := arrow.get_node_or_null("ArrowMesh") as MeshInstance3D
+	if shaft:
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = Color(0.45, 0.3, 0.12)
+		shaft.set_surface_override_material(0, m)
+	var tip := arrow.get_node_or_null("Tip") as MeshInstance3D
+	if tip:
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = Color(0.3, 0.3, 0.3)
+		tip.set_surface_override_material(0, m)
+	var fletch := arrow.get_node_or_null("Fletch") as MeshInstance3D
+	if fletch:
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = Color(0.8, 0.8, 0.75)
+		fletch.set_surface_override_material(0, m)
 	var tween := arrow.create_tween()
 	tween.tween_interval(4.0)
 	tween.tween_callback(arrow.queue_free)
@@ -2580,8 +3023,12 @@ func _start_attack_animation() -> void:
 			_draw_weapon()
 		var wclass := ItemDatabase.get_weapon_class(equipped_weapon)
 		var wpn_speed: float = _get_weapon_stat("attack_speed", 0.6)
-		if _has_affix(&"rapid_strikes") or _has_affix(&"rapid_chop") or _has_affix(&"quick_strike"):
-			wpn_speed *= 0.88
+		if _has_affix(&"rapid_strikes"):
+			wpn_speed *= (1.0 - _affix_val(&"rapid_strikes"))
+		elif _has_affix(&"rapid_chop"):
+			wpn_speed *= (1.0 - _affix_val(&"rapid_chop"))
+		elif _has_affix(&"quick_strike"):
+			wpn_speed *= (1.0 - _affix_val(&"quick_strike"))
 		_gltf_attack_timer = wpn_speed
 		match wclass:
 			"bow":
@@ -2631,9 +3078,13 @@ func _fit_attack_anim_to_timer() -> void:
 			if _gltf_anim_player.has_animation(candidate):
 				var anim: Animation = _gltf_anim_player.get_animation(candidate)
 				if anim and anim.length > 0.0:
-					_gltf_anim_player.speed_scale = anim.length / _gltf_attack_timer
+					var speed: float = anim.length / _gltf_attack_timer
+					_gltf_anim_player.speed_scale = speed
 					_gltf_anim_player.play(candidate)
 					_gltf_current_anim = candidate
+					_gltf_playing_clip = candidate
+					_gltf_playing_speed = speed
+					synced_animation = candidate
 				return
 
 
@@ -2734,7 +3185,6 @@ func _toggle_inventory() -> void:
 func _close_inventory() -> void:
 	_inventory_open = false
 	_cancel_drag()
-	_cancel_equip_progress()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if _inventory_panel:
 		_inventory_panel.visible = false
@@ -2747,6 +3197,8 @@ func _close_inventory() -> void:
 
 
 func _toggle_map() -> void:
+	if _map_disabled:
+		return
 	_map_open = not _map_open
 	if _map_open:
 		_map_zoom = _map_zoom_target
@@ -2794,6 +3246,7 @@ func _build_hud() -> void:
 	_build_minimap(_hud_root)
 	_build_fps_counter(_hud_root)
 	_build_target_hud(_hud_root)
+	_hud_module.build_chat_ui(_hud_root)
 	_build_pause_menu()
 
 
@@ -2883,10 +3336,20 @@ func _build_pause_menu() -> void:
 	char_btn.pressed.connect(func() -> void:
 		_close_pause_menu()
 		SaveManager.stop_game()
+		if NetworkManager.is_connected_to_game():
+			NetworkManager.disconnect_game()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		get_tree().change_scene_to_file("res://scenes/ui/main_menu.tscn")
 	)
 	vbox.add_child(char_btn)
+
+	var debug_btn := _make_pause_button("Debug Panel (F3)", Color(0.3, 0.3, 0.45))
+	debug_btn.pressed.connect(func() -> void:
+		_close_pause_menu()
+		_ensure_debug_panel()
+		_debug_panel.toggle_panel()
+	)
+	vbox.add_child(debug_btn)
 
 	var quit_btn := _make_pause_button("Exit Game", Color(0.5, 0.15, 0.15))
 	quit_btn.pressed.connect(func() -> void:
@@ -2966,6 +3429,15 @@ func _close_pause_menu() -> void:
 		get_tree().paused = false
 	AudioServer.set_bus_mute(AudioServer.get_bus_index(&"Master"), false)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _ensure_debug_panel() -> void:
+	if _debug_panel and is_instance_valid(_debug_panel):
+		return
+	var DebugPanelClass := load("res://scripts/debug/debug_panel.gd")
+	_debug_panel = DebugPanelClass.new()
+	_debug_panel.setup(self)
+	add_child(_debug_panel)
 
 
 func _build_fps_counter(root: Control) -> void:
@@ -3177,6 +3649,7 @@ func _build_minimap(root: Control) -> void:
 	outer.offset_bottom = float(bottom_y + 36)
 	outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(outer)
+	_minimap_outer = outer
 
 	# ── Biome name banner (grey translucent box, like WoW's "Mulgore") ──
 	var banner := PanelContainer.new()
@@ -3435,6 +3908,35 @@ func _draw_arrow_on_image(img: Image, half_px: int, scale: float = 1.0) -> void:
 		img.set_pixel(half_px, half_px, center_col)
 
 
+const _MINIMAP_LO := 36  # 180 / 5 — one pixel per stride cell
+
+var _minimap_lo_image: Image
+var _minimap_mask_lut: PackedByteArray  # 0=skip, 1=ring, 2=terrain
+var _minimap_ring_colors: PackedColorArray
+
+func _ensure_minimap_lut() -> void:
+	if not _minimap_mask_lut.is_empty():
+		return
+	_minimap_lo_image = Image.create(_MINIMAP_LO, _MINIMAP_LO, false, Image.FORMAT_RGBA8)
+	var stride := MINIMAP_PX / _MINIMAP_LO
+	var count := _MINIMAP_LO * _MINIMAP_LO
+	_minimap_mask_lut.resize(count)
+	_minimap_ring_colors.resize(count)
+	for ly in _MINIMAP_LO:
+		for lx in _MINIMAP_LO:
+			var px := lx * stride
+			var py := ly * stride
+			var idx := ly * _MINIMAP_LO + lx
+			var mask_px := _minimap_circle_mask.get_pixel(px, py)
+			if mask_px.a < 0.01:
+				_minimap_mask_lut[idx] = 0
+			elif (mask_px.r < 0.95 or mask_px.g < 0.95 or mask_px.b < 0.95) and mask_px.r < 0.9:
+				_minimap_mask_lut[idx] = 1
+				_minimap_ring_colors[idx] = Color(mask_px.r, mask_px.g, mask_px.b, mask_px.a)
+			else:
+				_minimap_mask_lut[idx] = 2
+
+
 func _refresh_minimap() -> void:
 	if not _minimap_image or not _minimap_tex_rect:
 		return
@@ -3443,73 +3945,68 @@ func _refresh_minimap() -> void:
 		return
 
 	_minimap_needs_refresh = false
+	_ensure_minimap_lut()
 
-	var player_pos := global_position
-	var half_px := MINIMAP_PX / 2
+	var player_pos := wg.get_world_position(self)
+	var half_lo := _MINIMAP_LO / 2
 	var zone_size: float = wg.ZONE_SIZE
 	var water_col := Color(0.12, 0.28, 0.52)
 	var water_shallow := Color(0.18, 0.38, 0.55)
 	var transparent := Color(0, 0, 0, 0)
 
-	# World meters covered from center to edge of minimap
-	var world_radius := _minimap_zoom * zone_size
-	var meters_per_pixel := world_radius / float(half_px)
+	var world_radius_map := _minimap_zoom * zone_size
+	var meters_per_lo_pixel := world_radius_map / float(half_lo)
 
-	_minimap_image.fill(transparent)
+	var zone_cache: Dictionary = {}
 
-	var stride := 5
-	var biome_cache: Dictionary = {}
-
-	for py in range(0, MINIMAP_PX, stride):
-		for px in range(0, MINIMAP_PX, stride):
-			var mask_px := _minimap_circle_mask.get_pixel(px, py)
-			if mask_px.a < 0.01:
+	for ly in _MINIMAP_LO:
+		for lx in _MINIMAP_LO:
+			var idx := ly * _MINIMAP_LO + lx
+			var mask_type: int = _minimap_mask_lut[idx]
+			if mask_type == 0:
+				_minimap_lo_image.set_pixel(lx, ly, transparent)
+				continue
+			if mask_type == 1:
+				_minimap_lo_image.set_pixel(lx, ly, _minimap_ring_colors[idx])
 				continue
 
-			var is_ring := mask_px.r < 0.95 or mask_px.g < 0.95 or mask_px.b < 0.95
-			if is_ring and mask_px.r < 0.9:
-				var ring_col := Color(mask_px.r, mask_px.g, mask_px.b, mask_px.a)
-				for sy in stride:
-					for sx in stride:
-						if px + sx < MINIMAP_PX and py + sy < MINIMAP_PX:
-							_minimap_image.set_pixel(px + sx, py + sy, ring_col)
-				continue
-
-			var world_x := player_pos.x + float(px - half_px) * meters_per_pixel
-			var world_z := player_pos.z + float(py - half_px) * meters_per_pixel
+			var world_x := player_pos.x + float(lx - half_lo) * meters_per_lo_pixel
+			var world_z := player_pos.z + float(ly - half_lo) * meters_per_lo_pixel
 			var zone_coord := Vector2i(
 				floori(world_x / zone_size),
 				floori(world_z / zone_size))
 
-			var h := wg.get_height_at(world_x, world_z)
 			var col: Color
-			if h < wg.WATER_LEVEL:
-				var depth := clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0)
-				col = water_shallow.lerp(water_col, depth)
+			if zone_cache.has(zone_coord):
+				col = zone_cache[zone_coord] as Color
 			else:
-				if biome_cache.has(zone_coord):
-					col = biome_cache[zone_coord] as Color
+				var zx := (float(zone_coord.x) + 0.5) * zone_size
+				var zz := (float(zone_coord.y) + 0.5) * zone_size
+				var zh := wg.get_height_at(zx, zz)
+				if zh < wg.WATER_LEVEL:
+					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
+					col = water_shallow.lerp(water_col, depth)
 				else:
 					var biome: StringName = wg._determine_biome(zone_coord)
 					var micro := wg.get_microbiome_at_zone(zone_coord)
 					col = _biome_map_color(biome, micro)
-					biome_cache[zone_coord] = col
-				var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
-				col = Color(
-					clampf(col.r * bright, 0.0, 1.0),
-					clampf(col.g * bright, 0.0, 1.0),
-					clampf(col.b * bright, 0.0, 1.0))
+					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
+					col = Color(
+						clampf(col.r * bright, 0.0, 1.0),
+						clampf(col.g * bright, 0.0, 1.0),
+						clampf(col.b * bright, 0.0, 1.0))
+				zone_cache[zone_coord] = col
+			_minimap_lo_image.set_pixel(lx, ly, col)
 
-			for sy in stride:
-				for sx in stride:
-					if px + sx < MINIMAP_PX and py + sy < MINIMAP_PX:
-						_minimap_image.set_pixel(px + sx, py + sy, col)
+	var upscaled := _minimap_lo_image.duplicate()
+	upscaled.resize(MINIMAP_PX, MINIMAP_PX, Image.INTERPOLATE_NEAREST)
+	_minimap_image.copy_from(upscaled)
 
-	# ── Directional arrow at center ──
 	_draw_arrow_on_image(_minimap_image, MINIMAP_PX / 2, 2.6)
 
-	_minimap_image_tex = ImageTexture.create_from_image(_minimap_image)
-	_minimap_tex_rect.texture = _minimap_image_tex
+	_minimap_image_tex.set_image(_minimap_image)
+	if _minimap_tex_rect.texture != _minimap_image_tex:
+		_minimap_tex_rect.texture = _minimap_image_tex
 
 	if _minimap_biome_label:
 		var current_biome: StringName = wg.get_biome_at(player_pos)
@@ -4070,6 +4567,22 @@ func _build_tooltip(root: Control) -> void:
 	_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tooltip_panel.add_child(_tooltip_label)
 	root.add_child(_tooltip_panel)
+	_tooltip_panel.resized.connect(_cap_tooltip_height)
+
+
+func _cap_tooltip_height() -> void:
+	if not _tooltip_panel or not _tooltip_panel.visible:
+		return
+	var max_h := _hud_root.get_viewport_rect().size.y - 32.0
+	if _tooltip_panel.size.y > max_h:
+		_tooltip_label.fit_content = false
+		_tooltip_label.scroll_active = true
+		_tooltip_label.custom_minimum_size.y = max_h - 20.0
+		_tooltip_panel.reset_size()
+	else:
+		_tooltip_label.fit_content = true
+		_tooltip_label.scroll_active = false
+		_tooltip_label.custom_minimum_size.y = 0
 
 
 func _build_drag_icon(root: Control) -> void:
@@ -4113,13 +4626,19 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	{"id": &"wood_stair", "name": "Wood Stairs", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 6}],
 	 "mesh": "stair", "color": Color(0.42, 0.3, 0.14), "size": Vector3(3.6, 5.0, 3.6)},
+	{"id": &"wood_door", "name": "Wood Door", "tab": "Building",
+	 "cost": [{"item": &"wood", "amount": 6}],
+	 "mesh": "door", "color": Color(0.4, 0.28, 0.12), "size": Vector3(3.6, 5.0, 0.20)},
 	# Heavy Build
 	{"id": &"stone_wall", "name": "Stone Wall", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 6}],
-	 "mesh": "box", "color": Color(0.4, 0.4, 0.42), "size": Vector3(2.0, 2.0, 0.3)},
+	 "mesh": "box", "color": Color(0.4, 0.4, 0.42), "size": Vector3(3.6, 5.0, 0.20)},
 	{"id": &"stone_floor", "name": "Stone Floor", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 6}],
-	 "mesh": "box", "color": Color(0.45, 0.45, 0.47), "size": Vector3(2.0, 0.15, 2.0)},
+	 "mesh": "box", "color": Color(0.45, 0.45, 0.47), "size": Vector3(3.6, 0.1, 3.6)},
+	{"id": &"stone_door", "name": "Stone Door", "tab": "Heavy Build",
+	 "cost": [{"item": &"stone", "amount": 8}],
+	 "mesh": "door", "color": Color(0.4, 0.4, 0.42), "size": Vector3(3.6, 5.0, 0.20)},
 	# Roofing – Building tab (wood)
 	{"id": &"thatch_roof_45", "name": "Thatch Roof 45\u00b0", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 6}],
@@ -4278,9 +4797,9 @@ func _refresh_build_menu() -> void:
 			var mat_amt: int = int(mat["amount"])
 			var have: int = Inventory.get_amount_any_star(mat_id)
 			var mat_name: String = (ItemDatabase.get_item(mat_id) as Dictionary).get("name", str(mat_id)) as String
-			if have < mat_amt:
+			if have < mat_amt and not Inventory.has_free_craft():
 				can_afford = false
-			var have_color := "aaffaa" if have >= mat_amt else "ff6666"
+			var have_color := "aaffaa" if (have >= mat_amt or Inventory.has_free_craft()) else "ff6666"
 			if cost_text != "":
 				cost_text += "  "
 			cost_text += "[color=#%s]%s %d/%d[/color]" % [have_color, mat_name, have, mat_amt]
@@ -4348,6 +4867,7 @@ func _enter_build_mode() -> void:
 	_build_mode = true
 	_build_rotation = rotation.y
 	_build_snapped = false
+	_build_height_offset = 0.0
 	var recipe := _get_build_recipe(_build_selected)
 	if recipe.is_empty():
 		_build_mode = false
@@ -4408,28 +4928,43 @@ func _update_build_ghost() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if not cam:
 		return
-	var forward := -cam.global_transform.basis.z
-	forward.y = 0.0
-	forward = forward.normalized()
-	var place_pos := global_position + forward * 3.5
-	place_pos.y = global_position.y
 
 	var recipe := _get_build_recipe(_build_selected)
 	var is_water_only := recipe.get("water_only", false) as bool
+
+	# Raycast from camera through screen center into the world
+	var vp := get_viewport()
+	var screen_center := vp.get_visible_rect().size * 0.5
+	var ray_origin := cam.project_ray_origin(screen_center)
+	var ray_dir := cam.project_ray_normal(screen_center)
+
+	var place_pos := global_position + (-cam.global_transform.basis.z * Vector3(1, 0, 1)).normalized() * 3.5
+	place_pos.y = global_position.y
+
+	var space := get_world_3d().direct_space_state
+	if space:
+		var ray_end := ray_origin + ray_dir * 50.0
+		var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 1)
+		query.exclude = [get_rid()]
+		var result := space.intersect_ray(query)
+		if not result.is_empty():
+			var hit_pos: Vector3 = result["position"]
+			var dist_to_player := Vector2(hit_pos.x - global_position.x, hit_pos.z - global_position.z).length()
+			if dist_to_player <= BUILD_MAX_DISTANCE:
+				place_pos = hit_pos
 
 	if is_water_only:
 		var water_y := WaterSystem.get_surface_y(place_pos.x, place_pos.z)
 		place_pos.y = water_y
 		var terrain_y := place_pos.y - 10.0
-		var space := get_world_3d().direct_space_state
 		if space:
-			var ray_from := Vector3(place_pos.x, water_y + 50.0, place_pos.z)
-			var ray_to := Vector3(place_pos.x, water_y - 50.0, place_pos.z)
-			var query := PhysicsRayQueryParameters3D.create(ray_from, ray_to, 1)
-			query.exclude = [get_rid()]
-			var result := space.intersect_ray(query)
-			if not result.is_empty():
-				terrain_y = result["position"].y
+			var wray_from := Vector3(place_pos.x, water_y + 50.0, place_pos.z)
+			var wray_to := Vector3(place_pos.x, water_y - 50.0, place_pos.z)
+			var wquery := PhysicsRayQueryParameters3D.create(wray_from, wray_to, 1)
+			wquery.exclude = [get_rid()]
+			var wresult := space.intersect_ray(wquery)
+			if not wresult.is_empty():
+				terrain_y = wresult["position"].y
 		if terrain_y > water_y - 0.1:
 			_build_ghost.global_position = place_pos
 			_build_ghost.rotation.y = _build_rotation
@@ -4440,18 +4975,11 @@ func _update_build_ghost() -> void:
 					mat.albedo_color = Color(0.9, 0.2, 0.2, 0.4)
 			return
 	else:
-		var space := get_world_3d().direct_space_state
-		if space:
-			var ray_from := Vector3(place_pos.x, place_pos.y + 50.0, place_pos.z)
-			var ray_to := Vector3(place_pos.x, place_pos.y - 50.0, place_pos.z)
-			var query := PhysicsRayQueryParameters3D.create(ray_from, ray_to, 1)
-			query.exclude = [get_rid()]
-			var result := space.intersect_ray(query)
-			if not result.is_empty():
-				place_pos.y = result["position"].y
-				var bid: StringName = recipe.get("id", &"") as StringName
-				if bid in [&"wood_floor", &"stone_floor"]:
-					place_pos.y -= 0.05
+		var bid: StringName = recipe.get("id", &"") as StringName
+		if bid in [&"wood_floor", &"stone_floor"]:
+			place_pos.y -= 0.05
+
+	place_pos.y += _build_height_offset
 
 	var use_rot := _build_rotation
 	_build_snapped = false
@@ -4494,7 +5022,7 @@ func _place_build() -> void:
 		if terrain_y > water_y - 0.1:
 			return
 
-	if not _build_from_workbench:
+	if not _build_from_workbench and not Inventory.has_free_craft():
 		var costs: Array = recipe.get("cost", []) as Array
 		for mat: Dictionary in costs:
 			var mat_id: StringName = mat["item"] as StringName
@@ -4521,6 +5049,7 @@ func _place_build() -> void:
 	var _is_chest := build_id == &"chest"
 	var _is_wall_torch := mesh_type == "wall_torch"
 	var _is_bed := mesh_type == "bed"
+	var _is_door := mesh_type == "door"
 
 	structure.add_to_group(&"structures")
 	structure.set_meta("build_id", build_id)
@@ -4539,18 +5068,23 @@ func _place_build() -> void:
 			_build_wall_torch_visual(structure)
 		elif _is_bed:
 			_build_bed_visual(structure, sz)
+		elif _is_door:
+			_build_door_visual(structure, sz, build_id)
 
 	if _is_workbench:
 		structure.add_to_group(&"workbenches")
 	elif _is_chest:
 		structure.add_to_group(&"chests")
+	elif _is_door:
+		structure.add_to_group(&"doors")
+		structure.set_meta("door_open", false)
 
 	var _is_roof := mesh_type.begins_with("roof")
 
 	if not _used_glb:
 		if _deferred_campfire:
 			pass
-		elif not _is_workbench and not _is_chest and not _is_wall_torch and not _is_bed:
+		elif not _is_workbench and not _is_chest and not _is_wall_torch and not _is_bed and not _is_door:
 			var mi := MeshInstance3D.new()
 			var mesh: Mesh
 			if mesh_type in ["roof_45", "roof_26"]:
@@ -4591,6 +5125,8 @@ func _place_build() -> void:
 	var _is_stair := mesh_type == "stair"
 	if _is_stair:
 		_add_stair_collision(structure, sz)
+	elif _is_door:
+		pass
 	else:
 		var col_shape := CollisionShape3D.new()
 		var col: Shape3D
@@ -4644,16 +5180,20 @@ func _place_build() -> void:
 		var chest_contents: Array = []
 		if build_id == &"chest" and structure.has_meta("chest_contents"):
 			chest_contents = structure.get_meta("chest_contents", [])
+		var bld_wg := _find_world_generator()
+		var bld_wp := target_pos
+		if bld_wg:
+			bld_wp = bld_wg.get_world_position_vec(target_pos)
 		var entry := {
 			"build_id": str(build_id),
-			"px": target_pos.x,
-			"py": target_pos.y,
-			"pz": target_pos.z,
+			"px": bld_wp.x,
+			"py": bld_wp.y,
+			"pz": bld_wp.z,
 			"ry": target_rot,
 			"chest_contents": chest_contents,
 		}
 		if NetworkManager.is_server():
-			wss.record_building_placed(build_id, target_pos, target_rot, chest_contents)
+			wss.record_building_placed(build_id, bld_wp, target_rot, chest_contents)
 		else:
 			wss.request_building_placed.rpc_id(1, entry)
 
@@ -4678,6 +5218,7 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 	var is_chest := build_id == &"chest"
 	var is_wall_torch := mesh_type == "wall_torch"
 	var is_bed := mesh_type == "bed"
+	var is_door := mesh_type == "door"
 
 	structure.add_to_group(&"structures")
 	structure.set_meta("build_id", build_id)
@@ -4698,6 +5239,8 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 			_build_wall_torch_visual(structure)
 		elif is_bed:
 			_build_bed_visual(structure, sz)
+		elif is_door:
+			_build_door_visual(structure, sz, build_id)
 		elif not is_campfire:
 			var mi := MeshInstance3D.new()
 			var mesh: Mesh
@@ -4740,10 +5283,15 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 		structure.add_to_group(&"workbenches")
 	elif is_chest:
 		structure.add_to_group(&"chests")
+	elif is_door:
+		structure.add_to_group(&"doors")
+		structure.set_meta("door_open", false)
 
 	var is_stair := mesh_type == "stair"
 	if is_stair:
 		_add_stair_collision(structure, sz)
+	elif is_door:
+		pass
 	else:
 		var col_shape := CollisionShape3D.new()
 		var col: Shape3D
@@ -4789,11 +5337,6 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 		_add_torch_light(structure, Vector3(0.0, sz.y + 0.1, 0.0))
 
 	_disable_structure_shadows(structure)
-	# Stay in build mode for continuous placement
-	if _build_ghost:
-		_build_ghost.queue_free()
-		_build_ghost = null
-	_enter_build_mode()
 
 
 func _clear_vegetation_at(pos: Vector3, sz: Vector3) -> void:
@@ -4946,9 +5489,9 @@ static func _ensure_building_materials() -> void:
 	if _bmat_wood != null:
 		return
 	_bmat_wood = _load_building_mat("res://textures/building/wood_planks.png",
-		Color(0.45, 0.32, 0.15), 0.80, Vector3(2.0, 2.0, 1.0))
+		Color(0.50, 0.38, 0.22), 0.80, Vector3(4.0, 4.0, 1.0))
 	_bmat_stone = _load_building_mat("res://textures/building/cobblestone.png",
-		Color(0.55, 0.55, 0.58), 0.92, Vector3(2.0, 2.0, 1.0))
+		Color(0.70, 0.70, 0.73), 0.92, Vector3(4.0, 4.0, 1.0))
 	_bmat_thatch = _load_building_mat("res://textures/building/thatch.png",
 		Color(0.60, 0.50, 0.30), 0.85, Vector3(2.0, 2.0, 1.0))
 	_bmat_slate = _load_building_mat("res://textures/building/slate_roof.png",
@@ -4965,18 +5508,18 @@ static func _load_building_mat(path: String, tint: Color, rough: float, uv_scale
 		mat.albedo_color = tint
 	mat.roughness = rough
 	mat.uv1_scale = uv_scale
-	mat.cull_mode = BaseMaterial3D.CULL_BACK
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.set_flag(BaseMaterial3D.FLAG_DONT_RECEIVE_SHADOWS, true)
 	mat.emission_enabled = true
 	mat.emission = tint
-	mat.emission_energy_multiplier = 0.35
+	mat.emission_energy_multiplier = 0.25
 	return mat
 
 func _get_building_material(build_id: StringName) -> StandardMaterial3D:
 	_ensure_building_materials()
-	if build_id in [&"wood_wall", &"wood_floor", &"wood_stair"]:
+	if build_id in [&"wood_wall", &"wood_floor", &"wood_stair", &"wood_door"]:
 		return _bmat_wood
-	elif build_id in [&"stone_wall", &"stone_floor"]:
+	elif build_id in [&"stone_wall", &"stone_floor", &"stone_door"]:
 		return _bmat_stone
 	elif build_id.begins_with(&"thatch_roof"):
 		return _bmat_thatch
@@ -5233,10 +5776,11 @@ static func _build_stair_mesh(sz: Vector3, step_count: int = 6) -> ArrayMesh:
 	return st.commit()
 
 
-static func _add_stair_collision(structure: StaticBody3D, sz: Vector3, step_count: int = 6) -> void:
-	var step_h := sz.y / float(step_count)
-	var step_d := sz.z / float(step_count)
-	for i in range(step_count):
+static func _add_stair_collision(structure: StaticBody3D, sz: Vector3, _step_count: int = 6) -> void:
+	var phys_steps := ceili(sz.y / 0.3)
+	var step_h := sz.y / float(phys_steps)
+	var step_d := sz.z / float(phys_steps)
+	for i in range(phys_steps):
 		var col_shape := CollisionShape3D.new()
 		var box := BoxShape3D.new()
 		var height := step_h * float(i + 1)
@@ -5278,7 +5822,7 @@ func _get_snap_points_for(build_id: StringName, sz: Vector3) -> Array[Dictionary
 	var hd := sz.z * 0.5
 	var h := sz.y
 
-	if build_id in [&"wood_wall", &"stone_wall"]:
+	if build_id in [&"wood_wall", &"stone_wall", &"wood_door", &"stone_door"]:
 		var edge_overlap := 0.10
 		for x in [-hw + edge_overlap, 0.0, hw - edge_overlap]:
 			pts.append({"pos": Vector3(x, 0.0, 0.0), "type": &"wall_base"})
@@ -5352,7 +5896,7 @@ func _find_best_snap(ghost_pos: Vector3, ghost_rot_y: float, build_id: StringNam
 
 	var new_ag := _get_roof_angle_group(build_id)
 
-	var best_dist := 1.2
+	var best_dist := 0.8
 	var best_pos := Vector3.ZERO
 	var best_rot := ghost_rot_y
 	var found := false
@@ -5698,11 +6242,22 @@ func _drop_item_on_ground(item_id: StringName, amount: int, despawn_time: float 
 	var drop_pos := global_position + fwd_flat * 2.0 + Vector3.UP * 0.5
 	drop_pos += Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5))
 
+	var my_peer := multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else -1
+	if NetworkManager.is_connected_to_game():
+		var wss := _get_world_state_sync()
+		if wss:
+			if NetworkManager.is_server():
+				wss.spawn_player_drop_synced(drop_pos, item_id, amount, stars, my_peer)
+			else:
+				wss.request_drop_item.rpc_id(1, str(item_id), amount, stars, drop_pos.x, drop_pos.y, drop_pos.z)
+			return
+
 	var drop := LootDrop.new()
 	drop.item_id = item_id
 	drop.star_level = stars
 	drop.amount = amount
-	drop.pickup_grace = 6.0
+	drop.pickup_grace = 5.0
+	drop.drop_owner_peer = my_peer
 	get_tree().current_scene.add_child(drop)
 	drop.global_position = drop_pos
 
@@ -5753,7 +6308,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		var ftex := _load_campfire_tex(path)
 		if ftex:
 			flame_anim_frames.append(ftex)
-	print("[Campfire] Loaded %d flame animation frames" % flame_anim_frames.size())
+	if _DEBUG_LOG: print("[Campfire] Loaded %d flame animation frames" % flame_anim_frames.size())
 
 	var fire_full_tex: Texture2D
 	var fire_only_tex: Texture2D
@@ -6224,6 +6779,79 @@ func _start_campfire_animation(
 	_spark_ref[0].call()
 
 
+func _build_door_visual(structure: StaticBody3D, sz: Vector3, build_id: StringName) -> void:
+	_ensure_building_materials()
+	var mat: StandardMaterial3D = _bmat_wood if build_id == &"wood_door" else _bmat_stone
+
+	var pivot := AnimatableBody3D.new()
+	pivot.name = "DoorPivot"
+	pivot.collision_layer = 8
+	pivot.collision_mask = 0
+	pivot.position = Vector3(-sz.x * 0.5, 0.0, 0.0)
+	structure.add_child(pivot)
+
+	var panel := MeshInstance3D.new()
+	var panel_mesh := BoxMesh.new()
+	panel_mesh.size = sz
+	panel.mesh = panel_mesh
+	panel.set_surface_override_material(0, mat)
+	panel.position = Vector3(sz.x * 0.5, sz.y * 0.5, 0.0)
+	pivot.add_child(panel)
+
+	var col := CollisionShape3D.new()
+	col.name = "DoorCollision"
+	var col_box := BoxShape3D.new()
+	col_box.size = sz
+	col.shape = col_box
+	col.position = Vector3(sz.x * 0.5, sz.y * 0.5, 0.0)
+	pivot.add_child(col)
+
+	var trim_mat := StandardMaterial3D.new()
+	trim_mat.albedo_color = Color(0.25, 0.15, 0.05) if build_id == &"wood_door" else Color(0.3, 0.3, 0.32)
+	trim_mat.roughness = 0.9
+	var trim_w := 0.08
+	var trim_d := sz.z + 0.02
+	for edge_x in [0.0, sz.x]:
+		var trim := MeshInstance3D.new()
+		var trim_mesh := BoxMesh.new()
+		trim_mesh.size = Vector3(trim_w, sz.y, trim_d)
+		trim.mesh = trim_mesh
+		trim.set_surface_override_material(0, trim_mat)
+		trim.position = Vector3(edge_x, sz.y * 0.5, 0.0)
+		pivot.add_child(trim)
+	var top_trim := MeshInstance3D.new()
+	var top_mesh := BoxMesh.new()
+	top_mesh.size = Vector3(sz.x, trim_w, trim_d)
+	top_trim.mesh = top_mesh
+	top_trim.set_surface_override_material(0, trim_mat)
+	top_trim.position = Vector3(sz.x * 0.5, sz.y, 0.0)
+	pivot.add_child(top_trim)
+
+	var handle_mat := StandardMaterial3D.new()
+	handle_mat.albedo_color = Color(0.4, 0.35, 0.25)
+	handle_mat.roughness = 0.7
+	handle_mat.metallic = 0.4
+	var handle := MeshInstance3D.new()
+	var handle_mesh := BoxMesh.new()
+	handle_mesh.size = Vector3(0.06, 0.3, 0.12)
+	handle.mesh = handle_mesh
+	handle.set_surface_override_material(0, handle_mat)
+	handle.position = Vector3(sz.x * 0.8, sz.y * 0.5, sz.z * 0.5 + 0.06)
+	pivot.add_child(handle)
+
+
+func _toggle_door(door: StaticBody3D) -> void:
+	var is_open: bool = door.get_meta("door_open", false)
+	var pivot := door.get_node_or_null("DoorPivot") as Node3D
+	if not pivot:
+		return
+	var target_angle := 0.0 if is_open else -PI * 0.5
+	var tw := door.create_tween()
+	tw.tween_property(pivot, "rotation:y", target_angle, 0.35).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_QUAD)
+	door.set_meta("door_open", not is_open)
+	AudioManager.play_sfx_at("wood_thud", door.global_position, -6.0, 0.15)
+
+
 func _build_workbench_visual(structure: StaticBody3D, sz: Vector3, _color: Color) -> void:
 	_ensure_building_materials()
 	var wood_mat := _bmat_wood
@@ -6451,11 +7079,12 @@ func _refresh_map() -> void:
 
 	var wg := _find_world_generator()
 	if not wg:
-		_map_image_tex = ImageTexture.create_from_image(_map_image)
-		_map_texture_rect.texture = _map_image_tex
+		_map_image_tex.set_image(_map_image)
+		if _map_texture_rect.texture != _map_image_tex:
+			_map_texture_rect.texture = _map_image_tex
 		return
 
-	var player_pos := global_position
+	var player_pos := wg.get_world_position(self)
 	var center_zone: Vector2i = wg.world_to_zone(player_pos)
 	var half_px := MAP_PX / 2
 	var explored: Dictionary = wg._explored_zones
@@ -6476,6 +7105,8 @@ func _refresh_map() -> void:
 	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
 
 	var stride := 2
+	var map_zone_cache: Dictionary = {}
+
 	for py in range(0, MAP_PX, stride):
 		for px in range(0, MAP_PX, stride):
 			var mask_pixel := _map_circle_mask.get_pixel(px, py)
@@ -6495,26 +7126,30 @@ func _refresh_map() -> void:
 			var zone_coord := Vector2i(
 				center_zone.x + roundi(zone_fx),
 				center_zone.y + roundi(zone_fz))
-			var world_x := player_pos.x + zone_fx * zone_size
-			var world_z := player_pos.z + zone_fz * zone_size
 
 			var col: Color
-			if explored.has(zone_coord):
+			if map_zone_cache.has(zone_coord):
+				col = map_zone_cache[zone_coord] as Color
+			elif explored.has(zone_coord):
 				var biome: StringName = cache.get(zone_coord, &"hearthlands") as StringName
 				var micro := wg.get_microbiome_at_zone(zone_coord)
-				if wg._zone_has_water(zone_coord):
-					var h := wg.get_height_at(world_x, world_z)
-					col = water_shallow.lerp(water_col, clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0))
+				var zx := (float(zone_coord.x) + 0.5) * zone_size
+				var zz := (float(zone_coord.y) + 0.5) * zone_size
+				var zh := wg.get_height_at(zx, zz)
+				if wg._zone_has_water(zone_coord) or zh < wg.WATER_LEVEL:
+					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
+					col = water_shallow.lerp(water_col, depth)
 				else:
 					col = _biome_map_color(biome, micro)
-					var h := wg.get_height_at(world_x, world_z)
-					var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
+					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
 					col = Color(
 						clampf(col.r * bright, 0.0, 1.0),
 						clampf(col.g * bright, 0.0, 1.0),
 						clampf(col.b * bright, 0.0, 1.0))
+				map_zone_cache[zone_coord] = col
 			else:
 				col = unexplored
+				map_zone_cache[zone_coord] = col
 
 			for sy in stride:
 				for sx in stride:
@@ -6527,8 +7162,9 @@ func _refresh_map() -> void:
 	# ── Player marker — directional arrow ──
 	_draw_player_arrow(half_px)
 
-	_map_image_tex = ImageTexture.create_from_image(_map_image)
-	_map_texture_rect.texture = _map_image_tex
+	_map_image_tex.set_image(_map_image)
+	if _map_texture_rect.texture != _map_image_tex:
+		_map_texture_rect.texture = _map_image_tex
 
 
 func _draw_player_arrow(half_px: int) -> void:
@@ -6536,11 +7172,11 @@ func _draw_player_arrow(half_px: int) -> void:
 
 
 func _point_in_arrow(pt: Vector2, verts: Array[Vector2], scale: float) -> bool:
-	var sv: Array[Vector2] = []
-	for v in verts:
-		sv.append(v * scale)
-	# Triangle fan check: arrow is 2 triangles
-	return _point_in_tri(pt, sv[0], sv[1], sv[2]) or _point_in_tri(pt, sv[0], sv[2], sv[3])
+	var s0 := verts[0] * scale
+	var s1 := verts[1] * scale
+	var s2 := verts[2] * scale
+	var s3 := verts[3] * scale
+	return _point_in_tri(pt, s0, s1, s2) or _point_in_tri(pt, s0, s2, s3)
 
 
 func _point_in_tri(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> bool:
@@ -6593,21 +7229,15 @@ func _biome_map_color(biome: StringName, micro: StringName = &"none") -> Color:
 			&"birch_forest":  return Color(0.35, 0.55, 0.22)
 			&"hills":         return Color(0.45, 0.52, 0.32)
 			&"riverside":     return Color(0.32, 0.52, 0.35)
-	match biome:
-		&"hearthlands":     return Color(0.35, 0.55, 0.25)
-		&"thornwood":       return Color(0.15, 0.3, 0.1)
-		&"scorched_steppe": return Color(0.6, 0.45, 0.2)
-		&"ocean":           return Color(0.1, 0.2, 0.4)
-		_:                  return Color(0.2, 0.2, 0.2)
+	if biome == &"ocean":
+		return Color(0.1, 0.2, 0.4)
+	return Color(0.35, 0.55, 0.25)
 
 
 func _biome_display_name(biome: StringName) -> String:
-	match biome:
-		&"hearthlands":     return "Hearthlands"
-		&"thornwood":       return "Thornwood"
-		&"scorched_steppe": return "Scorched Steppe"
-		&"ocean":           return "Ocean"
-		_:                  return "Unknown"
+	if biome == &"ocean":
+		return "Ocean"
+	return "Hearthlands"
 
 
 func _microbiome_display_name(micro: StringName) -> String:
@@ -6703,6 +7333,7 @@ func _show_tooltip_for_item(item_id: StringName) -> void:
 
 	# Affixes section
 	var tip_affixes: Array = parsed_tip.get("affixes", [])
+	var tip_rolls: Dictionary = parsed_tip.get("affix_rolls", {})
 	if not tip_affixes.is_empty():
 		text += "\n\n[color=#666666]───────────────[/color]"
 		for affix_id in tip_affixes:
@@ -6710,15 +7341,20 @@ func _show_tooltip_for_item(item_id: StringName) -> void:
 			if affix_data.is_empty():
 				continue
 			var affix_name: String = affix_data.get("name", str(affix_id)) as String
-			var affix_desc: String = affix_data.get("description", "") as String
+			var roll: float = float(tip_rolls.get(affix_id, 0.5))
+			var affix_desc: String = ItemDatabase.format_affix_description(affix_id, roll)
 			text += "\n[color=#ffd700]%s[/color]" % affix_name
 			if affix_desc != "":
 				text += "\n[color=#aaaaaa]%s[/color]" % affix_desc
 
+	_tooltip_label.fit_content = true
+	_tooltip_label.scroll_active = false
+	_tooltip_label.custom_minimum_size.y = 0
 	_tooltip_label.text = text.strip_edges()
 	_tooltip_panel.reset_size()
 	_tooltip_panel.visible = true
-	_tooltip_panel.position = _hud_root.get_local_mouse_position() + Vector2(16, 8)
+	_cap_tooltip_height()
+	_tooltip_panel.position = _clamp_tooltip_pos(_hud_root.get_local_mouse_position())
 
 
 func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id: StringName) -> void:
@@ -6774,10 +7410,28 @@ func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id
 	if data.has("description"):
 		text += "\n%s" % str(data["description"])
 
+	_tooltip_label.fit_content = true
+	_tooltip_label.scroll_active = false
+	_tooltip_label.custom_minimum_size.y = 0
 	_tooltip_label.text = text.strip_edges()
 	_tooltip_panel.reset_size()
 	_tooltip_panel.visible = true
-	_tooltip_panel.position = _hud_root.get_local_mouse_position() + Vector2(16, 8)
+	_cap_tooltip_height()
+	_tooltip_panel.position = _clamp_tooltip_pos(_hud_root.get_local_mouse_position())
+
+
+func _clamp_tooltip_pos(mouse_pos: Vector2) -> Vector2:
+	var vp_size := _hud_root.get_viewport_rect().size
+	var tip_size := _tooltip_panel.size
+	var margin := 8.0
+	var pos := mouse_pos + Vector2(16, 8)
+	if pos.x + tip_size.x + margin > vp_size.x:
+		pos.x = mouse_pos.x - tip_size.x - 16
+	if pos.y + tip_size.y + margin > vp_size.y:
+		pos.y = vp_size.y - tip_size.y - margin
+	pos.x = maxf(pos.x, margin)
+	pos.y = maxf(pos.y, margin)
+	return pos
 
 
 func _hide_tooltip() -> void:
@@ -6865,20 +7519,6 @@ func _refresh_inventory_ui() -> void:
 				icon_rect.modulate = _get_item_fallback_color(base_id)
 			stack.add_child(icon_rect)
 
-			if item_equipped:
-				var equip_badge := Label.new()
-				equip_badge.text = "E"
-				equip_badge.add_theme_font_size_override("font_size", 10)
-				equip_badge.add_theme_color_override("font_color", Color.WHITE)
-				equip_badge.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-				equip_badge.add_theme_constant_override("shadow_offset_x", 1)
-				equip_badge.add_theme_constant_override("shadow_offset_y", 1)
-				equip_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-				equip_badge.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-				equip_badge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-				equip_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				stack.add_child(equip_badge)
-
 			if total > 1:
 				var amt_lbl := Label.new()
 				amt_lbl.text = str(total)
@@ -6960,7 +7600,7 @@ func _refresh_crafting_ui() -> void:
 			var req_data: Dictionary = ItemDatabase.get_item(req_id)
 			var req_name: String = req_data.get("name", str(req_id)) as String
 			var have: int = Inventory.get_amount_capped_star(req_id, hand_max, 0) if not hand_is_equip else Inventory.get_amount_any_star(req_id)
-			var have_color := "aaffaa" if have >= req_amt else "ff6666"
+			var have_color := "aaffaa" if (have >= req_amt or Inventory.has_free_craft()) else "ff6666"
 			if cost_text != "":
 				cost_text += "  "
 			cost_text += "[color=#%s]%s %d/%d[/color]" % [have_color, req_name, have, req_amt]
@@ -7259,11 +7899,20 @@ func _finish_drag(to_visual_slot: int) -> void:
 	_cancel_drag()
 
 
+var _pc_proc_timer := 0.0
+var _pc_proc_max_total := 0.0
+var _pc_proc_max_minimap := 0.0
+var _pc_proc_max_physics := 0.0
+
 func _process(delta: float) -> void:
+	var _pc_t0 := Time.get_ticks_usec()
+
 	if _fps_label:
 		_fps_label.text = "%d FPS" % Engine.get_frames_per_second()
 
 	_tick_equip_progress(delta)
+	if _hud_module:
+		_hud_module.update_chat_fade(self, delta)
 
 	# Phase 5: Clients report player data to host for save on disconnect
 	if is_multiplayer_authority() and NetworkManager.is_connected_to_game() and not NetworkManager.is_server():
@@ -7294,13 +7943,17 @@ func _process(delta: float) -> void:
 					_cancel_drag()
 
 	if _tooltip_panel and _tooltip_panel.visible and _hud_root:
-		_tooltip_panel.position = _hud_root.get_local_mouse_position() + Vector2(16, 8)
+		_tooltip_panel.position = _clamp_tooltip_pos(_hud_root.get_local_mouse_position())
 
 	# Minimap (always refreshes, instant on zoom)
-	_minimap_refresh_timer += delta
-	if _minimap_needs_refresh or _minimap_refresh_timer >= 0.4:
-		_minimap_refresh_timer = 0.0
-		_refresh_minimap()
+	var _pc_tmm := Time.get_ticks_usec()
+	if not _minimap_paused:
+		_minimap_refresh_timer += delta
+		if _minimap_needs_refresh or _minimap_refresh_timer >= 0.4:
+			_minimap_refresh_timer = 0.0
+			_refresh_minimap()
+	var _minimap_ms := float(Time.get_ticks_usec() - _pc_tmm) / 1000.0
+	_pc_proc_max_minimap = maxf(_pc_proc_max_minimap, _minimap_ms)
 
 	if _map_open:
 		_map_fog_time += delta
@@ -7318,6 +7971,24 @@ func _process(delta: float) -> void:
 			_map_refresh_timer = 0.0
 			_refresh_map()
 			_map_dirty = false
+
+	var _pc_total_ms := float(Time.get_ticks_usec() - _pc_t0) / 1000.0
+	_pc_proc_max_total = maxf(_pc_proc_max_total, _pc_total_ms)
+	_pc_proc_timer -= delta
+	if _pc_proc_timer <= 0.0:
+		_pc_proc_timer = 5.0
+		_pc_proc_max_physics = maxf(_pc_proc_max_physics, 0.0)
+		var _wp := global_position
+		var _wg_ref := _find_world_generator()
+		if _wg_ref:
+			_wp = _wg_ref.get_world_position(self)
+		print("[PC TIMING] process=%.2fms minimap=%.2fms physics=%.2fms scene=(%.0f, %.0f, %.0f) world=(%.0f, %.0f, %.0f)" % [
+			_pc_proc_max_total, _pc_proc_max_minimap, _pc_proc_max_physics,
+			global_position.x, global_position.y, global_position.z,
+			_wp.x, _wp.y, _wp.z])
+		_pc_proc_max_total = 0.0
+		_pc_proc_max_minimap = 0.0
+		_pc_proc_max_physics = 0.0
 
 
 func _get_item_fallback_color(item_id: StringName) -> Color:
@@ -7415,17 +8086,17 @@ func _get_active_affixes() -> Dictionary:
 		return _cached_affixes
 	_cached_affixes.clear()
 	var wpn_parsed := ItemDatabase.parse_star_id(equipped_weapon)
+	var wpn_rolls: Dictionary = wpn_parsed.get("affix_rolls", {})
 	for a: StringName in wpn_parsed.get("affixes", []):
-		_cached_affixes[a] = true
+		_cached_affixes[a] = float(wpn_rolls.get(a, 0.5))
 	for slot: String in Inventory.EQUIPMENT_SLOTS:
-		if slot == "weapon":
-			continue
 		var eq_id: StringName = Inventory.get_equipped(slot)
 		if eq_id == &"":
 			continue
 		var eq_parsed := ItemDatabase.parse_star_id(eq_id)
+		var eq_rolls: Dictionary = eq_parsed.get("affix_rolls", {})
 		for a: StringName in eq_parsed.get("affixes", []):
-			_cached_affixes[a] = true
+			_cached_affixes[a] = float(eq_rolls.get(a, 0.5))
 	_affix_cache_dirty = false
 	_regenerator_active = _cached_affixes.has(&"regenerator")
 	_rally_cry_active = _cached_affixes.has(&"rally_cry")
@@ -7434,6 +8105,10 @@ func _get_active_affixes() -> Dictionary:
 
 func _has_affix(affix_id: StringName) -> bool:
 	return _get_active_affixes().has(affix_id)
+
+func _affix_val(affix_id: StringName) -> float:
+	var roll: float = float(_cached_affixes.get(affix_id, 0.5))
+	return ItemDatabase.get_affix_value(affix_id, roll)
 
 func _get_weapon_affixes() -> Array:
 	var parsed := ItemDatabase.parse_star_id(equipped_weapon)
@@ -7449,9 +8124,9 @@ func _apply_affix_stat_bonuses() -> void:
 	var new_max_hp := base_max_hp
 	var new_max_stam := base_max_stam
 	if affixes.has(&"vitality"):
-		new_max_hp += 15.0
+		new_max_hp += _affix_val(&"vitality")
 	if affixes.has(&"endurance"):
-		new_max_stam += 20.0
+		new_max_stam += _affix_val(&"endurance")
 	if new_max_hp != max_health:
 		var hp_ratio := current_health / max_health if max_health > 0 else 1.0
 		max_health = new_max_hp
@@ -7468,14 +8143,20 @@ func _try_attack() -> void:
 		return
 	if _bow_drawing:
 		return
+	if _mounted:
+		return
 	var wpn_speed: float = _get_weapon_stat("attack_speed", 0.6)
-	if _has_affix(&"rapid_strikes") or _has_affix(&"rapid_chop") or _has_affix(&"quick_strike"):
-		wpn_speed *= 0.88
+	if _has_affix(&"rapid_strikes"):
+		wpn_speed *= (1.0 - _affix_val(&"rapid_strikes"))
+	elif _has_affix(&"rapid_chop"):
+		wpn_speed *= (1.0 - _affix_val(&"rapid_chop"))
+	elif _has_affix(&"quick_strike"):
+		wpn_speed *= (1.0 - _affix_val(&"quick_strike"))
 	if _crushing_momentum_timer > 0.0:
-		wpn_speed *= 0.80
+		wpn_speed *= (1.0 - _affix_val(&"crushing_momentum"))
 	var wpn_stamina: float = _get_weapon_stat("stamina_cost", 4.0)
 	if _has_affix(&"efficient_miner"):
-		wpn_stamina *= 0.8
+		wpn_stamina *= (1.0 - _affix_val(&"efficient_miner"))
 
 	if _attack_cooldown > 0.0 or not _can_spend_stamina(wpn_stamina):
 		return
@@ -7496,15 +8177,17 @@ func _try_attack() -> void:
 			tween.tween_property(_model, "position:z", -0.3, 0.05)
 			tween.tween_property(_model, "position:z", 0.0, 0.15)
 
-	var wpn_damage: float = _get_weapon_stat("damage", 5.0)
-	var wpn_range: float = _get_weapon_stat("range", 2.5)
+	var is_tool := str(wpn_data.get("type", "weapon")) == "tool"
+	var is_unarmed := equipped_weapon == &"fists" or is_tool
+	var fist_data: Dictionary = ItemDatabase.get_item(&"fists")
+	var wpn_damage: float = float(fist_data.get("damage", 5.0)) if is_tool else _get_weapon_stat("damage", 5.0)
+	var wpn_range: float = float(fist_data.get("range", 2.5)) if is_tool else _get_weapon_stat("range", 2.5)
 	if _has_affix(&"reaching"):
-		wpn_range *= 1.2
-	var wpn_knockback: float = _get_weapon_stat("knockback", 10.0)
-	var is_unarmed := equipped_weapon == &"fists"
+		wpn_range *= (1.0 + _affix_val(&"reaching"))
+	var wpn_knockback: float = float(fist_data.get("knockback", 10.0)) if is_tool else _get_weapon_stat("knockback", 10.0)
 	var hit_delay := 0.30 if is_2h else MELEE_HIT_DELAY
 	get_tree().create_timer(hit_delay).timeout.connect(
-		_resolve_attack.bind(wpn_damage, wpn_range, wpn_knockback, is_unarmed)
+		_resolve_attack.bind(wpn_damage, wpn_range, wpn_knockback, is_unarmed, "auto")
 	)
 
 
@@ -7547,16 +8230,56 @@ func _open_chest(chest_node: Node3D) -> void:
 
 
 func _apply_damage_to_creature(creature: Node3D, amount: float) -> void:
-	## Apply damage to creature (host-authoritative). Client sends RPC to host.
-	if creature.has_method("take_damage"):
-		if NetworkManager.is_connected_to_game() and not NetworkManager.is_server():
-			if creature.has_method("request_damage"):
-				creature.request_damage.rpc_id(1, amount, NetworkManager.get_peer_id())
-		else:
-			creature.take_damage(amount, self)
+	## Apply damage to creature (host-authoritative).
+	## Client routes through WorldStateSync to avoid RPC node-path mismatches
+	## on dynamically generated creature nodes.
+	if not creature.has_method("take_damage"):
+		return
+	if NetworkManager.is_connected_to_game() and not NetworkManager.is_server():
+		var zone_root := creature.get_parent()
+		if zone_root:
+			var zone_name: String = zone_root.name
+			var parts := zone_name.trim_prefix("Zone_").split("_")
+			if parts.size() >= 2:
+				var zx := int(parts[0])
+				var zz := int(parts[1])
+				var cidx := 0
+				for child in zone_root.get_children():
+					if child == creature:
+						break
+					if child is CreatureAI:
+						cidx += 1
+				var wss_nodes := get_tree().get_nodes_in_group(&"world_state_sync")
+				if not wss_nodes.is_empty():
+					var wss: WorldStateSync = wss_nodes[0] as WorldStateSync
+					wss.request_creature_damage.rpc_id(1, zx, zz, cidx, amount, NetworkManager.get_peer_id())
+				else:
+					if _DEBUG_LOG: print("[COMBAT] WorldStateSync not found — damage not sent")
+			else:
+				if _DEBUG_LOG: print("[COMBAT] Could not parse zone name '%s' for creature '%s'" % [zone_name, creature.name])
+	else:
+		creature.take_damage(amount, self)
 
 
-func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, single_target: bool = false) -> void:
+func _echoing_blade_hit(positions: Array[Vector3], echo_dmg: float) -> void:
+	const ECHO_RADIUS := 2.5
+	var already_hit: Array[Node3D] = []
+	for origin in positions:
+		for node: Node in get_tree().get_nodes_in_group(&"enemies"):
+			var enemy := node as Node3D
+			if not enemy or already_hit.has(enemy):
+				continue
+			if enemy.has_method("is_dead") and enemy.is_dead():
+				continue
+			if enemy.global_position.distance_to(origin) > ECHO_RADIUS:
+				continue
+			if enemy.has_method("take_damage"):
+				_apply_damage_to_creature(enemy, echo_dmg)
+				DamageNumber.spawn(get_tree(), enemy.global_position + Vector3.UP * 1.0, echo_dmg, false, "ability")
+				already_hit.append(enemy)
+
+
+func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, single_target: bool = false, hit_type: String = "auto") -> void:
 	var cam: Camera3D = _spring_arm.get_child(0) if _spring_arm.get_child_count() > 0 else null
 	if not cam:
 		return
@@ -7570,31 +8293,33 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 	if affixes.has(&"cleaving") and not single_target:
 		cone_threshold = -0.3
 
-	var dmg := wpn_damage * randf_range(0.7, 1.3)
+	var base_roll := wpn_damage * randf_range(0.7, 1.3)
+
+	var affix_bonus := 0.0
 	if affixes.has(&"berserker"):
 		var missing_pct := 1.0 - (current_health / max_health)
-		dmg *= 1.0 + minf(missing_pct * 0.5, 0.5)
+		var berserk_cap := _affix_val(&"berserker")
+		affix_bonus += minf(missing_pct * berserk_cap, berserk_cap)
 	if affixes.has(&"momentum"):
-		dmg *= 1.0 + _momentum_stacks * 0.04
+		affix_bonus += _momentum_stacks * _affix_val(&"momentum")
 	if affixes.has(&"relentless_fury"):
-		dmg *= 1.0 + _momentum_stacks * 0.05
+		affix_bonus += _momentum_stacks * _affix_val(&"relentless_fury")
 	if _retaliation_timer > 0.0:
-		dmg *= 1.3
+		affix_bonus += _affix_val(&"retaliation")
+
+	var dmg := base_roll * (1.0 + affix_bonus)
 
 	var kb := wpn_knockback
-	if affixes.has(&"brutal_force"):
-		kb *= 1.25
 
-	# Crit
 	var crit_chance := 5.0 + base_dexterity * 0.5
-	var crit_dmg := 150.0 + base_strength * 2.0
+	var crit_mult := (150.0 + base_strength * 2.0) / 100.0
 	if affixes.has(&"sharpened"):
-		crit_chance += 10.0
+		crit_chance += _affix_val(&"sharpened")
 	if affixes.has(&"savage"):
-		crit_dmg += 40.0
+		crit_mult += _affix_val(&"savage")
 	var did_crit := randf() < crit_chance / 100.0
 	if did_crit:
-		dmg *= crit_dmg / 100.0
+		dmg *= crit_mult
 
 	var hit_something := false
 	var hit_enemies: Array[Node3D] = []
@@ -7604,6 +8329,8 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 	for node: Node in get_tree().get_nodes_in_group(&"enemies"):
 		var enemy: Node3D = node as Node3D
 		if not enemy:
+			continue
+		if enemy.has_method("is_dead") and enemy.is_dead():
 			continue
 		var to_enemy: Vector3 = enemy.global_position - check_origin
 		to_enemy.y = 0.0
@@ -7619,20 +8346,21 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 				best_dist = dist
 				best_enemy = enemy
 		else:
-			var final_dmg := dmg
+			var target_bonus := 0.0
 			if affixes.has(&"executioner"):
 				var ehp: float = enemy.get("current_health") if enemy.get("current_health") != null else 999.0
 				var emhp: float = enemy.get("max_health") if enemy.get("max_health") != null else 999.0
 				if emhp > 0.0 and ehp / emhp < 0.3:
-					final_dmg *= 1.3
+					target_bonus += _affix_val(&"executioner")
 			if affixes.has(&"skull_crusher") and enemy.has_method("is_stunned") and enemy.is_stunned():
-				final_dmg *= 1.25
-			if affixes.has(&"bane") and randf() < 0.08:
-				final_dmg *= 2.0
+				target_bonus += _affix_val(&"skull_crusher")
+			if affixes.has(&"bane") and randf() < _affix_val(&"bane"):
+				target_bonus += 1.0
+			var final_dmg := dmg * (1.0 + target_bonus)
 			if enemy.has_method("take_damage"):
 				_apply_damage_to_creature(enemy, final_dmg)
 				_set_target_creature(enemy)
-				_DamageNumber.spawn(get_tree(), enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit)
+				_DamageNumber.spawn(get_tree(), enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit, hit_type)
 				hit_something = true
 				hit_enemies.append(enemy)
 			if kb > 0.0 and enemy is CharacterBody3D:
@@ -7641,20 +8369,21 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 				(enemy as CharacterBody3D).velocity += kb_dir * kb * 0.1
 
 	if single_target and best_enemy:
-		var final_dmg := dmg
+		var target_bonus := 0.0
 		if affixes.has(&"executioner"):
 			var ehp: float = best_enemy.get("current_health") if best_enemy.get("current_health") != null else 999.0
 			var emhp: float = best_enemy.get("max_health") if best_enemy.get("max_health") != null else 999.0
 			if emhp > 0.0 and ehp / emhp < 0.3:
-				final_dmg *= 1.3
+				target_bonus += _affix_val(&"executioner")
 		if affixes.has(&"skull_crusher") and best_enemy.has_method("is_stunned") and best_enemy.is_stunned():
-			final_dmg *= 1.25
-		if affixes.has(&"bane") and randf() < 0.08:
-			final_dmg *= 2.0
+			target_bonus += _affix_val(&"skull_crusher")
+		if affixes.has(&"bane") and randf() < _affix_val(&"bane"):
+			target_bonus += 1.0
+		var final_dmg := dmg * (1.0 + target_bonus)
 		if best_enemy.has_method("take_damage"):
 			best_enemy.take_damage(final_dmg, self)
 			_set_target_creature(best_enemy)
-			_DamageNumber.spawn(get_tree(), best_enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit)
+			_DamageNumber.spawn(get_tree(), best_enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit, hit_type)
 			hit_something = true
 			hit_enemies.append(best_enemy)
 		if kb > 0.0 and best_enemy is CharacterBody3D:
@@ -7666,34 +8395,29 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 	for enemy in hit_enemies:
 		if not is_instance_valid(enemy):
 			continue
+		if enemy.has_method("is_dead") and enemy.is_dead():
+			continue
 		# Lifesteal
 		if affixes.has(&"lifesteal"):
-			var heal_amt := dmg * 0.08
+			var heal_amt := dmg * _affix_val(&"lifesteal")
+			var pre_hp := current_health
 			current_health = minf(current_health + heal_amt, max_health)
 			GameEvents.player_health_changed.emit(current_health, max_health)
+			var actual_heal := current_health - pre_hp
+			if actual_heal > 0.5 and _camera_pivot:
+				DamageNumber.spawn_heal(get_tree(), global_position, actual_heal, _camera_pivot.global_transform.basis)
 		# Siphon
 		if affixes.has(&"siphon"):
-			current_stamina = minf(current_stamina + 3.0, max_stamina)
+			current_stamina = minf(current_stamina + _affix_val(&"siphon"), max_stamina)
 			GameEvents.player_stamina_changed.emit(current_stamina, max_stamina)
 		# Firebrand
-		if affixes.has(&"firebrand") and randf() < 0.15:
+		if affixes.has(&"firebrand") and randf() < _affix_val(&"firebrand"):
 			var fire_dmg := wpn_damage * 0.5
 			if enemy.has_method("take_damage"):
 				enemy.take_damage(fire_dmg, self)
-				var fire_num := DamageNumber.new()
-				fire_num.text = "%.0f" % fire_dmg
-				fire_num.font_size = 22
-				fire_num.pixel_size = 0.008
-				fire_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-				fire_num.no_depth_test = true
-				fire_num.modulate = Color(1.0, 0.5, 0.1)
-				fire_num.outline_modulate = Color.BLACK
-				fire_num.outline_size = 5
-				fire_num._velocity = Vector3(randf_range(-0.5, 0.5), 2.5, 0)
-				get_tree().current_scene.add_child(fire_num)
-				fire_num.global_position = enemy.global_position + Vector3.UP * 1.5
+				DamageNumber.spawn(get_tree(), enemy.global_position + Vector3.UP * 1.0, fire_dmg, false, "ability")
 		# Chain Lightning
-		if affixes.has(&"chain_lightning") and randf() < 0.10:
+		if affixes.has(&"chain_lightning") and randf() < _affix_val(&"chain_lightning"):
 			var arc_dmg := wpn_damage * 0.4
 			var nearest: Node3D = null
 			var nearest_dist := 8.0
@@ -7701,93 +8425,79 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 				var other_3d := other as Node3D
 				if not other_3d or other_3d == enemy:
 					continue
+				if other_3d.has_method("is_dead") and other_3d.is_dead():
+					continue
 				var d := enemy.global_position.distance_to(other_3d.global_position)
 				if d < nearest_dist:
 					nearest_dist = d
 					nearest = other_3d
 			if nearest and nearest.has_method("take_damage"):
 				nearest.take_damage(arc_dmg, self)
-				var arc_num := DamageNumber.new()
-				arc_num.text = "⚡%.0f" % arc_dmg
-				arc_num.font_size = 22
-				arc_num.pixel_size = 0.008
-				arc_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-				arc_num.no_depth_test = true
-				arc_num.modulate = Color(0.4, 0.7, 1.0)
-				arc_num.outline_modulate = Color.BLACK
-				arc_num.outline_size = 5
-				arc_num._velocity = Vector3(0, 2.5, 0)
-				get_tree().current_scene.add_child(arc_num)
-				arc_num.global_position = nearest.global_position + Vector3.UP * 1.5
+				DamageNumber.spawn(get_tree(), nearest.global_position + Vector3.UP * 1.0, arc_dmg, false, "ability")
 		# Runic AoE
-		if affixes.has(&"runic") and randf() < 0.12:
+		if affixes.has(&"runic") and randf() < _affix_val(&"runic"):
 			var aoe_dmg := wpn_damage * 0.25
 			for other: Node in get_tree().get_nodes_in_group(&"enemies"):
 				var other_3d := other as Node3D
 				if not other_3d or other_3d == enemy:
 					continue
+				if other_3d.has_method("is_dead") and other_3d.is_dead():
+					continue
 				if enemy.global_position.distance_to(other_3d.global_position) < 5.0:
 					if other_3d.has_method("take_damage"):
 						_apply_damage_to_creature(other_3d, aoe_dmg)
-						_DamageNumber.spawn(get_tree(), other_3d.global_position + Vector3.UP * 1.0, aoe_dmg)
+						_DamageNumber.spawn(get_tree(), other_3d.global_position + Vector3.UP * 1.0, aoe_dmg, false, "ability")
 		# Frostbite
-		if affixes.has(&"frostbite") and randf() < 0.20:
+		if affixes.has(&"frostbite") and randf() < _affix_val(&"frostbite"):
 			if enemy.has_method("apply_slow"):
 				enemy.apply_slow(0.6, 3.0)
 		# Venomous
-		if affixes.has(&"venomous") and randf() < 0.12:
+		if affixes.has(&"venomous") and randf() < _affix_val(&"venomous"):
 			if enemy.has_method("apply_poison"):
 				var max_hp: float = float(enemy.get("max_health")) if enemy.get("max_health") != null else 100.0
 				enemy.apply_poison(max_hp * 0.03, 4.0, self)
 		# Stunning Blow
-		if affixes.has(&"stunning_blow") and randf() < 0.08:
+		if affixes.has(&"stunning_blow") and randf() < _affix_val(&"stunning_blow"):
 			if enemy.has_method("apply_stun"):
 				enemy.apply_stun(1.5)
 		# Concussive (mace): 20% chance to disorient
-		if affixes.has(&"concussive") and randf() < 0.20:
+		if affixes.has(&"concussive") and randf() < _affix_val(&"concussive"):
 			if enemy.has_method("apply_disorient"):
 				enemy.apply_disorient(3.0)
 		# Bone Breaker (mace): 10% chance to shred armor
-		if affixes.has(&"bone_breaker") and randf() < 0.10:
+		if affixes.has(&"bone_breaker") and randf() < _affix_val(&"bone_breaker"):
 			if enemy.has_method("apply_armor_shred"):
 				enemy.apply_armor_shred(0.30, 5.0)
 		# Earthshaker (mace): 12% chance for ground slam AoE
-		if affixes.has(&"earthshaker") and randf() < 0.12:
+		if affixes.has(&"earthshaker") and randf() < _affix_val(&"earthshaker"):
 			var slam_dmg := wpn_damage * 0.30
 			for aoe_node: Node in get_tree().get_nodes_in_group(&"enemies"):
 				var aoe_e := aoe_node as Node3D
 				if not aoe_e or aoe_e == enemy:
 					continue
+				if aoe_e.has_method("is_dead") and aoe_e.is_dead():
+					continue
 				if enemy.global_position.distance_to(aoe_e.global_position) < 3.0:
 					if aoe_e.has_method("take_damage"):
 						_apply_damage_to_creature(aoe_e, slam_dmg)
-						_DamageNumber.spawn(get_tree(), aoe_e.global_position + Vector3.UP * 1.0, slam_dmg)
+						_DamageNumber.spawn(get_tree(), aoe_e.global_position + Vector3.UP * 1.0, slam_dmg, false, "ability")
 		# Staggering (mace): 18% chance to stun briefly
-		if affixes.has(&"staggering") and randf() < 0.18:
+		if affixes.has(&"staggering") and randf() < _affix_val(&"staggering"):
 			if enemy.has_method("apply_stun"):
 				enemy.apply_stun(0.8)
 		# Thunderclap (mace): 8% chance for lightning AoE
-		if affixes.has(&"thunderclap") and randf() < 0.08:
+		if affixes.has(&"thunderclap") and randf() < _affix_val(&"thunderclap"):
 			var thunder_dmg := wpn_damage * 0.25
 			for t_node: Node in get_tree().get_nodes_in_group(&"enemies"):
 				var t_e := t_node as Node3D
 				if not t_e or t_e == enemy:
 					continue
+				if t_e.has_method("is_dead") and t_e.is_dead():
+					continue
 				if enemy.global_position.distance_to(t_e.global_position) < 3.0:
 					if t_e.has_method("take_damage"):
 						t_e.take_damage(thunder_dmg, self)
-						var t_num := DamageNumber.new()
-						t_num.text = "⚡%.0f" % thunder_dmg
-						t_num.font_size = 22
-						t_num.pixel_size = 0.008
-						t_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-						t_num.no_depth_test = true
-						t_num.modulate = Color(0.4, 0.7, 1.0)
-						t_num.outline_modulate = Color.BLACK
-						t_num.outline_size = 5
-						t_num._velocity = Vector3(0, 2.5, 0)
-						get_tree().current_scene.add_child(t_num)
-						t_num.global_position = t_e.global_position + Vector3.UP * 1.5
+						DamageNumber.spawn(get_tree(), t_e.global_position + Vector3.UP * 1.0, thunder_dmg, false, "ability")
 
 	# Momentum / Relentless Fury tracking
 	if (affixes.has(&"momentum") or affixes.has(&"relentless_fury")) and not hit_enemies.is_empty():
@@ -7796,11 +8506,21 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 
 	# Windfury: 30% chance to trigger 2 extra attacks (no recursion)
 	if affixes.has(&"windfury") and not _windfury_guard and not hit_enemies.is_empty():
-		if randf() < 0.30:
+		if randf() < _affix_val(&"windfury"):
 			_windfury_guard = true
-			_resolve_attack(wpn_damage, wpn_range, wpn_knockback, single_target)
-			_resolve_attack(wpn_damage, wpn_range, wpn_knockback, single_target)
+			_resolve_attack(wpn_damage, wpn_range, wpn_knockback, single_target, "ability")
+			_resolve_attack(wpn_damage, wpn_range, wpn_knockback, single_target, "ability")
 			_windfury_guard = false
+
+	if affixes.has(&"echoing_blade") and not _windfury_guard and not hit_enemies.is_empty():
+		var echo_positions: Array[Vector3] = []
+		for e in hit_enemies:
+			if is_instance_valid(e):
+				echo_positions.append(e.global_position)
+		var echo_dmg := wpn_damage * _affix_val(&"echoing_blade")
+		get_tree().create_timer(0.5).timeout.connect(
+			_echoing_blade_hit.bind(echo_positions, echo_dmg)
+		)
 
 	var harvestable_candidates: Array[Dictionary] = []
 	for node: Node in get_tree().get_nodes_in_group(&"interactables"):
@@ -7899,10 +8619,10 @@ func _hit_harvestable(node: Node3D, damage: float) -> void:
 	_DamageNumber.spawn(get_tree(), node.global_position + Vector3.UP * 2.0, effective_dmg)
 
 	# Frenzied Chop / Frenzied Mining: 25% chance to land 2 extra hits
-	if drop_id == &"wood" and _has_affix(&"sharpened_edge") and randf() < 0.25 and hp > 0.0:
+	if drop_id == &"wood" and _has_affix(&"sharpened_edge") and randf() < _affix_val(&"sharpened_edge") and hp > 0.0:
 		_hit_harvestable(node, effective_dmg)
 		_hit_harvestable(node, effective_dmg)
-	elif drop_id == &"stone" and _has_affix(&"precision_strike") and randf() < 0.25 and hp > 0.0:
+	elif drop_id == &"stone" and _has_affix(&"precision_strike") and randf() < _affix_val(&"precision_strike") and hp > 0.0:
 		_hit_harvestable(node, effective_dmg)
 		_hit_harvestable(node, effective_dmg)
 
@@ -7930,7 +8650,7 @@ func _destroy_rock(node: Node3D) -> void:
 				wss.record_object_destroyed(node)
 			else:
 				wss.request_destroy_object.rpc_id(1, key)
-				is_client_destroy = true  # Host will spawn loot; client must not
+				is_client_destroy = true
 
 	var drop_id: StringName = node.get_meta("drop_id", &"stone") as StringName
 	var drop_min: int = int(node.get_meta("drop_min", 2))
@@ -7942,17 +8662,26 @@ func _destroy_rock(node: Node3D) -> void:
 	if col:
 		col.disabled = true
 
+	var rock_pos := node.global_position
+	var rock_mi := node.get_node_or_null("MeshInstance3D") as MeshInstance3D
+	var rock_scale := 1.0
+	if rock_mi:
+		rock_scale = rock_mi.scale.x
+
+	_spawn_rock_explosion(rock_pos, rock_scale)
+
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var total := rng.randi_range(drop_min, drop_max)
 	if drop_id == &"stone" and _has_affix(&"prospector"):
-		total = ceili(total * 1.4)
+		total = ceili(total * (1.0 + _affix_val(&"prospector")))
 	elif drop_id == &"copper_ore" and _has_affix(&"ore_seeker"):
-		total = ceili(total * 1.3)
-	if _has_affix(&"rich_vein") and rng.randf() < 0.10:
+		total = ceili(total * (1.0 + _affix_val(&"ore_seeker")))
+	if _has_affix(&"rich_vein") and rng.randf() < _affix_val(&"rich_vein"):
 		total *= 2
 	var master_miner := _has_affix(&"heavy_swing")
 	var use_sync := wss and NetworkManager.is_connected_to_game() and NetworkManager.is_server()
+	const ROCK_LOOT_DELAY := 1.0
 	if not is_client_destroy:
 		for i in total:
 			var angle := rng.randf_range(0.0, TAU)
@@ -7966,59 +8695,108 @@ func _destroy_rock(node: Node3D) -> void:
 				reroll = ItemDatabase.roll_star_level(rng)
 				if reroll > stars:
 					stars = reroll
-			var pos := node.global_position + offset
+			var pos := rock_pos + offset
 			if use_sync:
-				wss.spawn_loot_synced(pos, drop_id, 1, stars)
+				wss.spawn_loot_synced(pos, drop_id, 1, stars, ROCK_LOOT_DELAY)
 			else:
 				var drop := LootDrop.new()
 				drop.item_id = drop_id
 				drop.star_level = stars
 				drop.amount = 1
+				drop.spawn_delay = ROCK_LOOT_DELAY
 				get_tree().current_scene.add_child(drop)
 				drop.global_position = pos
 
 		if rng.randf() < 0.4:
 			var flint_stars := ItemDatabase.roll_star_level(rng)
-			var flint_pos := node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			var flint_pos := rock_pos + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
 			if use_sync:
-				wss.spawn_loot_synced(flint_pos, &"flint", rng.randi_range(1, 2), flint_stars)
+				wss.spawn_loot_synced(flint_pos, &"flint", rng.randi_range(1, 2), flint_stars, ROCK_LOOT_DELAY)
 			else:
 				var flint_drop := LootDrop.new()
 				flint_drop.item_id = &"flint"
 				flint_drop.star_level = flint_stars
 				flint_drop.amount = rng.randi_range(1, 2)
+				flint_drop.spawn_delay = ROCK_LOOT_DELAY
 				get_tree().current_scene.add_child(flint_drop)
 				flint_drop.global_position = flint_pos
 
-		if _has_affix(&"vein_finder") and rng.randf() < 0.30:
-			var ore_pos := node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+		if _has_affix(&"vein_finder") and rng.randf() < _affix_val(&"vein_finder"):
+			var ore_pos := rock_pos + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
 			if use_sync:
-				wss.spawn_loot_synced(ore_pos, &"copper_ore", rng.randi_range(1, 2), ItemDatabase.roll_star_level(rng))
+				wss.spawn_loot_synced(ore_pos, &"copper_ore", rng.randi_range(1, 2), ItemDatabase.roll_star_level(rng), ROCK_LOOT_DELAY)
 			else:
 				var ore_drop := LootDrop.new()
 				ore_drop.item_id = &"copper_ore"
 				ore_drop.star_level = ItemDatabase.roll_star_level(rng)
 				ore_drop.amount = rng.randi_range(1, 2)
+				ore_drop.spawn_delay = ROCK_LOOT_DELAY
 				get_tree().current_scene.add_child(ore_drop)
 				ore_drop.global_position = ore_pos
 
 		if _has_affix(&"geologist") and rng.randf() < 0.20:
 			var rare_items: Array[StringName] = [&"gemstone", &"ancient_bone", &"ember_stone"]
 			var rare_id: StringName = rare_items[rng.randi_range(0, rare_items.size() - 1)]
-			var rare_pos := node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			var rare_pos := rock_pos + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
 			if use_sync:
-				wss.spawn_loot_synced(rare_pos, rare_id, 1, ItemDatabase.roll_star_level(rng))
+				wss.spawn_loot_synced(rare_pos, rare_id, 1, ItemDatabase.roll_star_level(rng), ROCK_LOOT_DELAY)
 			else:
 				var rare_drop := LootDrop.new()
 				rare_drop.item_id = rare_id
 				rare_drop.star_level = ItemDatabase.roll_star_level(rng)
 				rare_drop.amount = 1
+				rare_drop.spawn_delay = ROCK_LOOT_DELAY
 				get_tree().current_scene.add_child(rare_drop)
 				rare_drop.global_position = rare_pos
 
-	AudioManager.play_sfx_at("rock_fall", node.global_position, 2.0)
-	AudioManager.play_sfx_at("stone_rubble", node.global_position, -2.0)
+	AudioManager.play_sfx_at("rock_fall", rock_pos, 2.0)
+	AudioManager.play_sfx_at("stone_rubble", rock_pos, -2.0)
 	node.queue_free()
+
+
+func _spawn_rock_explosion(rock_pos: Vector3, rock_scale: float) -> void:
+	var scene_root := get_tree().current_scene
+	if not scene_root:
+		return
+
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var chunk_count := clampi(int(8 + rock_scale * 2.0), 8, 20)
+	var burst_pos := rock_pos + Vector3.UP * maxf(rock_scale * 0.3, 0.3)
+	var spread := maxf(rock_scale * 0.25, 0.2)
+	var chunk_base_size := clampf(rock_scale * 0.06, 0.05, 0.3)
+
+	for i in chunk_count:
+		var chunk := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		var sz := rng.randf_range(chunk_base_size * 0.5, chunk_base_size * 1.5)
+		box.size = Vector3(sz, sz * rng.randf_range(0.5, 1.2), sz * rng.randf_range(0.6, 1.0))
+		chunk.mesh = box
+
+		var grey := rng.randf_range(0.35, 0.6)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(grey, grey * rng.randf_range(0.92, 1.0), grey * rng.randf_range(0.88, 0.97))
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		chunk.set_surface_override_material(0, mat)
+
+		chunk.global_position = burst_pos + Vector3(
+			rng.randf_range(-spread, spread),
+			rng.randf_range(-spread * 0.3, spread * 0.5),
+			rng.randf_range(-spread, spread))
+		scene_root.add_child(chunk)
+
+		var angle := rng.randf_range(0.0, TAU)
+		var horiz_speed := rng.randf_range(2.5, 6.0)
+		var vert_speed := rng.randf_range(3.0, 7.0)
+		var end_pos := chunk.global_position + Vector3(cos(angle) * horiz_speed, vert_speed, sin(angle) * horiz_speed) * 0.4 + Vector3.DOWN * 3.0
+
+		var tw := chunk.create_tween()
+		tw.set_parallel(true)
+		tw.tween_property(chunk, "global_position", end_pos, 0.8) \
+			.set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		tw.tween_property(chunk, "rotation",
+			Vector3(rng.randf_range(-10.0, 10.0), rng.randf_range(-10.0, 10.0), rng.randf_range(-10.0, 10.0)), 0.8)
+		tw.chain().tween_callback(chunk.queue_free)
 
 
 func _get_terrain_slope_dir(pos: Vector3) -> Vector3:
@@ -8026,11 +8804,11 @@ func _get_terrain_slope_dir(pos: Vector3) -> Vector3:
 	if not wg:
 		return Vector3.ZERO
 	var sample_dist := 2.0
-	var h_center := wg.get_height_at(pos.x, pos.z)
-	var h_px := wg.get_height_at(pos.x + sample_dist, pos.z)
-	var h_nx := wg.get_height_at(pos.x - sample_dist, pos.z)
-	var h_pz := wg.get_height_at(pos.x, pos.z + sample_dist)
-	var h_nz := wg.get_height_at(pos.x, pos.z - sample_dist)
+	var h_center := wg.get_height_at_scene(pos.x, pos.z)
+	var h_px := wg.get_height_at_scene(pos.x + sample_dist, pos.z)
+	var h_nx := wg.get_height_at_scene(pos.x - sample_dist, pos.z)
+	var h_pz := wg.get_height_at_scene(pos.x, pos.z + sample_dist)
+	var h_nz := wg.get_height_at_scene(pos.x, pos.z - sample_dist)
 	var slope := Vector3(h_nx - h_px, 0.0, h_nz - h_pz)
 	if slope.length_squared() < 0.001:
 		return Vector3.ZERO
@@ -8047,8 +8825,12 @@ func _fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tr
 			if NetworkManager.is_server():
 				wss.record_object_destroyed(node)
 			else:
+				if _DEBUG_LOG: print("[FELL-CLIENT] Sending request_destroy_object key='%s' for node '%s'" % [key, node.name])
 				wss.request_destroy_object.rpc_id(1, key)
-				is_client_destroy = true  # Host will spawn loot; client must not
+				is_client_destroy = true
+		else:
+			if _DEBUG_LOG: print("[FELL-CLIENT] WARNING: could not compute key for node '%s' (parent='%s')" % [
+				node.name, node.get_parent().name if node.get_parent() else "null"])
 
 	var drop_id: StringName = node.get_meta("drop_id", &"wood") as StringName
 	var drop_min: int = int(node.get_meta("drop_min", 2))
@@ -8089,10 +8871,10 @@ func _fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tr
 
 	var fall_tween := node.create_tween()
 	fall_tween.set_ease(Tween.EASE_IN)
-	fall_tween.set_trans(Tween.TRANS_QUAD)
+	fall_tween.set_trans(Tween.TRANS_QUART)
 
 	node.rotation.y = fall_angle
-	var fall_duration := 0.82 if _has_affix(&"splitter") else 1.17
+	var fall_duration := (1.17 * (1.0 - _affix_val(&"splitter"))) if _has_affix(&"splitter") else 1.17
 	fall_tween.tween_property(node, "rotation:x", deg_to_rad(-85.0), fall_duration)
 
 	var fall_dir := Vector3(-sin(fall_angle), 0.0, -cos(fall_angle))
@@ -8109,8 +8891,8 @@ func _fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tr
 		rng.randomize()
 		var log_count := rng.randi_range(drop_min, drop_max)
 		if _has_affix(&"lumberjack"):
-			log_count = ceili(log_count * 1.4)
-		if _has_affix(&"double_yield") and rng.randf() < 0.10:
+			log_count = ceili(log_count * (1.0 + _affix_val(&"lumberjack")))
+		if _has_affix(&"double_yield") and rng.randf() < _affix_val(&"double_yield"):
 			log_count *= 2
 		var master_woodsman := _has_affix(&"heavy_chop")
 		var tree_wss := _get_world_state_sync()
@@ -8141,7 +8923,7 @@ func _fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tr
 					get_tree().current_scene.add_child(drop)
 					drop.global_position = pos
 
-			if _has_affix(&"bark_stripper") and rng.randf() < 0.25:
+			if _has_affix(&"bark_stripper") and rng.randf() < _affix_val(&"bark_stripper"):
 				var resin_pos := tree_base + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
 				if use_sync:
 					tree_wss.spawn_loot_synced(resin_pos, &"resin", rng.randi_range(1, 2), ItemDatabase.roll_star_level(rng))
@@ -8217,10 +8999,10 @@ func _spawn_tree_stump(tree_node: Node3D, base_pos: Vector3) -> void:
 	stump_root.name = "Stump"
 	stump_root.collision_layer = 0 if is_sapling_stump else 1
 	stump_root.collision_mask = 0
-	stump_root.global_position = base_pos
 	stump_root.set_meta("stump_radius", maxf(bot_r, top_r) + 0.1)
 	stump_root.add_to_group(&"stumps")
 	get_tree().current_scene.add_child(stump_root)
+	stump_root.global_position = base_pos
 	stump_root.add_child(stump_mi)
 	if not is_sapling_stump:
 		stump_root.add_child(col_shape)
@@ -8307,6 +9089,17 @@ func _update_interact_prompt() -> void:
 		if d < closest_dist:
 			closest_dist = d
 			closest_name = "Workbench"
+
+	# Check for nearby doors
+	for door in get_tree().get_nodes_in_group(&"doors"):
+		var d3d := door as Node3D
+		if not d3d:
+			continue
+		var d := global_position.distance_to(d3d.global_position)
+		if d < closest_dist:
+			closest_dist = d
+			var is_open: bool = d3d.get_meta("door_open", false)
+			closest_name = "Close Door" if is_open else "Open Door"
 
 	# Check for nearby chests
 	for ch in get_tree().get_nodes_in_group(&"chests"):
@@ -8435,12 +9228,14 @@ func _try_interact() -> void:
 
 	var best_loot: Node3D
 	var best_dist := 3.45
+	var my_peer_e := multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 0
 	for node in get_tree().get_nodes_in_group(&"loot"):
 		var loot := node as Node3D
 		if not loot:
 			continue
 		if "pickup_grace" in loot and loot.pickup_grace > 0.0:
-			continue
+			if "drop_owner_peer" in loot and loot.drop_owner_peer == my_peer_e:
+				continue
 		var d: float = global_position.distance_to(loot.global_position)
 		if d < best_dist:
 			best_dist = d
@@ -8461,6 +9256,15 @@ func _try_interact() -> void:
 		var h3d := horse as Node3D
 		if h3d and global_position.distance_to(h3d.global_position) < 3.5:
 			_mount(h3d)
+			return
+
+	# Check doors
+	for door in get_tree().get_nodes_in_group(&"doors"):
+		var d3d := door as StaticBody3D
+		if not d3d:
+			continue
+		if global_position.distance_to(d3d.global_position) < 3.5:
+			_toggle_door(d3d)
 			return
 
 	# Check chests
@@ -8536,28 +9340,29 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 	var pre_vel := velocity
 	var affixes := _get_active_affixes()
 
-	# Iron Skin: 8% chance to negate
-	if affixes.has(&"iron_skin") and randf() < 0.08:
-		var dodge_num := DamageNumber.new()
-		dodge_num.text = "Absorbed"
-		dodge_num.font_size = 20
-		dodge_num.pixel_size = 0.008
-		dodge_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		dodge_num.no_depth_test = true
-		dodge_num.modulate = Color(0.6, 0.8, 1.0)
-		dodge_num.outline_modulate = Color.BLACK
-		dodge_num.outline_size = 5
-		dodge_num._velocity = Vector3(0, 2.0, 0)
-		get_tree().current_scene.add_child(dodge_num)
-		dodge_num.global_position = global_position + Vector3.UP * 2.5
-		return
-	# Evasion: 5% auto-dodge
+	var proc_dr := 0.0
+	if affixes.has(&"iron_skin") and randf() < _affix_val(&"iron_skin"):
+		proc_dr = 0.85
+		var absorb_num := DamageNumber.new()
+		absorb_num.text = "Absorbed"
+		absorb_num.font_size = 20
+		absorb_num.pixel_size = 0.008
+		absorb_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		absorb_num.no_depth_test = true
+		absorb_num.modulate = Color(0.6, 0.8, 1.0)
+		absorb_num.outline_modulate = Color.BLACK
+		absorb_num.outline_size = 5
+		absorb_num._velocity = Vector3(0, 2.0, 0)
+		get_tree().current_scene.add_child(absorb_num)
+		absorb_num.global_position = global_position + Vector3.UP * 2.5
+
 	var dodge_roll := 0.0
 	if affixes.has(&"evasion"):
-		dodge_roll += 0.05
+		dodge_roll += _affix_val(&"evasion")
 	if affixes.has(&"nimble") and _is_sprinting:
-		dodge_roll += 0.08
-	if dodge_roll > 0.0 and randf() < dodge_roll:
+		dodge_roll += _affix_val(&"nimble")
+	if proc_dr == 0.0 and dodge_roll > 0.0 and randf() < dodge_roll:
+		proc_dr = 0.85
 		var evade_num := DamageNumber.new()
 		evade_num.text = "Evaded"
 		evade_num.font_size = 20
@@ -8570,13 +9375,10 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		evade_num._velocity = Vector3(0, 2.0, 0)
 		get_tree().current_scene.add_child(evade_num)
 		evade_num.global_position = global_position + Vector3.UP * 2.5
-		return
 
-	var final_amount := amount
-
-	# Deflection (shield): 15% chance to deflect projectile attacks
-	if affixes.has(&"deflection") and not _is_blocking and randf() < 0.15:
+	if proc_dr == 0.0 and affixes.has(&"deflection") and not _is_blocking and randf() < _affix_val(&"deflection"):
 		if _source and _source.global_position.distance_to(global_position) > 5.0:
+			proc_dr = 0.85
 			var defl_num := DamageNumber.new()
 			defl_num.text = "Deflected"
 			defl_num.font_size = 20
@@ -8589,51 +9391,32 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 			defl_num._velocity = Vector3(0, 2.0, 0)
 			get_tree().current_scene.add_child(defl_num)
 			defl_num.global_position = global_position + Vector3.UP * 2.5
-			return
 
-	# Shield Wall: +15% auto-block chance (not blocking required)
-	if affixes.has(&"shield_wall") and not _is_blocking and randf() < 0.15:
+	var final_amount := amount
+	if proc_dr > 0.0:
+		final_amount *= (1.0 - proc_dr)
+
+	if affixes.has(&"shield_wall") and not _is_blocking and randf() < _affix_val(&"shield_wall"):
 		final_amount *= 0.3
 
-	# Aegis: absorb damage with shield HP
 	if _aegis_shield > 0.0:
 		var absorbed := minf(final_amount, _aegis_shield)
 		_aegis_shield -= absorbed
 		final_amount -= absorbed
-	if affixes.has(&"aegis") and randf() < 0.10 and _aegis_timer <= 0.0:
+	if affixes.has(&"aegis") and randf() < _affix_val(&"aegis") and _aegis_timer <= 0.0:
 		_aegis_shield = max_health * 0.15
 		_aegis_timer = 5.0
 
-	# Iron Will (mace): +10% reduction while attacking
+	var dr_bonus := 0.0
 	if affixes.has(&"iron_will") and _is_attacking:
-		final_amount *= 0.9
-	# Thick Skinned: first hit in combat -30% (10s cooldown)
+		dr_bonus += _affix_val(&"iron_will")
 	if affixes.has(&"thick_skinned") and _thick_skinned_cooldown <= 0.0:
-		final_amount *= 0.7
+		dr_bonus += _affix_val(&"thick_skinned")
 		_thick_skinned_cooldown = 10.0
-	# Block
-	var did_block := _is_blocking
-	if _is_blocking:
-		if affixes.has(&"unbreakable") and current_health / max_health < 0.25:
-			final_amount = 0.0
-		else:
-			var block_mult := 0.2 if affixes.has(&"guardian") else 0.3
-			final_amount *= block_mult
-	# Armor
-	var armor_value := Inventory.get_total_armor()
-	if affixes.has(&"bulwark"):
-		armor_value += 3.0
-	if _fortress_active:
-		armor_value += 5.0
-	if armor_value > 0.0:
-		final_amount *= maxf(1.0 - (armor_value * 0.02), 0.2)
-	# Fortified: +8% reduction
 	if affixes.has(&"fortified"):
-		final_amount *= 0.92
-	# Last Stand: +25% reduction below 25% HP
+		dr_bonus += _affix_val(&"fortified")
 	if affixes.has(&"last_stand") and current_health / max_health < 0.25:
-		final_amount *= 0.75
-	# Battle Hardened: +5% per nearby enemy (max 3)
+		dr_bonus += _affix_val(&"last_stand")
 	if affixes.has(&"battle_hardened"):
 		var nearby_count := 0
 		for node: Node in get_tree().get_nodes_in_group(&"enemies"):
@@ -8642,22 +9425,45 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 				nearby_count += 1
 				if nearby_count >= 3:
 					break
-		final_amount *= maxf(1.0 - nearby_count * 0.05, 0.85)
+		dr_bonus += nearby_count * _affix_val(&"battle_hardened")
+
+	var did_block := _is_blocking
+	if _is_blocking:
+		if affixes.has(&"unbreakable") and current_health / max_health < 0.25:
+			dr_bonus += 0.90
+		elif affixes.has(&"guardian"):
+			dr_bonus += _affix_val(&"guardian")
+		else:
+			dr_bonus += 0.70
+
+	var armor_value := Inventory.get_total_armor()
+	if affixes.has(&"bulwark"):
+		armor_value += _affix_val(&"bulwark")
+	if _fortress_active:
+		armor_value += _affix_val(&"fortress")
+	var armor_dr := minf(armor_value * 0.02, 0.80)
+	dr_bonus += armor_dr
+
+	var total_dr := minf(dr_bonus, 0.85)
+	final_amount *= (1.0 - total_dr)
 
 	current_health = maxf(current_health - final_amount, 0.0)
 	_hp_pulse = 1.0
 	var regen_delay := health_regen_delay
 	if affixes.has(&"quick_recovery"):
-		regen_delay -= 2.0
+		regen_delay -= _affix_val(&"quick_recovery")
 	_health_regen_timer = regen_delay
 	GameEvents.player_health_changed.emit(current_health, max_health)
 	AudioManager.play_sfx("player_hurt", -2.0)
+
+	if final_amount > 0.5:
+		DamageNumber.spawn(get_tree(), global_position + Vector3.UP * 2.0, final_amount, false, "enemy")
 
 	# Shield post-hit procs
 	if did_block:
 		if affixes.has(&"retaliation"):
 			_retaliation_timer = 3.0
-		if affixes.has(&"shield_bash") and randf() < 0.25 and _source and _source.has_method("apply_stun"):
+		if affixes.has(&"shield_bash") and randf() < _affix_val(&"shield_bash") and _source and _source.has_method("apply_stun"):
 			_source.apply_stun(1.0)
 	if not _gltf_all_meshes.is_empty():
 		_gltf_flash(Color(1.0, 0.2, 0.2))
@@ -8676,23 +9482,25 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		velocity = pre_vel
 	elif affixes.has(&"stalwart"):
 		var kb_change := velocity - pre_vel
-		velocity = pre_vel + kb_change * 0.7
+		velocity = pre_vel + kb_change * (1.0 - _affix_val(&"stalwart"))
 
-	# Thorns: reflect 15% back
 	if affixes.has(&"thorns") and _source and _source.has_method("take_damage"):
-		_source.take_damage(amount * 0.15, self)
+		_source.take_damage(amount * _affix_val(&"thorns"), self)
 
-	# Second Wind: heal when below 20% HP
 	if affixes.has(&"second_wind") and _second_wind_cooldown <= 0.0:
 		if current_health > 0.0 and current_health / max_health < 0.20:
-			current_health = minf(current_health + max_health * 0.20, max_health)
+			var pre_hp := current_health
+			current_health = minf(current_health + max_health * _affix_val(&"second_wind"), max_health)
 			_second_wind_cooldown = 45.0
 			GameEvents.player_health_changed.emit(current_health, max_health)
+			var actual_heal := current_health - pre_hp
+			if actual_heal > 0.5 and _camera_pivot:
+				DamageNumber.spawn_heal(get_tree(), global_position, actual_heal, _camera_pivot.global_transform.basis)
 
 	if current_health <= 0.0:
 		# Undying: revive once (300s cooldown)
 		if affixes.has(&"undying") and _undying_cooldown <= 0.0:
-			current_health = max_health * 0.10
+			current_health = max_health * _affix_val(&"undying")
 			_undying_cooldown = 300.0
 			GameEvents.player_health_changed.emit(current_health, max_health)
 			var revive_num := DamageNumber.new()
@@ -8716,7 +9524,7 @@ func _handle_health_regen(delta: float) -> void:
 	if _health_regen_timer <= 0.0 and current_health < max_health:
 		var regen := health_regen_rate
 		if _has_affix(&"rejuvenation"):
-			regen *= 1.3
+			regen *= (1.0 + _affix_val(&"rejuvenation"))
 		current_health = minf(current_health + regen * delta, max_health)
 		GameEvents.player_health_changed.emit(current_health, max_health)
 	# Regenerator: +1 HP/s even during combat (ignores regen delay)
@@ -8775,7 +9583,7 @@ func _respawn() -> void:
 	velocity = Vector3.ZERO
 	current_health = max_health
 	_last_safe_position = Vector3.ZERO
-	_respawn_grace = 3.0
+	_respawn_grace = 10.0
 	var spawn_x := 0.0
 	var spawn_z := 0.0
 	var spawn_y := 0.5
@@ -8784,7 +9592,8 @@ func _respawn() -> void:
 		spawn_y = wg.get_height_at(spawn_x, spawn_z) + 0.2
 	if spawn_y > 5.0 or spawn_y < -5.0:
 		spawn_y = 0.5
-	global_position = Vector3(spawn_x, spawn_y, spawn_z)
+	var spawn_world := Vector3(spawn_x, spawn_y, spawn_z)
+	global_position = wg.world_to_scene_pos(spawn_world) if wg else spawn_world
 	velocity = Vector3.ZERO
 	_is_attacking = false
 	_is_jumping = false
@@ -8793,6 +9602,7 @@ func _respawn() -> void:
 	_is_dodging = false
 	_is_swimming = false
 	_swim_time = 0.0
+	_swim_fatigue = 0.0
 	if _player_sprite:
 		_player_sprite.visible = true
 		if not _gltf_all_meshes.is_empty():
@@ -8809,6 +9619,7 @@ func _respawn() -> void:
 	if _model and _player_yaw_offset != 0.0:
 		_model.rotation.y = _player_yaw_offset
 	GameEvents.player_health_changed.emit(current_health, max_health)
+	GameEvents.player_respawned.emit()
 
 
 var _mount_anim_player: AnimationPlayer = null
@@ -8928,7 +9739,7 @@ func _gltf_play(anim_name: String) -> void:
 
 	if not _gltf_play_warned.has(anim_name):
 		_gltf_play_warned[anim_name] = true
-		print("[PLAYER ANIM] '%s' not found. Available: %s" % [anim_name, _gltf_anim_player.get_animation_list()])
+		if _DEBUG_LOG: print("[PLAYER ANIM] '%s' not found. Available: %s" % [anim_name, _gltf_anim_player.get_animation_list()])
 
 
 func _lock_torso_height() -> void:
@@ -9434,7 +10245,7 @@ func _gltf_clear_flash() -> void:
 func _apply_pahlevan_texture() -> void:
 	var tex_path := "res://models/player/Pahlevan/Pahlevan_tripo_node_641e01bc-4c81-4461-be84-6538ef0e1a1a.jpg"
 	if not ResourceLoader.exists(tex_path):
-		print("[PLAYER MODEL] Pahlevan texture not found: ", tex_path)
+		if _DEBUG_LOG: print("[PLAYER MODEL] Pahlevan texture not found: ", tex_path)
 		return
 	var tex: Texture2D = load(tex_path)
 	if not tex:
@@ -9457,13 +10268,13 @@ func _apply_pahlevan_texture() -> void:
 		mat.metallic = 0.0
 		for mi in _gltf_all_meshes:
 			mi.material_override = mat
-	print("[PLAYER MODEL] Applied Pahlevan texture+shader to %d meshes" % _gltf_all_meshes.size())
+	if _DEBUG_LOG: print("[PLAYER MODEL] Applied Pahlevan texture+shader to %d meshes" % _gltf_all_meshes.size())
 
 
 func _apply_tripo_player_texture() -> void:
 	var tex_path := "res://models/player/Lowpolyvikingwithaxe/barbarian+3d+model_barbarian3dmodel_basecolor.jpg"
 	if not ResourceLoader.exists(tex_path):
-		print("[PLAYER MODEL] Tripo barbarian basecolor not found")
+		if _DEBUG_LOG: print("[PLAYER MODEL] Tripo barbarian basecolor not found")
 		return
 	var tex := load(tex_path) as Texture2D
 	if not tex:
@@ -9474,7 +10285,7 @@ func _apply_tripo_player_texture() -> void:
 	for mi in _gltf_all_meshes:
 		mi.material_override = mat
 		mi.visible = true
-	print("[PLAYER MODEL] Applied Tripo barbarian texture to %d meshes" % _gltf_all_meshes.size())
+	if _DEBUG_LOG: print("[PLAYER MODEL] Applied Tripo barbarian texture to %d meshes" % _gltf_all_meshes.size())
 
 
 func _apply_viking_texture() -> void:
@@ -9485,7 +10296,7 @@ func _apply_viking_texture() -> void:
 	if not ResourceLoader.exists(glb_path):
 		glb_path = "res://models/player/Lowpolyviking/low-poly+viking+3d+model (1).glb"
 	if not ResourceLoader.exists(glb_path):
-		print("[PLAYER MODEL] Viking GLB not found")
+		if _DEBUG_LOG: print("[PLAYER MODEL] Viking GLB not found")
 		return
 
 	var glb_scene: PackedScene = load(glb_path) as PackedScene
@@ -9507,7 +10318,7 @@ func _apply_viking_texture() -> void:
 			if mat:
 				glb_materials.append(mat)
 
-	print("[PLAYER MODEL] Extracted %d materials from GLB" % glb_materials.size())
+	if _DEBUG_LOG: print("[PLAYER MODEL] Extracted %d materials from GLB" % glb_materials.size())
 
 	# Make FBX meshes visible and apply GLB materials
 	var mat_idx := 0
@@ -9524,7 +10335,7 @@ func _apply_viking_texture() -> void:
 				if not glb_materials.is_empty():
 					mi.set_surface_override_material(surf_idx, glb_materials[glb_materials.size() - 1])
 
-	print("[PLAYER MODEL] Applied %d materials to FBX meshes (%d surfaces)" % [glb_materials.size(), mat_idx])
+	if _DEBUG_LOG: print("[PLAYER MODEL] Applied %d materials to FBX meshes (%d surfaces)" % [glb_materials.size(), mat_idx])
 
 	# Free the temporary GLB instance — we only needed its materials
 	glb_inst.queue_free()
@@ -9607,7 +10418,7 @@ func _print_node_tree(node: Node, depth: int) -> void:
 	if depth > 6:
 		return
 	var indent := "  ".repeat(depth)
-	print("%s%s (%s)" % [indent, node.name, node.get_class()])
+	if _DEBUG_LOG: print("%s%s (%s)" % [indent, node.name, node.get_class()])
 	for child in node.get_children():
 		_print_node_tree(child, depth + 1)
 
@@ -9645,11 +10456,11 @@ func _load_external_animations() -> void:
 	for anim_name in anim_files:
 		var path: String = anim_files[anim_name]
 		if not ResourceLoader.exists(path):
-			print("[PLAYER MODEL] External anim not found: ", path)
+			if _DEBUG_LOG: print("[PLAYER MODEL] External anim not found: ", path)
 			continue
 		var scene := load(path) as PackedScene
 		if not scene:
-			print("[PLAYER MODEL] Could not load: ", path)
+			if _DEBUG_LOG: print("[PLAYER MODEL] Could not load: ", path)
 			continue
 		var inst := scene.instantiate()
 		var ext_player: AnimationPlayer = _find_anim_player(inst)
@@ -9663,10 +10474,10 @@ func _load_external_animations() -> void:
 					if lib.has_animation(lib_name):
 						lib.remove_animation(lib_name)
 					lib.add_animation(lib_name, copy)
-					print("[PLAYER MODEL] Loaded external: %s -> %s (%.2fs)" % [path.get_file(), lib_name, copy.length])
+					if _DEBUG_LOG: print("[PLAYER MODEL] Loaded external: %s -> %s (%.2fs)" % [path.get_file(), lib_name, copy.length])
 					break
 		else:
-			print("[PLAYER MODEL] No AnimationPlayer in: ", path)
+			if _DEBUG_LOG: print("[PLAYER MODEL] No AnimationPlayer in: ", path)
 		inst.queue_free()
 
 
@@ -9698,18 +10509,18 @@ func _rename_nla_tracks() -> void:
 		var logical: String = nla_order[i] if i < nla_order.size() else "unknown_%d" % i
 		var anim := _gltf_anim_player.get_animation(a)
 		if anim:
-			print("[PLAYER MODEL] Track %d: %s -> %s (%.2fs)" % [i, a, logical, anim.length])
+			if _DEBUG_LOG: print("[PLAYER MODEL] Track %d: %s -> %s (%.2fs)" % [i, a, logical, anim.length])
 
 	var lib := _gltf_anim_player.get_animation_library("")
 	if not lib:
-		print("[PLAYER MODEL] No default animation library found, checking all libraries...")
+		if _DEBUG_LOG: print("[PLAYER MODEL] No default animation library found, checking all libraries...")
 		var lib_names := _gltf_anim_player.get_animation_library_list()
-		print("[PLAYER MODEL] Available libraries: ", lib_names)
+		if _DEBUG_LOG: print("[PLAYER MODEL] Available libraries: ", lib_names)
 		if lib_names.size() > 0:
 			lib = _gltf_anim_player.get_animation_library(lib_names[0])
-			print("[PLAYER MODEL] Using library: ", lib_names[0])
+			if _DEBUG_LOG: print("[PLAYER MODEL] Using library: ", lib_names[0])
 		if not lib:
-			print("[PLAYER MODEL] ERROR: Could not find any animation library!")
+			if _DEBUG_LOG: print("[PLAYER MODEL] ERROR: Could not find any animation library!")
 			return
 
 	for i in _nla_debug_names.size():
@@ -9725,12 +10536,12 @@ func _rename_nla_tracks() -> void:
 			if lib.has_animation(new_name):
 				lib.remove_animation(new_name)
 			lib.add_animation(new_name, anim)
-			print("[PLAYER MODEL] Renamed %s -> %s" % [old_name, new_name])
+			if _DEBUG_LOG: print("[PLAYER MODEL] Renamed %s -> %s" % [old_name, new_name])
 		else:
-			print("[PLAYER MODEL] WARNING: Track '%s' not found in library" % old_name)
+			if _DEBUG_LOG: print("[PLAYER MODEL] WARNING: Track '%s' not found in library" % old_name)
 
 	var final_anims := _gltf_anim_player.get_animation_list()
-	print("[PLAYER MODEL] Final animation list: ", final_anims)
+	if _DEBUG_LOG: print("[PLAYER MODEL] Final animation list: ", final_anims)
 
 
 func _strip_root_motion(anim: Animation) -> void:
@@ -9741,15 +10552,15 @@ func _strip_root_motion(anim: Animation) -> void:
 		var bone_part := path_str.get_slice(":", 1) if ":" in path_str else path_str.split("/")[-1]
 		if bone_part in root_bones and anim.track_get_type(i) == Animation.TYPE_POSITION_3D:
 			anim.remove_track(i)
-			print("[PLAYER MODEL] Stripped root motion track: ", path_str)
+			if _DEBUG_LOG: print("[PLAYER MODEL] Stripped root motion track: ", path_str)
 
 
 func _create_bone_attachment(label: String, bone_names: Array) -> Node3D:
 	var skel := _find_skeleton(_player_sprite)
 	if not skel:
-		print("[PLAYER MODEL] No Skeleton3D found for bone attachment: ", label)
+		if _DEBUG_LOG: print("[PLAYER MODEL] No Skeleton3D found for bone attachment: ", label)
 		return null
-	print("[PLAYER MODEL] Skeleton3D bones: ", _get_bone_names(skel))
+	if _DEBUG_LOG: print("[PLAYER MODEL] Skeleton3D bones: ", _get_bone_names(skel))
 	for bname in bone_names:
 		var bone_idx := skel.find_bone(bname)
 		if bone_idx >= 0:
@@ -9758,9 +10569,9 @@ func _create_bone_attachment(label: String, bone_names: Array) -> Node3D:
 			attachment.bone_name = bname
 			attachment.bone_idx = bone_idx
 			skel.add_child(attachment)
-			print("[PLAYER MODEL] Attached ", label, " to bone: ", bname, " (idx ", bone_idx, ")")
+			if _DEBUG_LOG: print("[PLAYER MODEL] Attached ", label, " to bone: ", bname, " (idx ", bone_idx, ")")
 			return attachment
-	print("[PLAYER MODEL] No matching bone for ", label, " tried: ", bone_names)
+	if _DEBUG_LOG: print("[PLAYER MODEL] No matching bone for ", label, " tried: ", bone_names)
 	return null
 
 
@@ -9911,7 +10722,7 @@ func _update_equipped_weapon_model() -> void:
 	if not _r_hand_anchor:
 		_r_hand_anchor = _create_bone_attachment("RightHand", ["R_Hand", "RightHand", "mixamorig_RightHand", "right_hand", "Hand_R", "hand.R", "Hand.R"])
 	if not _r_hand_anchor:
-		print("[PLAYER MODEL] WARNING: No right hand anchor found!")
+		if _DEBUG_LOG: print("[PLAYER MODEL] WARNING: No right hand anchor found!")
 		return
 
 	if not _back_anchor:

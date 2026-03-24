@@ -1,5 +1,8 @@
 class_name CreatureSyncManager
 extends Node
+
+const _DEBUG_LOG := false
+
 ## Batched creature state synchronization from host to clients.
 ##
 ## The host collects creature positions/states from loaded zones and broadcasts
@@ -18,7 +21,7 @@ var _diag_tick: int = 0
 
 func _ready() -> void:
 	add_to_group(&"creature_sync_manager")
-	print("[CSM] CreatureSyncManager ready | is_server=%s path=%s" % [str(multiplayer.is_server()), str(get_path())])
+	if _DEBUG_LOG: print("[CSM] CreatureSyncManager ready | is_server=%s path=%s" % [str(multiplayer.is_server()), str(get_path())])
 
 
 func _physics_process(_delta: float) -> void:
@@ -53,7 +56,7 @@ func _broadcast_creature_positions() -> void:
 				count += 1
 		if count > 0:
 			if _diag_tick <= 3 or _diag_tick % 100 == 0:
-				print("[CSM-HOST] Broadcasting zone (%d,%d): %d creatures" % [coord.x, coord.y, count])
+				if _DEBUG_LOG: print("[CSM-HOST] Broadcasting zone (%d,%d): %d creatures" % [coord.x, coord.y, count])
 			_receive_positions.rpc(coord.x, coord.y, positions, rotations, velocities)
 
 
@@ -97,7 +100,7 @@ func _receive_positions(zone_x: int, zone_z: int, positions: PackedFloat32Array,
 	var zone_root := _find_zone(zone_x, zone_z)
 	if not zone_root:
 		if _recv_diag <= 5 or _recv_diag % 300 == 0:
-			print("[CSM-CLIENT] Zone (%d,%d) NOT FOUND on client (recv #%d)" % [zone_x, zone_z, _recv_diag])
+			if _DEBUG_LOG: print("[CSM-CLIENT] Zone (%d,%d) NOT FOUND on client (recv #%d)" % [zone_x, zone_z, _recv_diag])
 		return
 	var idx := 0
 	var pos_i := 0
@@ -109,14 +112,14 @@ func _receive_positions(zone_x: int, zone_z: int, positions: PackedFloat32Array,
 				if not creature._sync_initialized:
 					creature.global_position = target_pos
 					creature._sync_initialized = true
-					print("[CSM-CLIENT] Creature '%s' in zone (%d,%d) initialized at %s" % [creature.name, zone_x, zone_z, str(target_pos)])
+					if _DEBUG_LOG: print("[CSM-CLIENT] Creature '%s' in zone (%d,%d) initialized at %s" % [creature.name, zone_x, zone_z, str(target_pos)])
 				creature._sync_target_position = target_pos
 				creature.velocity = Vector3(velocities[pos_i], velocities[pos_i + 1], velocities[pos_i + 2])
 				creature.rotation.y = rotations[idx]
 			pos_i += 3
 			idx += 1
 	if _recv_diag <= 3 or _recv_diag % 300 == 0:
-		print("[CSM-CLIENT] Recv #%d zone (%d,%d): applied to %d creatures" % [_recv_diag, zone_x, zone_z, idx])
+		if _DEBUG_LOG: print("[CSM-CLIENT] Recv #%d zone (%d,%d): applied to %d creatures" % [_recv_diag, zone_x, zone_z, idx])
 
 
 @rpc("authority", "reliable")

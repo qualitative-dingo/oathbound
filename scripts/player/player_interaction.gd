@@ -81,22 +81,28 @@ func open_chest(chest_node: Node3D) -> void:
 	if pc._inventory_panel:
 		pc._inventory_panel.visible = true
 		pc._refresh_inventory_ui()
+	if pc._minimap_biome_label:
+		pc._minimap_biome_label.visible = false
 	AudioManager.play_sfx_at("wood_thud", chest_node.global_position, -6.0, 0.2)
 
 
 func close_chest() -> void:
 	pc._chest_open = false
 	pc._chest_node = null
+	pc._hide_tooltip()
 	if pc._chest_panel:
 		pc._chest_panel.visible = false
 	if pc._inventory_panel and not pc._inventory_open:
 		pc._inventory_panel.visible = false
+	if pc._minimap_biome_label:
+		pc._minimap_biome_label.visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func refresh_chest_ui() -> void:
 	if not pc._chest_grid or not pc._chest_node:
 		return
+	pc._hide_tooltip()
 	for child in pc._chest_grid.get_children():
 		pc._chest_grid.remove_child(child)
 		child.free()
@@ -118,6 +124,11 @@ func refresh_chest_ui() -> void:
 		var count: int = int(slot_data.get("count", 0))
 
 		if item_id != &"" and count > 0:
+			var parsed: Dictionary = ItemDatabase.parse_star_id(item_id)
+			var slot_stars: int = int(parsed.get("stars", 0))
+			if slot_stars > 0:
+				slot_style.border_color = ItemDatabase.get_rarity_color(slot_stars)
+				slot_style.set_border_width_all(2)
 			var data: Dictionary = ItemDatabase.get_item(item_id)
 			var icon_path: String = str(data.get("icon", ""))
 			if icon_path != "" and ResourceLoader.exists(icon_path):
@@ -139,13 +150,14 @@ func refresh_chest_ui() -> void:
 			if count > 1:
 				var qty := Label.new()
 				qty.text = str(count)
-				qty.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-				qty.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-				qty.add_theme_font_size_override("font_size", 14)
-				qty.add_theme_color_override("font_color", Color.WHITE)
-				qty.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+				qty.add_theme_font_size_override("font_size", 11)
+				qty.add_theme_color_override("font_color", Color(0.9, 0.9, 0.8))
+				qty.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
 				qty.add_theme_constant_override("shadow_offset_x", 1)
 				qty.add_theme_constant_override("shadow_offset_y", 1)
+				qty.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+				qty.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+				qty.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 				qty.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				slot.add_child(qty)
 
@@ -153,6 +165,9 @@ func refresh_chest_ui() -> void:
 		slot.gui_input.connect(func(ev: InputEvent):
 			on_chest_slot_click(ev, slot_idx)
 		)
+		if item_id != &"" and count > 0:
+			slot.mouse_entered.connect(pc._show_tooltip_for_item.bind(item_id))
+			slot.mouse_exited.connect(pc._hide_tooltip)
 		pc._chest_grid.add_child(slot)
 
 
@@ -164,7 +179,9 @@ func on_chest_slot_click(event: InputEvent, slot_idx: int) -> void:
 	var mb := event as InputEventMouseButton
 	if mb.button_index != MOUSE_BUTTON_LEFT and mb.button_index != MOUSE_BUTTON_RIGHT:
 		return
-	if not mb.shift_pressed:
+
+	# Right-click (no shift) = take all; Shift+Left = take half; Shift+Right = take all
+	if mb.button_index == MOUSE_BUTTON_LEFT and not mb.shift_pressed:
 		return
 
 	var contents: Array = pc._chest_node.get_meta("chest_contents") as Array
@@ -176,7 +193,7 @@ func on_chest_slot_click(event: InputEvent, slot_idx: int) -> void:
 		return
 
 	var to_take: int
-	if mb.button_index == MOUSE_BUTTON_LEFT:
+	if mb.button_index == MOUSE_BUTTON_LEFT and mb.shift_pressed:
 		to_take = maxi(chest_count / 2, 1)
 	else:
 		to_take = chest_count
@@ -189,8 +206,8 @@ func on_chest_slot_click(event: InputEvent, slot_idx: int) -> void:
 		else:
 			contents[slot_idx] = {"item_id": chest_id, "count": chest_count}
 		pc._chest_node.set_meta("chest_contents", contents)
-		refresh_chest_ui()
-		pc._refresh_inventory_ui()
+		refresh_chest_ui.call_deferred()
+		pc._refresh_inventory_ui.call_deferred()
 	else:
 		NetworkManager.request_withdraw_from_chest.rpc_id(1, str(pc._chest_node.get_path()), str(chest_id), to_take)
 		pc._refresh_inventory_ui()
@@ -235,8 +252,8 @@ func deposit_inv_slot_to_chest(slot_idx: int, half_only: bool) -> void:
 				deposited += add
 		if deposited > 0:
 			pc._chest_node.set_meta("chest_contents", contents)
-		refresh_chest_ui()
-		pc._refresh_inventory_ui()
+		refresh_chest_ui.call_deferred()
+		pc._refresh_inventory_ui.call_deferred()
 	else:
 		NetworkManager.request_deposit_to_chest.rpc_id(1, str(pc._chest_node.get_path()), str(item_id), to_deposit)
 		pc._refresh_inventory_ui()
@@ -276,8 +293,8 @@ func deposit_item_to_chest(item_id: StringName, half_only: bool) -> void:
 				deposited += add
 		if deposited > 0:
 			pc._chest_node.set_meta("chest_contents", contents)
-		refresh_chest_ui()
-		pc._refresh_inventory_ui()
+		refresh_chest_ui.call_deferred()
+		pc._refresh_inventory_ui.call_deferred()
 	else:
 		NetworkManager.request_deposit_to_chest.rpc_id(1, str(pc._chest_node.get_path()), str(item_id), to_deposit)
 		pc._refresh_inventory_ui()
@@ -286,6 +303,23 @@ func deposit_item_to_chest(item_id: StringName, half_only: bool) -> void:
 # ===================================================================
 # INTERACT PROMPT & TRY INTERACT
 # ===================================================================
+
+var _interact_cache_timer := 0.0
+var _interact_cached_workbenches: Array[Node] = []
+var _interact_cached_doors: Array[Node] = []
+var _interact_cached_chests: Array[Node] = []
+var _interact_cached_horses: Array[Node] = []
+var _interact_cached_rafts: Array[Node] = []
+var _interact_cached_cave_entrances: Array[Node] = []
+const _INTERACT_CACHE_INTERVAL := 1.0
+
+func _refresh_interact_caches() -> void:
+	_interact_cached_workbenches = pc.get_tree().get_nodes_in_group(&"workbenches")
+	_interact_cached_doors = pc.get_tree().get_nodes_in_group(&"doors")
+	_interact_cached_chests = pc.get_tree().get_nodes_in_group(&"chests")
+	_interact_cached_horses = pc.get_tree().get_nodes_in_group(&"horses")
+	_interact_cached_rafts = pc.get_tree().get_nodes_in_group(&"rafts")
+	_interact_cached_cave_entrances = pc.get_tree().get_nodes_in_group(&"cave_entrances")
 
 func update_interact_prompt() -> void:
 	if not pc._interact_prompt:
@@ -296,52 +330,74 @@ func update_interact_prompt() -> void:
 			pc._world_name_label.visible = false
 		return
 
-	# Check for nearby workbenches
+	_interact_cache_timer -= 0.15
+	if _interact_cache_timer <= 0.0:
+		_interact_cache_timer = _INTERACT_CACHE_INTERVAL
+		_refresh_interact_caches()
+
+	var pp := pc.global_position
 	var closest_dist := 3.5
 	var closest_name := ""
-	for wb in pc.get_tree().get_nodes_in_group(&"workbenches"):
-		var wb3d := wb as Node3D
-		if not wb3d:
+	for wb in _interact_cached_workbenches:
+		if not is_instance_valid(wb):
 			continue
-		var d := pc.global_position.distance_to(wb3d.global_position)
+		var wb3d := wb as Node3D
+		if not wb3d or not wb3d.is_inside_tree():
+			continue
+		var d := pp.distance_to(wb3d.global_position)
 		if d < closest_dist:
 			closest_dist = d
 			closest_name = "Workbench"
 
-	# Check for nearby chests
-	for ch in pc.get_tree().get_nodes_in_group(&"chests"):
-		var ch3d := ch as Node3D
-		if not ch3d:
+	for door in _interact_cached_doors:
+		if not is_instance_valid(door):
 			continue
-		var d := pc.global_position.distance_to(ch3d.global_position)
+		var d3d := door as Node3D
+		if not d3d or not d3d.is_inside_tree():
+			continue
+		var d := pp.distance_to(d3d.global_position)
+		if d < closest_dist:
+			closest_dist = d
+			var is_open: bool = d3d.get_meta("door_open", false)
+			closest_name = "Close Door" if is_open else "Open Door"
+
+	for ch in _interact_cached_chests:
+		if not is_instance_valid(ch):
+			continue
+		var ch3d := ch as Node3D
+		if not ch3d or not ch3d.is_inside_tree():
+			continue
+		var d := pp.distance_to(ch3d.global_position)
 		if d < closest_dist:
 			closest_dist = d
 			closest_name = "Chest"
 
-	# Check for nearby horses/rafts (mount prompt) or show dismount
 	if pc._on_raft:
 		closest_name = "Dismount Raft"
 	elif pc._mounted:
 		closest_name = "Dismount"
 	else:
-		for horse in pc.get_tree().get_nodes_in_group(&"horses"):
-			var h3d := horse as Node3D
-			if not h3d:
+		for horse in _interact_cached_horses:
+			if not is_instance_valid(horse):
 				continue
-			var d := pc.global_position.distance_to(h3d.global_position)
+			var h3d := horse as Node3D
+			if not h3d or not h3d.is_inside_tree():
+				continue
+			var d := pp.distance_to(h3d.global_position)
 			if d < closest_dist:
 				closest_dist = d
 				closest_name = "Mount"
-		for raft in pc.get_tree().get_nodes_in_group(&"rafts"):
-			var r3d := raft as Node3D
-			if not r3d:
+		for raft in _interact_cached_rafts:
+			if not is_instance_valid(raft):
 				continue
-			var d := pc.global_position.distance_to(r3d.global_position)
+			var r3d := raft as Node3D
+			if not r3d or not r3d.is_inside_tree():
+				continue
+			var d := pp.distance_to(r3d.global_position)
 			if d < 4.0 and d < closest_dist:
 				closest_dist = d
 				closest_name = "Board Raft"
 
-	# Show interactable name only when crosshair is aimed at it (raycast)
 	var nearest_world_name := ""
 	var cam: Camera3D = pc._spring_arm.get_child(0) if pc._spring_arm.get_child_count() > 0 else null
 	if cam and cam.is_inside_tree() and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -367,22 +423,25 @@ func update_interact_prompt() -> void:
 					elif obj.has_meta("cave_exit"):
 						nearest_world_name = "Exit"
 
-	# Cave entrance / exit prompt
 	if not pc._in_cave:
-		for ce in pc.get_tree().get_nodes_in_group(&"cave_entrances"):
-			var ce3d := ce as Node3D
-			if not ce3d:
+		for ce in _interact_cached_cave_entrances:
+			if not is_instance_valid(ce):
 				continue
-			var d := pc.global_position.distance_to(ce3d.global_position)
+			var ce3d := ce as Node3D
+			if not ce3d or not ce3d.is_inside_tree():
+				continue
+			var d := pp.distance_to(ce3d.global_position)
 			if d < 4.0 and d < closest_dist:
 				closest_dist = d
 				closest_name = "Enter Cave"
 	else:
-		for node in pc.get_tree().get_nodes_in_group(&"interactables"):
-			var n3d := node as Node3D
-			if not n3d or not n3d.has_meta("cave_exit"):
+		for node in _interact_cached_cave_entrances:
+			if not is_instance_valid(node):
 				continue
-			var d := pc.global_position.distance_to(n3d.global_position)
+			var n3d := node as Node3D
+			if not n3d or not n3d.is_inside_tree() or not n3d.has_meta("cave_exit"):
+				continue
+			var d := pp.distance_to(n3d.global_position)
 			if d < 4.0 and d < closest_dist:
 				closest_dist = d
 				closest_name = "Exit Cave"
@@ -463,6 +522,15 @@ func try_interact() -> void:
 			mount(h3d)
 			return
 
+	# Check doors
+	for door in pc.get_tree().get_nodes_in_group(&"doors"):
+		var d3d := door as StaticBody3D
+		if not d3d:
+			continue
+		if pc.global_position.distance_to(d3d.global_position) < 3.5:
+			pc._toggle_door(d3d)
+			return
+
 	# Check chests
 	for ch in pc.get_tree().get_nodes_in_group(&"chests"):
 		var ch3d := ch as Node3D
@@ -473,6 +541,16 @@ func try_interact() -> void:
 				open_chest(ch3d)
 			else:
 				NetworkManager.request_open_chest.rpc_id(1, str(ch3d.get_path()))
+			return
+
+	# Check debug portals
+	for portal in pc.get_tree().get_nodes_in_group(&"debug_portals"):
+		var p3d := portal as Node3D
+		if not p3d:
+			continue
+		if pc.global_position.distance_to(p3d.global_position) < 4.0:
+			if p3d.has_method("interact"):
+				p3d.interact(pc)
 			return
 
 	# Check workbenches
@@ -531,6 +609,10 @@ func exit_cave() -> void:
 func mount(horse: Node3D) -> void:
 	pc._mounted = true
 	pc._mount_node = horse
+	pc._mount_star_level = int(horse.get_meta("star_level", 0))
+	pc._mount_max_stamina = float(horse.get_meta("max_stamina", 100.0))
+	pc._mount_stamina = float(horse.get_meta("current_stamina", pc._mount_max_stamina))
+	pc._mount_stamina_regen_timer = 0.0
 	pc._horse_walk_frames = horse.get_meta("walk_frames", {}) as Dictionary
 	pc._horse_run_frames = horse.get_meta("run_frames", {}) as Dictionary
 	pc._horse_anim_idx = 0
@@ -560,6 +642,10 @@ func mount(horse: Node3D) -> void:
 
 	if pc._footstep_player and pc._footstep_player.playing:
 		pc._footstep_player.stop()
+
+	var np_root := horse.get_node_or_null("HorseNameplateRoot")
+	if np_root:
+		np_root.visible = false
 
 	pc._sit_idle_anim_idx = 0
 	pc._sit_idle_anim_timer = 0.0
@@ -642,6 +728,8 @@ func force_dismount() -> void:
 		pc._gallop_player.stop()
 
 	if is_instance_valid(pc._mount_node):
+		pc._mount_node.set_meta("max_stamina", pc._mount_max_stamina)
+		pc._mount_node.set_meta("current_stamina", pc._mount_stamina)
 		pc._mount_node.add_to_group(&"horses")
 		if pc._mount_node is StaticBody3D:
 			(pc._mount_node as StaticBody3D).collision_layer = 4
@@ -653,6 +741,10 @@ func force_dismount() -> void:
 			var rider := pc._mount_node.get_node_or_null(tag)
 			if rider:
 				rider.queue_free()
+		var wg := pc.get_tree().root.get_node_or_null("TestWorld/WorldGenerator")
+		if wg and wg.has_method("get_height_at_scene"):
+			var hp := pc._mount_node.global_position
+			pc._mount_node.global_position.y = wg.get_height_at_scene(hp.x, hp.z)
 
 	pc._mount_node = null
 	pc._mount_anim_player = null
@@ -675,6 +767,11 @@ func dismount() -> void:
 		pc._gallop_player.stop()
 
 	if is_instance_valid(pc._mount_node):
+		var np_root := pc._mount_node.get_node_or_null("HorseNameplateRoot")
+		if np_root:
+			np_root.visible = true
+		pc._mount_node.set_meta("max_stamina", pc._mount_max_stamina)
+		pc._mount_node.set_meta("current_stamina", pc._mount_stamina)
 		pc._mount_node.add_to_group(&"horses")
 		if pc._mount_node is StaticBody3D:
 			(pc._mount_node as StaticBody3D).collision_layer = 4
@@ -688,7 +785,11 @@ func dismount() -> void:
 				rider.queue_free()
 		var offset := -pc.global_transform.basis.z * 2.0
 		offset.y = 0.0
-		pc._mount_node.global_position = pc.global_position + offset
+		var horse_pos := pc.global_position + offset
+		var wg := pc.get_tree().root.get_node_or_null("TestWorld/WorldGenerator")
+		if wg and wg.has_method("get_height_at_scene"):
+			horse_pos.y = wg.get_height_at_scene(horse_pos.x, horse_pos.z)
+		pc._mount_node.global_position = horse_pos
 
 	pc._mount_node = null
 	pc._mount_anim_player = null

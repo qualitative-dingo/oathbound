@@ -1,5 +1,8 @@
 class_name CreatureAI
 extends CharacterBody3D
+
+const _DEBUG_LOG := false
+
 ## Basic enemy creature with wander / aggro / chase / attack states.
 ## Visual is a Sprite3D billboard added by ZonePopulator.
 
@@ -45,9 +48,12 @@ var _armor_shred_timer: float = 0.0
 var _armor_shred_factor: float = 0.0
 var _target: Node3D
 var _cached_player: Node3D
+var _player_cache_timer: float = 0.0
+var _cached_world_gen: Node
 var _spawn_position: Vector3
 var _wander_direction: Vector3 = Vector3.ZERO
 var _wander_timer: float = 0.0
+var _aggro_check_cd: float = 0.0
 var _attack_timer: float = 0.0
 var _attack_hit_done: bool = false
 var _idle_timer: float = 0.0
@@ -60,7 +66,11 @@ var _hp_bar_full_width: float = 0.35
 var _nameplate_label: Label3D
 var _stars_label: Label3D
 var _nameplate_bg: Sprite3D
+var _accent_bar: Sprite3D
 static var _shared_panel_tex: ImageTexture
+static var _shared_accent_tex: ImageTexture
+const _BANNER_W := 128
+const _BANNER_H := 32
 var _anim_frame_idx: int = 0
 var _anim_frame_timer: float = 0.0
 var _roar_cooldown: float = 0.0
@@ -155,8 +165,10 @@ func _build_anim_map(anim_list: PackedStringArray) -> void:
 			var logical_order: Array[String]
 			if creature_kind == &"goblin":
 				logical_order = ["walk", "run", "death", "attack", "idle"]
-			elif creature_kind in [&"cyclops", &"orc_brute", &"minotaur"]:
+			elif creature_kind in [&"cyclops", &"orc_brute"]:
 				logical_order = ["walk", "attack", "run", "attack", "attack", "death"]
+			elif creature_kind == &"minotaur":
+				logical_order = ["walk", "attack", "run", "attack", "death", "idle"]
 			else:
 				logical_order = ["idle", "walk", "run", "attack", "death"]
 
@@ -182,7 +194,7 @@ func _build_anim_map(anim_list: PackedStringArray) -> void:
 		for logical_name in keywords:
 			_anim_map[logical_name] = first_anim
 
-	print("[CREATURE] %s (kind=%s) anim_map=%s full_list=%s" % [display_name, str(creature_kind), str(_anim_map), str(anim_list)])
+	if _DEBUG_LOG: print("[CREATURE] %s (kind=%s) anim_map=%s full_list=%s" % [display_name, str(creature_kind), str(_anim_map), str(anim_list)])
 
 
 func _play_model_anim(anim_name: String) -> void:
@@ -273,7 +285,7 @@ func _ready() -> void:
 		_cache_model_material_colors(_model_node)
 		if _model_anim_player:
 			var anim_list := _model_anim_player.get_animation_list()
-			print("[CREATURE] %s animations: %s" % [display_name, str(anim_list)])
+			if _DEBUG_LOG: print("[CREATURE] %s animations: %s" % [display_name, str(anim_list)])
 			_build_anim_map(anim_list)
 			var death_anim_name: String = _anim_map.get("death", "") as String
 			for anim_name in anim_list:
@@ -292,6 +304,8 @@ func _physics_process(delta: float) -> void:
 		_spawn_position = global_position
 		_recompute_ui_height()
 
+	_player_cache_timer -= delta
+	_aggro_check_cd -= delta
 	_update_proximity_label()
 
 	if _state == State.DEAD:
@@ -416,13 +430,13 @@ func _clamp_to_terrain() -> void:
 		return
 	_terrain_clamp_cd = 0.1
 
-	var wgs := get_tree().get_nodes_in_group(&"world_generator")
-	if wgs.is_empty():
+	if not is_instance_valid(_cached_world_gen):
+		var wgs := get_tree().get_nodes_in_group(&"world_generator")
+		_cached_world_gen = wgs[0] if not wgs.is_empty() else null
+	if not _cached_world_gen or not _cached_world_gen.has_method(&"get_height_at_scene"):
 		return
-	var wg: Node = wgs[0]
-	if not wg.has_method(&"get_height_at"):
-		return
-	var surface_y: float = wg.get_height_at(global_position.x, global_position.z)
+	var wg: Node = _cached_world_gen
+	var surface_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
 	var target_y := surface_y + 0.05
 	var diff := global_position.y - target_y
 	if diff < -2.0:
@@ -835,7 +849,6 @@ func _do_attack() -> void:
 		var target_peer := _target.get_multiplayer_authority()
 		if not multiplayer.has_multiplayer_peer() or target_peer == multiplayer.get_unique_id():
 			_target.take_damage(eff_dmg, self)
-			_DamageNumber.spawn(get_tree(), _target.global_position, eff_dmg, false, "enemy")
 		else:
 			deal_damage_to_player.rpc_id(target_peer, target_peer, eff_dmg)
 
@@ -856,9 +869,11 @@ func _get_nearest_player() -> Node3D:
 
 
 func _get_player() -> Node3D:
+	if is_instance_valid(_cached_player) and _player_cache_timer > 0.0:
+		return _cached_player
 	var nearest := _get_nearest_player()
-	if nearest != _cached_player or not is_instance_valid(_cached_player):
-		_cached_player = nearest
+	_cached_player = nearest
+	_player_cache_timer = 0.5
 	return _cached_player
 
 
@@ -867,6 +882,9 @@ func _check_aggro() -> void:
 		return
 	if is_instance_valid(_target):
 		return
+	if _aggro_check_cd > 0.0:
+		return
+	_aggro_check_cd = 0.25
 	var players := get_tree().get_nodes_in_group(&"player")
 	var best_target: Node3D = null
 	var best_dist := INF
@@ -1043,8 +1061,16 @@ func _tick_animation(delta: float) -> void:
 func _tick_3d_animation() -> void:
 	if not _model_node:
 		return
-	# Rotate model to face movement direction
+
 	var flat_vel := Vector2(velocity.x, velocity.z)
+
+	if _state == State.ATTACK and _target and is_instance_valid(_target):
+		var to_target := _target.global_position - global_position
+		var face_angle := atan2(to_target.x, to_target.z) + _model_yaw_offset
+		_model_node.rotation.y = lerp_angle(_model_node.rotation.y, face_angle, 0.25)
+		_play_model_anim("attack")
+		return
+
 	if flat_vel.length() > 0.3:
 		var target_angle := atan2(velocity.x, velocity.z) + _model_yaw_offset
 		_model_node.rotation.y = lerp_angle(_model_node.rotation.y, target_angle, 0.15)
@@ -1086,8 +1112,11 @@ func _tick_3d_animation() -> void:
 func request_damage(amount: float, source_peer: int) -> void:
 	if not multiplayer.is_server():
 		return
-	print("[CREATURE] request_damage received: %.1f from peer %d on '%s'" % [amount, source_peer, name])
-	take_damage(amount, _get_player_by_peer(source_peer))
+	var clamped := clampf(amount, 0.0, 9999.0)
+	if clamped != amount:
+		if _DEBUG_LOG: print("[CREATURE] WARN: peer %d sent suspicious damage %.1f, clamped to %.1f" % [source_peer, amount, clamped])
+	if _DEBUG_LOG: print("[CREATURE] request_damage received: %.1f from peer %d on '%s'" % [clamped, source_peer, name])
+	take_damage(clamped, _get_player_by_peer(source_peer))
 
 
 @rpc("authority", "reliable")
@@ -1096,7 +1125,6 @@ func deal_damage_to_player(peer_id: int, amount: float) -> void:
 	var player := _get_player_by_peer(peer_id)
 	if player and player.has_method("take_damage"):
 		player.take_damage(amount, self)
-		_DamageNumber.spawn(get_tree(), player.global_position, amount, false, "enemy")
 
 
 func _get_player_by_peer(peer_id: int) -> Node3D:
@@ -1132,9 +1160,10 @@ func take_damage(amount: float, source: Node3D = null) -> void:
 	if source and source.is_in_group(&"player"):
 		_target = source
 		_cached_player = source
-		_state = State.CHASE
 		_perch_target = null
 		_perch_settled = false
+		if _state != State.ATTACK:
+			_state = State.CHASE
 
 	if current_health <= 0.0:
 		_die()
@@ -1152,6 +1181,9 @@ func apply_poison(dps: float, duration: float, source: Node3D = null) -> void:
 	_poison_timer = maxf(_poison_timer, duration)
 	if source:
 		_poison_source = source
+
+func is_dead() -> bool:
+	return _state == State.DEAD
 
 func is_stunned() -> bool:
 	return _stun_timer > 0.0
@@ -1476,7 +1508,7 @@ func _create_floating_ui() -> void:
 		full_text += star_text
 
 	var label_fs := 32
-	var label_px := 0.00096
+	var label_px := 0.0075
 
 	_nameplate_label = Label3D.new()
 	_nameplate_label.name = "NameplateLabel"
@@ -1484,11 +1516,10 @@ func _create_floating_ui() -> void:
 	_nameplate_label.font_size = label_fs
 	_nameplate_label.pixel_size = label_px
 	_nameplate_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_nameplate_label.fixed_size = true
 	_nameplate_label.no_depth_test = false
 	_nameplate_label.modulate = Color.WHITE
-	_nameplate_label.outline_modulate = Color(0, 0, 0, 0.9)
-	_nameplate_label.outline_size = 6
+	_nameplate_label.outline_modulate = Color(0, 0, 0, 0.95)
+	_nameplate_label.outline_size = 10
 	_nameplate_label.render_priority = 1
 
 	if star_level > 0:
@@ -1499,11 +1530,10 @@ func _create_floating_ui() -> void:
 		_stars_label.font_size = label_fs
 		_stars_label.pixel_size = label_px
 		_stars_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		_stars_label.fixed_size = true
 		_stars_label.no_depth_test = false
 		_stars_label.modulate = ItemDatabase.get_rarity_color(star_level)
-		_stars_label.outline_modulate = Color(0, 0, 0, 0.9)
-		_stars_label.outline_size = 6
+		_stars_label.outline_modulate = Color(0, 0, 0, 0.95)
+		_stars_label.outline_size = 10
 		_stars_label.render_priority = 1
 		_stars_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 
@@ -1554,31 +1584,66 @@ static func _estimate_text_width(text: String, unit: float) -> float:
 	return w
 
 
+static func _smoothstep(edge0: float, edge1: float, x: float) -> float:
+	var t := clampf((x - edge0) / maxf(edge1 - edge0, 0.0001), 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
+
+
 static func _ensure_panel_tex() -> void:
 	if _shared_panel_tex:
 		return
-	var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
-	img.fill(Color.WHITE)
+
+	var img := Image.create(_BANNER_W, _BANNER_H, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+
+	var taper := 0.14
+	var border_width := 0.10
+	var interior := Color(0.06, 0.06, 0.10)
+	var border_col := Color(0.22, 0.19, 0.15)
+
+	for x in _BANNER_W:
+		for y in _BANNER_H:
+			var ux := float(x) / float(_BANNER_W - 1)
+			var uy := float(y) / float(_BANNER_H - 1)
+
+			var edge_dist := minf(ux, 1.0 - ux)
+			var taper_factor := _smoothstep(0.0, taper, edge_dist)
+
+			var half_h := 0.5 * taper_factor
+			var center_dist := absf(uy - 0.5)
+			if center_dist > half_h:
+				continue
+
+			var dist_from_edge := half_h - center_dist
+			var edge_soft := _smoothstep(0.0, 0.06, dist_from_edge)
+
+			var border_amt := 1.0 - _smoothstep(0.0, border_width * maxf(taper_factor, 0.3), dist_from_edge)
+			var col := interior.lerp(border_col, border_amt)
+
+			var sheen := 1.0 - (center_dist / maxf(half_h, 0.001))
+			col = col.lerp(Color(0.10, 0.09, 0.13), sheen * 0.12)
+
+			var alpha := 0.78 * edge_soft * _smoothstep(0.0, taper * 0.35, edge_dist)
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, alpha))
+
 	_shared_panel_tex = ImageTexture.create_from_image(img)
 
+	if not _shared_accent_tex:
+		var accent_img := Image.create(64, 4, false, Image.FORMAT_RGBA8)
+		accent_img.fill(Color(0, 0, 0, 0))
+		for ax in 64:
+			var aux := float(ax) / 63.0
+			var ae := minf(aux, 1.0 - aux)
+			var aa := _smoothstep(0.0, 0.18, ae) * 0.7
+			for ay in 4:
+				var auy := float(ay) / 3.0
+				var vert_fade := 1.0 - absf(auy - 0.5) * 1.6
+				accent_img.set_pixel(ax, ay, Color(1, 1, 1, aa * maxf(vert_fade, 0.0)))
+		_shared_accent_tex = ImageTexture.create_from_image(accent_img)
 
-func _attach_nameplate_bg(ui_root: Node3D, bg_w: float, bg_h: float, label_y: float) -> void:
-	_ensure_panel_tex()
 
-	_nameplate_bg = Sprite3D.new()
-	_nameplate_bg.name = "NameplateBG"
-	_nameplate_bg.texture = _shared_panel_tex
-	_nameplate_bg.modulate = Color(0.05, 0.05, 0.08, 0.85)
-	_nameplate_bg.pixel_size = bg_w / 4.0
-	_nameplate_bg.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_nameplate_bg.fixed_size = true
-	_nameplate_bg.no_depth_test = false
-	_nameplate_bg.transparent = true
-	_nameplate_bg.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-	_nameplate_bg.render_priority = 0
-	_nameplate_bg.position.y = label_y
-	_nameplate_bg.scale.y = bg_h / bg_w
-	ui_root.add_child(_nameplate_bg)
+func _attach_nameplate_bg(_ui_root: Node3D, _bg_w: float, _bg_h: float, _label_y: float) -> void:
+	pass
 
 
 func _update_hp_bar() -> void:

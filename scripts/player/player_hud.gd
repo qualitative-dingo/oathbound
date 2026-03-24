@@ -38,7 +38,7 @@ func setup_floating_bars() -> void:
 	pc._bar_anchor.add_child(pc._hp_bar)
 
 	pc._stam_bar = make_shader_bar(BAR_W, STAM_H,
-		Color(0.05, 0.2, 0.5), Color(0.15, 0.7, 0.9))
+		Color(0.35, 0.25, 0.05), Color(0.95, 0.75, 0.15))
 	pc._stam_bar.position = Vector3(0.0, -(BAR_H * 0.5 + STAM_H * 0.5 + GAP), 0.0)
 	pc._bar_anchor.add_child(pc._stam_bar)
 
@@ -112,8 +112,6 @@ func build_hud() -> void:
 
 
 func build_chat_ui(root: Control) -> void:
-	if not NetworkManager.is_connected_to_game():
-		return
 	pc._chat_panel = PanelContainer.new()
 	pc._chat_panel.name = "ChatPanel"
 	pc._chat_panel.anchor_left = 0.0
@@ -137,15 +135,15 @@ func build_chat_ui(root: Control) -> void:
 	chat_vbox.add_theme_constant_override("separation", 4)
 	pc._chat_panel.add_child(chat_vbox)
 
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 100)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	chat_vbox.add_child(scroll)
+	pc._chat_scroll = ScrollContainer.new()
+	pc._chat_scroll.custom_minimum_size = Vector2(0, 100)
+	pc._chat_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	pc._chat_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	chat_vbox.add_child(pc._chat_scroll)
 
 	pc._chat_log = VBoxContainer.new()
 	pc._chat_log.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(pc._chat_log)
+	pc._chat_scroll.add_child(pc._chat_log)
 
 	pc._chat_input = LineEdit.new()
 	pc._chat_input.placeholder_text = "Press Enter to chat..."
@@ -165,8 +163,42 @@ func build_chat_ui(root: Control) -> void:
 	chat_vbox.add_child(pc._chat_input)
 
 	root.add_child(pc._chat_panel)
+	pc._chat_panel.modulate.a = 0.0
+	pc._chat_visible = false
 	ChatManager.message_received.connect(_on_chat_message_received.bind(pc))
 	_refresh_chat_log(pc)
+
+
+func _show_chat(pc_ref: PlayerController) -> void:
+	pc_ref._chat_panel.modulate.a = 1.0
+	pc_ref._chat_visible = true
+	pc_ref._chat_fade_timer = 10.0
+
+
+func update_chat_fade(pc_ref: PlayerController, delta: float) -> void:
+	if not pc_ref._chat_panel:
+		return
+	if pc_ref._chat_focused:
+		pc_ref._chat_panel.modulate.a = 1.0
+		pc_ref._chat_visible = true
+		pc_ref._chat_fade_timer = 10.0
+		return
+	if pc_ref._chat_fade_timer > 0.0:
+		pc_ref._chat_fade_timer -= delta
+		if pc_ref._chat_fade_timer <= 0.0:
+			pc_ref._chat_fade_timer = 0.0
+	if not pc_ref._chat_visible:
+		return
+	if pc_ref._chat_fade_timer <= 0.0:
+		pc_ref._chat_panel.modulate.a = maxf(pc_ref._chat_panel.modulate.a - delta * 2.0, 0.0)
+		if pc_ref._chat_panel.modulate.a <= 0.0:
+			pc_ref._chat_visible = false
+
+
+func _scroll_chat_to_bottom(pc_ref: PlayerController) -> void:
+	if pc_ref._chat_scroll:
+		await pc_ref.get_tree().process_frame
+		pc_ref._chat_scroll.scroll_vertical = int(pc_ref._chat_scroll.get_v_scroll_bar().max_value)
 
 
 func _on_chat_input_gui_input(event: InputEvent, pc_ref: PlayerController) -> void:
@@ -176,6 +208,7 @@ func _on_chat_input_gui_input(event: InputEvent, pc_ref: PlayerController) -> vo
 			if ke.keycode == KEY_ESCAPE:
 				pc_ref._chat_input.release_focus()
 				pc_ref._chat_focused = false
+				_show_chat(pc_ref)
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 				get_viewport().set_input_as_handled()
 			elif ke.keycode == KEY_ENTER or ke.keycode == KEY_KP_ENTER:
@@ -185,12 +218,38 @@ func _on_chat_input_gui_input(event: InputEvent, pc_ref: PlayerController) -> vo
 				pc_ref._chat_focused = false
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 				if not text.is_empty():
-					ChatManager.send_message(text)
+					var cmd := text.strip_edges().to_lower()
+					if cmd == "oathsword" or cmd == "rosebud":
+						ItemDatabase.spawn_god_sword()
+					elif cmd == "oathgun" or cmd == "oathbow":
+						ItemDatabase.spawn_god_bow()
+					elif cmd == "oathaxe":
+						ItemDatabase.spawn_god_axe()
+					elif cmd == "oathpick" or cmd == "oathpickaxe":
+						ItemDatabase.spawn_god_pickaxe()
+					elif cmd == "oathmace":
+						ItemDatabase.spawn_god_mace()
+					elif cmd == "oathshield":
+						ItemDatabase.spawn_god_shield()
+					elif cmd == "oathchest" or cmd == "oathplate":
+						ItemDatabase.spawn_god_chest()
+					elif cmd == "oathlegs" or cmd == "oathcuisses":
+						ItemDatabase.spawn_god_legs()
+					elif cmd == "oathboots" or cmd == "oathstriders":
+						ItemDatabase.spawn_god_boots()
+					elif cmd == "oathall":
+						ItemDatabase.spawn_all_oath_gear()
+					elif cmd == "flight":
+						pc_ref.flight_mode = not pc_ref.flight_mode
+					else:
+						ChatManager.send_message(text)
+				_show_chat(pc_ref)
 				get_viewport().set_input_as_handled()
 
 
 func _on_chat_focus_entered(pc_ref: PlayerController) -> void:
 	pc_ref._chat_focused = true
+	_show_chat(pc_ref)
 
 
 func _on_chat_focus_exited(pc_ref: PlayerController) -> void:
@@ -199,6 +258,8 @@ func _on_chat_focus_exited(pc_ref: PlayerController) -> void:
 
 func _on_chat_message_received(sender: String, text: String, pc_ref: PlayerController) -> void:
 	_refresh_chat_log(pc_ref)
+	_show_chat(pc_ref)
+	_scroll_chat_to_bottom(pc_ref)
 
 
 func _refresh_chat_log(pc_ref: PlayerController) -> void:
@@ -363,6 +424,34 @@ func build_pause_menu() -> void:
 		if idx != -1:
 			AudioServer.set_bus_volume_db(idx, linear_to_db(val))
 	)
+
+	var dev_row := HBoxContainer.new()
+	dev_row.add_theme_constant_override("separation", 10)
+	dev_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var dev_check := CheckBox.new()
+	dev_check.text = "Dev Mode (free build & craft)"
+	dev_check.button_pressed = Inventory.dev_mode
+	dev_check.add_theme_font_size_override("font_size", 14)
+	dev_check.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
+	dev_check.toggled.connect(func(on: bool) -> void:
+		Inventory.dev_mode = on
+	)
+	dev_row.add_child(dev_check)
+	vbox.add_child(dev_row)
+
+	var fly_row := HBoxContainer.new()
+	fly_row.add_theme_constant_override("separation", 10)
+	fly_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var fly_check := CheckBox.new()
+	fly_check.text = "Flight Mode (noclip debug cam)"
+	fly_check.button_pressed = pc.flight_mode
+	fly_check.add_theme_font_size_override("font_size", 14)
+	fly_check.add_theme_color_override("font_color", Color(0.45, 0.65, 0.75))
+	fly_check.toggled.connect(func(on: bool) -> void:
+		pc.flight_mode = on
+	)
+	fly_row.add_child(fly_check)
+	vbox.add_child(fly_row)
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 6)
@@ -942,7 +1031,7 @@ func refresh_minimap() -> void:
 
 	pc._minimap_needs_refresh = false
 
-	var player_pos := pc.global_position
+	var player_pos := wg.get_world_position(pc)
 	var half_px := MINIMAP_PX / 2
 	var zone_size: float = wg.ZONE_SIZE
 	var water_col := Color(0.12, 0.28, 0.52)
@@ -1215,7 +1304,7 @@ func refresh_map() -> void:
 		pc._map_texture_rect.texture = pc._map_image_tex
 		return
 
-	var player_pos := pc.global_position
+	var player_pos := wg.get_world_position(pc)
 	var center_zone: Vector2i = wg.world_to_zone(player_pos)
 	var half_px := MAP_PX / 2
 	var explored: Dictionary = wg._explored_zones
@@ -1353,21 +1442,15 @@ func biome_map_color(biome: StringName, micro: StringName = &"none") -> Color:
 			&"birch_forest":  return Color(0.35, 0.55, 0.22)
 			&"hills":         return Color(0.45, 0.52, 0.32)
 			&"riverside":     return Color(0.32, 0.52, 0.35)
-	match biome:
-		&"hearthlands":     return Color(0.35, 0.55, 0.25)
-		&"thornwood":       return Color(0.15, 0.3, 0.1)
-		&"scorched_steppe": return Color(0.6, 0.45, 0.2)
-		&"ocean":           return Color(0.1, 0.2, 0.4)
-		_:                  return Color(0.2, 0.2, 0.2)
+	if biome == &"ocean":
+		return Color(0.1, 0.2, 0.4)
+	return Color(0.35, 0.55, 0.25)
 
 
 func biome_display_name(biome: StringName) -> String:
-	match biome:
-		&"hearthlands":     return "Hearthlands"
-		&"thornwood":       return "Thornwood"
-		&"scorched_steppe": return "Scorched Steppe"
-		&"ocean":           return "Ocean"
-		_:                  return "Unknown"
+	if biome == &"ocean":
+		return "Ocean"
+	return "Hearthlands"
 
 
 func microbiome_display_name(micro: StringName) -> String:

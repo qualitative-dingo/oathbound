@@ -57,10 +57,13 @@ Oathbound supports LAN co-op (Valheim-style) where one player hosts and others j
 - Each player node is named by peer ID (e.g. `Players/1`, `Players/2057384612`)
 - `MultiplayerSynchronizer` replicates position, rotation, animation, equipment, and display name
 - Primary animation/position sync uses `_broadcast_state` RPC at ~20Hz with immediate sends on animation changes (catches transient attack animations)
+- `_broadcast_state` also sends `current_health`, `max_health`, `current_stamina`, `max_stamina` so remote players display accurate floating HP/stamina bars
 - Remote players interpolate toward synced positions in `_physics_process`
-- Remote players load the same 3D model (GLTF), play synced animations via manual `AnimationPlayer.advance()`, and show floating nameplates
+- Remote players load the same 3D model (GLTF), play synced animations via manual `AnimationPlayer.advance()`, and show floating nameplates + HP/stamina bars
+- Remote player `_physics_process` calls `_update_floating_bars(delta)` so bars face the camera and update fill ratios
 - Model facing (yaw) is synced separately via `_remote_model_target_yaw` and interpolated with `lerp_angle`
 - Attack animations use `is_playing()` detection to restart finished non-looping clips on the receiver
+- **Critical:** `_fit_attack_anim_to_timer()` must set `_gltf_playing_clip` and `_gltf_playing_speed` (not just `_gltf_current_anim`) — these are the variables the broadcast reads. Missing this causes attack animations to be invisible to other players
 
 ### Creature Sync
 
@@ -70,8 +73,10 @@ Oathbound supports LAN co-op (Valheim-style) where one player hosts and others j
   - **Position/rotation/velocity** via unreliable RPC at ~10Hz (batched per loaded zone)
   - **State changes** (idle, chase, attack, dead) and health via reliable RPC on change
 - Clients interpolate creature positions toward `_sync_target_position` and strip root motion from animations to prevent model displacement
-- Player-to-creature damage: client sends `request_damage` RPC to host; host validates and applies
+- Player-to-creature damage: client routes damage through `WorldStateSync.request_creature_damage` RPC (zone coords + creature index), avoiding node-path mismatches on dynamically generated creature nodes. Host looks up the creature by zone + index and applies `take_damage` locally
 - Creature-to-player damage: host sends `deal_damage_to_player` RPC to the target client
+- Creatures hit mid-attack no longer get interrupted — `take_damage` only transitions to `CHASE` state if the creature is not already in `ATTACK` state
+- During attacks, creature models face their target (not velocity direction) to prevent rotation glitches
 
 ### World State Sync
 
@@ -80,8 +85,13 @@ Oathbound supports LAN co-op (Valheim-style) where one player hosts and others j
   - Destroyed harvestables (trees, rocks) — indexed by zone + position in group
   - Placed buildings — position, rotation, contents
   - Loot drops — host assigns `loot_id`, replicates via RPC, authoritative pickup
+  - Player-dropped items — routed through `WorldStateSync.spawn_player_drop_synced` (host) or `request_drop_item` RPC (client) so all peers see dropped items
 - Late-joining clients request the full mutation set to catch up
 - Loot pickup is host-authoritative: host calls `_grant_pickup` locally and broadcasts `_remove_loot` to clients (avoiding `call_local` RPC pitfalls)
+- **Pickup grace:** Dropped items track `drop_owner_peer` — only the dropper is blocked from picking up the item for 5 seconds; other players can grab it immediately
+- **Monster loot scatter:** ±0.85 units from death position (in `LootDrop._spawn_single_drop`)
+- **Tree wood scatter:** Along the full fallen trunk length (20%-90% of `trunk_h` in the fall direction, ±1.5 lateral). Trees are tall (30-55 units), so percentage-based scatter covers the whole fallen log. Client-felled trees go through `_spawn_loot_from_harvestable` on the host with a random fall direction
+- **HarvestableResource scatter:** `_compute_scatter_radius()` calculates 20% of the mesh AABB height for scatter radius (used by `HarvestableResource` scene instances like `tree_oak.tscn`)
 
 ### Save System & Inventory
 
@@ -92,6 +102,27 @@ Oathbound supports LAN co-op (Valheim-style) where one player hosts and others j
 - **Clients** auto-save their own inventory and player stats to a `lan_client` save file (periodic + on disconnect)
 - On session start, clients with no LAN save fall back to their character's most recent save from any world to preserve inventory across sessions
 - Health and stamina are always reset to max on session start (prevents spawning at low HP from stale saves)
+
+### Multiplayer Debugging Setup
+
+- **Dual-instance testing:** Godot editor setting "Game Embed Mode" must be set to **Floating Window** (Editor > Editor Settings > Interface > Editor > Game Embed Mode). This allows two game windows to exist side-by-side
+- **Automatic window layout:** `GameEvents._ready()` uses a UDP port probe to detect whether another instance is already running. First instance (host) positions left half of screen; second instance (client) positions right half. Window titles set to "Oathbound — Host" and "Oathbound — Client"
+- **Music slider:** Defaults to 0% volume at startup for quieter bug-testing sessions (the slider still works — music plays if you raise it)
+
+### Known Multiplayer Gotchas
+
+These are hard-won lessons from the LAN co-op implementation:
+
+1. **Never RPC directly to dynamically generated nodes** — creature nodes are created at runtime and may have different tree paths on host vs client. Route all cross-peer creature interactions through a scene-defined singleton like `WorldStateSync` using stable identifiers (zone coords + creature index)
+2. **`MultiplayerSpawner` can silently fail** — `_spawnable_scene_count: 0` at runtime even when scenes are registered in the inspector. Player replication uses direct RPCs instead
+3. **`_fit_attack_anim_to_timer` must update broadcast variables** — playing an animation locally via `AnimationPlayer.play()` doesn't automatically update `_gltf_playing_clip` / `_gltf_playing_speed`, which are what `_broadcast_state` sends. If you forget to set them, attack swings are invisible to other players
+4. **Remote player floating bars need explicit updates** — the remote player branch of `_physics_process` must call `_update_floating_bars(delta)` so HP/stamina bars face the camera and update their fill
+5. **`call_local` RPC pitfalls** — prefer separate local calls + `rpc()` to all remotes over `call_local` RPCs when the host needs different behavior from clients
+6. **Creature `take_damage` should not unconditionally change state** — interrupting an attack to enter CHASE causes visible animation glitches. Only transition if not already attacking
+7. **Dropped items must go through WorldStateSync** — locally creating a `LootDrop` node makes it invisible to other peers. All item drops (inventory shift+right-click, tree loot, monster loot) must use `_spawn_and_replicate_loot`
+8. **Pickup grace is per-player** — `LootDrop.drop_owner_peer` tracks who dropped the item. The 5s pickup delay only applies to the dropper; other players can grab immediately
+9. **Health/stamina resets on session start** — both host and client reset to max HP/stamina on spawn to avoid stale low-HP saves causing instant death
+10. **Client inventory persistence** — clients save to a `lan_client` save file. On first join, they fall back to their most recent character save from any world to carry over gear
 
 ## Core Systems
 
@@ -116,9 +147,15 @@ Oathbound uses **context-based weapon switching** — the equipped weapon used d
 | Ranged attack | Hold right-click (bow draw) → left-click to fire | **Bow** slot |
 | Block | Right-click (with shield) | **Shield** slot |
 
-**Damage variance:** All weapon damage has a ±30% random range per hit.
+**Damage variance:** All weapon damage has a ±30% random range per hit. Multi-arrow shots (Multishot, Quiver Mastery) each roll damage and crit independently.
 
-**Multiplayer combat:** Player damage to creatures is sent as an RPC to the host (`request_damage`), which validates and applies it. Creature damage to players is sent from the host to the target client via `deal_damage_to_player` RPC.
+**Bow draw speed:** Base draw time is 1.2 seconds (`BOW_MAX_DRAW_TIME`). Rapid Draw (+15%) and Quickdraw (+33%) stack additively on the draw speed multiplier.
+
+**Fall damage:** Players take damage when landing with downward velocity > 12.0 units/s. Red floating damage numbers are shown above the player.
+
+**Damage numbers:** WoW-style floating combat text with camera-relative spread. Simultaneous hits (e.g. 3 arrows) fan out left/right using the camera's basis vector so numbers don't overlap. Each number gets increasing lateral offset and directional velocity.
+
+**Multiplayer combat:** Player damage to creatures is routed through `WorldStateSync.request_creature_damage(zone_x, zone_z, creature_idx, amount, source_peer)` — this avoids node-path mismatches caused by dynamically generated creature nodes having different tree paths across peers. Creature damage to players is sent from the host to the target client via `deal_damage_to_player` RPC.
 
 ### Equipment Slots
 
@@ -289,10 +326,10 @@ Items can roll 0-5 stars, affecting stats and enabling affixes:
 |-------|--------|-------------|---------|
 | 0 | Common | 82.0% | 0 |
 | 1 | Uncommon | 10.9% | 0 |
-| 2 | Rare | 4.0% | 0 |
-| 3 | Epic | 2.0% | 1 |
-| 4 | Legendary | 0.8% | 2 |
-| 5 | Mythical | 0.3% | 3 |
+| 2 | Rare | 4.0% | 1 |
+| 3 | Epic | 2.0% | 2 |
+| 4 | Legendary | 0.8% | 3 |
+| 5 | Mythical | 0.3% | 5 |
 
 **Stat scaling per star:**
 - Damage: +15% per star
@@ -302,7 +339,7 @@ Items can roll 0-5 stars, affecting stats and enabling affixes:
 
 ## Affix System
 
-High-star equipment (3+) rolls random affixes from a pool specific to their item type. Tier 1 affixes are common; tier 2 affixes have half the roll weight.
+Equipment with 2+ stars rolls random affixes from a pool specific to their item type. Tier 1 affixes are common; tier 2 affixes have half the roll weight.
 
 ### Axe Affixes (10)
 
@@ -357,7 +394,7 @@ High-star equipment (3+) rolls random affixes from a pool specific to their item
 | Siphon | 1 | Restore 3 stamina per hit |
 | Runic | 2 | 12% chance to trigger AoE for 25% weapon damage |
 
-### Bow Affixes (10)
+### Bow Affixes (12)
 
 | Affix | Tier | Effect |
 |-------|------|--------|
@@ -371,6 +408,8 @@ High-star equipment (3+) rolls random affixes from a pool specific to their item
 | Explosive | 2 | 10% chance for arrows to deal AoE on impact |
 | Steady Aim | 1 | +12% crit chance while standing still |
 | Quiver Mastery | 1 | 15% chance to fire a bonus arrow on each shot |
+| Heatseeking | 2 | Arrows home toward nearby enemies in their trajectory (12-unit seek radius, ~66° cone) |
+| Quickdraw | 1 | 33% faster bow draw speed |
 
 ### Mace Affixes (10)
 
@@ -524,17 +563,129 @@ All man-made structures (except campfires, which have their own culling) are hid
 - **Throttled group queries** — `get_nodes_in_group` calls run on timers, not every frame
 - **Cached node references** — frequently accessed nodes stored as variables
 - **Heightmap lookups** — replace physics raycasts for terrain snapping
-- **Loot despawn timers** — dropped items auto-despawn after 60-180 seconds
-- **Zone cache pruning** — biome/water caches cleared when zones unload
+- **Loot despawn timers** — dropped items auto-despawn after 180 seconds
+- **Loot node cap** — `MAX_LOOT_NODES = 150`. When new loot spawns and the cap is exceeded, the oldest loot nodes are auto-despawned. Prevents unbounded node accumulation from heavy combat
+- **Loot nameplate throttling** — nameplate visibility checks run every 0.5s instead of every frame, using `distance_squared_to` to avoid sqrt. Previously O(N×P) per frame where N=loot count, P=player count
+- **Loot registry cleanup** — `WorldStateSync._loot_registry` entries are pruned when loot despawns naturally (180s) via `_cleanup_registry()`, and stale references are swept on zone unload via `_prune_loot_registry()`
+- **Creature sync state pruning** — `WorldStateSync._csync_last_states` entries are erased when zones unload (connected to `WorldGenerator.zone_unloaded` signal). Previously this dictionary grew unbounded as new zones were visited
+- **Debug print gating** — all ~118 `print()` calls across 10 script files are gated behind `const _DEBUG_LOG := false`. Zero console output in normal play. Set to `true` per-file when debugging
+- **Zone cache pruning** — biome/water/microbiome caches cleared when zones unload
 - **Shader simplification** — reduced FBM octaves in water shader
 - **Post-processing disabled** — SSAO and Glow off for performance
+- **Floating origin** — see "FPS Investigation" section below
+
+## FPS Investigation & Floating Origin
+
+### Problem
+
+Severe FPS degradation at large world coordinates. Near spawn (0, 0, 0): stable 60 FPS. At distant locations (5120, 0, 5120): 25 FPS. The FPS drop scaled with distance from world origin.
+
+### Investigation Process
+
+1. **Initial hypothesis — CPU backlog**: Terrain generation queues (`mesh_q`, `pop_q`) were unbounded. Fixed with backlog management (clearing stale entries, capping submissions). **Result: No improvement.** FPS still dropped at far locations even with idle world generator.
+
+2. **Initial hypothesis — Object count**: Aggressive LOD culling for trees, rocks, creatures. **Result: No improvement**, and caused slow tree pop-in. Reverted.
+
+3. **Portal test**: Added debug portal pair (spawn at (25, 20) ↔ far at (5120, 5120)) to isolate position-dependent performance. **Result: Instant FPS drop on teleport to far location**, confirming the issue was position-dependent, not content-dependent.
+
+4. **Nuking zones**: Spamming "nuke all zones" at far location temporarily raised FPS from 20→40, but it dropped back immediately when zones reloaded. **Result: Confirmed terrain rendering was involved.**
+
+5. **Sky test**: Looking straight up at the sky restored 60 FPS regardless of location. Windowed mode at 60% screen size also gave 60 FPS everywhere. **Result: Confirmed GPU fill-rate / fragment workload as the bottleneck layer.**
+
+6. **Minimap optimization**: Reduced minimap from ~33,696 pixel operations/frame to ~1,299 via low-res render + upscale. Minimap time dropped from 10ms to <1ms when disabled. **Result: Helped CPU time but did not fix the core FPS issue.**
+
+7. **Shader complexity test**: Replaced the full terrain shader (12 texture samples + 11 noise evaluations per pixel) with a solid green shader (`ALBEDO = vec3(0.3, 0.55, 0.2)`, zero textures, zero noise). **Result: Still 25 FPS at far location.** This eliminated shader complexity as the cause.
+
+8. **Terrain visibility test**: Added debug toggle to hide all terrain meshes entirely (`visible = false`). **Result: 60 FPS at far location with terrain hidden, 25 FPS with terrain visible (even solid green shader).** This proved the GPU vertex transform pipeline was the bottleneck — not fragment shading, not textures, not object count.
+
+### Root Cause
+
+**Large floating-point world coordinates cause GPU vertex transform performance degradation.** When terrain zone roots are positioned at (5120, 0, 5120), the GPU processes vertex transforms with large numbers. On Apple M4 (Metal 4.0, Forward+ renderer), this causes ~2.5x performance loss compared to coordinates near origin. The effect is:
+- Not shader-related (solid color shader still slow)
+- Not CPU-related (`proc` time inflated from CPU-GPU sync stalls, not script work)
+- Purely distance-from-origin dependent
+- Reproducible: looking at sky (reducing fill) or shrinking window restores 60 FPS
+
+### Solution: Floating Origin (confirmed fix — 60 FPS at all distances)
+
+Implemented a **floating origin** system that periodically re-centers the entire scene around the player. All Node3D children of the root scene are shifted so the player stays near (0, 0, 0) in scene space. Before the fix, the far portal location (5120, 5120) ran at 25 FPS. After: stable 60 FPS everywhere.
+
+**Key variables** (`world_generator.gd`):
+- `origin_shift: Vector3` — cumulative world-space offset applied to the scene
+- `ORIGIN_SHIFT_THRESHOLD = 512.0` — shift triggers when player scene-pos exceeds this (originally 2048, lowered after finding FPS degradation at ~500-1000 units)
+
+**Helper functions**:
+- `get_world_position(node)` — returns `node.global_position + origin_shift` (true world position)
+- `world_to_scene_pos(world_pos)` — returns `world_pos - origin_shift` (for node placement)
+- `get_height_at_scene(sx, sz)` — terrain height lookup from scene-space coordinates
+- `get_world_position_vec(scene_pos)` — converts a scene-space Vector3 to world coordinates
+
+**Systems updated**:
+- Zone placement: zones placed at `world_to_scene_pos(coord * ZONE_SIZE)`
+- Zone management: load/unload/LOD all use world positions via `get_world_position(player)`
+- Save/load: player and building positions saved as world coordinates, converted on load
+- Multiplayer sync: positions broadcast as world coordinates, converted to scene-space on receive
+- Minimap/map: terrain lookups use world-space player position
+- Portals/respawn: world coordinates converted to scene-space for `global_position` assignment
+- Creatures: terrain snap uses `get_height_at_scene()` for scene-space coordinates
+- Buildings: serialized with world positions, deserialized with scene-space conversion
+- Terrain shader: `origin_shift` uniform synced to all biome materials on every shift
+- Zone populator: `_ZonePopulator.origin_shift` kept in sync for structure proximity checks
+
+### Follow-up: Threshold Tuning
+
+The original `ORIGIN_SHIFT_THRESHOLD` of 2048 was too high. Testing showed FPS degrading from 60 to 32-46 at distances of ~500-1000 units from origin — well below the 2048 threshold, so the floating origin never triggered during normal exploration. Lowered to 512 so the origin shifts every ~8 zones of travel, keeping scene coordinates consistently small.
+
+### Follow-up: Terrain Shader Zone Seams
+
+After implementing floating origin, the terrain shader was temporarily set to use `v_local_pos = VERTEX` (model-space coordinates 0-64) to avoid large GPU coordinates. This caused **visible square artifacts at zone boundaries** — every zone got identical noise/dirt/brightness patterns because they all used the same 0-64 coordinate range.
+
+**Fix:** The shader now computes true world position in the vertex shader:
+```glsl
+uniform vec3 origin_shift;
+varying vec3 v_world_pos;
+void vertex() {
+    v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
+}
+```
+`MODEL_MATRIX * VERTEX` gives scene-space position (small thanks to floating origin), and adding `origin_shift` recovers the true world position for continuous texturing. Vertex transforms stay GPU-friendly (small scene coords), while fragment shader gets stable world coords for noise/texture continuity across zone boundaries. The `origin_shift` uniform is updated on all biome `ShaderMaterial`s whenever the origin shifts.
+
+### Follow-up: Floating Objects on Hills
+
+Trees, rocks, creatures, and horses were floating above the terrain on hills. **Root cause:** These objects used `height_func.call(wx, wz)` (the exact noise value at an arbitrary point) for their Y position, but the terrain mesh samples height on a 2-unit grid and **linearly interpolates** between vertices. On curved terrain (hills, valleys), the exact noise height and the mesh's interpolated height diverge.
+
+**Fix:** Switched all object placement to `_snap_height_to_mesh(wx, wz, height_func)`, which bilinearly interpolates between the same 4 grid vertices the terrain mesh uses. Grass and saplings already used this function (and sat correctly). Now all objects match the rendered terrain surface:
+- Trees: `_snap_height_to_mesh() - 1.5` (trunk burial offset)
+- Rocks: `_snap_height_to_mesh()`
+- Ground stones: `_snap_height_to_mesh() + 0.1`
+- Creatures: `_snap_height_to_mesh() + 0.1` (flying creatures add `fly_height`)
+- Horses: `_snap_height_to_mesh()`
+
+### Follow-up: Coordinate Mismatch in Structure Proximity
+
+After floating origin, `_is_near_structure()` in `zone_populator.gd` compared structure `global_position` (scene-space) against tree/rock world coordinates (`coord * ZONE_SIZE + local_offset`). After an origin shift, these are in different reference frames, breaking the proximity check (objects could spawn inside buildings).
+
+**Fix:** Added `ZonePopulator.origin_shift` static variable, kept in sync by `WorldGenerator._sync_origin_shift_to_shaders()`. The proximity function now converts structure positions to world-space: `(sp.x + origin_shift.x) - wx`.
+
+### Debug Panel Toggles
+
+The debug panel (F3) includes toggles for isolating performance issues:
+
+| Toggle | What it does |
+|--------|-------------|
+| Trees, Rocks, Saplings, Grass, Creatures, etc. | Hide/show specific object types |
+| Minimap | Disable minimap rendering entirely |
+| World Map | Disable full map rendering |
+| Fancy Terrain Shader | Switch between full shader (12 tex + 11 noise) and solid green |
+| Terrain Visible | Hide/show all terrain meshes (definitive GPU test) |
+| Disable ALL / Enable ALL | Bulk toggle for rapid isolation testing |
 
 ## Inventory & UI
 
 - **Grid inventory** with drag-and-drop reordering
 - **Right-click hold to equip** (0.5s progress bar) — moves item from inventory to equipment slot
-- **Shift + right-click to drop** items on the ground
-- **3-second pickup grace period** on dropped items to prevent accidental re-pickup
+- **Shift + right-click to drop** items on the ground (replicated via WorldStateSync so all peers see it)
+- **5-second pickup grace period** on dropped items — only blocks the dropper from re-picking up; other players can grab immediately
 - **Tooltips** show item name, type (specific: "Axe", "Chest Armor", etc.), stats, quality, star level, and affixes
 - **Crafting window** with building/equipment tabs and tier quality display (Low = white, Medium = blue, High = red)
 - **Building mode crosshair** — white `+` reticle with dark outline, visible only during build mode
@@ -542,12 +693,19 @@ All man-made structures (except campfires, which have their own culling) are hid
 
 ## Mounts
 
-Players can mount wild horses found in the world. While mounted:
-- Movement speed is multiplied by `MOUNT_SPEED_MULT`
+Players can mount wild horses found in the world. Horses spawn with 0-5 star levels (same star roll as creatures). Starred horses display a colored nameplate above them.
+
+### Horse Star Bonuses
+- **Speed:** Base mount speed is `MOUNT_SPEED_MULT_BASE = 2.0x`. Each star adds +20% (`MOUNT_SPEED_PER_STAR = 0.2`), so a 5★ horse is 3.0x speed
+- **Stamina:** Horses have their own stamina pool (base 100 + 20 per star). Galloping drains horse stamina, not player stamina. Horse stamina regens when not sprinting (18.0/s after 1.2s delay)
+- **Mount stamina bar:** A separate amber bar appears below the player's stamina bar while mounted
+
+### Mounted Movement
 - Jumping is disabled to prevent flight exploits
 - Vertical velocity is clamped to `[-10.0, 1.0]` for faster descent and limited upward movement
 - `floor_snap_length` is reduced to `1.5` and `floor_max_angle` to `55°` to avoid terrain snapping issues
 - Terrain raycast for mounted players limited to 3.0 units above current position
+- Horse stamina is saved back to the horse node metadata on dismount
 
 ## Fall Damage
 
@@ -556,6 +714,49 @@ Players take fall damage when landing with a downward velocity exceeding 12.0 un
 - **Light Step** — reduces fall damage by 30%
 
 A slope speed penalty (up to 40% reduction on steep slopes) is applied during normal movement. The **Sure-Footed** boot affix bypasses this penalty entirely.
+
+## Developer Cheat Codes
+
+Press Enter to open the chat box, type the command (case-insensitive), and press Enter:
+
+| Command | Effect |
+|---------|--------|
+| `rosebud` | Spawns **Oathbreaker** (god sword) — 5★ Godly sword with all 18 sword affixes, 25 damage |
+| `oathgun` | Spawns **Oathgun** (god bow) — 5★ Godly bow with all 12 bow affixes, 35 damage, 60 range |
+
+Both god weapons are registered in `ItemDatabase` as `god_sword` and `god_bow`. Their `spawn_god_*()` functions call `_get_affix_pool()` to dynamically collect all affixes for their slot, so new affixes are automatically included.
+
+## Monster Loot System
+
+Loot drops from creatures scale with their star level:
+
+### Piece Counts (per kill)
+
+| Stars | Pieces |
+|-------|--------|
+| 0★ | 2-4 |
+| 1★ | 3-5 |
+| 2★ | 4-6 |
+| 3★ | 6-9 |
+| 4★ | 9-12 |
+| 5★ | 12-15 |
+
+Each "piece" is 1-2 quantity of a random item from the creature's loot table (weighted by chance). Pieces scatter radially (0.5-3.5 unit radius, golden-angle pattern) to avoid clumping.
+
+### Quality Multiplier
+
+Each piece independently rolls star quality. Higher creature stars boost the chance of better quality:
+
+| Creature Stars | Quality Multiplier |
+|----------------|-------------------|
+| 0★ | 1.0x (base chance) |
+| 1★ | 1.2x |
+| 2★ | 1.5x |
+| 3★ | 1.8x |
+| 4★ | 2.5x |
+| 5★ | 3.3x |
+
+Rare/super drops are rolled independently with a `+2% per creature star` chance boost.
 
 ## Animation System
 
@@ -566,4 +767,4 @@ A slope speed penalty (up to 40% reduction on steep slopes) is applied during no
 - NlaTrack-based models have their tracks renamed to logical names (`chop`, `kick`, `walk`, `run`, `stand`, etc.) via `_rename_nla_tracks()`
 - Root motion position tracks are stripped from all animations (`_strip_root_motion`) to prevent model displacement from the collision body
 - Custom attack animations (`axe_swing`, `sword_slash`, `club_smash`) are procedurally rebuilt with explicit bone keyframes when the base animation exists in the model
-- **Multiplayer sync:** the local player broadcasts `_gltf_playing_clip` and `_gltf_playing_speed` via RPC; remote players play the clip with matching speed and detect finished non-looping animations to handle repeated attacks
+- **Multiplayer sync:** the local player broadcasts `_gltf_playing_clip` and `_gltf_playing_speed` via RPC; remote players play the clip with matching speed and detect finished non-looping animations to handle repeated attacks. Every code path that starts an animation (walk, run, attack, chop, mine) must set both `_gltf_playing_clip` and `_gltf_playing_speed` — these are the authoritative broadcast variables, not `_gltf_current_anim`

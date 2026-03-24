@@ -418,18 +418,9 @@ static func _add_cave_chest(parent: Node3D, pos: Vector3, fwd: Vector3, rng: Ran
 	chest.add_to_group(&"chests")
 	chest.set_meta("build_id", &"chest")
 
-	var sz := Vector3(0.8, 0.6, 0.5)
+	var sz := Vector3(1.92, 1.44, 1.2)
 
-	var mi := MeshInstance3D.new()
-	var bx := BoxMesh.new()
-	bx.size = sz
-	mi.mesh = bx
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.5, 0.35, 0.15)
-	mat.roughness = 0.8
-	mi.set_surface_override_material(0, mat)
-	mi.position.y = sz.y * 0.5
-	chest.add_child(mi)
+	PlayerBuilding.build_chest_visual(chest, sz)
 
 	var col := CollisionShape3D.new()
 	var box_col := BoxShape3D.new()
@@ -458,6 +449,7 @@ static func _add_cave_chest(parent: Node3D, pos: Vector3, fwd: Vector3, rng: Ran
 		slots[3] = {"item_id": &"bone", "count": rng.randi_range(3, 6)}
 
 	chest.set_meta("chest_contents", slots)
+	VillageGenerator._add_chest_rarity_sheen(chest, slots, sz)
 
 	chest.position = pos
 	if fwd.length_squared() > 0.01:

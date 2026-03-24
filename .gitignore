@@ -2,22 +2,40 @@
 .godot/
 .import/
 *.import
+*.uid
 
 # Export presets (may contain signing keys)
 export_presets.cfg
+
+# Export builds
+build/
+exports/
 
 # macOS
 .DS_Store
 .AppleDouble
 .LSOverride
 ._*
+Thumbs.db
 
-# IDE
+# Linux
+*~
+
+# IDE / Editor
 *.swp
 *.swo
-*~
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace
+
+# Cursor
+.cursor/
 
 # Backups
 backups/
+*.backup
+*.bak
+
+# Logs
+*.log

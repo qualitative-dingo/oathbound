@@ -58,6 +58,7 @@ signal inventory_changed()
 signal player_health_changed(current: float, maximum: float)
 signal player_stamina_changed(current: float, maximum: float)
 signal player_died()
+signal player_respawned()
 
 # --- Building ---
 signal building_piece_placed(piece: Node3D)

@@ -74,8 +74,8 @@ func add_xp(skill_id: StringName, multiplier: float = 1.0) -> void:
 	var base_xp: float = SKILL_DEFS[skill_id]["xp_per_use"]
 
 	# Soft cap: XP gain decreases as you approach max level
-	var level_factor := 1.0 - (skill["level"] / MAX_SKILL_LEVEL) * 0.5
-	var xp_gained := base_xp * multiplier * level_factor
+	var level_factor: float = 1.0 - (float(skill["level"]) / MAX_SKILL_LEVEL) * 0.5
+	var xp_gained: float = base_xp * multiplier * level_factor
 
 	skill["xp"] += xp_gained
 	skill_xp_gained.emit(skill_id, xp_gained)

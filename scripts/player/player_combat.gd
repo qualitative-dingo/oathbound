@@ -5,13 +5,16 @@ extends Node
 var pc: PlayerController
 
 const MELEE_HIT_DELAY := 0.18
-const BOW_MAX_DRAW_TIME := 1.8
+const BOW_MAX_DRAW_TIME := 1.2
 const BOW_MIN_DAMAGE_MULT := 0.2
 const BOW_MAX_DAMAGE_MULT := 2.0
 const BOW_RETICLE_MAX_RADIUS := 60.0
 const BOW_RETICLE_MIN_RADIUS := 6.0
 const ARROW_GRAVITY := 9.8
 const ARROW_MAX_LIFETIME := 5.0
+const HEATSEEK_RADIUS := 12.0
+const HEATSEEK_CONE_DOT := 0.4
+const HEATSEEK_TURN_SPEED := 4.5
 
 const _DamageNumber = preload("res://scripts/ui/damage_number.gd")
 const _LootDrop = preload("res://scripts/items/loot_drop.gd")
@@ -26,15 +29,34 @@ func is_bow_weapon(wpn: StringName) -> bool:
 
 
 func tick_bow_draw(delta: float, holding_draw: bool) -> void:
+	if pc._mounted:
+		if pc._bow_drawing:
+			cancel_bow_draw()
+		return
 	if holding_draw and not pc._is_attacking and not pc._is_dodging:
 		if not pc._bow_drawing:
+			if pc.current_stamina <= 0.0:
+				return
 			pc._bow_drawing = true
 			pc._bow_tension = 0.0
 			if not pc._weapon_drawn:
 				pc._draw_weapon()
 			show_bow_reticle()
 			start_bow_creak()
-		var draw_mult := 1.15 if has_affix(&"rapid_draw") else 1.0
+		var bow_id: StringName = Inventory.get_equipped("bow")
+		var bow_data: Dictionary = ItemDatabase.get_item(bow_id) if bow_id != &"" else {}
+		var wpn_stamina: float = float(bow_data.get("stamina_cost", 4.0))
+		var drain_per_sec := wpn_stamina / BOW_MAX_DRAW_TIME
+		var drain := drain_per_sec * delta
+		if pc.current_stamina < drain:
+			cancel_bow_draw()
+			return
+		pc._spend_stamina(drain)
+		var draw_mult := 1.0
+		if has_affix(&"quickdraw"):
+			draw_mult += affix_val(&"quickdraw")
+		if has_affix(&"rapid_draw"):
+			draw_mult += affix_val(&"rapid_draw")
 		pc._bow_tension = minf(pc._bow_tension + delta * draw_mult, BOW_MAX_DRAW_TIME)
 		update_bow_creak(delta)
 		update_bow_draw_sprite()
@@ -85,13 +107,13 @@ func cancel_bow_draw() -> void:
 func fire_bow() -> void:
 	if not pc._bow_drawing:
 		return
+	pc._respawn_grace = 0.0
 	var bow_id: StringName = Inventory.get_equipped("bow")
 	var bow_data: Dictionary = ItemDatabase.get_item(bow_id) if bow_id != &"" else {}
 	var tension_pct := clampf(pc._bow_tension / BOW_MAX_DRAW_TIME, 0.0, 1.0)
 	var base_damage: float = float(bow_data.get("damage", 8.0)) * randf_range(0.7, 1.3)
 	var damage_mult := lerpf(BOW_MIN_DAMAGE_MULT, BOW_MAX_DAMAGE_MULT, tension_pct)
 	var final_damage: float = base_damage * damage_mult
-	var wpn_stamina: float = float(bow_data.get("stamina_cost", 4.0))
 	var wpn_knockback: float = float(bow_data.get("knockback", 10.0)) * tension_pct
 
 	pc._bow_drawing = false
@@ -100,11 +122,6 @@ func fire_bow() -> void:
 	stop_bow_creak()
 	if pc._bow_arrow_node:
 		pc._bow_arrow_node.visible = false
-
-	if not pc._can_spend_stamina(wpn_stamina):
-		pc._revert_to_idle_sprite()
-		return
-	pc._spend_stamina(wpn_stamina)
 
 	start_attack_animation()
 
@@ -124,65 +141,196 @@ func fire_bow() -> void:
 	var crit_chance := 5.0 + pc.base_dexterity * 0.5
 	var crit_dmg_mult := (150.0 + pc.base_strength * 2.0) / 100.0
 	if affixes.has(&"steady_aim") and pc.velocity.length() < 0.5:
-		crit_chance += 12.0
+		crit_chance += affix_val(&"steady_aim")
 	if randf() < crit_chance / 100.0:
 		final_damage *= crit_dmg_mult
 
+	var base_wpn_damage: float = float(bow_data.get("damage", 8.0))
 	var arrow_speed := lerpf(8.0, 32.0, tension_pct)
 	if affixes.has(&"rapid_draw"):
-		arrow_speed *= 1.15
+		arrow_speed *= (1.0 + affix_val(&"rapid_draw"))
 	var launch_dir := aim_dir + Vector3.UP * lerpf(0.08, 0.02, tension_pct)
-	spawn_arrow(spawn_pos, launch_dir.normalized() * arrow_speed, final_damage, wpn_knockback, tension_pct)
+	var bow_parsed: Dictionary = ItemDatabase.parse_star_id(bow_id)
+	var bow_stars: int = int(bow_parsed.get("stars", 0))
+	var bow_quality_color: Variant = bow_data.get("quality_color", null)
+	spawn_arrow(spawn_pos, launch_dir.normalized() * arrow_speed, final_damage, wpn_knockback, tension_pct, bow_stars, bow_quality_color)
 	AudioManager.play_sfx_at("arrow_swoosh", spawn_pos, -2.0)
 
-	if affixes.has(&"multishot") and randf() < 0.20:
-		var offset_dir := cam_right * 0.3
-		spawn_arrow(spawn_pos + offset_dir, launch_dir.normalized() * arrow_speed, final_damage, wpn_knockback, tension_pct)
-		AudioManager.play_sfx_at("arrow_swoosh", spawn_pos, -4.0)
-	if affixes.has(&"quiver_mastery") and randf() < 0.15:
-		var offset_dir := cam_right * -0.3
-		spawn_arrow(spawn_pos + offset_dir, launch_dir.normalized() * arrow_speed, final_damage, wpn_knockback, tension_pct)
+	if affixes.has(&"echoing_shot"):
+		var echo_chance: float = affix_val(&"echoing_shot")
+		var offset_sign := 1.0
+		while randf() < echo_chance:
+			var echo_dmg := base_wpn_damage * randf_range(0.7, 1.3) * damage_mult
+			if randf() < crit_chance / 100.0:
+				echo_dmg *= crit_dmg_mult
+			var offset_dir := cam_right * (0.3 * offset_sign)
+			spawn_arrow(spawn_pos + offset_dir, launch_dir.normalized() * arrow_speed, echo_dmg, wpn_knockback, tension_pct, bow_stars, bow_quality_color)
+			AudioManager.play_sfx_at("arrow_swoosh", spawn_pos, -4.0)
+			offset_sign *= -1.0
 
 
-func spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float, tension_pct: float = 1.0) -> void:
+func _get_arrow_aura_color(bow_stars: int, quality_color: Variant) -> Color:
+	if quality_color is Color:
+		return quality_color as Color
+	if bow_stars >= 5:
+		return Color(0.9, 0.1, 0.1)
+	if bow_stars == 4:
+		return Color(1.0, 0.502, 0.0)
+	return Color.WHITE
+
+
+func _make_unshaded_mat(col: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = col
+	return m
+
+
+func _make_glow_mat(col: Color, alpha: float, energy: float) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.albedo_color = Color(col.r, col.g, col.b, alpha)
+	m.emission_enabled = true
+	m.emission = col
+	m.emission_energy_multiplier = energy
+	m.no_depth_test = true
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	return m
+
+
+func spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float, tension_pct: float = 1.0, bow_stars: int = 0, quality_color: Variant = null) -> void:
 	var arrow := Node3D.new()
 	arrow.name = "Arrow"
 	arrow.global_position = origin
 
+	var is_legendary := bow_stars >= 4
+	var aura_color := _get_arrow_aura_color(bow_stars, quality_color)
+
+	# --- Arrow shaft ---
 	var mesh_inst := MeshInstance3D.new()
 	mesh_inst.name = "ArrowMesh"
 	var box := BoxMesh.new()
 	box.size = Vector3(0.05, 0.05, 0.8)
 	mesh_inst.mesh = box
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.45, 0.3, 0.12)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mesh_inst.set_surface_override_material(0, mat)
+	if is_legendary:
+		var mat := _make_unshaded_mat(aura_color)
+		mat.emission_enabled = true
+		mat.emission = aura_color
+		mat.emission_energy_multiplier = 8.0
+		mesh_inst.set_surface_override_material(0, mat)
+	else:
+		mesh_inst.set_surface_override_material(0, _make_unshaded_mat(Color(0.45, 0.3, 0.12)))
 	arrow.add_child(mesh_inst)
 
+	# --- Arrowhead ---
 	var tip_inst := MeshInstance3D.new()
 	tip_inst.name = "Tip"
 	var tip_mesh := BoxMesh.new()
 	tip_mesh.size = Vector3(0.08, 0.08, 0.12)
 	tip_inst.mesh = tip_mesh
-	var tip_mat := StandardMaterial3D.new()
-	tip_mat.albedo_color = Color(0.3, 0.3, 0.3)
-	tip_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	tip_inst.set_surface_override_material(0, tip_mat)
+	if is_legendary:
+		var tip_mat := _make_unshaded_mat(Color(1.0, 1.0, 0.9))
+		tip_mat.emission_enabled = true
+		tip_mat.emission = aura_color
+		tip_mat.emission_energy_multiplier = 12.0
+		tip_inst.set_surface_override_material(0, tip_mat)
+	else:
+		tip_inst.set_surface_override_material(0, _make_unshaded_mat(Color(0.3, 0.3, 0.3)))
 	tip_inst.position.z = -0.42
 	arrow.add_child(tip_inst)
 
+	# --- Fletching ---
 	var fletch_inst := MeshInstance3D.new()
 	fletch_inst.name = "Fletch"
 	var fletch_mesh := BoxMesh.new()
 	fletch_mesh.size = Vector3(0.1, 0.1, 0.1)
 	fletch_inst.mesh = fletch_mesh
-	var fletch_mat := StandardMaterial3D.new()
-	fletch_mat.albedo_color = Color(0.8, 0.8, 0.75)
-	fletch_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	fletch_inst.set_surface_override_material(0, fletch_mat)
+	if is_legendary:
+		var fm := _make_unshaded_mat(aura_color)
+		fm.emission_enabled = true
+		fm.emission = aura_color
+		fm.emission_energy_multiplier = 6.0
+		fletch_inst.set_surface_override_material(0, fm)
+	else:
+		fletch_inst.set_surface_override_material(0, _make_unshaded_mat(Color(0.8, 0.8, 0.75)))
 	fletch_inst.position.z = 0.38
 	arrow.add_child(fletch_inst)
+
+	# --- Legendary+ aura ---
+	if is_legendary:
+		var light := OmniLight3D.new()
+		light.name = "AuraLight"
+		light.light_color = aura_color
+		light.light_energy = 8.0
+		light.omni_range = 8.0
+		light.omni_attenuation = 1.2
+		light.shadow_enabled = false
+		arrow.add_child(light)
+
+		# Core glow: bright opaque billboard quad at the arrow center
+		var core := MeshInstance3D.new()
+		core.name = "AuraCore"
+		var cq := QuadMesh.new()
+		cq.size = Vector2(0.8, 0.8)
+		core.mesh = cq
+		core.set_surface_override_material(0, _make_glow_mat(aura_color, 0.7, 16.0))
+		arrow.add_child(core)
+
+		# Mid glow: softer, larger billboard
+		var mid := MeshInstance3D.new()
+		mid.name = "AuraMid"
+		var mq := QuadMesh.new()
+		mq.size = Vector2(1.6, 1.6)
+		mid.mesh = mq
+		mid.set_surface_override_material(0, _make_glow_mat(aura_color, 0.35, 10.0))
+		arrow.add_child(mid)
+
+		# Outer haze: very large, subtle billboard
+		var outer := MeshInstance3D.new()
+		outer.name = "AuraOuter"
+		var oq := QuadMesh.new()
+		oq.size = Vector2(3.0, 3.0)
+		outer.mesh = oq
+		outer.set_surface_override_material(0, _make_glow_mat(aura_color, 0.12, 6.0))
+		arrow.add_child(outer)
+
+		# Particle trail
+		var trail := GPUParticles3D.new()
+		trail.name = "AuraTrail"
+		trail.amount = 32
+		trail.lifetime = 0.5
+		trail.explosiveness = 0.0
+		trail.one_shot = false
+		trail.local_coords = false
+		trail.visibility_aabb = AABB(Vector3(-5, -5, -5), Vector3(10, 10, 10))
+		var pmesh := QuadMesh.new()
+		pmesh.size = Vector2(0.3, 0.3)
+		trail.draw_pass_1 = pmesh
+		var pmat := ParticleProcessMaterial.new()
+		pmat.direction = Vector3(0, 0, 0)
+		pmat.spread = 25.0
+		pmat.initial_velocity_min = 0.3
+		pmat.initial_velocity_max = 0.8
+		pmat.gravity = Vector3.ZERO
+		pmat.damping_min = 3.0
+		pmat.damping_max = 6.0
+		pmat.scale_min = 0.6
+		pmat.scale_max = 2.0
+		pmat.color = Color(aura_color.r, aura_color.g, aura_color.b, 0.9)
+		var grad := Gradient.new()
+		grad.colors = PackedColorArray([Color(aura_color, 1.0), Color(aura_color, 0.0)])
+		grad.offsets = PackedFloat32Array([0.0, 1.0])
+		var color_ramp := GradientTexture1D.new()
+		color_ramp.gradient = grad
+		pmat.color_ramp = color_ramp
+		pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+		pmat.emission_sphere_radius = 0.15
+		trail.process_material = pmat
+		trail.material_override = _make_glow_mat(aura_color, 0.85, 12.0)
+		arrow.add_child(trail)
 
 	arrow.set_meta("velocity", vel)
 	arrow.set_meta("damage", damage)
@@ -196,6 +344,7 @@ func spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float,
 
 
 func tick_arrows(delta: float) -> void:
+	var do_heatseek := has_affix(&"heatseeking")
 	for node: Node in pc.get_tree().get_nodes_in_group(&"arrows"):
 		var arrow := node as Node3D
 		if not arrow or arrow.get_meta("hit", false):
@@ -205,6 +354,31 @@ func tick_arrows(delta: float) -> void:
 		var t_pct: float = arrow.get_meta("tension", 1.0) as float
 		var gravity := lerpf(ARROW_GRAVITY * 2.0, ARROW_GRAVITY * 0.4, t_pct)
 		vel.y -= gravity * delta
+
+		if do_heatseek:
+			var speed := vel.length()
+			if speed > 1.0:
+				var fwd := vel / speed
+				var best_enemy: Node3D = null
+				var best_dot := HEATSEEK_CONE_DOT
+				for e: Node in pc.get_tree().get_nodes_in_group(&"enemies"):
+					var enemy := e as Node3D
+					if not enemy or not is_instance_valid(enemy):
+						continue
+					if enemy.has_method("is_dead") and enemy.is_dead():
+						continue
+					var to_e := (enemy.global_position + Vector3.UP * 0.8) - arrow.global_position
+					var dist := to_e.length()
+					if dist > HEATSEEK_RADIUS or dist < 0.5:
+						continue
+					var d := fwd.dot(to_e / dist)
+					if d > best_dot:
+						best_dot = d
+						best_enemy = enemy
+				if best_enemy:
+					var desired := ((best_enemy.global_position + Vector3.UP * 0.8) - arrow.global_position).normalized()
+					vel = (fwd.lerp(desired, HEATSEEK_TURN_SPEED * delta)).normalized() * speed
+
 		arrow.set_meta("velocity", vel)
 
 		var old_pos := arrow.global_position
@@ -235,6 +409,8 @@ func tick_arrows(delta: float) -> void:
 		for enemy_node: Node in pc.get_tree().get_nodes_in_group(&"enemies"):
 			var enemy := enemy_node as Node3D
 			if not enemy:
+				continue
+			if enemy.has_method("is_dead") and enemy.is_dead():
 				continue
 			var cap_radius := 0.5
 			var cap_height := 1.6
@@ -271,43 +447,41 @@ func tick_arrows(delta: float) -> void:
 				arrow.global_position = hit_pos
 				var hit_height := hit_pos.y - enemy.global_position.y
 				var is_headshot := hit_height > cap_height * 0.7
-				var head_mult := 1.3
-				if is_headshot and has_affix(&"precision"):
-					head_mult = 1.5
-				var final_dmg := dmg * head_mult if is_headshot else dmg
+				var hit_bonus := 0.0
+				if is_headshot:
+					hit_bonus += affix_val(&"precision") if has_affix(&"precision") else 0.3
 				if has_affix(&"sniper"):
 					var dist_to_enemy := pc.global_position.distance_to(enemy.global_position)
 					if dist_to_enemy > 15.0:
-						final_dmg *= 1.25
+						hit_bonus += affix_val(&"sniper")
+				var final_dmg := dmg * (1.0 + hit_bonus)
 				if enemy.has_method("take_damage"):
 					pc._apply_damage_to_creature(enemy, final_dmg)
 					pc._set_target_creature(enemy)
-					_DamageNumber.spawn(pc.get_tree(), enemy.global_position + Vector3.UP * 1.5, final_dmg, is_headshot)
-				if has_affix(&"frost_arrow") and randf() < 0.35 and enemy.has_method("apply_slow"):
+					_DamageNumber.spawn(pc.get_tree(), enemy.global_position + Vector3.UP * 1.5, final_dmg, is_headshot, "auto")
+				if has_affix(&"frost_arrow") and randf() < affix_val(&"frost_arrow") and enemy.has_method("apply_slow"):
 					enemy.apply_slow(0.65, 3.0)
 				if has_affix(&"poison_tip") and randf() < 0.30 and enemy.has_method("apply_poison"):
 					var mhp: float = float(enemy.get("max_health")) if enemy.get("max_health") != null else 100.0
-					enemy.apply_poison(mhp * 0.02, 4.0, pc)
-				if has_affix(&"explosive") and randf() < 0.10:
+					enemy.apply_poison(mhp * affix_val(&"poison_tip"), 4.0, pc)
+				if has_affix(&"explosive") and randf() < affix_val(&"explosive"):
 					var aoe_dmg := dmg * 0.4
 					for aoe_node: Node in pc.get_tree().get_nodes_in_group(&"enemies"):
 						var aoe_e := aoe_node as Node3D
 						if not aoe_e or aoe_e == enemy:
 							continue
+						if aoe_e.has_method("is_dead") and aoe_e.is_dead():
+							continue
 						if enemy.global_position.distance_to(aoe_e.global_position) < 4.0:
 							if aoe_e.has_method("take_damage"):
 								pc._apply_damage_to_creature(aoe_e, aoe_dmg)
-								_DamageNumber.spawn(pc.get_tree(), aoe_e.global_position + Vector3.UP * 1.0, aoe_dmg)
+								_DamageNumber.spawn(pc.get_tree(), aoe_e.global_position + Vector3.UP * 1.0, aoe_dmg, false, "ability")
 				if kb > 0.0 and enemy is CharacterBody3D:
 					var kb_dir := (enemy.global_position - hit_pos).normalized()
 					kb_dir.y = 0.0
 					(enemy as CharacterBody3D).velocity += kb_dir * kb * 0.1
-				var pierce_count: int = arrow.get_meta("pierce_count", 0) as int
-				if has_affix(&"piercing") and pierce_count < 1:
-					arrow.set_meta("pierce_count", pierce_count + 1)
-				else:
-					arrow.set_meta("hit", true)
-					stick_arrow(arrow)
+				arrow.set_meta("hit", true)
+				stick_arrow(arrow)
 				break
 
 		if not arrow.get_meta("hit", false):
@@ -329,7 +503,7 @@ func tick_arrows(delta: float) -> void:
 				if not obj:
 					continue
 				if arrow.global_position.distance_to(obj.global_position + Vector3.UP * 0.5) < 1.5:
-					if obj.has_meta("harvestable"):
+					if obj.has_meta("harvestable") and obj.get_meta("drop_id", &"") != &"wood":
 						arrow.set_meta("hit", true)
 						hit_harvestable(obj, dmg)
 						stick_arrow(arrow)
@@ -434,6 +608,7 @@ func draw_bow_reticle() -> void:
 
 
 func start_attack_animation() -> void:
+	pc._respawn_grace = 0.0
 	if pc._gltf_anim_player:
 		pc._is_jumping = false
 		pc._is_flipping = false
@@ -442,8 +617,12 @@ func start_attack_animation() -> void:
 			pc._draw_weapon()
 		var wclass := ItemDatabase.get_weapon_class(pc.equipped_weapon)
 		var wpn_speed: float = get_weapon_stat("attack_speed", 0.6)
-		if has_affix(&"rapid_strikes") or has_affix(&"rapid_chop") or has_affix(&"quick_strike"):
-			wpn_speed *= 0.88
+		if has_affix(&"rapid_strikes"):
+			wpn_speed *= (1.0 - affix_val(&"rapid_strikes"))
+		elif has_affix(&"rapid_chop"):
+			wpn_speed *= (1.0 - affix_val(&"rapid_chop"))
+		elif has_affix(&"quick_strike"):
+			wpn_speed *= (1.0 - affix_val(&"quick_strike"))
 		pc._gltf_attack_timer = wpn_speed
 		match wclass:
 			"bow":
@@ -624,17 +803,17 @@ func get_active_affixes() -> Dictionary:
 		return pc._cached_affixes
 	pc._cached_affixes.clear()
 	var wpn_parsed := ItemDatabase.parse_star_id(pc.equipped_weapon)
+	var wpn_rolls: Dictionary = wpn_parsed.get("affix_rolls", {})
 	for a: StringName in wpn_parsed.get("affixes", []):
-		pc._cached_affixes[a] = true
+		pc._cached_affixes[a] = float(wpn_rolls.get(a, 0.5))
 	for slot: String in Inventory.EQUIPMENT_SLOTS:
-		if slot == "weapon":
-			continue
 		var eq_id: StringName = Inventory.get_equipped(slot)
 		if eq_id == &"":
 			continue
 		var eq_parsed := ItemDatabase.parse_star_id(eq_id)
+		var eq_rolls: Dictionary = eq_parsed.get("affix_rolls", {})
 		for a: StringName in eq_parsed.get("affixes", []):
-			pc._cached_affixes[a] = true
+			pc._cached_affixes[a] = float(eq_rolls.get(a, 0.5))
 	pc._affix_cache_dirty = false
 	pc._regenerator_active = pc._cached_affixes.has(&"regenerator")
 	pc._rally_cry_active = pc._cached_affixes.has(&"rally_cry")
@@ -644,6 +823,11 @@ func get_active_affixes() -> Dictionary:
 
 func has_affix(affix_id: StringName) -> bool:
 	return get_active_affixes().has(affix_id)
+
+
+func affix_val(affix_id: StringName) -> float:
+	var roll: float = float(pc._cached_affixes.get(affix_id, 0.5))
+	return ItemDatabase.get_affix_value(affix_id, roll)
 
 
 func get_weapon_affixes() -> Array:
@@ -662,9 +846,9 @@ func apply_affix_stat_bonuses() -> void:
 	var new_max_hp := base_max_hp
 	var new_max_stam := base_max_stam
 	if affixes.has(&"vitality"):
-		new_max_hp += 15.0
+		new_max_hp += affix_val(&"vitality")
 	if affixes.has(&"endurance"):
-		new_max_stam += 20.0
+		new_max_stam += affix_val(&"endurance")
 	if new_max_hp != pc.max_health:
 		var hp_ratio := pc.current_health / pc.max_health if pc.max_health > 0 else 1.0
 		pc.max_health = new_max_hp
@@ -679,18 +863,22 @@ func apply_affix_stat_bonuses() -> void:
 
 # --- Melee attack ---
 func try_attack() -> void:
-	if pc._is_blocking or pc._is_dodging:
+	if pc._mounted or pc._is_blocking or pc._is_dodging:
 		return
 	if pc._bow_drawing:
 		return
 	var wpn_speed: float = get_weapon_stat("attack_speed", 0.6)
-	if has_affix(&"rapid_strikes") or has_affix(&"rapid_chop") or has_affix(&"quick_strike"):
-		wpn_speed *= 0.88
+	if has_affix(&"rapid_strikes"):
+		wpn_speed *= (1.0 - affix_val(&"rapid_strikes"))
+	elif has_affix(&"rapid_chop"):
+		wpn_speed *= (1.0 - affix_val(&"rapid_chop"))
+	elif has_affix(&"quick_strike"):
+		wpn_speed *= (1.0 - affix_val(&"quick_strike"))
 	if pc._crushing_momentum_timer > 0.0:
-		wpn_speed *= 0.80
+		wpn_speed *= (1.0 - affix_val(&"crushing_momentum"))
 	var wpn_stamina: float = get_weapon_stat("stamina_cost", 4.0)
 	if has_affix(&"efficient_miner"):
-		wpn_stamina *= 0.8
+		wpn_stamina *= (1.0 - affix_val(&"efficient_miner"))
 
 	if pc._attack_cooldown > 0.0 or not pc._can_spend_stamina(wpn_stamina):
 		return
@@ -711,19 +899,41 @@ func try_attack() -> void:
 			tween.tween_property(pc._model, "position:z", -0.3, 0.05)
 			tween.tween_property(pc._model, "position:z", 0.0, 0.15)
 
-	var wpn_damage: float = get_weapon_stat("damage", 5.0)
-	var wpn_range: float = get_weapon_stat("range", 2.5)
+	var is_tool := str(wpn_data.get("type", "weapon")) == "tool"
+	var is_unarmed := pc.equipped_weapon == &"fists" or is_tool
+	var fist_data: Dictionary = ItemDatabase.get_item(&"fists")
+	var wpn_damage: float = float(fist_data.get("damage", 5.0)) if is_tool else get_weapon_stat("damage", 5.0)
+	var wpn_range: float = float(fist_data.get("range", 2.5)) if is_tool else get_weapon_stat("range", 2.5)
 	if has_affix(&"reaching"):
-		wpn_range *= 1.2
-	var wpn_knockback: float = get_weapon_stat("knockback", 10.0)
-	var is_unarmed := pc.equipped_weapon == &"fists"
+		wpn_range *= (1.0 + affix_val(&"reaching"))
+	var wpn_knockback: float = float(fist_data.get("knockback", 10.0)) if is_tool else get_weapon_stat("knockback", 10.0)
 	var hit_delay := 0.30 if is_2h else MELEE_HIT_DELAY
 	pc.get_tree().create_timer(hit_delay).timeout.connect(
-		resolve_attack.bind(wpn_damage, wpn_range, wpn_knockback, is_unarmed)
+		resolve_attack.bind(wpn_damage, wpn_range, wpn_knockback, is_unarmed, "auto")
 	)
 
 
-func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, single_target: bool = false) -> void:
+func _echoing_blade_hit(positions: Array[Vector3], echo_dmg: float, wpn_range: float) -> void:
+	if not is_instance_valid(pc):
+		return
+	const ECHO_RADIUS := 2.5
+	var already_hit: Array[Node3D] = []
+	for origin in positions:
+		for node: Node in pc.get_tree().get_nodes_in_group(&"enemies"):
+			var enemy := node as Node3D
+			if not enemy or already_hit.has(enemy):
+				continue
+			if enemy.has_method("is_dead") and enemy.is_dead():
+				continue
+			if enemy.global_position.distance_to(origin) > ECHO_RADIUS:
+				continue
+			if enemy.has_method("take_damage"):
+				pc._apply_damage_to_creature(enemy, echo_dmg)
+				_DamageNumber.spawn(pc.get_tree(), enemy.global_position + Vector3.UP * 1.0, echo_dmg, false, "ability")
+				already_hit.append(enemy)
+
+
+func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, single_target: bool = false, hit_type: String = "auto") -> void:
 	var cam: Camera3D = pc._spring_arm.get_child(0) if pc._spring_arm.get_child_count() > 0 else null
 	if not cam:
 		return
@@ -737,30 +947,33 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 	if affixes.has(&"cleaving") and not single_target:
 		cone_threshold = -0.3
 
-	var dmg := wpn_damage * randf_range(0.7, 1.3)
+	var base_roll := wpn_damage * randf_range(0.7, 1.3)
+
+	var affix_bonus := 0.0
 	if affixes.has(&"berserker"):
 		var missing_pct := 1.0 - (pc.current_health / pc.max_health)
-		dmg *= 1.0 + minf(missing_pct * 0.5, 0.5)
+		var berserk_cap := affix_val(&"berserker")
+		affix_bonus += minf(missing_pct * berserk_cap, berserk_cap)
 	if affixes.has(&"momentum"):
-		dmg *= 1.0 + pc._momentum_stacks * 0.04
+		affix_bonus += pc._momentum_stacks * affix_val(&"momentum")
 	if affixes.has(&"relentless_fury"):
-		dmg *= 1.0 + pc._momentum_stacks * 0.05
+		affix_bonus += pc._momentum_stacks * affix_val(&"relentless_fury")
 	if pc._retaliation_timer > 0.0:
-		dmg *= 1.3
+		affix_bonus += affix_val(&"retaliation")
+
+	var dmg := base_roll * (1.0 + affix_bonus)
 
 	var kb := wpn_knockback
-	if affixes.has(&"brutal_force"):
-		kb *= 1.25
 
 	var crit_chance := 5.0 + pc.base_dexterity * 0.5
-	var crit_dmg := 150.0 + pc.base_strength * 2.0
+	var crit_mult := (150.0 + pc.base_strength * 2.0) / 100.0
 	if affixes.has(&"sharpened"):
-		crit_chance += 10.0
+		crit_chance += affix_val(&"sharpened")
 	if affixes.has(&"savage"):
-		crit_dmg += 40.0
+		crit_mult += affix_val(&"savage")
 	var did_crit := randf() < crit_chance / 100.0
 	if did_crit:
-		dmg *= crit_dmg / 100.0
+		dmg *= crit_mult
 
 	var hit_something := false
 	var hit_enemies: Array[Node3D] = []
@@ -770,6 +983,8 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 	for node: Node in pc.get_tree().get_nodes_in_group(&"enemies"):
 		var enemy: Node3D = node as Node3D
 		if not enemy:
+			continue
+		if enemy.has_method("is_dead") and enemy.is_dead():
 			continue
 		var to_enemy: Vector3 = enemy.global_position - check_origin
 		to_enemy.y = 0.0
@@ -785,20 +1000,21 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 				best_dist = dist
 				best_enemy = enemy
 		else:
-			var final_dmg := dmg
+			var target_bonus := 0.0
 			if affixes.has(&"executioner"):
 				var ehp: float = enemy.get("current_health") if enemy.get("current_health") != null else 999.0
 				var emhp: float = enemy.get("max_health") if enemy.get("max_health") != null else 999.0
 				if emhp > 0.0 and ehp / emhp < 0.3:
-					final_dmg *= 1.3
+					target_bonus += affix_val(&"executioner")
 			if affixes.has(&"skull_crusher") and enemy.has_method("is_stunned") and enemy.is_stunned():
-				final_dmg *= 1.25
-			if affixes.has(&"bane") and randf() < 0.08:
-				final_dmg *= 2.0
+				target_bonus += affix_val(&"skull_crusher")
+			if affixes.has(&"bane") and randf() < affix_val(&"bane"):
+				target_bonus += 1.0
+			var final_dmg := dmg * (1.0 + target_bonus)
 			if enemy.has_method("take_damage"):
 				pc._apply_damage_to_creature(enemy, final_dmg)
 				pc._set_target_creature(enemy)
-				_DamageNumber.spawn(pc.get_tree(), enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit)
+				_DamageNumber.spawn(pc.get_tree(), enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit, hit_type)
 				hit_something = true
 				hit_enemies.append(enemy)
 			if kb > 0.0 and enemy is CharacterBody3D:
@@ -807,20 +1023,21 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 				(enemy as CharacterBody3D).velocity += kb_dir * kb * 0.1
 
 	if single_target and best_enemy:
-		var final_dmg := dmg
+		var target_bonus := 0.0
 		if affixes.has(&"executioner"):
 			var ehp: float = best_enemy.get("current_health") if best_enemy.get("current_health") != null else 999.0
 			var emhp: float = best_enemy.get("max_health") if best_enemy.get("max_health") != null else 999.0
 			if emhp > 0.0 and ehp / emhp < 0.3:
-				final_dmg *= 1.3
+				target_bonus += affix_val(&"executioner")
 		if affixes.has(&"skull_crusher") and best_enemy.has_method("is_stunned") and best_enemy.is_stunned():
-			final_dmg *= 1.25
-		if affixes.has(&"bane") and randf() < 0.08:
-			final_dmg *= 2.0
+			target_bonus += affix_val(&"skull_crusher")
+		if affixes.has(&"bane") and randf() < affix_val(&"bane"):
+			target_bonus += 1.0
+		var final_dmg := dmg * (1.0 + target_bonus)
 		if best_enemy.has_method("take_damage"):
 			pc._apply_damage_to_creature(best_enemy, final_dmg)
 			pc._set_target_creature(best_enemy)
-			_DamageNumber.spawn(pc.get_tree(), best_enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit)
+			_DamageNumber.spawn(pc.get_tree(), best_enemy.global_position + Vector3.UP * 1.0, final_dmg, did_crit, hit_type)
 			hit_something = true
 			hit_enemies.append(best_enemy)
 		if kb > 0.0 and best_enemy is CharacterBody3D:
@@ -831,30 +1048,25 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 	for enemy in hit_enemies:
 		if not is_instance_valid(enemy):
 			continue
+		if enemy.has_method("is_dead") and enemy.is_dead():
+			continue
 		if affixes.has(&"lifesteal"):
-			var heal_amt := dmg * 0.08
+			var heal_amt := dmg * affix_val(&"lifesteal")
+			var pre_hp := pc.current_health
 			pc.current_health = minf(pc.current_health + heal_amt, pc.max_health)
 			GameEvents.player_health_changed.emit(pc.current_health, pc.max_health)
+			var actual_heal := pc.current_health - pre_hp
+			if actual_heal > 0.5 and pc._camera_pivot:
+				_DamageNumber.spawn_heal(pc.get_tree(), pc.global_position, actual_heal, pc._camera_pivot.global_transform.basis)
 		if affixes.has(&"siphon"):
-			pc.current_stamina = minf(pc.current_stamina + 3.0, pc.max_stamina)
+			pc.current_stamina = minf(pc.current_stamina + affix_val(&"siphon"), pc.max_stamina)
 			GameEvents.player_stamina_changed.emit(pc.current_stamina, pc.max_stamina)
-		if affixes.has(&"firebrand") and randf() < 0.15:
+		if affixes.has(&"firebrand") and randf() < affix_val(&"firebrand"):
 			var fire_dmg := wpn_damage * 0.5
 			if enemy.has_method("take_damage"):
 				pc._apply_damage_to_creature(enemy, fire_dmg)
-				var fire_num := _DamageNumber.new()
-				fire_num.text = "%.0f" % fire_dmg
-				fire_num.font_size = 22
-				fire_num.pixel_size = 0.008
-				fire_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-				fire_num.no_depth_test = true
-				fire_num.modulate = Color(1.0, 0.5, 0.1)
-				fire_num.outline_modulate = Color.BLACK
-				fire_num.outline_size = 5
-				fire_num._velocity = Vector3(randf_range(-0.5, 0.5), 2.5, 0)
-				pc.get_tree().current_scene.add_child(fire_num)
-				fire_num.global_position = enemy.global_position + Vector3.UP * 1.5
-		if affixes.has(&"chain_lightning") and randf() < 0.10:
+				_DamageNumber.spawn(pc.get_tree(), enemy.global_position + Vector3.UP * 1.0, fire_dmg, false, "ability")
+		if affixes.has(&"chain_lightning") and randf() < affix_val(&"chain_lightning"):
 			var arc_dmg := wpn_damage * 0.4
 			var nearest: Node3D = null
 			var nearest_dist := 8.0
@@ -862,95 +1074,91 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 				var other_3d := other as Node3D
 				if not other_3d or other_3d == enemy:
 					continue
+				if other_3d.has_method("is_dead") and other_3d.is_dead():
+					continue
 				var d := enemy.global_position.distance_to(other_3d.global_position)
 				if d < nearest_dist:
 					nearest_dist = d
 					nearest = other_3d
 			if nearest and nearest.has_method("take_damage"):
 				pc._apply_damage_to_creature(nearest, arc_dmg)
-				var arc_num := _DamageNumber.new()
-				arc_num.text = "⚡%.0f" % arc_dmg
-				arc_num.font_size = 22
-				arc_num.pixel_size = 0.008
-				arc_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-				arc_num.no_depth_test = true
-				arc_num.modulate = Color(0.4, 0.7, 1.0)
-				arc_num.outline_modulate = Color.BLACK
-				arc_num.outline_size = 5
-				arc_num._velocity = Vector3(0, 2.5, 0)
-				pc.get_tree().current_scene.add_child(arc_num)
-				arc_num.global_position = nearest.global_position + Vector3.UP * 1.5
-		if affixes.has(&"runic") and randf() < 0.12:
+				_DamageNumber.spawn(pc.get_tree(), nearest.global_position + Vector3.UP * 1.0, arc_dmg, false, "ability")
+		if affixes.has(&"runic") and randf() < affix_val(&"runic"):
 			var aoe_dmg := wpn_damage * 0.25
 			for other: Node in pc.get_tree().get_nodes_in_group(&"enemies"):
 				var other_3d := other as Node3D
 				if not other_3d or other_3d == enemy:
 					continue
+				if other_3d.has_method("is_dead") and other_3d.is_dead():
+					continue
 				if enemy.global_position.distance_to(other_3d.global_position) < 5.0:
 					if other_3d.has_method("take_damage"):
 						pc._apply_damage_to_creature(other_3d, aoe_dmg)
-						_DamageNumber.spawn(pc.get_tree(), other_3d.global_position + Vector3.UP * 1.0, aoe_dmg)
-		if affixes.has(&"frostbite") and randf() < 0.20:
+						_DamageNumber.spawn(pc.get_tree(), other_3d.global_position + Vector3.UP * 1.0, aoe_dmg, false, "ability")
+		if affixes.has(&"frostbite") and randf() < affix_val(&"frostbite"):
 			if enemy.has_method("apply_slow"):
 				enemy.apply_slow(0.6, 3.0)
-		if affixes.has(&"venomous") and randf() < 0.12:
+		if affixes.has(&"venomous") and randf() < affix_val(&"venomous"):
 			if enemy.has_method("apply_poison"):
 				var max_hp: float = float(enemy.get("max_health")) if enemy.get("max_health") != null else 100.0
 				enemy.apply_poison(max_hp * 0.03, 4.0, pc)
-		if affixes.has(&"stunning_blow") and randf() < 0.08:
+		if affixes.has(&"stunning_blow") and randf() < affix_val(&"stunning_blow"):
 			if enemy.has_method("apply_stun"):
 				enemy.apply_stun(1.5)
-		if affixes.has(&"concussive") and randf() < 0.20:
+		if affixes.has(&"concussive") and randf() < affix_val(&"concussive"):
 			if enemy.has_method("apply_disorient"):
 				enemy.apply_disorient(3.0)
-		if affixes.has(&"bone_breaker") and randf() < 0.10:
+		if affixes.has(&"bone_breaker") and randf() < affix_val(&"bone_breaker"):
 			if enemy.has_method("apply_armor_shred"):
 				enemy.apply_armor_shred(0.30, 5.0)
-		if affixes.has(&"earthshaker") and randf() < 0.12:
+		if affixes.has(&"earthshaker") and randf() < affix_val(&"earthshaker"):
 			var slam_dmg := wpn_damage * 0.30
 			for aoe_node: Node in pc.get_tree().get_nodes_in_group(&"enemies"):
 				var aoe_e := aoe_node as Node3D
 				if not aoe_e or aoe_e == enemy:
 					continue
+				if aoe_e.has_method("is_dead") and aoe_e.is_dead():
+					continue
 				if enemy.global_position.distance_to(aoe_e.global_position) < 3.0:
 					if aoe_e.has_method("take_damage"):
 						pc._apply_damage_to_creature(aoe_e, slam_dmg)
-						_DamageNumber.spawn(pc.get_tree(), aoe_e.global_position + Vector3.UP * 1.0, slam_dmg)
-		if affixes.has(&"staggering") and randf() < 0.18:
+						_DamageNumber.spawn(pc.get_tree(), aoe_e.global_position + Vector3.UP * 1.0, slam_dmg, false, "ability")
+		if affixes.has(&"staggering") and randf() < affix_val(&"staggering"):
 			if enemy.has_method("apply_stun"):
 				enemy.apply_stun(0.8)
-		if affixes.has(&"thunderclap") and randf() < 0.08:
+		if affixes.has(&"thunderclap") and randf() < affix_val(&"thunderclap"):
 			var thunder_dmg := wpn_damage * 0.25
 			for t_node: Node in pc.get_tree().get_nodes_in_group(&"enemies"):
 				var t_e := t_node as Node3D
 				if not t_e or t_e == enemy:
 					continue
+				if t_e.has_method("is_dead") and t_e.is_dead():
+					continue
 				if enemy.global_position.distance_to(t_e.global_position) < 3.0:
 					if t_e.has_method("take_damage"):
 						pc._apply_damage_to_creature(t_e, thunder_dmg)
-						var t_num := _DamageNumber.new()
-						t_num.text = "⚡%.0f" % thunder_dmg
-						t_num.font_size = 22
-						t_num.pixel_size = 0.008
-						t_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-						t_num.no_depth_test = true
-						t_num.modulate = Color(0.4, 0.7, 1.0)
-						t_num.outline_modulate = Color.BLACK
-						t_num.outline_size = 5
-						t_num._velocity = Vector3(0, 2.5, 0)
-						pc.get_tree().current_scene.add_child(t_num)
-						t_num.global_position = t_e.global_position + Vector3.UP * 1.5
+						_DamageNumber.spawn(pc.get_tree(), t_e.global_position + Vector3.UP * 1.0, thunder_dmg, false, "ability")
 
 	if (affixes.has(&"momentum") or affixes.has(&"relentless_fury")) and not hit_enemies.is_empty():
 		pc._momentum_stacks = mini(pc._momentum_stacks + 1, 5)
 		pc._momentum_timer = 3.0
 
 	if affixes.has(&"windfury") and not pc._windfury_guard and not hit_enemies.is_empty():
-		if randf() < 0.30:
+		if randf() < affix_val(&"windfury"):
 			pc._windfury_guard = true
-			resolve_attack(wpn_damage, wpn_range, wpn_knockback, single_target)
-			resolve_attack(wpn_damage, wpn_range, wpn_knockback, single_target)
+			resolve_attack(wpn_damage, wpn_range, wpn_knockback, single_target, "ability")
+			resolve_attack(wpn_damage, wpn_range, wpn_knockback, single_target, "ability")
 			pc._windfury_guard = false
+
+	if affixes.has(&"echoing_blade") and not pc._windfury_guard and not hit_enemies.is_empty():
+		var echo_positions: Array[Vector3] = []
+		for e in hit_enemies:
+			if is_instance_valid(e):
+				echo_positions.append(e.global_position)
+		var echo_dmg := wpn_damage * affix_val(&"echoing_blade")
+		pc.get_tree().create_timer(0.5).timeout.connect(
+			_echoing_blade_hit.bind(echo_positions, echo_dmg, wpn_range)
+		)
 
 	var harvestable_candidates: Array[Dictionary] = []
 	for node: Node in pc.get_tree().get_nodes_in_group(&"interactables"):
@@ -1045,10 +1253,10 @@ func hit_harvestable(node: Node3D, damage: float) -> void:
 		cx_tween.tween_property(canopy, "rotation:x", base_rx, 0.11)
 	_DamageNumber.spawn(pc.get_tree(), node.global_position + Vector3.UP * 2.0, effective_dmg)
 
-	if drop_id == &"wood" and has_affix(&"sharpened_edge") and randf() < 0.25 and hp > 0.0:
+	if drop_id == &"wood" and has_affix(&"sharpened_edge") and randf() < affix_val(&"sharpened_edge") and hp > 0.0:
 		hit_harvestable(node, effective_dmg)
 		hit_harvestable(node, effective_dmg)
-	elif drop_id == &"stone" and has_affix(&"precision_strike") and randf() < 0.25 and hp > 0.0:
+	elif drop_id == &"stone" and has_affix(&"precision_strike") and randf() < affix_val(&"precision_strike") and hp > 0.0:
 		hit_harvestable(node, effective_dmg)
 		hit_harvestable(node, effective_dmg)
 
@@ -1080,10 +1288,10 @@ func destroy_rock(node: Node3D) -> void:
 	rng.randomize()
 	var total := rng.randi_range(drop_min, drop_max)
 	if drop_id == &"stone" and has_affix(&"prospector"):
-		total = ceili(total * 1.4)
+		total = ceili(total * (1.0 + affix_val(&"prospector")))
 	elif drop_id == &"copper_ore" and has_affix(&"ore_seeker"):
-		total = ceili(total * 1.3)
-	if has_affix(&"rich_vein") and rng.randf() < 0.10:
+		total = ceili(total * (1.0 + affix_val(&"ore_seeker")))
+	if has_affix(&"rich_vein") and rng.randf() < affix_val(&"rich_vein"):
 		total *= 2
 	var master_miner := has_affix(&"heavy_swing")
 	for i in total:
@@ -1114,7 +1322,7 @@ func destroy_rock(node: Node3D) -> void:
 		pc.get_tree().current_scene.add_child(flint_drop)
 		flint_drop.global_position = node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
 
-	if has_affix(&"vein_finder") and rng.randf() < 0.30:
+	if has_affix(&"vein_finder") and rng.randf() < affix_val(&"vein_finder"):
 		var ore_drop := _LootDrop.new()
 		ore_drop.item_id = &"copper_ore"
 		ore_drop.star_level = ItemDatabase.roll_star_level(rng)
@@ -1142,11 +1350,11 @@ func get_terrain_slope_dir(pos: Vector3) -> Vector3:
 	if not wg:
 		return Vector3.ZERO
 	var sample_dist := 2.0
-	var h_center := wg.get_height_at(pos.x, pos.z)
-	var h_px := wg.get_height_at(pos.x + sample_dist, pos.z)
-	var h_nx := wg.get_height_at(pos.x - sample_dist, pos.z)
-	var h_pz := wg.get_height_at(pos.x, pos.z + sample_dist)
-	var h_nz := wg.get_height_at(pos.x, pos.z - sample_dist)
+	var h_center := wg.get_height_at_scene(pos.x, pos.z)
+	var h_px := wg.get_height_at_scene(pos.x + sample_dist, pos.z)
+	var h_nx := wg.get_height_at_scene(pos.x - sample_dist, pos.z)
+	var h_pz := wg.get_height_at_scene(pos.x, pos.z + sample_dist)
+	var h_nz := wg.get_height_at_scene(pos.x, pos.z - sample_dist)
 	var slope := Vector3(h_nx - h_px, 0.0, h_nz - h_pz)
 	if slope.length_squared() < 0.001:
 		return Vector3.ZERO
@@ -1191,10 +1399,10 @@ func fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tru
 
 	var fall_tween := node.create_tween()
 	fall_tween.set_ease(Tween.EASE_IN)
-	fall_tween.set_trans(Tween.TRANS_QUAD)
+	fall_tween.set_trans(Tween.TRANS_QUART)
 
 	node.rotation.y = fall_angle
-	var fall_duration := 0.82 if has_affix(&"splitter") else 1.17
+	var fall_duration := (1.17 * (1.0 - affix_val(&"splitter"))) if has_affix(&"splitter") else 1.17
 	fall_tween.tween_property(node, "rotation:x", deg_to_rad(-85.0), fall_duration)
 
 	var fall_dir := Vector3(-sin(fall_angle), 0.0, -cos(fall_angle))
@@ -1211,8 +1419,8 @@ func fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tru
 		rng.randomize()
 		var log_count := rng.randi_range(drop_min, drop_max)
 		if has_affix(&"lumberjack"):
-			log_count = ceili(log_count * 1.4)
-		if has_affix(&"double_yield") and rng.randf() < 0.10:
+			log_count = ceili(log_count * (1.0 + affix_val(&"lumberjack")))
+		if has_affix(&"double_yield") and rng.randf() < affix_val(&"double_yield"):
 			log_count *= 2
 		var master_woodsman := has_affix(&"heavy_chop")
 		for i in log_count:
@@ -1236,7 +1444,7 @@ func fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tru
 			pc.get_tree().current_scene.add_child(drop)
 			drop.global_position = tree_base + offset
 
-		if has_affix(&"bark_stripper") and rng.randf() < 0.25:
+		if has_affix(&"bark_stripper") and rng.randf() < affix_val(&"bark_stripper"):
 			var resin_drop := _LootDrop.new()
 			resin_drop.item_id = &"resin"
 			resin_drop.star_level = ItemDatabase.roll_star_level(rng)
@@ -1382,26 +1590,30 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 	var pre_vel := pc.velocity
 	var affixes := get_active_affixes()
 
-	if affixes.has(&"iron_skin") and randf() < 0.08:
-		var dodge_num := _DamageNumber.new()
-		dodge_num.text = "Absorbed"
-		dodge_num.font_size = 20
-		dodge_num.pixel_size = 0.008
-		dodge_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		dodge_num.no_depth_test = true
-		dodge_num.modulate = Color(0.6, 0.8, 1.0)
-		dodge_num.outline_modulate = Color.BLACK
-		dodge_num.outline_size = 5
-		dodge_num._velocity = Vector3(0, 2.0, 0)
-		pc.get_tree().current_scene.add_child(dodge_num)
-		dodge_num.global_position = pc.global_position + Vector3.UP * 2.5
-		return
+	# --- Proc-based DR (still chance-based, but reduced not immune) ---
+	var proc_dr := 0.0
+	if affixes.has(&"iron_skin") and randf() < affix_val(&"iron_skin"):
+		proc_dr = 0.85
+		var absorb_num := _DamageNumber.new()
+		absorb_num.text = "Absorbed"
+		absorb_num.font_size = 20
+		absorb_num.pixel_size = 0.008
+		absorb_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		absorb_num.no_depth_test = true
+		absorb_num.modulate = Color(0.6, 0.8, 1.0)
+		absorb_num.outline_modulate = Color.BLACK
+		absorb_num.outline_size = 5
+		absorb_num._velocity = Vector3(0, 2.0, 0)
+		pc.get_tree().current_scene.add_child(absorb_num)
+		absorb_num.global_position = pc.global_position + Vector3.UP * 2.5
+
 	var dodge_roll := 0.0
 	if affixes.has(&"evasion"):
-		dodge_roll += 0.05
+		dodge_roll += affix_val(&"evasion")
 	if affixes.has(&"nimble") and pc._is_sprinting:
-		dodge_roll += 0.08
-	if dodge_roll > 0.0 and randf() < dodge_roll:
+		dodge_roll += affix_val(&"nimble")
+	if proc_dr == 0.0 and dodge_roll > 0.0 and randf() < dodge_roll:
+		proc_dr = 0.85
 		var evade_num := _DamageNumber.new()
 		evade_num.text = "Evaded"
 		evade_num.font_size = 20
@@ -1414,12 +1626,10 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		evade_num._velocity = Vector3(0, 2.0, 0)
 		pc.get_tree().current_scene.add_child(evade_num)
 		evade_num.global_position = pc.global_position + Vector3.UP * 2.5
-		return
 
-	var final_amount := amount
-
-	if affixes.has(&"deflection") and not pc._is_blocking and randf() < 0.15:
+	if proc_dr == 0.0 and affixes.has(&"deflection") and not pc._is_blocking and randf() < affix_val(&"deflection"):
 		if _source and _source.global_position.distance_to(pc.global_position) > 5.0:
+			proc_dr = 0.85
 			var defl_num := _DamageNumber.new()
 			defl_num.text = "Deflected"
 			defl_num.font_size = 20
@@ -1432,42 +1642,33 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 			defl_num._velocity = Vector3(0, 2.0, 0)
 			pc.get_tree().current_scene.add_child(defl_num)
 			defl_num.global_position = pc.global_position + Vector3.UP * 2.5
-			return
 
-	if affixes.has(&"shield_wall") and not pc._is_blocking and randf() < 0.15:
+	var final_amount := amount
+	if proc_dr > 0.0:
+		final_amount *= (1.0 - proc_dr)
+
+	if affixes.has(&"shield_wall") and not pc._is_blocking and randf() < affix_val(&"shield_wall"):
 		final_amount *= 0.3
 
 	if pc._aegis_shield > 0.0:
 		var absorbed := minf(final_amount, pc._aegis_shield)
 		pc._aegis_shield -= absorbed
 		final_amount -= absorbed
-	if affixes.has(&"aegis") and randf() < 0.10 and pc._aegis_timer <= 0.0:
+	if affixes.has(&"aegis") and randf() < affix_val(&"aegis") and pc._aegis_timer <= 0.0:
 		pc._aegis_shield = pc.max_health * 0.15
 		pc._aegis_timer = 5.0
 
+	# --- Additive DR pool (capped at 85%) ---
+	var dr_bonus := 0.0
 	if affixes.has(&"iron_will") and pc._is_attacking:
-		final_amount *= 0.9
+		dr_bonus += affix_val(&"iron_will")
 	if affixes.has(&"thick_skinned") and pc._thick_skinned_cooldown <= 0.0:
-		final_amount *= 0.7
+		dr_bonus += affix_val(&"thick_skinned")
 		pc._thick_skinned_cooldown = 10.0
-	var did_block := pc._is_blocking
-	if pc._is_blocking:
-		if affixes.has(&"unbreakable") and pc.current_health / pc.max_health < 0.25:
-			final_amount = 0.0
-		else:
-			var block_mult := 0.2 if affixes.has(&"guardian") else 0.3
-			final_amount *= block_mult
-	var armor_value := Inventory.get_total_armor()
-	if affixes.has(&"bulwark"):
-		armor_value += 3.0
-	if pc._fortress_active:
-		armor_value += 5.0
-	if armor_value > 0.0:
-		final_amount *= maxf(1.0 - (armor_value * 0.02), 0.2)
 	if affixes.has(&"fortified"):
-		final_amount *= 0.92
+		dr_bonus += affix_val(&"fortified")
 	if affixes.has(&"last_stand") and pc.current_health / pc.max_health < 0.25:
-		final_amount *= 0.75
+		dr_bonus += affix_val(&"last_stand")
 	if affixes.has(&"battle_hardened"):
 		var nearby_count := 0
 		for node: Node in pc.get_tree().get_nodes_in_group(&"enemies"):
@@ -1476,13 +1677,33 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 				nearby_count += 1
 				if nearby_count >= 3:
 					break
-		final_amount *= maxf(1.0 - nearby_count * 0.05, 0.85)
+		dr_bonus += nearby_count * affix_val(&"battle_hardened")
+
+	var did_block := pc._is_blocking
+	if pc._is_blocking:
+		if affixes.has(&"unbreakable") and pc.current_health / pc.max_health < 0.25:
+			dr_bonus += 0.90
+		elif affixes.has(&"guardian"):
+			dr_bonus += affix_val(&"guardian")
+		else:
+			dr_bonus += 0.70
+
+	var armor_value := Inventory.get_total_armor()
+	if affixes.has(&"bulwark"):
+		armor_value += affix_val(&"bulwark")
+	if pc._fortress_active:
+		armor_value += affix_val(&"fortress")
+	var armor_dr := minf(armor_value * 0.02, 0.80)
+	dr_bonus += armor_dr
+
+	var total_dr := minf(dr_bonus, 0.85)
+	final_amount *= (1.0 - total_dr)
 
 	pc.current_health = maxf(pc.current_health - final_amount, 0.0)
 	pc._hp_pulse = 1.0
 	var regen_delay := pc.health_regen_delay
 	if affixes.has(&"quick_recovery"):
-		regen_delay -= 2.0
+		regen_delay -= affix_val(&"quick_recovery")
 	pc._health_regen_timer = regen_delay
 	GameEvents.player_health_changed.emit(pc.current_health, pc.max_health)
 	AudioManager.play_sfx("player_hurt", -2.0)
@@ -1490,7 +1711,7 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 	if did_block:
 		if affixes.has(&"retaliation"):
 			pc._retaliation_timer = 3.0
-		if affixes.has(&"shield_bash") and randf() < 0.25 and _source and _source.has_method("apply_stun"):
+		if affixes.has(&"shield_bash") and randf() < affix_val(&"shield_bash") and _source and _source.has_method("apply_stun"):
 			_source.apply_stun(1.0)
 	if not pc._gltf_all_meshes.is_empty():
 		pc._gltf_flash(Color(1.0, 0.2, 0.2))
@@ -1508,20 +1729,24 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		pc.velocity = pre_vel
 	elif affixes.has(&"stalwart"):
 		var kb_change := pc.velocity - pre_vel
-		pc.velocity = pre_vel + kb_change * 0.7
+		pc.velocity = pre_vel + kb_change * (1.0 - affix_val(&"stalwart"))
 
 	if affixes.has(&"thorns") and _source and _source.has_method("take_damage"):
-		_source.take_damage(amount * 0.15, pc)
+		_source.take_damage(amount * affix_val(&"thorns"), pc)
 
 	if affixes.has(&"second_wind") and pc._second_wind_cooldown <= 0.0:
 		if pc.current_health > 0.0 and pc.current_health / pc.max_health < 0.20:
-			pc.current_health = minf(pc.current_health + pc.max_health * 0.20, pc.max_health)
+			var pre_hp := pc.current_health
+			pc.current_health = minf(pc.current_health + pc.max_health * affix_val(&"second_wind"), pc.max_health)
 			pc._second_wind_cooldown = 45.0
 			GameEvents.player_health_changed.emit(pc.current_health, pc.max_health)
+			var actual_heal := pc.current_health - pre_hp
+			if actual_heal > 0.5 and pc._camera_pivot:
+				_DamageNumber.spawn_heal(pc.get_tree(), pc.global_position, actual_heal, pc._camera_pivot.global_transform.basis)
 
 	if pc.current_health <= 0.0:
 		if affixes.has(&"undying") and pc._undying_cooldown <= 0.0:
-			pc.current_health = pc.max_health * 0.10
+			pc.current_health = pc.max_health * affix_val(&"undying")
 			pc._undying_cooldown = 300.0
 			GameEvents.player_health_changed.emit(pc.current_health, pc.max_health)
 			var revive_num := _DamageNumber.new()
@@ -1545,7 +1770,7 @@ func handle_health_regen(delta: float) -> void:
 	if pc._health_regen_timer <= 0.0 and pc.current_health < pc.max_health:
 		var regen := pc.health_regen_rate
 		if has_affix(&"rejuvenation"):
-			regen *= 1.3
+			regen *= (1.0 + affix_val(&"rejuvenation"))
 		pc.current_health = minf(pc.current_health + regen * delta, pc.max_health)
 		GameEvents.player_health_changed.emit(pc.current_health, pc.max_health)
 	if pc._regenerator_active and pc.current_health < pc.max_health and pc._health_regen_timer > 0.0:
@@ -1614,7 +1839,8 @@ func respawn() -> void:
 		spawn_y = wg.get_height_at(spawn_x, spawn_z) + 0.2
 	if spawn_y > 5.0 or spawn_y < -5.0:
 		spawn_y = 0.5
-	pc.global_position = Vector3(spawn_x, spawn_y, spawn_z)
+	var spawn_world := Vector3(spawn_x, spawn_y, spawn_z)
+	pc.global_position = wg.world_to_scene_pos(spawn_world) if wg else spawn_world
 	pc.velocity = Vector3.ZERO
 	pc._is_attacking = false
 	pc._is_jumping = false

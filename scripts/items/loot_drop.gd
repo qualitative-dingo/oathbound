@@ -8,18 +8,38 @@ extends StaticBody3D
 
 const DESPAWN_TIME := 180.0
 const DESPAWN_FADE := 5.0
+const MAX_LOOT_NODES := 150
+const STACK_RADIUS_SQ := 2.25
+const STACK_SPACING := 0.40
+
+static var _s_cached_players: Array = []
+static var _s_cached_world_gen: Node = null
+static var _s_cache_frame: int = -1
 
 var _bob_time := 0.0
 var _age := 0.0
+var _nameplate_timer := 0.0
 var pickup_grace := 0.0
+var spawn_delay := 0.0
+var drop_owner_peer: int = -1
 var _sprite: Sprite3D
 var _nameplate_label: Label3D
 var _stars_label: Label3D
 var _nameplate_bg: Sprite3D
+var _accent_bar: Sprite3D
 
+
+func _refresh_static_caches() -> void:
+	var frame := Engine.get_process_frames()
+	if frame != _s_cache_frame:
+		_s_cache_frame = frame
+		_s_cached_players = get_tree().get_nodes_in_group(&"player")
+		if not is_instance_valid(_s_cached_world_gen):
+			var wgs := get_tree().get_nodes_in_group(&"world_generator")
+			_s_cached_world_gen = wgs[0] if not wgs.is_empty() else null
 
 func _ready() -> void:
-	collision_layer = 4
+	collision_layer = 32
 	collision_mask = 0
 	add_to_group(&"loot")
 
@@ -33,9 +53,10 @@ func _ready() -> void:
 	_sprite.pixel_size = 0.02
 	_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	_sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
+	_sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	_sprite.alpha_scissor_threshold = 0.5
 	_sprite.transparent = true
-	_sprite.shaded = true
+	_sprite.shaded = false
 	_sprite.double_sided = true
 	_sprite.position.y = 0.4
 	add_child(_sprite)
@@ -55,6 +76,13 @@ func _ready() -> void:
 var _grounded := false
 
 func _process(delta: float) -> void:
+	if spawn_delay > 0.0:
+		spawn_delay -= delta
+		visible = false
+		return
+	elif not visible:
+		visible = true
+
 	if not _grounded:
 		_snap_to_ground()
 
@@ -62,6 +90,7 @@ func _process(delta: float) -> void:
 		pickup_grace -= delta
 	_age += delta
 	if _age >= DESPAWN_TIME:
+		_cleanup_registry()
 		queue_free()
 		return
 	if _age >= DESPAWN_TIME - DESPAWN_FADE:
@@ -72,41 +101,98 @@ func _process(delta: float) -> void:
 		if _stars_label:
 			_stars_label.modulate.a = fade
 		if _nameplate_bg:
-			_nameplate_bg.modulate.a = fade * 0.85
+			_nameplate_bg.modulate.a = fade
+		if _accent_bar:
+			_accent_bar.modulate.a = fade
 
 	_bob_time += delta * 2.0
 	_sprite.position.y = 0.4 + sin(_bob_time) * 0.08
 	_sprite.rotation.y += delta * 1.5
 
-	# Nameplate: show if ANY player is within range (use nearest player's distance)
-	var nearest_dist := INF
-	for p in get_tree().get_nodes_in_group(&"player"):
-		var node := p as Node3D
-		if not is_instance_valid(node):
+	_nameplate_timer -= delta
+	if _nameplate_timer <= 0.0:
+		_nameplate_timer = 0.5
+		_refresh_static_caches()
+		var nearest_dist_sq := INF
+		for p in _s_cached_players:
+			var node := p as Node3D
+			if not is_instance_valid(node):
+				continue
+			var d_sq := global_position.distance_squared_to(node.global_position)
+			if d_sq < nearest_dist_sq:
+				nearest_dist_sq = d_sq
+		var label_dist := 9.0 if item_id == &"stone" else 45.0
+		var show_label := nearest_dist_sq < label_dist * label_dist
+		if _nameplate_label:
+			_nameplate_label.visible = show_label
+			if _stars_label:
+				_stars_label.visible = show_label
+			if _nameplate_bg:
+				_nameplate_bg.visible = show_label
+			if _accent_bar:
+				_accent_bar.visible = show_label
+
+			if show_label:
+				_update_stack_offset()
+
+
+func _update_stack_offset() -> void:
+	var my_pos := global_position
+	var my_id := get_instance_id()
+	var slot := 0
+	for other in get_tree().get_nodes_in_group(&"loot"):
+		if other == self or not is_instance_valid(other):
 			continue
-		var d := global_position.distance_to(node.global_position)
-		if d < nearest_dist:
-			nearest_dist = d
-	var label_dist := 9.0 if item_id == &"stone" else 45.0
-	var show_label := nearest_dist < label_dist
-	if _nameplate_label:
-		_nameplate_label.visible = show_label
-		if _stars_label:
-			_stars_label.visible = show_label
-		if _nameplate_bg:
-			_nameplate_bg.visible = show_label
+		var od := other as LootDrop
+		if not od or not od._nameplate_label or not od._nameplate_label.visible:
+			continue
+		var dx: float = od.global_position.x - my_pos.x
+		var dz: float = od.global_position.z - my_pos.z
+		if dx * dx + dz * dz < STACK_RADIUS_SQ:
+			if od.get_instance_id() < my_id:
+				slot += 1
+	var target_y := 0.95 + slot * STACK_SPACING
+	_nameplate_label.position.y = target_y
+	if _stars_label:
+		_stars_label.position.y = target_y
+
+
+func _cleanup_registry() -> void:
+	var loot_id: int = get_meta("loot_id", -1)
+	if loot_id >= 0:
+		var wss := _get_world_state_sync()
+		if wss and wss._loot_registry.has(loot_id):
+			wss._loot_registry.erase(loot_id)
+
+
+static func _enforce_loot_cap() -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if not tree:
+		return
+	var all_loot := tree.get_nodes_in_group(&"loot")
+	var excess := all_loot.size() - MAX_LOOT_NODES
+	if excess <= 0:
+		return
+	var sorted: Array[LootDrop] = []
+	for n in all_loot:
+		if n is LootDrop:
+			sorted.append(n as LootDrop)
+	sorted.sort_custom(func(a: LootDrop, b: LootDrop) -> bool: return a._age > b._age)
+	for i in mini(excess, sorted.size()):
+		sorted[i]._cleanup_registry()
+		sorted[i].queue_free()
 
 
 func _snap_to_ground() -> void:
 	_push_away_from_stumps()
 
-	var wgs := get_tree().get_nodes_in_group(&"world_generator")
-	if wgs.is_empty():
+	_refresh_static_caches()
+	if not is_instance_valid(_s_cached_world_gen):
 		_grounded = true
 		return
-	var wg: Node = wgs[0]
-	if wg.has_method(&"get_height_at"):
-		var ground_y: float = wg.get_height_at(global_position.x, global_position.z)
+	var wg: Node = _s_cached_world_gen
+	if wg.has_method(&"get_height_at_scene"):
+		var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
 		global_position.y = ground_y + 0.15
 	_grounded = true
 
@@ -209,7 +295,7 @@ func _build_nameplate() -> void:
 	var full_text := name_part + star_text
 
 	var label_fs := 28
-	var label_px := 0.00088
+	var label_px := 0.009
 	var label_y := 0.95
 
 	_nameplate_label = Label3D.new()
@@ -218,11 +304,15 @@ func _build_nameplate() -> void:
 	_nameplate_label.font_size = label_fs
 	_nameplate_label.pixel_size = label_px
 	_nameplate_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_nameplate_label.fixed_size = true
 	_nameplate_label.no_depth_test = false
-	_nameplate_label.modulate = Color.WHITE
-	_nameplate_label.outline_modulate = Color(0, 0, 0, 0.9)
-	_nameplate_label.outline_size = 6
+	var data: Dictionary = ItemDatabase.get_item(item_id)
+	var qc = data.get("quality_color", null)
+	if star_level == 0 and qc is Color:
+		_nameplate_label.modulate = qc as Color
+	else:
+		_nameplate_label.modulate = Color.WHITE
+	_nameplate_label.outline_modulate = Color(0, 0, 0, 0.95)
+	_nameplate_label.outline_size = 10
 	_nameplate_label.render_priority = 1
 	_nameplate_label.visible = false
 
@@ -234,11 +324,10 @@ func _build_nameplate() -> void:
 		_stars_label.font_size = label_fs
 		_stars_label.pixel_size = label_px
 		_stars_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		_stars_label.fixed_size = true
 		_stars_label.no_depth_test = false
 		_stars_label.modulate = ItemDatabase.get_rarity_color(star_level)
-		_stars_label.outline_modulate = Color(0, 0, 0, 0.9)
-		_stars_label.outline_size = 6
+		_stars_label.outline_modulate = Color(0, 0, 0, 0.95)
+		_stars_label.outline_size = 10
 		_stars_label.render_priority = 1
 		_stars_label.visible = false
 		_stars_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -270,24 +359,8 @@ func _build_nameplate() -> void:
 	_attach_loot_nameplate_bg(bg_w, bg_h, label_y)
 
 
-func _attach_loot_nameplate_bg(bg_w: float, bg_h: float, label_y: float) -> void:
-	CreatureAI._ensure_panel_tex()
-
-	_nameplate_bg = Sprite3D.new()
-	_nameplate_bg.name = "LootNameplateBG"
-	_nameplate_bg.texture = CreatureAI._shared_panel_tex
-	_nameplate_bg.modulate = Color(0.05, 0.05, 0.08, 0.85)
-	_nameplate_bg.pixel_size = bg_w / 4.0
-	_nameplate_bg.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_nameplate_bg.fixed_size = true
-	_nameplate_bg.no_depth_test = false
-	_nameplate_bg.transparent = true
-	_nameplate_bg.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-	_nameplate_bg.render_priority = 0
-	_nameplate_bg.position.y = label_y
-	_nameplate_bg.visible = false
-	_nameplate_bg.scale.y = bg_h / bg_w
-	add_child(_nameplate_bg)
+func _attach_loot_nameplate_bg(_bg_w: float, _bg_h: float, _label_y: float) -> void:
+	pass
 
 
 func _update_visuals() -> void:
@@ -306,9 +379,14 @@ func _update_visuals() -> void:
 		mi.position.y = 0.3
 		add_child(mi)
 
-	# Tint the sprite with rarity color for starred items
+	# Tint the sprite with rarity/quality color
 	if star_level > 0:
 		_sprite.modulate = ItemDatabase.get_rarity_color(star_level).lightened(0.3)
+	else:
+		var data: Dictionary = ItemDatabase.get_item(item_id)
+		var qc = data.get("quality_color", null)
+		if qc is Color:
+			_sprite.modulate = (qc as Color).lightened(0.15)
 
 
 func _get_item_color() -> Color:
@@ -332,79 +410,145 @@ func _get_item_color() -> Color:
 		_:             return Color(0.6, 0.6, 0.3)
 
 
+static var _PIECE_COUNTS: Array[Vector2i] = [
+	Vector2i(2, 4),   # 0 stars
+	Vector2i(3, 5),   # 1 star
+	Vector2i(4, 6),   # 2 stars
+	Vector2i(6, 9),   # 3 stars
+	Vector2i(9, 12),  # 4 stars
+	Vector2i(12, 15), # 5 stars
+]
+
+static var _QUALITY_MULTIPLIERS: Array[float] = [1.0, 1.2, 1.5, 1.8, 2.5, 3.3]
+
+
+static func _roll_boosted_star(rng: RandomNumberGenerator, quality_mult: float) -> int:
+	var weights := ItemDatabase.STAR_WEIGHTS.duplicate()
+	for i in range(1, weights.size()):
+		weights[i] *= quality_mult
+	var total := 0.0
+	for w in weights:
+		total += w
+	var roll := rng.randf() * total
+	var cumulative := 0.0
+	for i in weights.size():
+		cumulative += weights[i]
+		if roll < cumulative:
+			return i
+	return 0
+
+
+static var _drop_index: int = 0
+
 static func spawn_loot(tree: SceneTree, world_pos: Vector3, loot_table: Array, creature_stars: int = 0, rare_table: Array = []) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 
-	var qty_multiplier := 1.0 + creature_stars * 0.5
-	var extra_rolls := creature_stars
+	var star_idx := clampi(creature_stars, 0, _PIECE_COUNTS.size() - 1)
+	var piece_range := _PIECE_COUNTS[star_idx]
+	var piece_count := rng.randi_range(piece_range.x, piece_range.y)
+	var quality_mult := _QUALITY_MULTIPLIERS[star_idx]
 
-	# Check player affixes for loot bonuses — if ANY player has lucky, apply bonus
-	var affix_lucky := 0.0
-	for p in tree.get_nodes_in_group(&"player"):
-		if p.has_method("_has_affix") and p._has_affix(&"lucky"):
-			affix_lucky = 0.05
-			break
-
+	# Build weighted pool from loot table
+	var pool: Array[Dictionary] = []
+	var total_weight := 0.0
 	for entry in loot_table:
-		var id: StringName = entry.get("id", &"wood") as StringName
-		var min_amt: int = int(entry.get("min", 1))
-		var max_amt: int = int(entry.get("max", 1))
-		var chance: float = float(entry.get("chance", 1.0))
-		var boosted_chance := minf(chance + creature_stars * 0.05, 1.0)
-		if rng.randf() > boosted_chance:
-			continue
-		var qty: int = rng.randi_range(min_amt, max_amt)
-		qty = int(ceil(qty * qty_multiplier))
-		if qty <= 0:
-			continue
+		var w: float = float(entry.get("chance", 1.0))
+		pool.append(entry)
+		total_weight += w
 
-		var stars := ItemDatabase.roll_star_level(rng)
-		for _i in extra_rolls:
-			var reroll := ItemDatabase.roll_star_level(rng)
-			if reroll > stars:
-				stars = reroll
+	if pool.is_empty():
+		return
 
-		_spawn_single_drop(tree, world_pos, id, qty, stars, rng)
+	_drop_index = 0
+	var base_angle := rng.randf_range(0.0, TAU)
+	_enforce_loot_cap()
 
-	# Rare / super drop table — each entry rolled independently
-	var rare_chance_boost := creature_stars * 0.02 + affix_lucky
+	var stacked: Dictionary = {}
+	for _piece in piece_count:
+		var roll := rng.randf() * total_weight
+		var cumulative := 0.0
+		var chosen: Dictionary = pool[0]
+		for entry in pool:
+			cumulative += float(entry.get("chance", 1.0))
+			if roll < cumulative:
+				chosen = entry
+				break
+
+		var id: StringName = chosen.get("id", &"bone") as StringName
+		var qty := rng.randi_range(1, 2)
+		var stars := _roll_boosted_star(rng, quality_mult)
+		var item_type: String = str(ItemDatabase.get_item(id).get("type", "material"))
+		if item_type in ["weapon", "armor"]:
+			_spawn_single_drop(tree, world_pos, id, qty, stars, rng, base_angle)
+		else:
+			var key := "%s:%d" % [str(id), stars]
+			if stacked.has(key):
+				stacked[key]["qty"] += qty
+			else:
+				stacked[key] = {"id": id, "stars": stars, "qty": qty}
+
+	var rare_chance_boost := creature_stars * 0.02
 	for entry in rare_table:
-		var id: StringName = entry.get("id", &"wood") as StringName
+		var id: StringName = entry.get("id", &"bone") as StringName
 		var min_amt: int = int(entry.get("min", 1))
 		var max_amt: int = int(entry.get("max", 1))
 		var chance: float = float(entry.get("chance", 0.05))
 		if rng.randf() > chance + rare_chance_boost:
 			continue
 		var qty: int = rng.randi_range(min_amt, max_amt)
-		qty = int(ceil(qty * qty_multiplier))
 		if qty <= 0:
 			continue
-
 		var stars := 0
 		if not entry.get("no_stars", false):
-			stars = ItemDatabase.roll_star_level(rng)
-			for _i in extra_rolls:
-				var reroll := ItemDatabase.roll_star_level(rng)
-				if reroll > stars:
-					stars = reroll
+			stars = _roll_boosted_star(rng, quality_mult)
+		var item_type: String = str(ItemDatabase.get_item(id).get("type", "material"))
+		if item_type in ["weapon", "armor"]:
+			_spawn_single_drop(tree, world_pos, id, qty, stars, rng, base_angle)
+		else:
+			var key := "%s:%d" % [str(id), stars]
+			if stacked.has(key):
+				stacked[key]["qty"] += qty
+			else:
+				stacked[key] = {"id": id, "stars": stars, "qty": qty}
 
-		_spawn_single_drop(tree, world_pos, id, qty, stars, rng)
+	for key: String in stacked:
+		var s: Dictionary = stacked[key]
+		_spawn_single_drop(tree, world_pos, s["id"] as StringName, s["qty"] as int, s["stars"] as int, rng, base_angle)
 
 
-static func _spawn_single_drop(tree: SceneTree, world_pos: Vector3, id: StringName, qty: int, stars: int, rng: RandomNumberGenerator) -> void:
+static func _spawn_scattered_drops(tree: SceneTree, world_pos: Vector3, id: StringName, total_qty: int, stars: int, rng: RandomNumberGenerator, base_angle: float = 0.0) -> void:
+	const MAX_PER_DROP := 2
+	if total_qty <= MAX_PER_DROP:
+		_spawn_single_drop(tree, world_pos, id, total_qty, stars, rng, base_angle)
+		return
+	var remaining := total_qty
+	while remaining > 0:
+		var chunk := mini(rng.randi_range(1, MAX_PER_DROP), remaining)
+		remaining -= chunk
+		_spawn_single_drop(tree, world_pos, id, chunk, stars, rng, base_angle)
+
+
+static func _spawn_single_drop(tree: SceneTree, world_pos: Vector3, id: StringName, qty: int, stars: int, rng: RandomNumberGenerator, base_angle: float = 0.0) -> void:
 	var composite_id := id
 	if stars > 0:
 		var base_data: Dictionary = ItemDatabase.get_item(id)
 		var item_type: String = str(base_data.get("type", "material"))
 		var affixes: Array[StringName] = []
-		if stars >= 3 and item_type in ["weapon", "armor"]:
+		if stars >= 2 and item_type in ["weapon", "armor"]:
 			affixes = ItemDatabase.roll_affixes(stars, ItemDatabase.get_affix_slot(id))
-		composite_id = ItemDatabase.make_star_id(id, stars, affixes)
+		var affix_rolls: Dictionary = ItemDatabase.roll_affix_magnitudes(affixes)
+		composite_id = ItemDatabase.make_star_id(id, stars, affixes, affix_rolls)
 
-	var offset := Vector3(
-		rng.randf_range(-8.0, 8.0), 0.0, rng.randf_range(-8.0, 8.0)
-	)
+	const GOLDEN_ANGLE := 2.39996323  # PI * (3 - sqrt(5))
+	const MIN_RADIUS := 0.8
+	const MAX_RADIUS := 4.0
+	const RADIUS_STEP := 0.35
+	var idx := _drop_index
+	_drop_index += 1
+	var angle := base_angle + idx * GOLDEN_ANGLE + rng.randf_range(-0.15, 0.15)
+	var radius := minf(MIN_RADIUS + idx * RADIUS_STEP, MAX_RADIUS) + rng.randf_range(-0.1, 0.1)
+	var offset := Vector3(cos(angle) * radius, 0.0, sin(angle) * radius)
 	var final_pos := world_pos + offset + Vector3.UP * 0.5
 	# Multiplayer: host spawns and replicates
 	if NetworkManager.is_connected_to_game() and NetworkManager.is_server():

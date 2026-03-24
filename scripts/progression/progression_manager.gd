@@ -9,7 +9,7 @@ signal tier_unlocked(tier: int, boss_id: StringName)
 signal boss_power_activated(boss_id: StringName)
 signal boss_power_deactivated()
 
-## 3 biome tiers (1-3). Each maps to a biome, boss, key drop, and what it unlocks.
+## Biome tiers. Currently only Hearthlands (tier 1); more biomes will be added later.
 const TIER_DATA: Array[Dictionary] = [
 	{
 		"tier": 1,
@@ -17,26 +17,8 @@ const TIER_DATA: Array[Dictionary] = [
 		"boss": &"the_stag_king",
 		"boss_drop": &"antler_pick",
 		"unlocks_station": &"",
-		"unlocks_description": "Antler Pick — mine copper and tin in the Thornwood",
+		"unlocks_description": "Antler Pick — mine copper and tin",
 		"boss_power": "Movement speed +30% for 5 min",
-	},
-	{
-		"tier": 2,
-		"biome": &"thornwood",
-		"boss": &"the_ancient_warden",
-		"boss_drop": &"crypt_key",
-		"unlocks_station": &"forge",
-		"unlocks_description": "Crypt Key — unlock forge and bronze crafting",
-		"boss_power": "Wood yield +100% for 5 min",
-	},
-	{
-		"tier": 3,
-		"biome": &"scorched_steppe",
-		"boss": &"the_warlord",
-		"boss_drop": &"warlords_seal",
-		"unlocks_station": &"war_forge",
-		"unlocks_description": "Warlord's Seal — build the War Forge for iron gear",
-		"boss_power": "Melee damage +50% for 5 min",
 	},
 ]
 

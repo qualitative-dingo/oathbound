@@ -3,25 +3,86 @@
 This file gets an AI agent up to speed on the Oathbound Godot 4 project.
 All game code lives under `/Users/andreattar/Documents/Games/Oathbound/`.
 
+**Multiplayer**: LAN co-op for up to 4 players (ENet, host-authoritative). See [LAN Multiplayer](#lan-multiplayer) section.
+**Single biome**: Currently only Hearthlands (with microbiome variety). More biomes planned for later.
+
+---
+
+## AI Agent MCP Access
+
+You have direct tool access to these MCP servers — **do NOT ask the user** for information you can retrieve yourself.
+
+### Godot Editor MCP (`user-godot-*` tools)
+Full read/write access to the running Godot editor and game:
+- **Editor control**: `godot-editor` — `get_state`, `get_selection`, `select`, `run`, `stop`, `screenshot_game`, `screenshot_editor`, `get_log_messages`, `get_debug_output`, `get_errors`, `get_stack_trace`, `get_performance`
+- **Scene tree**: `godot-node` — `get_properties`, `find`, `create`, `update`, `delete`, `reparent`, `attach_script`, `detach_script`, `connect_signal`
+- **Scenes**: `godot-scene` — `open`, `save`, `create`
+- **3D spatial**: `godot-scene3d` — `get_spatial_info`, `get_bounds`
+- **Animations**: `godot-animation` — list players, get info/details/keyframes, play/stop/seek, create/edit
+- **Resources**: `godot-resource` — `get_info` (SpriteFrames, TileSet, Material, etc.)
+- **Project**: `godot-project` — `get_info`, `get_settings`, `addon_status`
+- **TileMaps**: `godot-tilemap` — list layers, get/set cells, convert coords
+- **GridMaps**: `godot-gridmap` — list, get/set cells
+- **Input injection**: `godot-input` — `get_map`, `sequence`, `type_text` (for testing)
+- **Docs**: `godot-godot_docs` — `fetch_class`, `fetch_page` (Godot engine documentation)
+
+**Key point**: When the game is running, use `get_log_messages` or `get_debug_output` to read console output, `screenshot_game` to see the running game, and `get_errors`/`get_stack_trace` for crash info. Never ask the user to paste Godot output.
+
+### PixelLab MCP (`user-pixellab-*` tools)
+AI pixel art generation for game assets:
+- Characters with directional views + animations (humanoid and quadruped)
+- Isometric tiles, top-down Wang tilesets, sidescroller tilesets
+- Pro tiles (hex, iso, square, octagon with style matching)
+- Map objects with style-matching inpainting
+- All ops are async — create returns a job ID, poll with `get_*` to retrieve results
+
+### Meshy AI MCP (`user-meshy-*` tools)
+3D model generation and processing:
+- Text-to-3D and image-to-3D model generation
+- Rigging, animation, remeshing, text-to-texture
+- Async tasks with streaming status updates
+
+### Gemini Image MCP (`user-gemini-image-*` tools)
+AI image generation and editing:
+- `generate_image` — text-to-image
+- `edit_image` — modify existing images with prompts
+- `compose_images` — combine multiple images
+- `style_transfer` — apply style from one image to another
+
 ---
 
 ## Project Structure (key files)
 
 ```
 scripts/
-  player/player_controller.gd    — Player movement, combat, animations, HUD, weapons, bow, building,
-                                    inventory, crafting, pause menu, workbench, chest UI
+  player/player_controller.gd    — Player movement, combat, animations, HUD, weapons, bow,
+                                  inventory, crafting, minimap, map, chest UI (main 10k+ line file)
+  player/player_hud.gd            — HUD construction (pause menu, hotbar, minimap, map), split from controller
+  player/player_combat.gd          — Player combat logic (attacks, damage, affix processing, affix_val() helper)
+  player/player_inventory_ui.gd    — Inventory UI, crafting grid, tooltips
+  player/player_workbench_ui.gd    — Workbench UI (category tabs, star tiers, craft preview, building tab)
+  player/player_building.gd        — Building system (placement, snapping, ghost preview, cost checks)
   player/interaction_manager.gd   — E-key interaction logic
+  player/player_interaction.gd    — Chest UI (open/close, slots, deposit/withdraw, tooltips)
+  player/skill_system.gd          — Skill XP and leveling
   creatures/creature_ai.gd        — All creature behavior, HP, animations, floating UI, death, status effects
+  world/world_generator.gd        — Terrain generation, zone loading/unloading, biome determination, height noise
   world/zone_populator.gd         — Creature/resource spawning, model paths, scales, yaw offsets, stats
+  world/art_unifier.gd            — Fog/ambient transitions per biome (loads BiomeData .tres files)
   items/loot_drop.gd              — Ground loot pickups, nameplate UI, star system, pickup text
   ui/main_menu.gd                 — Main menu, character/world selection, delete confirmation
   ui/damage_number.gd             — Floating Label3D that rises and fades (DamageNumber class)
+  data/biome_data.gd              — BiomeData Resource class (identity, environment, terrain, creatures, boss)
+  progression/progression_manager.gd — Boss progression tiers, boss powers, station unlocks
   autoloads/audio_manager.gd      — SFX and music playback (pooled AudioStreamPlayer/3D)
-  autoloads/item_database.gd      — Item definitions, rarity colors, star IDs, crafting, star-quality crafting, affix registry
-  autoloads/inventory.gd          — Inventory slots, equipment, star-aware consume/preview, star-capped helpers
-  autoloads/game_events.gd        — Signal bus (item_picked_up, inventory_changed, etc.)
+  autoloads/item_database.gd      — Item definitions, rarity colors, star IDs, crafting, star-quality crafting,
+                                    affix registry + roll ranges. dev_mode bypass for free crafting.
+  autoloads/save_manager.gd       — Save/load, item ID migration (adds @roll to old affix IDs)
+  autoloads/inventory.gd          — Inventory slots, equipment, star-aware consume/preview, star-capped helpers.
+                                    Also holds `dev_mode` flag (bool) for free build/craft.
+  autoloads/game_events.gd        — Signal bus (item_picked_up, inventory_changed, biome_entered, etc.)
 scenes/world/test_world.tscn      — Main world scene (lighting, shadows)
+resources/biomes/*.tres           — BiomeData resources (hearthlands.tres, etc.)
 models/
   player/Lowpolyvikingwithaxe/    — Tripo barbarian player model
   creatures/<Name>/               — Per-creature GLB + basecolor JPG
@@ -62,6 +123,76 @@ audio/music/                       — Background music
 
 ---
 
+## World Generation & Biomes
+
+### Current state: single biome
+The world currently has **one playable biome — Hearthlands**. Ocean is kept as the world-edge
+boundary (zones beyond 90% of `world_radius` or low altitude). All other biome code (Thornwood,
+Scorched Steppe) has been stripped out; it will be re-added later as new biomes are introduced.
+
+### Zone system (`world_generator.gd`)
+- World is divided into `ZONE_SIZE`-unit square chunks, loaded/unloaded around the player
+- `_determine_biome(zone)` returns `&"hearthlands"` or `&"ocean"` based on distance/altitude
+- `_determine_microbiome(zone)` adds variety within Hearthlands: `meadow`, `forest`,
+  `birch_forest`, `hills`, `riverside`, or `none` (driven by noise functions)
+- Each zone gets a terrain mesh with biome-specific material from `_biome_materials`
+- `_generate_zone(coord)` builds mesh → applies material → calls `ZonePopulator.populate_zone()`
+- Height is global (`get_height_at(x, z)`) using layered `FastNoiseLite`; not per-biome
+- Zone biome is cached in `_zone_biome_cache` (Dictionary keyed by `Vector2i`)
+
+### Biome signals
+- `biome_at_player_changed(biome_id)` — emitted by `WorldGenerator` when host zone changes
+- `GameEvents.biome_entered(biome_name)` — global signal bus mirror
+- `art_unifier.gd` listens to `biome_at_player_changed` and tweens fog/ambient from `BiomeData .tres`
+
+### Microbiome effects on spawning (`zone_populator.gd`)
+- `_get_microbiome_counts(biome, micro)` overrides tree/rock/bush/enemy counts per microbiome
+- `_pick_tree_name()` uses microbiome to weight Oak vs Birch distribution
+- Grass is always Hearthlands-style green (no biome variants currently)
+
+### BiomeData resource (`data/biome_data.gd`)
+Resource class with exports for identity, environment (fog, ambient), terrain hints,
+vegetation/creature tables, boss info, and progression tier. `.tres` files live in
+`res://resources/biomes/`. Currently only `hearthlands.tres` is used at runtime (by `art_unifier`
+for fog/ambient tweens). The resource format is forward-compatible for adding new biomes later.
+
+---
+
+## Progression System (`progression_manager.gd`)
+
+### Current state: tier 1 only
+- `TIER_DATA` contains a single entry: tier 1 / Hearthlands / The Stag King boss
+- Defeating the Stag King drops `antler_pick` and advances to tier 2 (unlocking everything)
+- Additional tiers (with new biomes and bosses) will be added later
+
+### Boss powers
+- `activate_boss_power(boss_id)` — 5 min active buff, 20 min cooldown
+- Stag King power: "Movement speed +30% for 5 min"
+- Only one power active at a time; tracked via `active_boss_power` and timer
+
+### Station gating
+- `is_station_unlocked(station_type)` checks if the tier granting that station has been reached
+- Stations not in `TIER_DATA` (e.g. workbench) are always available (returns `true`)
+
+---
+
+## Dev Mode
+
+A **dev mode toggle** exists on the pause screen for testing.
+
+### How it works
+- `Inventory.dev_mode` (bool, default `false`) — global flag on the Inventory autoload
+- Pause menu has a "Dev Mode (free build & craft)" checkbox that toggles it
+- When enabled:
+  - `ItemDatabase.can_craft()` always returns `true` (skip material checks)
+  - `ItemDatabase.craft_item()` and `craft_item_at()` skip material consumption
+  - Building placement in `player_building.gd` skips cost checks and material deduction
+  - Workbench placeable crafting skips material removal
+  - All UI `can_afford` checks return `true`; cost text shows green instead of red
+- State is **not** persisted across sessions (resets to off on game restart)
+
+---
+
 ## Player Character (Tripo Barbarian)
 
 - **Model**: `res://models/player/Lowpolyvikingwithaxe/barbarian+3d+model.glb`
@@ -70,6 +201,7 @@ audio/music/                       — Background music
 - **Rotation**: `-PI/2` offset via `_player_yaw_offset` (applied in `_rotate_model` and `_respawn`)
 - External Mixamo animations are **SKIPPED** (`if not is_tripo_barbarian: _load_external_animations()`)
   because they target a different skeleton. Uses built-in NlaTracks only.
+- **Jump velocity**: 9.9 (increased 20% from 8.25)
 - **Gravity multiplier**: 2.34
 - Armor baked into mesh — `_update_armor_visuals()` returns early when `_is_lowpoly_viking` is true
 
@@ -102,18 +234,24 @@ idle        → ["stand", "idle"]
 ### Player attack flow
 - `_start_attack_animation()` sets `_gltf_attack_anim` and `_gltf_attack_timer` per weapon class
 - A whoosh sound (`arrow_swoosh`) plays on every melee swing via `AudioManager.play_sfx()` (non-positional)
-- `_try_attack()` applies `rapid_strikes`/`rapid_chop`/`quick_strike` (×0.88 cooldown), `sharpened_edge`/`precision_strike` (+15% dmg), `reaching` (×1.2 range), and `efficient_miner` (-20% stamina) before scheduling resolve
+- `_try_attack()` applies `rapid_strikes`/`rapid_chop`/`quick_strike` (rolled faster cooldown), `sharpened_edge`/`precision_strike` (rolled +dmg%), `reaching` (rolled +range%), and `efficient_miner` (rolled -stamina%) before scheduling resolve
 - `_resolve_attack()` runs after `hit_delay` (0.18s or 0.30s for 2h), checks enemies + harvestables
   - Includes crit roll, affix damage modifiers, and post-hit affix procs (see affix ordering)
 - **Harvestable hit cap**: Max 2 per swing (or 3 with `timber_cleave` axe affix), sorted by distance (closest first)
-- Tree drops boosted by axe affixes: `lumberjack` (+40%), `double_yield` (10% double), `bark_stripper` (25% resin)
-- Rock drops boosted by pickaxe affixes: `prospector` (+40% stone), `ore_seeker` (+30% copper), `rich_vein` (10% double), `vein_finder` (30% bonus ore)
+- Tree drops boosted by axe affixes: `lumberjack` (rolled 30-50%), `double_yield` (rolled 8-12% double), `bark_stripper` (rolled 20-30% resin)
+- Rock drops boosted by pickaxe affixes: `prospector` (rolled 30-50% stone), `ore_seeker` (rolled 25-35% copper), `rich_vein` (rolled 8-12% double), `vein_finder` (rolled 25-35% bonus ore)
 - `deep_cut` (axe) and `stone_breaker` (pickaxe) add +50% damage to trees/rocks respectively
 - `sap_drinker` (axe) and `geologist` (pickaxe) heal +2 HP per resource hit
 - Tree hit: plays `axe_chop` (non-positional); fists play `fist_hit_tree`
 - Stone hit: plays `pickaxe_hit` (non-positional)
 - All player combat audio uses `play_sfx()` (non-positional) for constant volume regardless of zoom
 - **Player death guard**: `take_damage()` returns early if `current_health <= 0.0` (unless `undying` triggers)
+
+### Double jump (`_handle_jump()` in `player_controller.gd`)
+- Requires the `double_jump` boots affix (tier 2, rare)
+- Tracked by `_double_jump_used: bool`, reset to `false` when `is_on_floor()`
+- If airborne + has affix + not used yet: performs a second jump at **85%** of normal `jump_velocity`
+- Only one extra jump per airborne period — cannot chain multiple double jumps
 
 ### Pickup radius
 - Auto-pickup: 2.07 units
@@ -248,6 +386,34 @@ ghoul, cyclops, minotaur), `ember_stone` (fire_imp), `frost_shard` (frost_wraith
 Both `zone_populator.gd` and `cave_generator.gd` call `_creature_loot_for()` and set
 `loot_table` + `rare_loot_table` on the creature. `_spawn_single_drop()` in `loot_drop.gd`
 is the shared helper that creates individual `LootDrop` nodes for both normal and rare drops.
+
+**Abandoned Villages** — `village_generator.gd` (static class, same pattern as `cave_generator.gd`).
+Called from `zone_populator.gd` with 12% chance per hearthlands zone (`VILLAGE_CHANCE = 0.12`).
+A forced village always spawns at `(20, 20)` in the `(0,0)` zone (near player spawn).
+
+- **Huts**: 6–12 per village (`MIN_HUTS`/`MAX_HUTS`), spread in a ring at radius 17–34m from center
+- **Variations**: 45 hut variations parameterized by footprint (`gx×gz` grid cells, each 3.6m),
+  roof type (thatch_45, thatch_26, collapsed, none), material (wood/stone/mixed), floor, door
+- **Renovatable buildings**: Village huts use the **same building components as player-built
+  structures**. Each wall, floor, and roof section is its own `StaticBody3D` with proper `build_id`
+  metadata (`wood_wall`, `stone_wall`, `wood_floor`, `stone_floor`, `thatch_roof_45`, etc.) in the
+  `structures` group. Players can **salvage (remove) individual pieces** with a hammer and get
+  half the materials back, then rebuild/renovate with their own building pieces.
+- **80% minimum completeness**: Buildings randomly omit up to 20% of their components for an
+  abandoned look, but are always at least 80% intact.
+- **Hut anchor**: Each hut has a lightweight `Node3D` anchor with `footprint_radius` metadata
+  (for tree/grass exclusion). The anchor is in the `structures` group but has no `build_id`,
+  so the salvage system skips it. Individual building pieces are children of the anchor.
+- **Wall openings**: Every hut always has at least one front wall removed (facing village center)
+  as a doorway.
+- **Collapsed roofs**: Roof debris scatters *outside* the hut footprint (leaning against exterior
+  walls or lying on the ground nearby). Never placed flat on the hut floor. Each collapsed piece
+  is its own salvageable `StaticBody3D` with `build_id = thatch_roof_26`.
+- **Chests**: Each hut has a 1-in-3 chance (`CHEST_CHANCE = 0.333`) to contain a chest with basic
+  materials + starred gear (1-5★). **Guaranteed minimum 1 chest per village** — if RNG produces
+  zero chests, a fallback chest is placed in a random hut.
+- **Hero centerpiece**: Meshy-generated GLB (stone statue, well, or broken cart) at village center.
+  GLBs in `res://models/village/`. Falls back to procedural stone pillar if GLBs missing.
 
 ---
 
@@ -384,10 +550,13 @@ Starred equipment gets per-star multipliers applied at lookup time:
 Base armor values: Leather Vest 5, Leather Pants 3, Leather Boots 2 (total 10 at 0★).
 
 ### Damage reduction formula (`take_damage()` in player_controller.gd)
-- Blocking: `final_amount *= 0.3` (or `0.2` with `guardian` affix)
+- Blocking: base 70% DR (or rolled 75-85% with `guardian` affix)
 - Armor: `final_amount *= max(1.0 - armor_value * 0.02, 0.2)` (caps at 80% reduction)
 - Full 0★ leather set (10 armor) → 20% damage reduction
-- Additional layers from affixes: thick_skinned, fortified, last_stand, battle_hardened (see affix ordering)
+- Defensive affixes stack **additively** with an 85% hard cap:
+  iron_will, thick_skinned, fortified, last_stand, battle_hardened, blocking — all rolled values
+  summed into one DR percentage, then `clampf(total, 0.0, 0.85)`
+- Iron Skin and Deflection are high-DR procs (rolled 80-90%) with proc chance rolls, NOT immunity
 
 ### Critical hits (`_resolve_attack()` / `_fire_bow()`)
 - Base crit chance: `5.0 + dex * 0.5`%
@@ -528,7 +697,8 @@ accurate material counts for the selected tier. Craft button disables via `can_c
 - `roll_crafting_star(avg_material_quality)` — rolls output star using `get_crafting_probabilities()`
 - `get_hand_recipes()` — returns recipes with `crafting_station == "hand"`
 - `get_workbench_recipes()` — returns recipes with station `"hand"` or `"workbench"`
-- Affixes are rolled via `roll_affixes(crafted_stars, get_affix_slot(item_id))` and encoded into the output ID
+- Affixes are rolled via `roll_affixes(crafted_stars, get_affix_slot(item_id))`, then magnitudes via
+  `roll_affix_magnitudes(affixes)`, both encoded into the output ID via `make_star_id()`
 
 ---
 
@@ -547,97 +717,122 @@ Affixes are permanent, encoded in the item ID, and make each item unique. Two it
 same base and stars but different affixes are distinct inventory entries.
 
 ### Item ID format
-Affixes extend the composite ID: `base_id:stars:affix1,affix2` (sorted alphabetically).
-Example: `stone_sword:4:lifesteal,rapid_strikes`. Items with 0-2★ keep `base_id:stars`.
+Affixes extend the composite ID with roll values: `base_id:stars:affix1@roll1,affix2@roll2`
+(sorted alphabetically). The `@roll` is an integer 0–100 representing where the affix's
+numeric value falls within its min/max range (0 = minimum, 100 = maximum).
+Example: `stone_sword:4:lifesteal@73,rapid_strikes@42`. Items with 0-2★ keep `base_id:stars`.
+Old saves without `@` in affix IDs get a fresh `randf()` roll on parse (backward compatible).
 
 ### Affix registry (`item_database.gd`)
 - `AFFIXES` dictionary: ~88 entries keyed by StringName, each with `name`, `description`, `slot`, `tier`
-- `slot` is the **specific** weapon class or armor slot: `"axe"`, `"pickaxe"`, `"sword"`, `"bow"`, `"chest"`, `"legs"`, `"feet"`
+- **Roll ranges**: Most numeric affixes also have `"min"`, `"max"`, `"fmt"`, `"pct"` fields:
+  - `min`/`max`: the actual value range (e.g. `0.06` to `0.10` for Lifesteal's 6-10% heal)
+  - `fmt`: printf format string for display (e.g. `"Heal for %.0f%% of damage dealt"`)
+  - `pct`: if `true`, the display value is `val * 100` (converts 0.08 → "8%")
+  - Affixes without `min`/`max` are binary (no variable magnitude, e.g. Cleaving, Steadfast)
+- `slot` is the **specific** weapon class or armor slot: `"axe"`, `"pickaxe"`, `"sword"`, `"bow"`, `"mace"`, `"shield"`, `"chest"`, `"legs"`, `"feet"`
 - `tier`: 1 (common) or 2 (rare, weighted 0.5x in rolling)
 - `get_affix_slot(item_id)` — returns the affix pool key for an item (calls `get_weapon_class()` for weapons or reads `armor_slot` for armor)
 - `roll_affixes(stars, affix_slot)` — weighted random selection without replacement from the matching pool
+- `roll_affix_magnitudes(affixes)` — generates a `{affix_id: int(0-100)}` roll dictionary for each affix
 - `_get_affix_pool(affix_slot)` — filters affixes by exact slot match
 - `get_affix_data(affix_id)` — returns affix dictionary
+- `get_affix_value(affix_id, roll, fallback)` — interpolates between min/max using `roll` (0.0–1.0 float). Returns `fallback` if affix has no min/max.
+- `format_affix_description(affix_id, roll)` — returns a human-readable description with the rolled value (e.g. "+18% headshot damage"). Falls back to static `description` for non-numeric affixes.
+- `make_star_id(base_id, stars, affixes, affix_rolls)` — creates composite ID with `@roll` encoding
+- `parse_star_id(composite_id)` — returns `{"base_id", "stars", "affixes", "affix_rolls"}`. `affix_rolls` is `{affix_id: float(0.0-1.0)}`. Old IDs without `@` get `randf()` rolls.
 
 ### Axe affixes (10) — woodcutting themed
-`lumberjack` (+40% wood drops), `splitter` (trees fall 30% faster), `deep_cut` (trees take 1 fewer hit / +50% dmg),
-`bark_stripper` (25% bonus resin), `double_yield` (10% double wood), `timber_cleave` (hit 3 trees per swing),
-`sharpened_edge` (+15% axe damage), `heavy_chop` (+30% knockback), `rapid_chop` (12% faster swing),
-`sap_drinker` (+2 HP per tree chop)
+All numeric values below are rolled ranges (each item rolls independently within the range):
+`lumberjack` (30-50% wood drops), `splitter` (trees fall 25-35% faster), `deep_cut` (+40-60% tree dmg),
+`bark_stripper` (20-30% bonus resin), `double_yield` (8-12% double wood), `timber_cleave` (hit 3 trees per swing),
+`sharpened_edge` (12-18% axe damage), `heavy_chop` (25-35% knockback), `rapid_chop` (10-14% faster swing),
+`sap_drinker` (2-3 HP per tree chop)
 
 ### Pickaxe affixes (10) — mining themed
-`prospector` (+40% stone drops), `vein_finder` (30% bonus ore), `precision_strike` (+15% pickaxe damage),
-`stone_breaker` (rocks take 1 fewer hit / +50% dmg), `efficient_miner` (-20% stamina cost),
-`rich_vein` (10% double stone), `heavy_swing` (+30% knockback), `quick_strike` (12% faster swing),
-`ore_seeker` (+30% copper ore drops), `geologist` (+2 HP per mining hit)
+All numeric values are rolled ranges:
+`prospector` (30-50% stone drops), `vein_finder` (25-35% bonus ore), `precision_strike` (12-18% pickaxe dmg),
+`stone_breaker` (+40-60% rock dmg), `efficient_miner` (15-25% less stamina),
+`rich_vein` (8-12% double stone), `heavy_swing` (25-35% knockback), `quick_strike` (10-14% faster swing),
+`ore_seeker` (25-35% copper ore drops), `geologist` (2-3 HP per mining hit)
 
 ### Sword affixes (18) — melee combat themed
-`windfury` (30% extra 2 attacks), `lifesteal` (8% heal), `firebrand` (15% fire bonus),
-`frostbite` (20% slow), `venomous` (12% poison), `stunning_blow` (8% stun),
-`executioner` (+30% to low HP), `berserker` (+dmg from missing HP),
-`sharpened` (+10% crit), `savage` (+40% crit dmg), `rapid_strikes` (12% faster),
-`cleaving` (wider arc), `momentum` (+4%/stack), `reaching` (+20% range),
-`chain_lightning` (10% arc), `bane` (8% double dmg), `siphon` (+3 stam/hit),
-`runic` (12% AoE)
+All numeric values are rolled ranges:
+`windfury` (25-35% extra 2 attacks), `lifesteal` (6-10% heal), `firebrand` (12-18% fire bonus),
+`frostbite` (15-25% slow), `venomous` (10-14% poison), `stunning_blow` (6-10% stun),
+`executioner` (+25-35% to low HP), `berserker` (+dmg from missing HP, rolled scaling),
+`sharpened` (+7-13% crit), `savage` (+30-50% crit dmg), `rapid_strikes` (10-14% faster),
+`cleaving` (wider arc, binary), `momentum` (+3-5%/stack), `reaching` (+15-25% range),
+`chain_lightning` (8-12% arc), `bane` (6-10% double dmg), `siphon` (+2-4 stam/hit),
+`runic` (10-14% AoE)
 
 ### Bow affixes (10) — ranged combat themed
-`precision` (+20% headshot dmg), `multishot` (20% double arrow), `piercing` (arrow pierce),
-`sniper` (+25% dmg at long range), `rapid_draw` (15% faster draw), `poison_tip` (30% apply poison),
-`frost_arrow` (35% slow target), `explosive` (10% AoE on impact), `steady_aim` (+12% crit while still),
-`quiver_mastery` (15% no arrow consumption)
+All numeric values are rolled ranges:
+`precision` (+15-25% headshot dmg), `bouncing_shot` (28-38% chance arrow bounces to nearby enemy),
+`sniper` (+20-30% dmg at long range), `rapid_draw` (12-18% faster draw), `poison_tip` (25-35% apply poison),
+`frost_arrow` (30-40% slow target), `explosive` (8-12% AoE on impact), `steady_aim` (+9-15% crit while still),
+`echoing_shot` (12-25% chance to fire a bonus arrow, triggers recursively on itself)
 
 ### Chest armor affixes (10) — defense themed
-`vitality` (+15 max HP), `fortified` (+8% DR), `iron_skin` (8% negate dmg),
-`thorns` (15% reflect), `second_wind` (heal at 20% HP), `undying` (revive once, 300s CD),
-`bulwark` (+3 flat armor), `regenerator` (+1 HP/s always), `guardian` (block→20%),
-`battle_hardened` (+5%/enemy DR max 3)
+All numeric values are rolled ranges:
+`vitality` (+12-18 max HP), `fortified` (+6-10% DR), `iron_skin` (6-10% proc → 80-90% DR),
+`thorns` (12-18% reflect), `second_wind` (heal at low HP, rolled threshold + heal %), `undying` (revive once, 300s CD),
+`bulwark` (+2-4 flat armor), `regenerator` (+0.8-1.2 HP/s), `guardian` (block grants 75-85% DR),
+`battle_hardened` (+4-6%/enemy DR max 3)
 
 ### Legs armor affixes (10) — stamina/resilience themed
-`endurance` (+20 max stamina), `resilience` (+25% stam regen), `steadfast` (KB immune),
-`thick_skinned` (first hit -30%, 10s CD), `last_stand` (+25% DR below 25% HP),
-`fleet` (-25% sprint stam cost), `rejuvenation` (+30% HP regen), `quick_recovery` (-2s regen delay),
-`lucky` (+5% rare drop chance), `tenacity` (min 60% move speed)
+All numeric values are rolled ranges:
+`endurance` (+16-24 max stamina), `resilience` (+20-30% stam regen), `steadfast` (KB immune, binary),
+`thick_skinned` (first hit 25-35% DR, 10s CD), `last_stand` (+20-30% DR below 25% HP),
+`fleet` (20-30% less sprint stam cost), `rejuvenation` (+25-35% HP regen), `quick_recovery` (1.5-2.5s less regen delay),
+`lucky` (+4-6% rare drop chance), `tenacity` (min 50-70% move speed)
 
-### Boots armor affixes (10) — movement themed
-`swiftness` (+10% move speed), `aquatic` (+30% swim speed), `warmth` (-40% swim stam cost),
-`featherfall` (-50% fall dmg), `evasion` (5% dodge), `adrenaline` (on kill +15% speed 4s),
-`sure_footed` (no slope penalty), `light_step` (-30% fall dmg + silent), `trailblazer` (+15% water speed),
-`nimble` (+8% dodge while sprinting)
+### Boots armor affixes (11) — movement themed
+All numeric values are rolled ranges:
+`swiftness` (+8-12% move speed), `aquatic` (+25-35% swim speed), `warmth` (33-47% less swim stam cost),
+`featherfall` (40-60% less fall dmg), `evasion` (4-6% dodge), `adrenaline` (on kill +12-18% speed 4s),
+`sure_footed` (no slope penalty, binary), `light_step` (25-35% less fall dmg + silent), `trailblazer` (+12-18% water speed),
+`nimble` (+6-10% dodge while sprinting), `double_jump` (one extra mid-air jump, binary, tier 2)
 
-### Combat integration (`player_controller.gd`)
-- `_get_active_affixes()` — cached dictionary of all equipped affixes (weapon + armor), invalidated on inventory change via `_invalidate_affix_cache()` called from `_on_inventory_changed()`
-- `_has_affix(id)` — O(1) lookup, safe to call from hot paths
+### Combat integration (`player_controller.gd` + `player_combat.gd`)
+- `_get_active_affixes()` / `get_active_affixes()` — cached dictionary of all equipped affixes (weapon + armor), keyed by affix StringName with the **roll float (0.0–1.0)** as the value (not `true`). Invalidated on inventory change via `_invalidate_affix_cache()` called from `_on_inventory_changed()`
+- `_has_affix(id)` / `has_affix(id)` — O(1) lookup, safe to call from hot paths
+- `_affix_val(id)` / `affix_val(id)` — looks up the cached roll for the affix and calls `ItemDatabase.get_affix_value(id, roll)` to get the interpolated min/max value. All combat code uses this instead of hardcoded numbers.
 - `_get_weapon_affixes()` — affixes on currently equipped weapon only
-- `_apply_affix_stat_bonuses()` — called on equip change, adjusts `max_health`/`max_stamina` while preserving current ratio
+- `_apply_affix_stat_bonuses()` — called on equip change, adjusts `max_health`/`max_stamina` while preserving current ratio. Uses `affix_val()` for vitality/endurance.
 - `_tick_affix_timers(delta)` — runs each physics frame, counts down momentum, second_wind, thick_skinned, undying, and adrenaline timers
 - Sword procs fire in `_resolve_attack()` (melee); bow procs fire in `_fire_bow()` / `_tick_arrows()`; axe/pickaxe procs fire in `_hit_harvestable()` / `_destroy_rock()` / `_fell_tree()`
 - Armor procs fire in `take_damage()` (chest), `_handle_movement()` (boots), `_handle_stamina()` (legs)
-- Sword crit system: base `5% + dex*0.5`, `sharpened` adds +10%, `savage` adds +40% to crit damage
-- Bow crit: `steady_aim` adds +12% crit while standing still
+- Sword crit system: base `5% + dex*0.5`, `sharpened` adds rolled crit chance (7-13%), `savage` adds rolled crit dmg (30-50%)
+- Bow crit: `steady_aim` adds rolled crit chance (9-15%) while standing still
 - Windfury uses `_windfury_guard` bool to prevent infinite recursion when extra attacks trigger
 
 ### `take_damage()` affix ordering
-1. Iron Skin — full negate (early return)
-2. Evasion / Nimble — dodge roll (early return, combined chance)
-3. Thick Skinned — first-hit reduction (10s cooldown)
-4. Block (Guardian modifies multiplier 0.3→0.2)
-5. Armor (Bulwark adds +3 flat)
-6. Fortified (×0.92)
-7. Last Stand (×0.75 below 25% HP)
-8. Battle Hardened (×0.95 per nearby enemy, max 3)
-9. Apply damage
-10. Quick Recovery (reduces regen delay by 2s)
-11. Thorns (reflect 15% to source)
-12. Second Wind (heal 20% HP below 20%, 45s CD)
-13. Undying (revive at 10% HP on death, 300s CD)
+1. Iron Skin — high DR proc (rolled 80-90%, NOT full negate)
+2. Evasion / Nimble — dodge roll (early return, combined chance, rolled values)
+3. Deflection — shield high DR proc (rolled 80-90%)
+4. Thick Skinned — first-hit reduction (rolled 25-35%, 10s cooldown)
+5. Block (Guardian modifies reduction, rolled 75-85%)
+6. Armor (Bulwark/Stalwart add flat armor, rolled values)
+7. Additive DR stack: Iron Will + Thick Skinned + Fortified + Last Stand + Battle Hardened + Blocking,
+   all rolled values, stacked additively with 85% hard cap
+8. Apply damage
+9. Quick Recovery (reduces regen delay, rolled value)
+10. Thorns (reflect rolled 12-18% to source)
+11. Second Wind (heal at low HP, rolled values, 45s CD)
+12. Undying (revive at 10% HP on death, 300s CD)
 
 ### `_resolve_attack()` affix ordering (swords)
-1. Pre-damage modifiers: berserker, momentum stacks, sharpened_edge/precision_strike (+15% dmg for axes/pickaxes)
-2. Crit roll (sharpened/savage)
-3. Per-enemy modifiers: executioner, bane
-4. Post-hit procs: lifesteal, siphon, firebrand, chain_lightning, runic, frostbite, venomous, stunning_blow
+1. Additive offense stack: berserker + momentum + relentless_fury + retaliation + headshot + sniper
+   (all rolled values, stacked additively into one `offense_add` bonus multiplier)
+2. Crit roll: base chance + `sharpened` rolled bonus; crit damage: base + `savage` rolled bonus.
+   Crit and headshot applied as final separate multipliers (not additive with the stack).
+3. Per-enemy modifiers: executioner (rolled +25-35% to low HP), bane (rolled 6-10% double dmg)
+4. Post-hit procs: lifesteal, siphon, firebrand, chain_lightning, runic, frostbite, venomous,
+   stunning_blow, concussive, bone_breaker, earthshaker, staggering, thunderclap, echoing_blade
+   — all using rolled values via `affix_val()`
 5. Momentum stack update
-6. Windfury check (2 recursive calls with guard)
+6. Windfury check (rolled 25-35% chance, 2 recursive calls with guard)
 
 ### `_hit_harvestable()` affix effects (axes/pickaxes)
 - `deep_cut`: +50% damage to trees
@@ -679,28 +874,53 @@ Example: `stone_sword:4:lifesteal,rapid_strikes`. Items with 0-2★ keep `base_i
 ### Tooltip display
 Items with affixes show a separator + affix list below stats:
 - Affix name in gold (`#ffd700`)
-- Description in gray (`#aaaaaa`)
+- Description in gray (`#aaaaaa`) — uses `format_affix_description(affix_id, roll)` to show the
+  actual rolled value (e.g. "+18% headshot damage" instead of a generic "+20% headshot damage").
+  Affixes without min/max show their static `description` string.
+
+### Legendary+ arrow glow (`_spawn_arrow()` in `player_controller.gd`)
+Arrows fired from bows with 4+ stars (Legendary or better) get a purple magic-missile aura:
+- **Color**: hardcoded purple `Color(0.55, 0.1, 0.9)` via `_arrow_aura_color()` (ignores
+  quality_color — user preference for consistent purple regardless of item tier)
+- **Glow layers**: 3 billboard `MeshInstance3D` quads (AuraCore 0.5×0.5, AuraMid 1.0×1.0,
+  AuraOuter 1.75×1.75) using `BLEND_MODE_ADD` + emission for additive glow visible in any lighting
+- **Light**: `OmniLight3D` with `light_energy = 5.0`, `omni_range = 4.0`
+- **Particle trail**: `GPUParticles3D` (30 particles, 0.5s lifetime) with matching purple material
+- **Arrow mesh tinting**: body, tip, and fletching materials get boosted emission in `aura_col`
+- **Cleanup**: `_stick_arrow()` removes all aura children (light, quads, particles) and reverts
+  mesh materials to defaults when the arrow stops moving (hits a surface or loses speed)
+- Helper: `_make_aura_mat(col, alpha, energy)` creates `StandardMaterial3D` with unshaded +
+  additive blend + billboard + no depth test + emission. Reusable for similar effects.
+- Environment glow settings in `test_world.tscn` were boosted (`glow_intensity = 0.6`,
+  `glow_bloom = 0.15`) to make emission-based effects more visible.
 
 ### Bow affix specifics
 - Crit is rolled once per shot in `_fire_bow()` (not per arrow)
 - `steady_aim` adds +12% crit chance when player is standing still
 - `rapid_draw` increases bow tension buildup by 15%
-- Multishot spawns a second arrow offset by `cam_right * 0.3`
-- Piercing tracks `arrow.set_meta("pierce_count", ...)` — skips marking `hit=true` on first enemy
+- Echoing Shot rolls recursively in a `while` loop — each bonus arrow re-rolls the same chance,
+  so a 25% roll can theoretically chain multiple arrows (alternating left/right offset by `cam_right * 0.3`)
+- Bouncing Shot redirects the arrow toward the nearest alive enemy within 12 units on hit (re-triggers itself)
 - Precision increases headshot multiplier from 1.3 to 1.5 in `_tick_arrows()`
 - `sniper` adds +25% dmg when distance to target > 15 units
 - `frost_arrow` (35% slow), `poison_tip` (30% poison), `explosive` (10% AoE) trigger from arrow hits
 
 ### Loot drop affix integration (`_spawn_single_drop()` in `loot_drop.gd`)
-- Checks if item is equipment (`type` in `["weapon", "armor"]`) and `stars >= 3`
-- Calls `ItemDatabase.roll_affixes(stars, ItemDatabase.get_affix_slot(id))` and encodes into composite ID via `make_star_id()`
+- Checks if item is equipment (`type` in `["weapon", "armor"]`) and `stars >= 2`
+- Calls `ItemDatabase.roll_affixes(stars, ...)` then `roll_affix_magnitudes(affixes)` to generate rolls
+- Encodes both affixes and rolls into composite ID via `make_star_id(id, stars, affixes, affix_rolls)`
 - Player affix `lucky` is checked at the top of `spawn_loot()` by looking up the player node from the SceneTree
 
 ### Save/load
-Affixes are encoded in the StringName item ID, already persisted by inventory serialization.
-`save_manager.gd` has `_migrate_missing_affixes()` and `_migrate_item_id()` which retroactively
-roll affixes for 3+ star equipment loaded from old saves. Migration now uses `get_affix_slot()` to
-roll the correct weapon-specific or armor-slot-specific affixes.
+Affixes and their roll values are encoded in the StringName item ID, already persisted by inventory
+serialization. `save_manager.gd` has `_migrate_missing_affixes()` and `_migrate_item_id()` which
+retroactively roll affixes for 3+ star equipment loaded from old saves. Migration now uses
+`get_affix_slot()` to roll the correct weapon-specific or armor-slot-specific affixes, and
+`roll_affix_magnitudes()` to generate roll values for newly added affixes.
+
+Old item IDs without `@roll` in affixes (e.g. `"sword:3:windfury,lifesteal"`) are automatically
+upgraded on parse — `parse_star_id()` assigns a fresh `randf()` roll to each affix missing its `@`
+value. This means old saved items get randomized rolls on first load.
 
 ---
 
@@ -723,6 +943,20 @@ When a tree is chopped and falls, it can knock over nearby trees it collides wit
   `flat_speed / walk_speed` (clamped 0.4–2.2), multiplied by `0.65` for a slower, heavier feel
 - Footsteps stop while swimming (`_is_swimming` check)
 - Uses the `grass_step` sound group
+
+### Swim fatigue / drowning (`_tick_swim_fatigue()` in `player_controller.gd`)
+- When swimming (not on a raft), `_swim_fatigue` increments by `delta` each physics frame
+- `SWIM_FATIGUE_MAX = 15.0` seconds — reaching this kills the player ("Drowned!" floating text)
+- At 75% fatigue the bar starts pulsing (warning). At 100% the player dies via `_on_death()`
+- On returning to land or boarding a raft, fatigue recovers at `SWIM_FATIGUE_RECOVER_RATE = 5.0`/s
+  (takes ~3 seconds to fully recover from max fatigue)
+- If the player enters water while mounted on a horse, `force_dismount()` is called immediately
+  — the horse is dismounted and the player begins drowning on the fatigue timer
+- A **swim fatigue bar** (blue, shader-driven) appears below the stamina bar while fatigue > 0.
+  It drains left-to-right as fatigue increases (shows remaining breath). Uses the same
+  `bar_hud.gdshader` as HP/stamina bars, with pulse on the danger threshold.
+- Variables: `_swim_fatigue` (float), `_swim_fatigue_bar` (MeshInstance3D), `_swim_fatigue_pulse` (float)
+- Reset to 0 in `_respawn()`
 
 ---
 
@@ -758,6 +992,17 @@ Do NOT add player to creature collision_mask — causes creatures to ride up pla
 - **Wood floor**: `Vector3(3.0, 0.1, 3.0)` — 3m×3m square tile, no GLB model (uses procedural `BoxMesh`).
   The GLB was removed because `wood_floor.glb` had non-square internal proportions causing distortion.
 - Wall width and floor width are matched (3.0m) so pieces tile together cleanly.
+
+### Mouse-based placement (`_update_build_ghost()` in `player_controller.gd`)
+- Ghost position is determined by a **camera raycast** through the screen center into the world
+  (physics layer 1 = terrain). The ghost follows wherever the crosshair points.
+- **Max distance**: `BUILD_MAX_DISTANCE = 12.0` units from the player. If the raycast hit is
+  farther, it falls back to a fixed 3.5m forward offset.
+- **Horizontal**: move the mouse/camera to aim the ghost position on the terrain
+- **Height adjustment**: `Ctrl + Scroll Wheel` raises/lowers the ghost by `BUILD_HEIGHT_STEP = 0.3`
+  units per tick. Stored in `_build_height_offset`, reset to 0 on entering build mode.
+- **Rotation**: plain `Scroll Wheel` (no Ctrl) rotates the ghost (existing behavior)
+- The raycast excludes the player's own RID to prevent self-collision
 
 ### Snap system (`_get_snap_points_for()`, `_find_best_snap()`)
 - Walls have snap points at edges (wall_base, wall_top, wall_side) and center
@@ -807,6 +1052,9 @@ correction via `move_toward` instead of instant snapping.
 - Horse model faces opposite to Godot's -Z forward → `rotation.y += PI` when syncing to player
 - Rider is a duplicate of the player sprite at `_estimate_mount_height()`
 - Horse collision disabled while mounted (`layer=0, mask=0`)
+- **Dismount terrain snap**: Both `dismount()` and `force_dismount()` snap the horse's Y position
+  to terrain height via `WorldGenerator.get_height_at()`. This prevents horses floating mid-air
+  when the player dismounts while jumping or at elevation.
 
 ---
 
@@ -823,7 +1071,7 @@ Code ref: `_get_weapon_model_for_class()` in `player_controller.gd`.
 - 37% grizzly, 41% boar, 3.5% lion
 - 3.5% cyclops, 3.5% minotaur, 5% orc brute, 6.5% goblin
 - Enemy count per zone: `enemy_n * 0.3` (min 1)
-- Horses: 15% chance per hearthlands/thornwood zone
+- Horses: 15% chance per Hearthlands zone
 - Creature visibility range: 60 units (`VISIBILITY_RANGE_FADE_DISABLED`)
 
 ---
@@ -835,6 +1083,31 @@ Code ref: `_get_weapon_model_for_class()` in `player_controller.gd`.
 - `min_zoom`: 2.0, `max_zoom`: 12.0
 - **Spawn default**: 85% zoomed out (`spring_length = min_zoom + 0.85 * (max_zoom - min_zoom)` = 10.5)
   Set in `_ready()` so the player starts with a wide overview on login
+
+---
+
+## Flight Mode (Debug)
+
+`flight_mode: bool = true` in `player_controller.gd` — a debug noclip camera for world exploration.
+
+### How it works
+- `_handle_flight(delta)` moves the player by directly modifying `global_position` (no physics)
+- `velocity` is explicitly set to `Vector3.ZERO` every frame
+- `move_and_slide()` is **never called** in flight mode (the entire normal movement `else` block is skipped)
+- Speed: `FLIGHT_SPEED = 34.65` (150% of a 5-star horse sprint speed), doubled with sprint key
+- Jump key = ascend, crouch key = descend
+- Ground clamp: character cannot go below terrain height + 0.5
+
+### Known side effects when flight mode is ON
+- **No animations**: The animation system in `_tick_3d_model()` checks `velocity` (always zero)
+  and `is_on_floor()` (always false since `move_and_slide()` isn't called). Result: the character
+  is permanently stuck in "idle" animation with no visible walk/run/attack animations.
+- **No model rotation**: `_rotate_model()` checks `velocity` for facing direction — always zero
+  in flight mode, so the model never turns.
+- **Character appears as a static shadow**: The combination of no animation + no rotation makes
+  the character look like a dark, motionless silhouette — especially from the camera's top-down angle.
+- **No fall damage, no stamina drain, no collision**: All physics-dependent systems are bypassed.
+- If you see "no animations" or "permanent shadow" on the player, **check `flight_mode` first**.
 
 ---
 
@@ -865,10 +1138,11 @@ Code ref: `_get_weapon_model_for_class()` in `player_controller.gd`.
 
 ## UI Systems
 
-### Pause menu
+### Pause menu (`player_hud.gd build_pause_menu()`)
 - ESC opens pause menu (transparent overlay so game is still visible)
 - Game tree is paused (`get_tree().paused = true`), Master audio bus muted
-- Contains: Music slider, SFX slider, Resume, "Exit to Character Screen", "Exit Game"
+- Contains: Music slider, SFX slider, **Dev Mode checkbox**, Resume, "Exit to Character Screen", "Exit Game"
+- Dev Mode checkbox toggles `Inventory.dev_mode` — enables free build/craft (see Dev Mode section)
 - "Exit to Character Screen" calls `SaveManager.stop_game()` then `change_scene_to_file` to main menu
 - "Exit Game" calls `SaveManager.stop_game()` then `get_tree().quit()`
 - Dedicated `input_catcher` Control with `PROCESS_MODE_ALWAYS` and `grab_focus()` to capture ESC while paused
@@ -883,6 +1157,13 @@ Code ref: `_get_weapon_model_for_class()` in `player_controller.gd`.
 - Items with affixes: separator line + each affix name in gold (`#ffd700`) + description in gray (`#aaaaaa`)
 - `_show_tooltip_for_item(item_id)` — single item tooltip (stats, description, affixes)
 - `_show_grouped_tooltip(base_id, variants, display_id)` — grouped material tooltip with star breakdown
+- **Viewport clamping**: `_clamp_tooltip_pos()` ensures the tooltip stays within the screen.
+  If it would overflow the right edge, it flips to the left of the cursor. If it would overflow
+  the bottom, it shifts up. Prevents chest-UI tooltips from being cut off on the right side.
+- **Scroll for long tooltips**: `_cap_tooltip_height()` caps the tooltip at `viewport_height - 32px`.
+  If the content exceeds this (e.g., Oathgun with 9+ affixes), `fit_content` is disabled,
+  `scroll_active` is enabled, and the label gets a fixed max height — making overflow scrollable
+  with the mouse wheel. Short tooltips remain auto-sized with no scrollbar.
 
 ### Delete confirmation (main_menu.gd)
 - Character/world deletion shows "Delete" button instead of "X"
@@ -941,6 +1222,22 @@ Code ref: `_get_weapon_model_for_class()` in `player_controller.gd`.
   - `_drop_dragged_item()` reuses `_discard_inventory_slot()` for consistent behavior
 - `_drop_item_on_ground(item_id, amount, despawn_time)` helper spawns a `LootDrop` in front of the player with a timed despawn
 
+### Chest UI (`player_interaction.gd`)
+- Chest slots are 56×56 `PanelContainer` nodes built dynamically in `refresh_chest_ui()`
+- `CHEST_SLOTS` defines total capacity; contents stored as node metadata (`"chest_contents"`)
+- **Tooltips**: hovering a filled chest slot shows the same item tooltip used for inventory
+  (connects `mouse_entered` → `pc._show_tooltip_for_item(item_id)`, `mouse_exited` → `pc._hide_tooltip()`)
+- **Right-click** a chest slot to move the **full stack** to player inventory
+- **Shift+Left-click** a chest slot to take **half** the stack (rounded up)
+- **Shift+Right-click** also takes the full stack
+- Plain left-click (no shift) does nothing (prevents accidental moves)
+- Tooltip is hidden on `refresh_chest_ui()` and `close_chest()` to prevent stale tooltips on freed nodes
+- **Deposit**: shift+click inventory slots while chest is open to deposit items
+  (`deposit_inv_slot_to_chest` / `deposit_item_to_chest` in `player_interaction.gd`)
+- All `refresh_chest_ui()` and `pc._refresh_inventory_ui()` calls within signal handlers use
+  `call_deferred()` to avoid "Attempted to free a locked object" errors (freeing UI nodes
+  that are still emitting `gui_input`)
+
 ---
 
 ## Creature AI Behavior (`creature_ai.gd`)
@@ -969,6 +1266,161 @@ When a creature decides to leash (outside leash_range AND `_combat_timer <= 0`):
 
 ### Leash range
 - `leash_range = 45.0` (distance from spawn before leash check triggers)
+
+---
+
+## LAN Multiplayer
+
+### Overview
+Oathbound supports **LAN co-op multiplayer** for up to 4 players using Godot's `ENetMultiplayerPeer`.
+The host runs a **host-authoritative** server — clients connect by IP address on port 7777.
+Single-player ("Play Offline") still works without any networking.
+
+### Key files
+```
+scripts/autoloads/network_manager.gd    — Host/join, player spawn/despawn, chest sharing, player data sync
+scripts/network/world_state_sync.gd     — World mutations, creature sync, loot replication, damage requests
+scripts/network/creature_sync_manager.gd — Legacy creature sync (now delegated to WorldStateSync)
+scripts/network/chat_manager.gd         — Simple text chat (client→host→broadcast)
+```
+
+### Main menu flow (`main_menu.gd`)
+- **"Play Offline"** — **removed** from UI (function `_on_play_offline` still exists for future re-addition)
+- **"Host LAN Game"** — calls `NetworkManager.host_game()`, starts ENet server, spawns host player
+- **"Join LAN Game"** — player enters host IP, calls `NetworkManager.join_game(ip)`, receives world
+  seed/name via RPC, generates the same deterministic world, then spawns via `_rpc_create_player`
+
+### Connection lifecycle
+1. Host calls `host_game()` → creates ENet server on port 7777
+2. Client calls `join_game(address)` → connects to host
+3. Host auto-sends world seed + name to client via `_send_world_info` RPC
+4. Client generates the same deterministic terrain from the seed
+5. Client calls `notify_server_ready()` → host spawns client player via `spawn_player()`
+6. Each player node is named by `peer_id` with `set_multiplayer_authority(peer_id)`
+7. On disconnect: host saves client's player data via `_save_player_data()`, despawns node
+
+### World state sync (`world_state_sync.gd`)
+Terrain and zone population are deterministic per world seed. Only **mutations** need sync:
+- **Destroyed objects** (trees, rocks): keyed by `"zone_x_zone_z_index"`, broadcast to all clients
+- **Placed buildings**: position, rotation, chest contents — broadcast on placement
+- When a client joins mid-game, `request_world_state()` sends all accumulated mutations
+- `apply_destroyed_to_zone()` is called from `WorldGenerator` when zones load to remove
+  already-destroyed objects
+
+### Creature sync (host → clients)
+- **Positions**: broadcast at 10 Hz (`_CREATURE_POS_INTERVAL = 0.1s`) via **unreliable** RPCs
+  (loss tolerable on LAN). Sends packed `Float32Array` of positions, rotations, velocities per zone.
+- **State changes** (HP, AI state): broadcast at 5 Hz (`_CREATURE_STATE_INTERVAL = 0.2s`) via
+  **reliable** RPCs. Only sends creatures whose state actually changed (delta compression).
+- Clients interpolate creature positions via `_sync_target_position` on `CreatureAI`
+- `_sync_initialized` flag ensures first position is snapped, not lerped
+
+### Loot replication
+- Host spawns `LootDrop` nodes and replicates to all clients via `_spawn_loot_replicated` RPC
+- Each loot drop gets a unique `loot_id` tracked in `_loot_registry` (host only)
+- **Pickup arbitration**: client calls `request_pickup(loot_id, peer_id)` → host grants to first
+  requester via `_grant_pickup` RPC, then removes for everyone via `_remove_loot` RPC
+- Host pickups use `process_host_pickup()` directly
+- Player item drops use `spawn_player_drop_synced()` with `drop_owner_peer` for pickup grace
+
+### Creature damage (client → host)
+- Clients send `request_creature_damage(zone_x, zone_z, creature_idx, amount, source_peer)` RPC
+- Host validates and clamps damage (max 9999) before applying `creature.take_damage()`
+- TODO comment in code: "move full damage calc to host for cheat-proof authority"
+
+### Chest sharing (host-authoritative)
+- `request_open_chest(chest_path)` — client requests contents, host sends current state
+- `request_deposit_to_chest` / `request_withdraw_from_chest` — host validates, updates, broadcasts
+- Chest contents stored as node metadata (`"chest_contents"`)
+
+### Building sync
+- Client places building locally, sends `request_building_placed(entry)` to host
+- Host records, spawns for itself, broadcasts to all other clients (excluding sender)
+- Building entry: `{build_id, px, py, pz, ry, chest_contents}`
+
+### Chat (`chat_manager.gd`)
+- `send_message(text)` — client sends to host, host broadcasts to all peers
+- Max 20 messages, 5-second fade time
+- Uses character name from `SaveManager.current_character`
+
+### Save/load in multiplayer
+- Only the **host** runs autosaves and full save logic
+- Clients save only their own inventory locally via `_save_client_inventory()`
+- On client disconnect, host saves their cached player data via `save_disconnected_player()`
+- Clients report player data to host periodically via `report_player_data` RPC
+- When a client rejoins, `_load_latest_character_save()` restores their last state
+
+### Networking gotchas
+- `WorldStateSync` is a **scene-file node** (not dynamically added) so RPC node paths match
+  between host and clients. `CreatureSyncManager` was moved here for the same reason.
+- The default single-player `Player` node is `queue_free()`'d on multiplayer launch — players
+  are created by `NetworkManager` via RPC-based spawning instead.
+- Creature AI only runs on the host. Clients receive position/state updates and render accordingly.
+- `drop_owner_peer` on `LootDrop` prevents other players from picking up items during the grace period.
+- `multiplayer.has_multiplayer_peer()` checks are scattered throughout `save_manager.gd`,
+  `player_controller.gd`, `loot_drop.gd`, etc. to branch between single-player and multiplayer paths.
+
+### Multiplayer guidance for AI agents — what needs sync and what doesn't
+
+Understanding the sync boundary is critical when modifying game code. The architecture splits
+the game into **deterministic generation** (no sync needed) and **runtime mutations** (sync required).
+
+#### Deterministic generation layer (NO sync needed)
+These systems run identically on host and client using the same world seed + RNG:
+- **Terrain**: `world_generator.gd` height maps, biome determination, zone meshes
+- **Zone population**: `zone_populator.gd` trees, rocks, bushes, grass, creatures, horses
+- **Villages**: `village_generator.gd` hut placement, wall construction, chest spawning, hero assets
+- **Caves**: `cave_generator.gd` cave layout and contents
+
+**Why it works**: `rng.seed = world_seed_hash + coord.x * 73856093 + coord.y * 19349663` produces
+identical sequences on both host and client. As long as the code is the same, the output is the same.
+
+**AI agent rule**: Changes to generation code (adding hut variations, changing spawn rates, modifying
+wall construction, adjusting chest loot tables, etc.) are automatically multiplayer-safe. Both host
+and client will generate identical results from the same seed.
+
+**CAUTION — RNG sequence sensitivity**: The RNG is consumed sequentially. Adding or removing ANY
+`rng.randf()` / `rng.randi_range()` call in the generation loop shifts all subsequent random values
+for that seed. This can cause villages, creatures, and objects to change positions/properties across
+the entire world. This is acceptable (it's a new world generation) but be aware that "small" changes
+to generation code can have cascading visual effects.
+
+#### Runtime mutation layer (sync REQUIRED)
+These events happen during gameplay and MUST be replicated between host and clients:
+- **Object destruction** (trees chopped, rocks mined): `WorldStateSync._destroyed_objects`
+- **Building placement**: `WorldStateSync._placed_buildings` / `record_building_placed()`
+- **Chest contents** (items taken/deposited): host-authoritative via `request_withdraw_from_chest` /
+  `request_deposit_to_chest` RPCs
+- **Creature damage/death**: client sends `request_creature_damage` RPC → host applies
+- **Loot drops**: host spawns → replicates via `_spawn_loot_replicated` RPC
+- **Loot pickup**: client sends `request_pickup` → host grants via `_grant_pickup` RPC
+- **Player data** (position, health, equipment): synced via `report_player_data` RPC
+
+**AI agent rule**: When modifying interaction code (chest UI, loot pickup, building placement,
+combat), always check for the multiplayer branch pattern:
+```gdscript
+if not NetworkManager.is_multiplayer() or NetworkManager.is_server():
+    # Direct local logic (singleplayer or host)
+else:
+    # Send RPC to host for validation
+    NetworkManager.request_something.rpc_id(1, ...)
+```
+If you add a new mutation (e.g. a new interactable type), you MUST add corresponding RPC handling
+so clients can request the action and the host can validate + broadcast the result.
+
+#### Quick decision guide for AI agents
+| Change type | Sync needed? | Example |
+|------------|-------------|---------|
+| Generation constants (spawn rates, sizes) | No | Changing `CHEST_CHANCE`, `MIN_HUTS` |
+| Generation logic (new hut types, wall rules) | No | Adding wall openings, collapsed roof placement |
+| Visual-only changes (materials, colors, sizes) | No | Changing `_bmat_wood` color |
+| Player input/controls (keybinds, camera) | No | Adding Ctrl+scroll for build height |
+| Client-side UI (HUD, tooltips, menus) | No | Chest slot tooltip, inventory display |
+| Player combat (damage calc, affixes) | Partial | Melee is local; creature damage uses RPC |
+| Chest contents modification | Yes | Must go through host RPC in multiplayer |
+| Building placement | Yes | Uses `record_building_placed` + broadcast |
+| Object destruction | Yes | Uses `WorldStateSync._destroyed_objects` |
+| New interactable types | Yes | Need new RPC request/response handlers |
 
 ---
 
@@ -1012,6 +1464,31 @@ When a creature decides to leash (outside leash_range AND `_combat_timer <= 0`):
 
 ---
 
+## Performance Optimizations
+
+### `get_nodes_in_group()` caching
+Frequent calls to `get_tree().get_nodes_in_group()` caused significant FPS degradation after
+10+ minutes of gameplay as the node tree grew. The following caching strategies were applied:
+
+- **`player_controller.gd`** (`_tick_arrows()`): The "enemies", "carried_fish", and
+  "interactables" group arrays are queried **once per frame** at the top of the function and
+  reused by all per-arrow loops. Previously each arrow re-queried every group.
+
+- **`creature_ai.gd`**: Player reference (`_cached_player`) is cached for 0.5 seconds via
+  `_player_cache_timer`. Aggro checks (`_check_aggro()`) are throttled to 4 Hz via
+  `_aggro_check_cd`. World generator reference (`_cached_world_gen`) is cached once.
+
+- **`loot_drop.gd`**: Uses **static class-level caches** (`_s_cached_players`,
+  `_s_cached_world_gen`, `_s_cache_frame`) refreshed once per frame via
+  `_refresh_static_caches()`. All `LootDrop` instances share the same cached arrays.
+
+### General rules for new code
+- Never call `get_nodes_in_group()` inside per-entity `_process` or `_physics_process` loops
+- Cache group results at the start of the frame or use a timer-based refresh
+- Use `static var` for caches shared across many instances of the same class
+
+---
+
 ## Known Quirks / Gotchas
 
 - **Godot renames NlaTrack dots to underscores**: `NlaTrack.001` in the GLB becomes
@@ -1037,15 +1514,19 @@ When a creature decides to leash (outside leash_range AND `_combat_timer <= 0`):
   are freed with `remove_child()` + `free()`, NOT `queue_free()`, because deferred frees
   cause crashes in `Container::_child_minsize_changed` when rapidly refreshing (e.g. spam-crafting).
 - Star composite IDs use format `"base_id:stars"` (e.g. `"wood:3"` for 3★ wood).
-  Equipment with affixes: `"base_id:stars:affix1,affix2"` (e.g. `"stone_sword:3:windfury"`).
-  `parse_star_id()` splits on the **first** colon (changed from `rfind` to `find`); returns
-  `{"base_id": ..., "stars": ..., "affixes": [...]}`. `make_star_id()` creates them. 0★ items
-  have no suffix. Affixes in the ID are always sorted alphabetically for deduplication.
-- Affix cache (`_cached_affixes`) is a Dictionary `{affix_id: true}` rebuilt on inventory change.
+  Equipment with affixes: `"base_id:stars:affix1@roll1,affix2@roll2"` (e.g. `"stone_sword:3:windfury@73"`).
+  The `@roll` is an int 0–100 encoding the affix's magnitude within its min/max range.
+  `parse_star_id()` splits on the **first** colon; returns
+  `{"base_id": ..., "stars": ..., "affixes": [...], "affix_rolls": {id: float}}`.
+  `make_star_id(base_id, stars, affixes, affix_rolls)` creates them. 0★ items have no suffix.
+  Affixes in the ID are always sorted alphabetically for deduplication. Old IDs without `@`
+  get fresh `randf()` rolls on parse for backward compatibility.
+- Affix cache (`_cached_affixes`) is a Dictionary `{affix_id: roll_float}` (NOT `true`) rebuilt on
+  inventory change. Use `affix_val(id)` / `_affix_val(id)` to get the interpolated value from the roll.
   Don't forget to call `_invalidate_affix_cache()` if you change equipment outside normal flow.
 - **Affixes are weapon-class/armor-slot specific**: `get_affix_slot()` determines the pool.
   Axe→woodcutting, pickaxe→mining, sword→combat, bow→ranged, chest→defense, legs→stamina, feet→movement.
-  There are NO universal affixes anymore; each slot has exactly 10 affixes.
+  There are NO universal affixes anymore; each slot has 10-11 affixes (boots has 11 with `double_jump`).
 - `_apply_affix_stat_bonuses()` modifies the @export `max_health`/`max_stamina` directly. If the
   base values change, the function must be updated (currently hardcodes base 100/100).
 - Windfury (sword-only) recursive `_resolve_attack()` calls are guarded by `_windfury_guard`. If you add new
@@ -1057,12 +1538,24 @@ When a creature decides to leash (outside leash_range AND `_combat_timer <= 0`):
 - `remove_item_any_star()` consumes lowest-star variants first (used by hand crafting).
   `remove_item_capped_star()` consumes within a `[min_star..max_star]` range; direction is
   controlled by `prefer_low` (Low tier → lowest first, Medium/High → highest first).
+- **`call_deferred` for `add_child` in `_ready()`**: If a node's `_ready()` tries to add a child
+  to its parent (`get_parent().add_child(...)`) while the parent is still setting up children,
+  Godot errors with "Parent node is busy setting up children". Fix: use
+  `get_parent().call_deferred("add_child", child_node, true)`. This was the cause of sporadic
+  game crashes in `world_generator.gd` when adding `CreatureSyncManager`.
+- **`global_position` requires scene tree membership**: Setting `node.global_position` before
+  `add_child()` triggers "Condition !is_inside_tree() is true". Always add the node to the scene
+  tree FIRST, then set `global_position`. Fixed in `_spawn_arrow()` and `_spawn_tree_stump()`.
 - **Raft dismount rotation bug**: During raft riding, `rotation.y` on the CharacterBody3D is synced
   to the raft heading. `_dismount_raft()` must reset `rotation = Vector3.ZERO` on both code paths
   (normal dismount + early-exit), otherwise the player model faces sideways after leaving the raft.
   The model's local rotation (via `_rotate_model()`) combines with the parent body rotation.
+- **`_DEBUG_LOG` pattern**: Most player scripts (`player_controller.gd`, `player_animation.gd`)
+  wrap `print()` calls with `if _DEBUG_LOG:` guards (default `false`). Set `_DEBUG_LOG = true`
+  at the top of the file to re-enable verbose logging for debugging. Creature scripts still use
+  unconditional `print()` on spawn.
 - Debug print `[CREATURE] <name> (kind=...) anim_map=... full_list=...` logs on every spawn.
-- Debug print `[PLAYER ANIM] '<name>' not found...` logs when player animation is missing.
+- Debug print `[PLAYER ANIM] '<name>' not found...` logs when player animation is missing (guarded by `_DEBUG_LOG`).
 - Loot stone visibility is intentionally shorter (9 units) vs other loot (45 units).
 - Gold has `stack_size: 999` and `"no_stars": true` in rare drop tables — it never rolls star rarity.
 - Tools (hammer, torch) have `type: "tool"` — selectable from hotbar
@@ -1080,3 +1573,201 @@ When a creature decides to leash (outside leash_range AND `_combat_timer <= 0`):
 - **Nameplate bg_w formula**: `text_w * 1.15 + pad_x * 2.0` (both `creature_ai.gd` and `loot_drop.gd`).
   Using a higher multiplier (e.g. 1.55) creates excess right padding, especially for starred items.
   Star character width estimate is `0.72 * unit` (not 0.95) to match actual rendered width.
+- **Always use `DamageNumber.spawn()`** for floating damage numbers. Do NOT manually instantiate
+  `DamageNumber.new()` with custom font_size/pixel_size — it produces tiny text. The `spawn()`
+  method handles consistent sizing, animation, and distance scaling. Accepts `hit_type` parameter
+  (`"ability"` for affix procs like Firebrand, Chain Lightning, Thunderclap).
+- **`skill_system.gd` type inference**: Dictionary values accessed via `skill["level"]` are
+  `Variant` type. Using `:=` with arithmetic on them causes parse errors. Fix by explicitly
+  casting: `var level_factor: float = 1.0 - (float(skill["level"]) / MAX)`.
+- **Horse nameplate**: Uses a single `Label3D` (name + stars combined), no banner/background.
+  `fixed_size` is disabled so the text scales with player distance. `font_size = 48`,
+  `pixel_size = 0.005`.
+- **`dev_mode` is not persisted**: `Inventory.dev_mode` resets to `false` on every game restart.
+  The pause menu checkbox reads the current value on open.
+- **Chest UI `call_deferred` pattern**: `refresh_chest_ui()` and `_refresh_inventory_ui()` MUST
+  be called via `call_deferred()` when invoked from `gui_input` signal handlers (e.g.
+  `on_chest_slot_click`, `deposit_inv_slot_to_chest`, `deposit_item_to_chest`). Direct calls
+  trigger "Attempted to free a locked object" because `refresh_chest_ui` frees the slot node
+  that is still emitting the signal. Also hide tooltip before freeing chest slot children.
+
+---
+
+## Performance & Zone System Architecture
+
+### Zone lifecycle (3-stage pipeline)
+Zone generation uses a **threaded 3-stage pipeline** to keep the main thread under budget:
+
+| Stage | Thread | Cost | What happens |
+|-------|--------|------|--------------|
+| Build | WorkerThreadPool | ~15ms (hidden) | `_build_zone_mesh()` noise computation + `ConcavePolygonShape3D` BVH construction |
+| Mesh setup | Main thread, frame N | ~2ms | GPU upload via `add_surface_from_arrays()`, collision shape assignment, node setup |
+| Populate | Main thread, frame N+1 | ~5-10ms | `ZonePopulator.populate_zone()` spawns trees, rocks, creatures, grass |
+
+Mesh setup and population **never share the same frame** (enforced by `return` after processing
+a populate item). This ensures no single frame exceeds ~15ms of zone work.
+
+- `WorldGenerator._physics_process()` runs every physics frame: queues zones within `load_radius_zones` (2),
+  submits builds to the thread pool, finalizes completed zones, and unloads distant zones.
+- At any time, ~25 zones are loaded (5×5 grid). Up to `MAX_ZONES_PER_FRAME = 2` zones can be
+  submitted to background threads per frame (the actual computation is off-thread so this is cheap).
+- `_unload_distant_zones()` recycles zone roots via `ZonePool.recycle_zone()` (not `queue_free()`).
+- Zone roots are stored in `_loaded_zones: Dictionary[Vector2i, StaticBody3D]` and erased on unload.
+  `_explored_zones` and `_explored_sub_chunks` are lightweight `Dictionary[key, true]` maps for the minimap;
+  they grow unbounded but are just booleans and not a performance concern.
+
+**Key data structures:**
+- `_gen_in_flight: Dictionary` — zone coords currently being built on worker threads
+- `_finalize_backlog: Array` — zones with mesh/shape ready, waiting for main-thread GPU upload
+- `_populate_backlog: Array` — zones with terrain visible, waiting for object spawning next frame
+- `_terrain_mesh_cache: Dictionary` — `Vector2i → Array` (mesh vertex/normal/index/color/UV arrays)
+- `_terrain_shape_cache: Dictionary` — `Vector2i → ConcavePolygonShape3D` (pre-built BVH)
+- `_gen_mutex: Mutex` — protects `_gen_ready_queue` (worker→main thread communication)
+
+**Spawn area exception:** `_generate_spawn_area()` runs all 3 stages synchronously (including
+populate) for the 9 zones around spawn, because the player must land on fully populated terrain.
+
+### Material caching (critical for draw calls)
+- **Tree leaf materials** are cached per tree-type (texture + base color) in `_cached_leaf_mats`.
+  DO NOT create unique ShaderMaterials per tree — each unique material prevents GPU batching and
+  creates a separate draw call. Wind parameters are fixed at cached values.
+- **Grass materials** are cached per texture+color in `_cached_grass_mats`. DO NOT mutate cached
+  materials with per-zone wind variation (e.g. `mat.set_shader_parameter("wind_strength", ...)`)
+  after retrieving from cache — that modifies the shared material for all zones.
+- **Creature sprite materials** are cached per texture RID in `_cached_creature_mats`.
+- General rule: if a helper function like `_make_*_mat()` creates a `ShaderMaterial.new()`,
+  it MUST cache and reuse. Unique materials per-node is the #1 draw call multiplier.
+
+### Zone LOD culling
+- `_update_zone_lod()` in `world_generator.gd` hides grass (`Grass_*` nodes) for zones >1.5 away
+  and saplings for zones >2.0 away. This halves active draw calls since distant grass is invisible anyway.
+- The terrain mesh and trees remain visible at all loaded distances.
+
+### Creature distance sleep
+- `creature_ai.gd` has a distance-based sleep system: creatures >100m from the nearest player
+  skip their full `_physics_process()` (pathfinding, aggro, proximity labels). They re-check
+  distance every 1 second and wake up when the player approaches or if they're in combat.
+- Sleep is disabled during CHASE and ATTACK states so mid-combat creatures never freeze.
+
+### FPS degradation bug — diagnosis and fixes (mostly resolved)
+
+The game originally started at 60fps but degraded to 9-25fps after 5-10 minutes of exploration.
+Through systematic profiling with a debug panel (F3), the root causes were identified and fixed
+in layers. FPS now holds 50-60 during extended exploration.
+
+#### Root causes identified (in order of discovery)
+
+1. **Resource leaks from `queue_free()`**: Godot's `queue_free()` on zone `StaticBody3D` roots
+   does not fully release server-side resources (`Mesh`, `Material`, `Shape3D` held by
+   RenderingServer/PhysicsServer). These leaked RIDs accumulated as zones loaded/unloaded.
+   **Fix**: Object pooling via `zone_pool.gd` — nodes are recycled, not freed.
+
+2. **High draw calls from saplings**: Each sapling leaf was a separate `MeshInstance3D` with a
+   unique material, preventing GPU batching. With hundreds of saplings, draw calls hit 2000+.
+   **Fix**: Converted to `MultiMeshInstance3D` with shared cached materials.
+
+3. **Terrain regeneration on revisit**: Every time a zone was loaded (including revisits),
+   `_build_zone_mesh()` ran ~22,000 noise evaluations and `create_trimesh_shape()` rebuilt the
+   BVH tree. This cost 15-20ms per zone on the main thread.
+   **Fix**: Terrain mesh array + `ConcavePolygonShape3D` caching in `_terrain_mesh_cache` and
+   `_terrain_shape_cache`. Revisited zones skip all computation.
+
+4. **Main-thread zone generation blocking**: Even with caching, first-time zone visits ran
+   `_build_zone_mesh()` (~5ms noise) + `create_trimesh_shape()` (~10ms BVH) + `populate_zone()`
+   (~5-10ms spawning) all on the main thread in a single frame = 20-25ms spike.
+   **Fix**: 3-stage threaded pipeline (see "Zone lifecycle" above). Noise and BVH run on
+   `WorkerThreadPool`. Mesh upload and object spawning are split across separate frames.
+
+#### Attempted fixes that did NOT help (context for future agents)
+- `visibility_range_end` on zone objects — no measurable impact
+- Deep resource cleanup (nullifying mesh/material/shape refs before `queue_free()`) — Godot
+  still holds internal server references
+- Creature distance-based sleep — helped `phys` time but not `proc`
+
+#### Object pooling (`zone_pool.gd`)
+Instead of `queue_free()` on zone children, nodes are categorized (tree, rock, sapling, grass
+MMI, zone root) and stashed in typed static pools. When a new zone generates, `_create_tree()`,
+`_create_rock()`, `_scatter_grass()`, and `_scatter_saplings()` check the pool first. Reused
+nodes keep their server-side RIDs alive — zero new allocations. Creatures, villages, and loot
+drops are still `queue_free()`'d. Pooled nodes have `process_mode = PROCESS_MODE_DISABLED` to
+remove them from physics/render processing while stored.
+
+#### Terrain caching
+- `_terrain_mesh_cache: Dictionary[Vector2i, Array]` stores the vertex/normal/UV/color/index
+  arrays from `_build_zone_mesh()`. On revisit, the cached arrays are passed directly to
+  `add_surface_from_arrays()` — no noise computation needed.
+- `_terrain_shape_cache: Dictionary[Vector2i, ConcavePolygonShape3D]` stores the collision
+  shape with its pre-built BVH. On revisit, the shape is assigned directly to the
+  `CollisionShape3D` — no `create_trimesh_shape()` call.
+- Both caches grow unbounded (one entry per unique zone ever visited). At ~1000 zones explored,
+  memory usage is ~670MB VRAM which is acceptable on modern GPUs.
+
+#### Debug panel (`scripts/debug/debug_panel.gd`)
+Accessible via F3 or the pause menu "Debug Panel" button. Provides:
+- **Spawning toggles**: Trees, Rocks, Saplings, Grass, Creatures, Villages, Stones, Fish, Horses,
+  Terrain Collision, Minimap Refresh — each can be toggled off to isolate FPS impact.
+- **Actions**: Flush Object Pool, Nuke All Zones (regenerate), Disable/Enable ALL Spawning.
+- **Live metrics**: FPS (color-coded), node count, object count, draw calls, proc/phys times,
+  pool stats.
+- Toggle states are stored as `static var debug_skip_*` flags on `ZonePopulator` so they
+  persist across zone loads. The panel also hides/disables existing instances in the scene.
+
+#### Performance diagnostics
+A 5-second printout in `world_generator.gd` (`_diag_timer`) logs:
+```
+[PERF DIAG] FPS=60 nodes=3000 objects=12000 draws=400 vram=625MB buf=89MB tex=-300MB
+  proc=15ms phys=3ms zones=26 enemies=17 interact=500 loot=50 explored=200 sub=1400
+  tcache=150 bg=0 mesh_q=0 pop_q=1 pool[z=0 t=10 r=0 s=0 g=0 re=2000 ru=1990]
+```
+Key fields: `tcache` = terrain cache size, `bg` = zones building on threads, `mesh_q` = zones
+awaiting mesh finalization, `pop_q` = zones awaiting object population, `re` = total recycled,
+`ru` = total reused from pool.
+
+#### Remaining known issues
+- `OBJECT_COUNT` still grows over time (~20k after extended exploration) due to terrain cache
+  holding mesh arrays and shapes for all visited zones. This doesn't cause FPS drops but
+  increases memory usage.
+- `tex` (texture VRAM counter) goes increasingly negative — a Godot Metal driver accounting
+  bug on Apple Silicon. Does not affect actual rendering.
+- FPS can still dip to ~43-50 during rapid exploration of completely new territory (never-cached
+  zones). This is the cost of `populate_zone()` object spawning on the main thread. Revisiting
+  cached zones is instant.
+
+### GDScript type inference pitfalls
+- `var dx := od.global_position.x - my_pos.x` fails with "Cannot infer the type" if `od` was
+  cast via `as LootDrop` (nullable cast). Use explicit `var dx: float = ...` instead of `:=`.
+- `Dictionary` values from `get_nodes_in_group()` are `Variant`; arithmetic on them needs casting.
+- **Freed instance in typed variable**: `var node: Node = dict["node_ref"]` errors with
+  "Trying to assign invalid previously freed instance" if the stored node was freed between
+  frames. Use untyped `var node = dict["node_ref"]` then guard with `is_instance_valid(node)`.
+  This bit the `_populate_backlog` in `world_generator.gd` — fast flight causes zones to be
+  recycled before their deferred populate step runs.
+
+### Grass system
+- 4 grass varieties per hearthlands zone (reduced from 9 for performance), each a `MultiMeshInstance3D`
+  with 40-60 cross-quad instances. Named `Grass_0` through `Grass_3` under the zone root.
+- Grass is only spawned in `hearthlands` biome. The grass shader (`grass_billboard.gdshader`)
+  handles wind animation. Grass textures are procedurally generated at startup (20 varieties in
+  `_grass_textures[]`), only 4 are used per zone.
+
+### Village generator
+- `VillageGenerator` (class_name) must be accessed via `const _VillageGenerator := preload(...)` in
+  `zone_populator.gd`, NOT by bare class name. Godot's editor sometimes fails to resolve newly
+  added `class_name` declarations for files created outside the editor.
+- Huts use individual `StaticBody3D` pieces (walls, floors, roofs) with `collision_layer = 8,
+  collision_mask = 1`, each with `build_id` metadata matching player building items. The hut anchor
+  is a plain `Node3D` in the `&"structures"` group for grass suppression. Individual pieces are also
+  in `&"structures"` and have their own `build_id` so the salvage system can reclaim them.
+- Hero assets (GLBs) are loaded via `load()` which caches the PackedScene; subsequent instantiations
+  reuse the cached scene. The procedural fallback (`_place_hero_fallback`) activates if GLBs are missing.
+- Village chests follow the same pattern as cave chests: `StaticBody3D` in `&"chests"` +
+  `&"interactables"` groups, with `chest_contents` meta (32-slot Array of Dictionaries).
+- **RNG sensitivity**: Village generation consumes RNG calls sequentially (hut variation index,
+  overlap check, face angle, wall removal, chest roll, etc.). Adding/removing ANY `rng.*()` call
+  shifts the entire sequence for that seed. This can cause a village that previously had 4 chests
+  to have 0 chests (or vice versa). The guaranteed-minimum-1-chest fallback guards against this.
+- **Dead code warning**: `player_combat.gd` contains duplicate bow functions (`fire_bow`,
+  `spawn_arrow`, `tick_arrows`) that are NEVER called at runtime. The actual active bow logic
+  lives in `player_controller.gd` (`_fire_bow`, `_spawn_arrow`, `_tick_arrows`). Do NOT modify
+  the `player_combat.gd` versions thinking they'll have any effect — always check which file
+  contains the live code path before making changes.

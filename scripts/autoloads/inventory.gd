@@ -7,7 +7,17 @@ extends Node
 const TOTAL_SLOTS := 64
 const EQUIPMENT_SLOTS: Array[String] = ["weapon", "sword", "bow", "pickaxe", "shield", "chest", "legs", "feet"]
 
+var dev_mode := false
 var _local: PlayerInventory
+
+func has_free_craft() -> bool:
+	if dev_mode:
+		return true
+	var weapon_id: StringName = get_equipped("weapon")
+	if weapon_id == &"":
+		return false
+	var parsed: Dictionary = ItemDatabase.parse_star_id(weapon_id)
+	return parsed.get("base_id", &"") == &"god_axe"
 var _all_inventories: Dictionary = {}  # peer_id -> PlayerInventory
 
 

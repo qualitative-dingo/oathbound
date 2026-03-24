@@ -2,6 +2,7 @@ class_name PlayerAnimation
 extends Node
 
 ## Animation sub-module for PlayerController. Stores reference to parent and accesses state via pc.
+const _DEBUG_LOG := false
 
 var pc: PlayerController
 
@@ -76,7 +77,7 @@ func setup_player_sprite() -> void:
 		pc._player_sprite.position.y = pc._base_sprite_y
 		if pc._model:
 			pc._model.add_child(pc._player_sprite)
-		print("[PLAYER MODEL] Loaded %s — scale=%.2f" % [gltf_path.get_file(), s])
+		if _DEBUG_LOG: print("[PLAYER MODEL] Loaded %s — scale=%.2f" % [gltf_path.get_file(), s])
 		pc._gltf_anim_player = find_anim_player(pc._player_sprite)
 		if pc._gltf_anim_player:
 			pc._gltf_anim_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
@@ -84,7 +85,7 @@ func setup_player_sprite() -> void:
 			if not is_tripo_barbarian:
 				pc._load_external_animations()
 			var anim_list := pc._gltf_anim_player.get_animation_list()
-			print("[PLAYER MODEL] Available animations: ", anim_list)
+			if _DEBUG_LOG: print("[PLAYER MODEL] Available animations: ", anim_list)
 			var non_looping := [
 				"jump", "standing_jump", "punch", "punch_alt", "kick",
 				"sword_slash", "spin_attack", "jump_attack", "heavy_swing",
@@ -117,7 +118,7 @@ func setup_player_sprite() -> void:
 			apply_oathbound_shader()
 			pc._enhance_character_model()
 		else:
-			print("[PLAYER MODEL] Tripo model — skipping Blockbench shaders")
+			if _DEBUG_LOG: print("[PLAYER MODEL] Tripo model — skipping Blockbench shaders")
 		pc.call_deferred("_update_equipped_weapon_model")
 		call_deferred("update_armor_visuals")
 	else:
@@ -235,7 +236,7 @@ func update_armor_visuals() -> void:
 		var sy := armor_scale * fit_scale.y
 		var sz := armor_scale * xz_auto * fit_scale.z
 		instance.scale = Vector3(sx, sy, sz)
-		print("[ARMOR %s] aabb=%s height=%.4f width=%.4f armor_scale=%.4f xz_auto=%.4f shoulder_w=%.4f torso_h=%.4f final_scale=%s" % [slot, aabb, model_height, maxf(aabb.size.x, aabb.size.z), armor_scale, xz_auto, shoulder_width, torso_height, instance.scale])
+		if _DEBUG_LOG: print("[ARMOR %s] aabb=%s height=%.4f width=%.4f armor_scale=%.4f xz_auto=%.4f shoulder_w=%.4f torso_h=%.4f final_scale=%s" % [slot, aabb, model_height, maxf(aabb.size.x, aabb.size.z), armor_scale, xz_auto, shoulder_width, torso_height, instance.scale])
 
 		var bname: String = bone_target.get(slot, "mixamorig_Hips") as String
 		var bone_idx := skel.find_bone(bname)
@@ -889,7 +890,7 @@ func gltf_play(anim_name: String) -> void:
 
 	if not pc._gltf_play_warned.has(anim_name):
 		pc._gltf_play_warned[anim_name] = true
-		print("[PLAYER ANIM] '%s' not found. Available: %s" % [anim_name, pc._gltf_anim_player.get_animation_list()])
+		if _DEBUG_LOG: print("[PLAYER ANIM] '%s' not found. Available: %s" % [anim_name, pc._gltf_anim_player.get_animation_list()])
 
 
 func lock_torso_height() -> void:
@@ -1394,7 +1395,7 @@ func gltf_clear_flash() -> void:
 func apply_pahlevan_texture() -> void:
 	var tex_path := "res://models/player/Pahlevan/Pahlevan_tripo_node_641e01bc-4c81-4461-be84-6538ef0e1a1a.jpg"
 	if not ResourceLoader.exists(tex_path):
-		print("[PLAYER MODEL] Pahlevan texture not found: ", tex_path)
+		if _DEBUG_LOG: print("[PLAYER MODEL] Pahlevan texture not found: ", tex_path)
 		return
 	var tex: Texture2D = load(tex_path)
 	if not tex:
@@ -1417,13 +1418,13 @@ func apply_pahlevan_texture() -> void:
 		mat.metallic = 0.0
 		for mi in pc._gltf_all_meshes:
 			mi.material_override = mat
-	print("[PLAYER MODEL] Applied Pahlevan texture+shader to %d meshes" % pc._gltf_all_meshes.size())
+	if _DEBUG_LOG: print("[PLAYER MODEL] Applied Pahlevan texture+shader to %d meshes" % pc._gltf_all_meshes.size())
 
 
 func apply_tripo_player_texture() -> void:
 	var tex_path := "res://models/player/Lowpolyvikingwithaxe/barbarian+3d+model_barbarian3dmodel_basecolor.jpg"
 	if not ResourceLoader.exists(tex_path):
-		print("[PLAYER MODEL] Tripo barbarian basecolor not found")
+		if _DEBUG_LOG: print("[PLAYER MODEL] Tripo barbarian basecolor not found")
 		return
 	var tex := load(tex_path) as Texture2D
 	if not tex:
@@ -1434,7 +1435,7 @@ func apply_tripo_player_texture() -> void:
 	for mi in pc._gltf_all_meshes:
 		mi.material_override = mat
 		mi.visible = true
-	print("[PLAYER MODEL] Applied Tripo barbarian texture to %d meshes" % pc._gltf_all_meshes.size())
+	if _DEBUG_LOG: print("[PLAYER MODEL] Applied Tripo barbarian texture to %d meshes" % pc._gltf_all_meshes.size())
 
 
 func apply_viking_texture() -> void:
@@ -1442,7 +1443,7 @@ func apply_viking_texture() -> void:
 	if not ResourceLoader.exists(glb_path):
 		glb_path = "res://models/player/Lowpolyviking/low-poly+viking+3d+model (1).glb"
 	if not ResourceLoader.exists(glb_path):
-		print("[PLAYER MODEL] Viking GLB not found")
+		if _DEBUG_LOG: print("[PLAYER MODEL] Viking GLB not found")
 		return
 
 	var glb_scene: PackedScene = load(glb_path) as PackedScene
@@ -1463,7 +1464,7 @@ func apply_viking_texture() -> void:
 			if mat:
 				glb_materials.append(mat)
 
-	print("[PLAYER MODEL] Extracted %d materials from GLB" % glb_materials.size())
+	if _DEBUG_LOG: print("[PLAYER MODEL] Extracted %d materials from GLB" % glb_materials.size())
 
 	var mat_idx := 0
 	for mi in pc._gltf_all_meshes:
@@ -1478,7 +1479,7 @@ func apply_viking_texture() -> void:
 				if not glb_materials.is_empty():
 					mi.set_surface_override_material(surf_idx, glb_materials[glb_materials.size() - 1])
 
-	print("[PLAYER MODEL] Applied %d materials to FBX meshes (%d surfaces)" % [glb_materials.size(), mat_idx])
+	if _DEBUG_LOG: print("[PLAYER MODEL] Applied %d materials to FBX meshes (%d surfaces)" % [glb_materials.size(), mat_idx])
 
 	glb_inst.queue_free()
 

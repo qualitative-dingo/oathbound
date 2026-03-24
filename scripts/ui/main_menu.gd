@@ -1,4 +1,7 @@
 extends Control
+
+const _DEBUG_LOG := false
+
 ## Main menu: character selection → world selection → play.
 
 enum Screen { CHARACTER_SELECT, WORLD_SELECT, PLAY_MODE }
@@ -271,11 +274,6 @@ func _show_play_mode() -> void:
 	vbox.add_theme_constant_override("separation", 12)
 	_play_mode_panel.add_child(vbox)
 
-	var offline_btn := _make_button("Play Offline", Color(0.2, 0.45, 0.3))
-	offline_btn.custom_minimum_size = Vector2(0, 42)
-	offline_btn.pressed.connect(_on_play_offline)
-	vbox.add_child(offline_btn)
-
 	var host_btn := _make_button("Host LAN Game", Color(0.25, 0.35, 0.55))
 	host_btn.custom_minimum_size = Vector2(0, 42)
 	host_btn.pressed.connect(_on_host_lan)
@@ -355,12 +353,12 @@ func _on_join_failed() -> void:
 
 
 func _on_join_world_info() -> void:
-	print("[MENU-CLIENT] Received world info, loading world...")
+	if _DEBUG_LOG: print("[MENU-CLIENT] Received world info, loading world...")
 	_connection_status.text = "Loading world..."
 	SaveManager.start_game(_selected_character, {"id": "lan_client", "name": NetworkManager.world_name, "seed": NetworkManager.world_seed})
 	var world_data := {"seed": NetworkManager.world_seed, "name": NetworkManager.world_name}
 	_launch_world(world_data)
-	print("[MENU-CLIENT] World loaded, notifying server we are ready")
+	if _DEBUG_LOG: print("[MENU-CLIENT] World loaded, notifying server we are ready")
 	NetworkManager.call_deferred("notify_server_ready")
 
 
@@ -383,7 +381,7 @@ func _launch_world(world_data: Dictionary) -> void:
 		var default_player := world_instance.get_node_or_null("Players/Player")
 		if default_player:
 			default_player.queue_free()
-			print("[MENU] Removed default Player node for multiplayer")
+			if _DEBUG_LOG: print("[MENU] Removed default Player node for multiplayer")
 
 	get_tree().root.add_child(world_instance)
 	get_tree().current_scene = world_instance

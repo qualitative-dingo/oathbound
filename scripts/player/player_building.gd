@@ -1,6 +1,8 @@
 class_name PlayerBuilding
 extends Node
 
+const _DEBUG_LOG := false
+
 var pc: PlayerController
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -33,13 +35,19 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	{"id": &"wood_stair", "name": "Wood Stairs", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 6}],
 	 "mesh": "stair", "color": Color(0.42, 0.3, 0.14), "size": Vector3(3.6, 5.0, 3.6)},
+	{"id": &"wood_door", "name": "Wood Door", "tab": "Building",
+	 "cost": [{"item": &"wood", "amount": 6}],
+	 "mesh": "door", "color": Color(0.4, 0.28, 0.12), "size": Vector3(3.6, 5.0, 0.20)},
 	# Heavy Build
 	{"id": &"stone_wall", "name": "Stone Wall", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 6}],
-	 "mesh": "box", "color": Color(0.4, 0.4, 0.42), "size": Vector3(2.0, 2.0, 0.3)},
+	 "mesh": "box", "color": Color(0.4, 0.4, 0.42), "size": Vector3(3.6, 5.0, 0.20)},
 	{"id": &"stone_floor", "name": "Stone Floor", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 6}],
-	 "mesh": "box", "color": Color(0.45, 0.45, 0.47), "size": Vector3(2.0, 0.15, 2.0)},
+	 "mesh": "box", "color": Color(0.45, 0.45, 0.47), "size": Vector3(3.6, 0.1, 3.6)},
+	{"id": &"stone_door", "name": "Stone Door", "tab": "Heavy Build",
+	 "cost": [{"item": &"stone", "amount": 8}],
+	 "mesh": "door", "color": Color(0.4, 0.4, 0.42), "size": Vector3(3.6, 5.0, 0.20)},
 	# Roofing – Building tab (wood)
 	{"id": &"thatch_roof_45", "name": "Thatch Roof 45°", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 6}],
@@ -89,7 +97,7 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	# Furniture
 	{"id": &"chest", "name": "Chest", "tab": "Furniture",
 	 "cost": [{"item": &"wood", "amount": 10}],
-	 "mesh": "box", "color": Color(0.5, 0.35, 0.15), "size": Vector3(2.4, 1.8, 1.5)},
+	 "mesh": "box", "color": Color(0.5, 0.35, 0.15), "size": Vector3(1.92, 1.44, 1.2)},
 	{"id": &"bed", "name": "Bed", "tab": "Furniture",
 	 "cost": [{"item": &"wood", "amount": 8}, {"item": &"leather", "amount": 4}],
 	 "mesh": "bed", "color": Color(0.5, 0.3, 0.2), "size": Vector3(1.2, 0.6, 2.2)},
@@ -205,6 +213,7 @@ func refresh_build_menu() -> void:
 			tex_rect.custom_minimum_size = Vector2(36, 36)
 			tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			tex_rect.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			row.add_child(tex_rect)
 
 		var info_vb := VBoxContainer.new()
@@ -217,14 +226,15 @@ func refresh_build_menu() -> void:
 
 		var cost_text := ""
 		var can_afford := true
+		var _free := Inventory.has_free_craft()
 		for mat: Dictionary in (recipe["cost"] as Array):
 			var mat_id: StringName = mat["item"] as StringName
 			var mat_amt: int = int(mat["amount"])
 			var have: int = Inventory.get_amount_any_star(mat_id)
 			var mat_name: String = (ItemDatabase.get_item(mat_id) as Dictionary).get("name", str(mat_id)) as String
-			if have < mat_amt:
+			if have < mat_amt and not _free:
 				can_afford = false
-			var have_color := "aaffaa" if have >= mat_amt else "ff6666"
+			var have_color := "aaffaa" if (have >= mat_amt or _free) else "ff6666"
 			if cost_text != "":
 				cost_text += "  "
 			cost_text += "[color=#%s]%s %d/%d[/color]" % [have_color, mat_name, have, mat_amt]
@@ -438,7 +448,7 @@ func place_build() -> void:
 		if terrain_y > water_y - 0.1:
 			return
 
-	if not pc._build_from_workbench:
+	if not pc._build_from_workbench and not Inventory.has_free_craft():
 		var costs: Array = recipe.get("cost", []) as Array
 		for mat: Dictionary in costs:
 			var mat_id: StringName = mat["item"] as StringName
@@ -465,6 +475,7 @@ func place_build() -> void:
 	var _is_chest := build_id == &"chest"
 	var _is_wall_torch := mesh_type == "wall_torch"
 	var _is_bed := mesh_type == "bed"
+	var _is_door := mesh_type == "door"
 
 	structure.add_to_group(&"structures")
 	structure.set_meta("build_id", build_id)
@@ -483,18 +494,23 @@ func place_build() -> void:
 			build_wall_torch_visual(structure)
 		elif _is_bed:
 			build_bed_visual(structure, sz)
+		elif _is_door:
+			pc._build_door_visual(structure, sz, build_id)
 
 	if _is_workbench:
 		structure.add_to_group(&"workbenches")
 	elif _is_chest:
 		structure.add_to_group(&"chests")
+	elif _is_door:
+		structure.add_to_group(&"doors")
+		structure.set_meta("door_open", false)
 
 	var _is_roof := mesh_type.begins_with("roof")
 
 	if not _used_glb:
 		if _deferred_campfire:
 			pass
-		elif not _is_workbench and not _is_chest and not _is_wall_torch and not _is_bed:
+		elif not _is_workbench and not _is_chest and not _is_wall_torch and not _is_bed and not _is_door:
 			var mi := MeshInstance3D.new()
 			var mesh: Mesh
 			if mesh_type in ["roof_45", "roof_26"]:
@@ -535,6 +551,8 @@ func place_build() -> void:
 	var _is_stair := mesh_type == "stair"
 	if _is_stair:
 		add_stair_collision(structure, sz)
+	elif _is_door:
+		pass
 	else:
 		var col_shape := CollisionShape3D.new()
 		var col: Shape3D
@@ -582,14 +600,6 @@ func place_build() -> void:
 	disable_structure_shadows(structure)
 	AudioManager.play_sfx_at("wood_thud", structure.global_position, -4.0, 0.2)
 
-	# Sync to other clients in multiplayer
-	var sync := pc._get_world_state_sync()
-	if sync:
-		var chest_contents: Array = []
-		if structure.has_meta("chest_contents"):
-			chest_contents = structure.get_meta("chest_contents") as Array
-		sync.record_building_placed(build_id, structure.global_position, structure.rotation.y, chest_contents)
-
 
 func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void:
 	var build_id := StringName(build_id_str)
@@ -611,6 +621,7 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 	var is_chest := build_id == &"chest"
 	var is_wall_torch := mesh_type == "wall_torch"
 	var is_bed := mesh_type == "bed"
+	var is_door := mesh_type == "door"
 
 	structure.add_to_group(&"structures")
 	structure.set_meta("build_id", build_id)
@@ -631,6 +642,8 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 			build_wall_torch_visual(structure)
 		elif is_bed:
 			build_bed_visual(structure, sz)
+		elif is_door:
+			pc._build_door_visual(structure, sz, build_id)
 		elif not is_campfire:
 			var mi := MeshInstance3D.new()
 			var mesh: Mesh
@@ -673,10 +686,15 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 		structure.add_to_group(&"workbenches")
 	elif is_chest:
 		structure.add_to_group(&"chests")
+	elif is_door:
+		structure.add_to_group(&"doors")
+		structure.set_meta("door_open", false)
 
 	var is_stair := mesh_type == "stair"
 	if is_stair:
 		add_stair_collision(structure, sz)
+	elif is_door:
+		pass
 	else:
 		var col_shape := CollisionShape3D.new()
 		var col: Shape3D
@@ -722,11 +740,6 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 		add_torch_light(structure, Vector3(0.0, sz.y + 0.1, 0.0))
 
 	disable_structure_shadows(structure)
-	# Stay in build mode for continuous placement
-	if pc._build_ghost:
-		pc._build_ghost.queue_free()
-		pc._build_ghost = null
-	enter_build_mode()
 
 
 func clear_vegetation_at(pos: Vector3, sz: Vector3) -> void:
@@ -874,9 +887,9 @@ static func ensure_building_materials() -> void:
 	if _bmat_wood != null:
 		return
 	_bmat_wood = load_building_mat("res://textures/building/wood_planks.png",
-		Color(0.45, 0.32, 0.15), 0.80, Vector3(2.0, 2.0, 1.0))
+		Color(0.50, 0.38, 0.22), 0.80, Vector3(4.0, 4.0, 1.0))
 	_bmat_stone = load_building_mat("res://textures/building/cobblestone.png",
-		Color(0.55, 0.55, 0.58), 0.92, Vector3(2.0, 2.0, 1.0))
+		Color(0.70, 0.70, 0.73), 0.92, Vector3(4.0, 4.0, 1.0))
 	_bmat_thatch = load_building_mat("res://textures/building/thatch.png",
 		Color(0.60, 0.50, 0.30), 0.85, Vector3(2.0, 2.0, 1.0))
 	_bmat_slate = load_building_mat("res://textures/building/slate_roof.png",
@@ -893,18 +906,18 @@ static func load_building_mat(path: String, tint: Color, rough: float, uv_scale:
 		mat.albedo_color = tint
 	mat.roughness = rough
 	mat.uv1_scale = uv_scale
-	mat.cull_mode = BaseMaterial3D.CULL_BACK
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.set_flag(BaseMaterial3D.FLAG_DONT_RECEIVE_SHADOWS, true)
 	mat.emission_enabled = true
 	mat.emission = tint
-	mat.emission_energy_multiplier = 0.35
+	mat.emission_energy_multiplier = 0.25
 	return mat
 
 func get_building_material(build_id: StringName) -> StandardMaterial3D:
 	ensure_building_materials()
-	if build_id in [&"wood_wall", &"wood_floor", &"wood_stair"]:
+	if build_id in [&"wood_wall", &"wood_floor", &"wood_stair", &"wood_door"]:
 		return _bmat_wood
-	elif build_id in [&"stone_wall", &"stone_floor"]:
+	elif build_id in [&"stone_wall", &"stone_floor", &"stone_door"]:
 		return _bmat_stone
 	elif build_id.begins_with(&"thatch_roof"):
 		return _bmat_thatch
@@ -1161,10 +1174,11 @@ static func build_stair_mesh(sz: Vector3, step_count: int = 6) -> ArrayMesh:
 	return st.commit()
 
 
-static func add_stair_collision(structure: StaticBody3D, sz: Vector3, step_count: int = 6) -> void:
-	var step_h := sz.y / float(step_count)
-	var step_d := sz.z / float(step_count)
-	for i in range(step_count):
+static func add_stair_collision(structure: StaticBody3D, sz: Vector3, _step_count: int = 6) -> void:
+	var phys_steps := ceili(sz.y / 0.3)
+	var step_h := sz.y / float(phys_steps)
+	var step_d := sz.z / float(phys_steps)
+	for i in range(phys_steps):
 		var col_shape := CollisionShape3D.new()
 		var box := BoxShape3D.new()
 		var height := step_h * float(i + 1)
@@ -1189,7 +1203,7 @@ func get_snap_points_for(build_id: StringName, sz: Vector3) -> Array[Dictionary]
 	var hd := sz.z * 0.5
 	var h := sz.y
 
-	if build_id in [&"wood_wall", &"stone_wall"]:
+	if build_id in [&"wood_wall", &"stone_wall", &"wood_door", &"stone_door"]:
 		var edge_overlap := 0.10
 		for x in [-hw + edge_overlap, 0.0, hw - edge_overlap]:
 			pts.append({"pos": Vector3(x, 0.0, 0.0), "type": &"wall_base"})
@@ -1263,7 +1277,7 @@ func find_best_snap(ghost_pos: Vector3, ghost_rot_y: float, build_id: StringName
 
 	var new_ag := get_roof_angle_group(build_id)
 
-	var best_dist := 1.2
+	var best_dist := 0.8
 	var best_pos := Vector3.ZERO
 	var best_rot := ghost_rot_y
 	var found := false
@@ -1538,7 +1552,7 @@ func build_wall_torch_visual(structure: StaticBody3D) -> void:
 	structure.add_child(light)
 
 
-func build_chest_visual(structure: Node3D, sz: Vector3) -> void:
+static func build_chest_visual(structure: Node3D, sz: Vector3) -> void:
 	ensure_building_materials()
 
 	var mat_metal := StandardMaterial3D.new()
@@ -1653,7 +1667,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		var ftex := load_campfire_tex(path)
 		if ftex:
 			flame_anim_frames.append(ftex)
-	print("[Campfire] Loaded %d flame animation frames" % flame_anim_frames.size())
+	if _DEBUG_LOG: print("[Campfire] Loaded %d flame animation frames" % flame_anim_frames.size())
 
 	var fire_full_tex: Texture2D
 	var fire_only_tex: Texture2D

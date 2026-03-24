@@ -31,6 +31,7 @@ enum ToolRequirement { NONE, AXE, PICKAXE }
 @export var respawn_time: float = 300.0  # 5 minutes
 
 var current_hp: float
+var _drop_scatter_radius: float = 0.5
 
 @onready var _mesh: MeshInstance3D = $MeshInstance3D if has_node("MeshInstance3D") else null
 @onready var _particles: GPUParticles3D = $GPUParticles3D if has_node("GPUParticles3D") else null
@@ -40,6 +41,20 @@ var current_hp: float
 func _ready() -> void:
 	super._ready()
 	current_hp = max_hp
+	_drop_scatter_radius = _compute_scatter_radius()
+
+
+func _compute_scatter_radius() -> float:
+	var max_y := 0.0
+	for child in get_children():
+		if child is MeshInstance3D:
+			var mi := child as MeshInstance3D
+			var aabb := mi.get_aabb()
+			var top_y: float = mi.position.y + aabb.position.y + aabb.size.y
+			max_y = maxf(max_y, top_y)
+	if max_y > 0.0:
+		return max_y * 0.2
+	return 0.5
 
 
 func get_interaction_verb() -> String:
@@ -92,22 +107,24 @@ func _apply_damage(amount: float) -> void:
 
 
 func _spawn_partial_drops() -> void:
+	var r := _drop_scatter_radius
 	for entry in drop_table:
 		if randf() > 0.4:
 			continue
 		var amount := randi_range(1, max(1, entry.get("amount_min", 1)))
 		var loot_table: Array = [{"id": entry.get("item_id", &"wood"), "min": amount, "max": amount, "chance": 1.0}]
-		LootDrop.spawn_loot(get_tree(), global_position + Vector3(randf_range(-1.0, 1.0), 0.5, randf_range(-1.0, 1.0)), loot_table)
+		LootDrop.spawn_loot(get_tree(), global_position + Vector3(randf_range(-r, r), 0.5, randf_range(-r, r)), loot_table)
 
 
 func _on_depleted() -> void:
+	var r := _drop_scatter_radius
 	for entry in drop_table:
 		var amount := randi_range(
 			entry.get("amount_min", 1),
 			entry.get("amount_max", 3)
 		)
 		var loot_table: Array = [{"id": entry.get("item_id", &"wood"), "min": amount, "max": amount, "chance": 1.0}]
-		LootDrop.spawn_loot(get_tree(), global_position + Vector3(randf_range(-0.5, 0.5), 0.5, randf_range(-0.5, 0.5)), loot_table)
+		LootDrop.spawn_loot(get_tree(), global_position + Vector3(randf_range(-r, r), 0.5, randf_range(-r, r)), loot_table)
 
 	resource_depleted.emit()
 
