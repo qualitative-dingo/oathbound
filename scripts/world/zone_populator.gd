@@ -1057,6 +1057,8 @@ static func _scatter_grass(
 				continue
 			if _is_near_structure(wx, wz):
 				continue
+			if _terrain_normal_y(wx, wz, height_func) < 0.85:
+				continue
 
 			var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 			var cluster_boost := clampf((density - 0.35) * 2.5, 0.0, 1.0)
@@ -1331,6 +1333,17 @@ static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) ->
 	if fx + fz <= 1.0:
 		return h00 + (h10 - h00) * fx + (h01 - h00) * fz
 	return h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
+
+
+static func _terrain_normal_y(wx: float, wz: float, height_func: Callable) -> float:
+	const STEP := ZONE_SIZE / 32.0
+	var h_left := float(height_func.call(wx - STEP, wz))
+	var h_right := float(height_func.call(wx + STEP, wz))
+	var h_up := float(height_func.call(wx, wz - STEP))
+	var h_down := float(height_func.call(wx, wz + STEP))
+	var tx := Vector3(2.0 * STEP, h_right - h_left, 0.0)
+	var tz := Vector3(0.0, h_down - h_up, 2.0 * STEP)
+	return tz.cross(tx).normalized().y
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
