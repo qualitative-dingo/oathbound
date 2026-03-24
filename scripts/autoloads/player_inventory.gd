@@ -154,10 +154,13 @@ func get_grouped_item_list() -> Array:
 		if not _slots.has(item_id):
 			raw_idx += 1
 			continue
+		var amount: int = int(_slots[item_id])
+		if amount <= 0:
+			raw_idx += 1
+			continue
 		var parsed := ItemDatabase.parse_star_id(item_id)
 		var base_id: StringName = parsed["base_id"]
 		var stars: int = parsed["stars"]
-		var amount: int = int(_slots[item_id])
 		var data: Dictionary = ItemDatabase.get_item(item_id)
 		var item_type: String = str(data.get("type", "material"))
 		if item_type == "material" or item_type == "food" or item_type == "trophy":

@@ -267,7 +267,7 @@ func update_discard_btn_label() -> void:
 		pc._workbench_discard_btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	else:
 		var rname: String = ItemDatabase.RARITY_NAMES[pc._workbench_auto_discard_star]
-		pc._workbench_discard_btn.text = "🗑 ≤%s" % rname
+		pc._workbench_discard_btn.text = "🗑 %s" % rname
 		pc._workbench_discard_btn.add_theme_color_override("font_color", ItemDatabase.RARITY_COLORS[pc._workbench_auto_discard_star])
 
 
@@ -690,8 +690,10 @@ func _show_selected_detail() -> void:
 		_show_building_detail()
 		return
 
-	for ch in pc._workbench_preview_panel.get_children():
-		ch.queue_free()
+	while pc._workbench_preview_panel.get_child_count() > 0:
+		var ch := pc._workbench_preview_panel.get_child(0)
+		pc._workbench_preview_panel.remove_child(ch)
+		ch.free()
 
 	var item_id := pc._workbench_selected_id
 	var item_data := ItemDatabase.get_item(item_id)
@@ -812,7 +814,7 @@ func execute_craft(item_id: StringName) -> void:
 	if crafted_id != &"":
 		var crafted_parsed := ItemDatabase.parse_star_id(crafted_id)
 		var crafted_stars: int = crafted_parsed["stars"]
-		if pc._workbench_auto_discard_star >= 0 and crafted_stars <= pc._workbench_auto_discard_star:
+		if pc._workbench_auto_discard_star >= 0 and crafted_stars <= pc._workbench_auto_discard_star and item_type in ["weapon", "armor"]:
 			var craft_amount: int = int(ItemDatabase.get_item(crafted_id).get("craft_amount", 1))
 			Inventory.remove_item(crafted_id, craft_amount)
 			spawn_discard_text(crafted_id)
@@ -823,8 +825,10 @@ func execute_craft(item_id: StringName) -> void:
 
 
 func _show_building_detail() -> void:
-	for ch in pc._workbench_preview_panel.get_children():
-		ch.queue_free()
+	while pc._workbench_preview_panel.get_child_count() > 0:
+		var ch := pc._workbench_preview_panel.get_child(0)
+		pc._workbench_preview_panel.remove_child(ch)
+		ch.free()
 
 	var recipe: Dictionary = {}
 	for r: Dictionary in pc.BUILD_RECIPES:
@@ -940,15 +944,14 @@ func spawn_craft_text(crafted_id: StringName) -> void:
 	lbl.add_theme_color_override("default_color", Color.WHITE)
 	lbl.custom_minimum_size = Vector2(400, 0)
 
-	var anchor_pos := Vector2(pc.get_viewport().get_visible_rect().size.x * 0.5 - 200, pc.get_viewport().get_visible_rect().size.y * 0.35)
+	var anchor_pos := Vector2(pc.get_viewport().get_visible_rect().size.x * 0.5 - 200, pc.get_viewport().get_visible_rect().size.y * 0.15)
 	lbl.position = anchor_pos
 	pc._hud_root.add_child(lbl)
 
 	var tween := lbl.create_tween()
-	tween.set_parallel(true)
-	tween.tween_property(lbl, "position:y", anchor_pos.y - 80.0, 1.2).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
-	tween.tween_property(lbl, "modulate:a", 0.0, 1.2).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-	tween.chain().tween_callback(lbl.queue_free)
+	tween.tween_property(lbl, "position:y", anchor_pos.y - 60.0, 2.5).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tween.parallel().tween_property(lbl, "modulate:a", 0.0, 1.0).set_delay(1.5).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	tween.tween_callback(lbl.queue_free)
 
 
 func get_item_fallback_color(item_id: StringName) -> Color:
