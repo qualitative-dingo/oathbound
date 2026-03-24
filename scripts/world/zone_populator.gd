@@ -1345,10 +1345,12 @@ static func _terrain_normal_y(wx: float, wz: float, height_func: Callable) -> fl
 #  TREE — Procedural trunk with root flare + 2D billboard leaf planes
 # ═══════════════════════════════════════════════════════════════════════════════
 
-## Builds a trunk ArrayMesh with a flared base and buttress root ridges via
-## SurfaceTool. The radius follows a non-linear profile: wide flare at the
-## bottom that eases into a linear taper toward the top.  Buttress roots are
-## angular ridges whose protrusion fades out above the root zone.
+## Builds a trunk ArrayMesh with a flared base, buttress root ridges, and
+## organic asymmetry via SurfaceTool.  Radius profile: wide flare at the
+## bottom with smooth cubic ease into a tapered body.  Per-ring center
+## offsets produce a natural lean/wobble.  Each ring is slightly oval with
+## randomised orientation.  Bottom cap closes the mesh so it never looks
+## hollow.  Buttress roots vary in strength for a non-uniform silhouette.
 static func _build_trunk_mesh(
 	bot_r: float, top_r: float, height: float,
 	num_roots: int, rng: RandomNumberGenerator,
@@ -1356,19 +1358,32 @@ static func _build_trunk_mesh(
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
-	var radial_segs := 12
-	var h_rings := 14
-	var flare_mult := 1.7
-	var flare_zone := 0.12
-	var root_zone := 0.22
+	var radial_segs := 16
+	var h_rings := 18
+	var flare_mult := 1.55
+	var flare_zone := 0.15
+	var root_zone := 0.25
 
+	# --- Buttress roots with varied strength ---
 	var root_angles := PackedFloat32Array()
+	var root_strengths := PackedFloat32Array()
 	if num_roots > 0:
 		var base_a := rng.randf_range(0.0, TAU)
 		for i in num_roots:
 			root_angles.append(
 				base_a + TAU * float(i) / float(num_roots)
-				+ rng.randf_range(-0.2, 0.2))
+				+ rng.randf_range(-0.35, 0.35))
+			root_strengths.append(rng.randf_range(0.5, 1.0))
+
+	# --- Organic lean: accumulated XZ drift per ring ---
+	var drift_x := 0.0
+	var drift_z := 0.0
+	var drift_step_x := rng.randf_range(-0.015, 0.015) * bot_r
+	var drift_step_z := rng.randf_range(-0.015, 0.015) * bot_r
+
+	# --- Per-ring ovalization ---
+	var oval_angle := rng.randf_range(0.0, TAU)
+	var oval_amount := rng.randf_range(0.03, 0.10)
 
 	var all_rings: Array[PackedVector3Array] = []
 	for ri in range(h_rings + 1):
@@ -1378,10 +1393,17 @@ static func _build_trunk_mesh(
 		var r: float
 		if t < flare_zone:
 			var ft := t / flare_zone
-			r = lerpf(bot_r * flare_mult, bot_r, ft * ft)
+			var ease := ft * ft * (3.0 - 2.0 * ft)
+			r = lerpf(bot_r * flare_mult, bot_r, ease)
 		else:
 			var tt := (t - flare_zone) / (1.0 - flare_zone)
 			r = lerpf(bot_r, top_r, tt)
+
+		drift_x += drift_step_x * (1.0 - t * 0.5)
+		drift_z += drift_step_z * (1.0 - t * 0.5)
+		if ri % 5 == 0:
+			drift_step_x += rng.randf_range(-0.006, 0.006) * bot_r
+			drift_step_z += rng.randf_range(-0.006, 0.006) * bot_r
 
 		var ring := PackedVector3Array()
 		ring.resize(radial_segs)
@@ -1389,23 +1411,31 @@ static func _build_trunk_mesh(
 			var angle := TAU * float(si) / float(radial_segs)
 			var vr := r
 
+			var oval_stretch := 1.0 + oval_amount * cos(2.0 * (angle - oval_angle))
+			vr *= oval_stretch
+
 			if t < root_zone and num_roots > 0:
 				var root_fade := 1.0 - t / root_zone
-				root_fade *= root_fade
+				root_fade = root_fade * root_fade * root_fade
 				for ra_idx in root_angles.size():
 					var ra: float = root_angles[ra_idx]
+					var str_mult: float = root_strengths[ra_idx]
 					var da := absf(fmod(angle - ra + PI + TAU, TAU) - PI)
-					var root_w := 0.38
+					var root_w := 0.45
 					if da < root_w:
 						var strength := cos(da / root_w * PI * 0.5)
 						strength *= strength
-						vr += bot_r * 0.9 * strength * root_fade
+						vr += bot_r * 0.75 * strength * root_fade * str_mult
 
-			vr += rng.randf_range(-0.012, 0.012) * r
-			ring[si] = Vector3(cos(angle) * vr, y, sin(angle) * vr)
+			vr += rng.randf_range(-0.035, 0.035) * r
+
+			var px := cos(angle) * vr + drift_x * t
+			var pz := sin(angle) * vr + drift_z * t
+			ring[si] = Vector3(px, y, pz)
 
 		all_rings.append(ring)
 
+	# --- Side faces ---
 	for ri in h_rings:
 		for si in radial_segs:
 			var ns := (si + 1) % radial_segs
@@ -1421,6 +1451,18 @@ static func _build_trunk_mesh(
 			st.add_vertex(v10)
 			st.add_vertex(v01)
 			st.add_vertex(v11)
+
+	# --- Bottom cap (triangle fan, facing down) ---
+	var bot_ring: PackedVector3Array = all_rings[0]
+	var bot_center := Vector3.ZERO
+	for vi in bot_ring.size():
+		bot_center += bot_ring[vi]
+	bot_center /= float(bot_ring.size())
+	for si in radial_segs:
+		var ns := (si + 1) % radial_segs
+		st.add_vertex(bot_center)
+		st.add_vertex(bot_ring[ns])
+		st.add_vertex(bot_ring[si])
 
 	st.generate_normals()
 	return st.commit()
