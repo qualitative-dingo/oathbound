@@ -366,7 +366,7 @@ func compute_recipe_star_avg(recipe: Array, max_star: int = 5, min_star: int = 0
 			total_weight += star_level * qty
 			total_qty += qty
 	if total_qty == 0:
-		return 0.0
+		return float(min_star + max_star) / 2.0
 	return total_weight / float(total_qty)
 
 
