@@ -3333,7 +3333,7 @@ func _build_pause_menu() -> void:
 			AudioServer.set_bus_volume_db(idx, linear_to_db(val))
 	)
 
-	var fs_check := CheckBox.new()
+	var mode_options_ref: OptionButton = null
 
 	var res_row := HBoxContainer.new()
 	res_row.add_theme_constant_override("separation", 10)
@@ -3362,7 +3362,8 @@ func _build_pause_menu() -> void:
 		var r: Vector2i = resolutions[idx]
 		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_WINDOWED:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			fs_check.set_pressed_no_signal(false)
+			if mode_options_ref:
+				mode_options_ref.selected = 0
 		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_RESIZE_DISABLED, false)
 		DisplayServer.window_set_size(r)
 		await get_tree().process_frame
@@ -3375,28 +3376,44 @@ func _build_pause_menu() -> void:
 	res_row.add_child(res_options)
 	vbox.add_child(res_row)
 
-	var fs_row := HBoxContainer.new()
-	fs_row.add_theme_constant_override("separation", 10)
-	fs_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	fs_check.text = "Fullscreen"
-	var is_fs: bool = DisplayServer.window_get_mode() in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]
-	fs_check.button_pressed = is_fs
-	fs_check.add_theme_font_size_override("font_size", 14)
-	fs_check.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
-	fs_check.toggled.connect(func(on: bool) -> void:
-		if on:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
-		else:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			var r: Vector2i = resolutions[res_options.selected] if res_options.selected >= 0 else Vector2i(1920, 1080)
-			DisplayServer.window_set_size(r)
-			var screen_size := DisplayServer.screen_get_size()
-			DisplayServer.window_set_position(Vector2i(
-				(screen_size.x - r.x) / 2, (screen_size.y - r.y) / 2
-			))
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 10)
+	mode_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var mode_label := Label.new()
+	mode_label.text = "Display"
+	mode_label.add_theme_font_size_override("font_size", 14)
+	mode_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
+	mode_row.add_child(mode_label)
+	var mode_options := OptionButton.new()
+	mode_options.add_theme_font_size_override("font_size", 14)
+	mode_options.add_item("Windowed", 0)
+	mode_options.add_item("Fullscreen", 1)
+	mode_options.add_item("Windowed Fullscreen", 2)
+	var cur_mode := DisplayServer.window_get_mode()
+	if cur_mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		mode_options.selected = 1
+	elif cur_mode == DisplayServer.WINDOW_MODE_FULLSCREEN:
+		mode_options.selected = 2
+	else:
+		mode_options.selected = 0
+	mode_options.item_selected.connect(func(idx: int) -> void:
+		match idx:
+			0:
+				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+				var r: Vector2i = resolutions[res_options.selected] if res_options.selected >= 0 else Vector2i(1920, 1080)
+				DisplayServer.window_set_size(r)
+				var screen_size := DisplayServer.screen_get_size()
+				DisplayServer.window_set_position(Vector2i(
+					(screen_size.x - r.x) / 2, (screen_size.y - r.y) / 2
+				))
+			1:
+				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
+			2:
+				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 	)
-	fs_row.add_child(fs_check)
-	vbox.add_child(fs_row)
+	mode_row.add_child(mode_options)
+	vbox.add_child(mode_row)
+	mode_options_ref = mode_options
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 6)
