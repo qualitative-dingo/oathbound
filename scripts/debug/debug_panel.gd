@@ -194,7 +194,7 @@ func _build_ui() -> void:
 	spacer.custom_minimum_size = Vector2(0, 10)
 	outer.add_child(spacer)
 
-	var close_btn := _make_button("Close (F3)", Color(0.25, 0.25, 0.3))
+	var close_btn := _make_button("Close (Esc)", Color(0.25, 0.25, 0.3))
 	close_btn.custom_minimum_size = Vector2(200, 0)
 	close_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	close_btn.pressed.connect(toggle_panel)

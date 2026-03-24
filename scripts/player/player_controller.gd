@@ -822,6 +822,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _pause_open:
 			_close_pause_menu()
 			return
+		if _debug_panel and is_instance_valid(_debug_panel) and _debug_panel.visible:
+			_debug_panel.toggle_panel()
+			return
 		if _bow_drawing:
 			_cancel_bow_draw()
 			return
@@ -3343,7 +3346,7 @@ func _build_pause_menu() -> void:
 	)
 	vbox.add_child(char_btn)
 
-	var debug_btn := _make_pause_button("Debug Panel (F3)", Color(0.3, 0.3, 0.45))
+	var debug_btn := _make_pause_button("Debug Panel", Color(0.3, 0.3, 0.45))
 	debug_btn.pressed.connect(func() -> void:
 		_close_pause_menu()
 		_ensure_debug_panel()
