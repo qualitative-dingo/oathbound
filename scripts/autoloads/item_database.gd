@@ -289,18 +289,25 @@ static func make_star_id(base_id: StringName, stars: int, affixes: Array[StringN
 	return StringName(result)
 
 
+static func strip_instance_suffix(id: StringName) -> StringName:
+	var s := str(id)
+	var h := s.rfind("#")
+	return StringName(s.substr(0, h)) if h >= 0 else id
+
+
 static func parse_star_id(composite_id: StringName) -> Dictionary:
-	var s := str(composite_id)
+	var s := str(strip_instance_suffix(composite_id))
+	var stripped_id := StringName(s)
 	var colon := s.find(":")
 	if colon < 0:
-		return {"base_id": composite_id, "stars": 0, "affixes": [] as Array[StringName], "affix_rolls": {}}
+		return {"base_id": stripped_id, "stars": 0, "affixes": [] as Array[StringName], "affix_rolls": {}}
 	var base_id := StringName(s.substr(0, colon))
 	var rest := s.substr(colon + 1)
 	var colon2 := rest.find(":")
 	if colon2 < 0:
 		if rest.is_valid_int():
 			return {"base_id": base_id, "stars": int(rest), "affixes": [] as Array[StringName], "affix_rolls": {}}
-		return {"base_id": composite_id, "stars": 0, "affixes": [] as Array[StringName], "affix_rolls": {}}
+		return {"base_id": stripped_id, "stars": 0, "affixes": [] as Array[StringName], "affix_rolls": {}}
 	var stars_str := rest.substr(0, colon2)
 	var affix_str := rest.substr(colon2 + 1)
 	var affixes: Array[StringName] = []
@@ -320,7 +327,7 @@ static func parse_star_id(composite_id: StringName) -> Dictionary:
 			affix_rolls[affix_name] = randf()
 	if stars_str.is_valid_int():
 		return {"base_id": base_id, "stars": int(stars_str), "affixes": affixes, "affix_rolls": affix_rolls}
-	return {"base_id": composite_id, "stars": 0, "affixes": [] as Array[StringName], "affix_rolls": {}}
+	return {"base_id": stripped_id, "stars": 0, "affixes": [] as Array[StringName], "affix_rolls": {}}
 
 
 static func roll_star_level(rng: RandomNumberGenerator) -> int:

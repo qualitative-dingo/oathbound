@@ -14,13 +14,33 @@ signal changed()
 
 
 func add_item(item_id: StringName, amount: int) -> void:
-	if _slots.has(item_id):
-		_slots[item_id] = int(_slots[item_id]) + amount
+	var data: Dictionary = ItemDatabase.get_item(item_id)
+	var item_type: String = str(data.get("type", "material"))
+	var is_gear: bool = item_type == "weapon" or item_type == "armor"
+
+	if is_gear:
+		for _i in amount:
+			var uid := _unique_gear_id(item_id)
+			_slots[uid] = 1
+			_order.append(uid)
 	else:
-		_slots[item_id] = amount
-		_order.append(item_id)
+		if _slots.has(item_id):
+			_slots[item_id] = int(_slots[item_id]) + amount
+		else:
+			_slots[item_id] = amount
+			_order.append(item_id)
 	changed.emit()
 	GameEvents.inventory_changed.emit()
+
+
+func _unique_gear_id(item_id: StringName) -> StringName:
+	if not _slots.has(item_id):
+		return item_id
+	var base := str(item_id)
+	var counter := 2
+	while _slots.has(StringName(base + "#" + str(counter))):
+		counter += 1
+	return StringName(base + "#" + str(counter))
 
 
 func remove_item(item_id: StringName, amount: int) -> bool:
