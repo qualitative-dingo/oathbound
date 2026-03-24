@@ -1980,7 +1980,7 @@ func _setup_movement_audio() -> void:
 
 	_gallop_player = AudioStreamPlayer.new()
 	_gallop_player.bus = &"SFX"
-	_gallop_player.volume_db = -6.5
+	_gallop_player.volume_db = -9.6
 	add_child(_gallop_player)
 	_gallop_player.finished.connect(_on_gallop_finished)
 
