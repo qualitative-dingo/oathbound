@@ -3460,11 +3460,23 @@ func _build_pause_menu() -> void:
 
 	if NetworkManager.use_steam and NetworkManager.steam_lobby_id > 0:
 		var invite_btn := _make_pause_button("Invite Friend (Steam)", Color(0.2, 0.35, 0.55))
+		var invite_hint := Label.new()
+		invite_hint.text = ""
+		invite_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		invite_hint.add_theme_font_size_override("font_size", 12)
+		invite_hint.add_theme_color_override("font_color", Color(0.8, 0.6, 0.3))
+		invite_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		invite_hint.custom_minimum_size = Vector2(380, 0)
 		invite_btn.pressed.connect(func() -> void:
-			_close_pause_menu()
-			SteamManager.open_invite_dialog()
+			var s := SteamManager.get_steam()
+			if s and s.isOverlayEnabled():
+				_close_pause_menu()
+				SteamManager.open_invite_dialog()
+			else:
+				invite_hint.text = "Steam overlay not available.\nTell your friend to right-click your name\nin Steam and click \"Join Game\"."
 		)
 		vbox.add_child(invite_btn)
+		vbox.add_child(invite_hint)
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 6)

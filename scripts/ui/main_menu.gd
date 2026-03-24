@@ -363,9 +363,9 @@ func _on_steam_host_failed() -> void:
 
 
 func _on_steam_join_requested(lobby_id: int) -> void:
-	if _connection_status:
-		_connection_status.text = "Joining Steam game..."
-		_connection_status.add_theme_color_override("font_color", Color(0.7, 0.65, 0.5))
+	_ensure_character_for_join()
+	_set_status("Joining Steam game...", Color(0.7, 0.65, 0.5))
+	NetworkManager.character_name = str(_selected_character.get("name", "Player"))
 	NetworkManager.connection_succeeded.connect(_on_join_connected, CONNECT_ONE_SHOT)
 	NetworkManager.connection_failed.connect(_on_steam_join_failed, CONNECT_ONE_SHOT)
 	NetworkManager.world_info_received.connect(_on_join_world_info, CONNECT_ONE_SHOT)
@@ -373,11 +373,20 @@ func _on_steam_join_requested(lobby_id: int) -> void:
 
 
 func _on_steam_join_failed() -> void:
-	if _connection_status:
-		_connection_status.text = "Failed to join Steam game."
-		_connection_status.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+	_set_status("Failed to join Steam game.", Color(0.8, 0.3, 0.3))
 	if NetworkManager.world_info_received.is_connected(_on_join_world_info):
 		NetworkManager.world_info_received.disconnect(_on_join_world_info)
+
+
+func _ensure_character_for_join() -> void:
+	if not _selected_character.is_empty():
+		return
+	var chars := SaveManager.get_all_characters()
+	if not chars.is_empty():
+		_selected_character = chars[0]
+	else:
+		var steam_name := SteamManager.steam_name if SteamManager.is_steam_ready and SteamManager.steam_name != "" else "Player"
+		_selected_character = SaveManager.create_character(steam_name)
 
 
 func _on_host_lan() -> void:
@@ -394,8 +403,7 @@ func _on_join_lan() -> void:
 	var ip := _ip_input.text.strip_edges()
 	if ip.is_empty():
 		ip = "127.0.0.1"
-	_connection_status.text = "Connecting to %s..." % ip
-	_connection_status.add_theme_color_override("font_color", Color(0.7, 0.65, 0.5))
+	_set_status("Connecting to %s..." % ip, Color(0.7, 0.65, 0.5))
 
 	NetworkManager.connection_succeeded.connect(_on_join_connected, CONNECT_ONE_SHOT)
 	NetworkManager.connection_failed.connect(_on_join_failed, CONNECT_ONE_SHOT)
@@ -404,25 +412,30 @@ func _on_join_lan() -> void:
 
 
 func _on_join_connected() -> void:
-	_connection_status.text = "Connected! Waiting for world info..."
-	_connection_status.add_theme_color_override("font_color", Color(0.5, 0.8, 0.5))
+	_set_status("Connected! Waiting for world info...", Color(0.5, 0.8, 0.5))
 
 
 func _on_join_failed() -> void:
-	_connection_status.text = "Connection failed."
-	_connection_status.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+	_set_status("Connection failed.", Color(0.8, 0.3, 0.3))
 	if NetworkManager.world_info_received.is_connected(_on_join_world_info):
 		NetworkManager.world_info_received.disconnect(_on_join_world_info)
 
 
 func _on_join_world_info() -> void:
 	if _DEBUG_LOG: print("[MENU-CLIENT] Received world info, loading world...")
-	_connection_status.text = "Loading world..."
+	_set_status("Loading world...", Color(0.7, 0.65, 0.5))
+	_ensure_character_for_join()
 	SaveManager.start_game(_selected_character, {"id": "lan_client", "name": NetworkManager.world_name, "seed": NetworkManager.world_seed})
 	var world_data := {"seed": NetworkManager.world_seed, "name": NetworkManager.world_name}
 	_launch_world(world_data)
 	if _DEBUG_LOG: print("[MENU-CLIENT] World loaded, notifying server we are ready")
 	NetworkManager.call_deferred("notify_server_ready")
+
+
+func _set_status(msg: String, color: Color) -> void:
+	if _connection_status:
+		_connection_status.text = msg
+		_connection_status.add_theme_color_override("font_color", color)
 
 
 func _launch_world(world_data: Dictionary) -> void:
