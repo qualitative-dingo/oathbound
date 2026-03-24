@@ -3327,6 +3327,8 @@ func _build_pause_menu() -> void:
 			AudioServer.set_bus_volume_db(idx, linear_to_db(val))
 	)
 
+	var fs_check := CheckBox.new()
+
 	var res_row := HBoxContainer.new()
 	res_row.add_theme_constant_override("separation", 10)
 	res_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -3352,6 +3354,12 @@ func _build_pause_menu() -> void:
 		res_options.selected = selected_idx
 	res_options.item_selected.connect(func(idx: int) -> void:
 		var r: Vector2i = resolutions[idx]
+		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_WINDOWED:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			fs_check.set_pressed_no_signal(false)
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_RESIZE_DISABLED, false)
+		DisplayServer.window_set_size(r)
+		await get_tree().process_frame
 		DisplayServer.window_set_size(r)
 		var screen_size := DisplayServer.screen_get_size()
 		DisplayServer.window_set_position(Vector2i(
@@ -3364,16 +3372,22 @@ func _build_pause_menu() -> void:
 	var fs_row := HBoxContainer.new()
 	fs_row.add_theme_constant_override("separation", 10)
 	fs_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	var fs_check := CheckBox.new()
 	fs_check.text = "Fullscreen"
-	fs_check.button_pressed = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+	var is_fs: bool = DisplayServer.window_get_mode() in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]
+	fs_check.button_pressed = is_fs
 	fs_check.add_theme_font_size_override("font_size", 14)
 	fs_check.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
 	fs_check.toggled.connect(func(on: bool) -> void:
 		if on:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
 		else:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+			var r: Vector2i = resolutions[res_options.selected] if res_options.selected >= 0 else Vector2i(1920, 1080)
+			DisplayServer.window_set_size(r)
+			var screen_size := DisplayServer.screen_get_size()
+			DisplayServer.window_set_position(Vector2i(
+				(screen_size.x - r.x) / 2, (screen_size.y - r.y) / 2
+			))
 	)
 	fs_row.add_child(fs_check)
 	vbox.add_child(fs_row)
