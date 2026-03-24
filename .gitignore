@@ -33,6 +33,9 @@ Thumbs.db
 .cursor/*
 !.cursor/rules/
 
+# Godot MCP addon (dev-only, breaks on other machines)
+addons/godot_mcp/
+
 # Backups
 backups/
 *.backup
