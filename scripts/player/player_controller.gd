@@ -4323,7 +4323,7 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 
 	var sep := HSeparator.new()
 	var sep_style := StyleBoxFlat.new()
-	sep_style.color = Color(0.4, 0.35, 0.25, 0.6)
+	sep_style.bg_color = Color(0.4, 0.35, 0.25, 0.6)
 	sep_style.content_margin_top = 1
 	sep_style.content_margin_bottom = 1
 	sep.add_theme_stylebox_override("separator", sep_style)
