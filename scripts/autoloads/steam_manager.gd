@@ -24,14 +24,20 @@ func _ready() -> void:
 		return
 
 	_s = Engine.get_singleton("Steam")
-	var init: Dictionary = _s.steamInit()
+	var init = _s.steamInit()
 	if _DEBUG_LOG:
 		print("[STEAM] steamInit result: %s" % str(init))
 
-	if init.get("status", -1) != 1:
-		push_warning("[STEAM] Steam init failed: %s" % init.get("verbal", "unknown"))
-		_s = null
-		return
+	if init is Dictionary:
+		if init.get("status", -1) != 1:
+			push_warning("[STEAM] Steam init failed: %s" % init.get("verbal", "unknown"))
+			_s = null
+			return
+	elif init is bool:
+		if not init:
+			push_warning("[STEAM] Steam init failed (returned false)")
+			_s = null
+			return
 
 	is_steam_ready = true
 	steam_id = _s.getSteamID()
