@@ -28,6 +28,8 @@ func _ready() -> void:
 	AudioManager.stop_music(1.0)
 	_build_ui()
 	_show_character_select()
+	if SteamManager.is_steam_ready:
+		SteamManager.join_lobby_requested.connect(_on_steam_join_requested)
 
 
 func _build_ui() -> void:
@@ -264,29 +266,43 @@ func _show_play_mode() -> void:
 		_play_mode_panel.queue_free()
 	_play_mode_panel = _make_panel()
 	_play_mode_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_play_mode_panel.offset_left = -200
-	_play_mode_panel.offset_right = 200
-	_play_mode_panel.offset_top = -160
-	_play_mode_panel.offset_bottom = 160
+	_play_mode_panel.offset_left = -220
+	_play_mode_panel.offset_right = 220
+	_play_mode_panel.offset_top = -210
+	_play_mode_panel.offset_bottom = 210
 	add_child(_play_mode_panel)
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 12)
+	vbox.add_theme_constant_override("separation", 10)
 	_play_mode_panel.add_child(vbox)
+
+	if SteamManager.is_steam_ready:
+		var steam_host_btn := _make_button("Host Online Game", Color(0.2, 0.4, 0.55))
+		steam_host_btn.custom_minimum_size = Vector2(0, 42)
+		steam_host_btn.pressed.connect(_on_host_steam)
+		vbox.add_child(steam_host_btn)
+
+		var steam_hint := Label.new()
+		steam_hint.text = "Friends join via Steam: right-click your name > Join Game"
+		steam_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		steam_hint.add_theme_font_size_override("font_size", 11)
+		steam_hint.add_theme_color_override("font_color", Color(0.45, 0.55, 0.65))
+		steam_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		vbox.add_child(steam_hint)
+
+		vbox.add_child(_make_spacer(4))
+
+	var lan_sep := Label.new()
+	lan_sep.text = "— LAN —"
+	lan_sep.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lan_sep.add_theme_font_size_override("font_size", 13)
+	lan_sep.add_theme_color_override("font_color", Color(0.45, 0.45, 0.5))
+	vbox.add_child(lan_sep)
 
 	var host_btn := _make_button("Host LAN Game", Color(0.25, 0.35, 0.55))
 	host_btn.custom_minimum_size = Vector2(0, 42)
 	host_btn.pressed.connect(_on_host_lan)
 	vbox.add_child(host_btn)
-
-	vbox.add_child(_make_spacer(8))
-
-	var sep_label := Label.new()
-	sep_label.text = "— or join a game —"
-	sep_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sep_label.add_theme_font_size_override("font_size", 14)
-	sep_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
-	vbox.add_child(sep_label)
 
 	_ip_input = LineEdit.new()
 	_ip_input.placeholder_text = "Host IP (e.g. 192.168.1.50)"
@@ -315,6 +331,53 @@ func _show_play_mode() -> void:
 func _on_play_offline() -> void:
 	SaveManager.start_game(_selected_character, _selected_world)
 	_launch_world(_selected_world)
+
+
+func _on_host_steam() -> void:
+	SaveManager.start_game(_selected_character, _selected_world)
+	var seed_str: String = str(_selected_world.get("seed", "oathbound"))
+	var w_name: String = str(_selected_world.get("name", "World"))
+	NetworkManager.world_seed = seed_str
+	NetworkManager.world_name = w_name
+	NetworkManager.character_name = str(_selected_character.get("name", "Player"))
+	if _connection_status:
+		_connection_status.text = "Creating Steam lobby..."
+		_connection_status.add_theme_color_override("font_color", Color(0.7, 0.65, 0.5))
+	NetworkManager.steam_lobby_created.connect(_on_steam_host_ready, CONNECT_ONE_SHOT)
+	NetworkManager.connection_failed.connect(_on_steam_host_failed, CONNECT_ONE_SHOT)
+	NetworkManager.host_game_steam()
+
+
+func _on_steam_host_ready(_lobby_id: int) -> void:
+	if NetworkManager.connection_failed.is_connected(_on_steam_host_failed):
+		NetworkManager.connection_failed.disconnect(_on_steam_host_failed)
+	_launch_world(_selected_world)
+
+
+func _on_steam_host_failed() -> void:
+	if NetworkManager.steam_lobby_created.is_connected(_on_steam_host_ready):
+		NetworkManager.steam_lobby_created.disconnect(_on_steam_host_ready)
+	if _connection_status:
+		_connection_status.text = "Failed to create Steam lobby."
+		_connection_status.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+
+
+func _on_steam_join_requested(lobby_id: int) -> void:
+	if _connection_status:
+		_connection_status.text = "Joining Steam game..."
+		_connection_status.add_theme_color_override("font_color", Color(0.7, 0.65, 0.5))
+	NetworkManager.connection_succeeded.connect(_on_join_connected, CONNECT_ONE_SHOT)
+	NetworkManager.connection_failed.connect(_on_steam_join_failed, CONNECT_ONE_SHOT)
+	NetworkManager.world_info_received.connect(_on_join_world_info, CONNECT_ONE_SHOT)
+	NetworkManager.join_game_steam(lobby_id)
+
+
+func _on_steam_join_failed() -> void:
+	if _connection_status:
+		_connection_status.text = "Failed to join Steam game."
+		_connection_status.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+	if NetworkManager.world_info_received.is_connected(_on_join_world_info):
+		NetworkManager.world_info_received.disconnect(_on_join_world_info)
 
 
 func _on_host_lan() -> void:

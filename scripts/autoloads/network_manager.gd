@@ -1,6 +1,7 @@
 extends Node
-## NetworkManager autoload — handles hosting and joining LAN games.
-## Uses ENetMultiplayerPeer for low-latency LAN multiplayer.
+## NetworkManager autoload — handles hosting and joining via Steam or LAN.
+## Steam mode uses SteamMultiplayerPeer (lobby-based, NAT-free).
+## LAN mode uses ENetMultiplayerPeer (direct IP, port 7777).
 const _DEBUG_LOG := false
 
 const DEFAULT_PORT := 7777
@@ -13,15 +14,17 @@ signal connection_succeeded()
 signal connection_failed()
 signal server_started()
 signal world_info_received()
-## Phase 4d: emitted when chest contents are received (path, contents)
 signal chest_contents_received(chest_path: String, contents: Array)
+signal steam_lobby_created(lobby_id: int)
+signal steam_lobby_join_failed(reason: String)
 
 var is_hosting := false
+var use_steam := false
+var steam_lobby_id: int = 0
 var world_seed: String = ""
 var world_name: String = ""
 var character_name: String = ""
 
-## Phase 5: Cached player data from clients (peer_id -> {character_id, player, inventory})
 var _player_data_cache: Dictionary = {}
 
 
@@ -65,7 +68,124 @@ func join_game(address: String, port: int = DEFAULT_PORT) -> Error:
 	return OK
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Steam multiplayer (lobby-based, NAT-free)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+func host_game_steam() -> void:
+	if not SteamManager.is_steam_ready:
+		push_error("[NET] Steam not initialized — cannot host Steam game")
+		connection_failed.emit()
+		return
+	_cleanup_old_session()
+	use_steam = true
+	is_hosting = true
+
+	if not Steam.lobby_created.is_connected(_on_steam_lobby_created):
+		Steam.lobby_created.connect(_on_steam_lobby_created)
+	Steam.createLobby(Steam.LOBBY_TYPE_FRIENDS_ONLY, MAX_PLAYERS)
+	if _DEBUG_LOG: print("[NET-STEAM] Creating friends-only lobby...")
+
+
+func _on_steam_lobby_created(result: int, this_lobby_id: int) -> void:
+	if Steam.lobby_created.is_connected(_on_steam_lobby_created):
+		Steam.lobby_created.disconnect(_on_steam_lobby_created)
+
+	if result != 1:
+		push_error("[NET-STEAM] Lobby creation failed (result=%d)" % result)
+		use_steam = false
+		is_hosting = false
+		connection_failed.emit()
+		return
+
+	steam_lobby_id = this_lobby_id
+	Steam.setLobbyJoinable(steam_lobby_id, true)
+	Steam.setLobbyData(steam_lobby_id, "name", world_name)
+	Steam.setLobbyData(steam_lobby_id, "seed", world_seed)
+	Steam.setLobbyData(steam_lobby_id, "game", "Oathbound")
+	Steam.allowP2PPacketRelay(true)
+
+	var peer := SteamMultiplayerPeer.new()
+	var err := peer.host_with_lobby(steam_lobby_id)
+	if err != OK:
+		push_error("[NET-STEAM] host_with_lobby failed: %s" % error_string(err))
+		Steam.leaveLobby(steam_lobby_id)
+		steam_lobby_id = 0
+		use_steam = false
+		is_hosting = false
+		connection_failed.emit()
+		return
+
+	multiplayer.multiplayer_peer = peer
+	multiplayer.peer_connected.connect(_on_peer_connected)
+	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+
+	if _DEBUG_LOG: print("[NET-STEAM] Host ready — lobby=%d peer_id=%d" % [steam_lobby_id, multiplayer.get_unique_id()])
+	server_started.emit()
+	steam_lobby_created.emit(steam_lobby_id)
+	call_deferred("_deferred_spawn_host")
+
+
+func join_game_steam(lobby_id: int) -> void:
+	if not SteamManager.is_steam_ready:
+		push_error("[NET] Steam not initialized — cannot join Steam game")
+		connection_failed.emit()
+		return
+	_cleanup_old_session()
+	use_steam = true
+	is_hosting = false
+	steam_lobby_id = lobby_id
+
+	if not Steam.lobby_joined.is_connected(_on_steam_lobby_joined):
+		Steam.lobby_joined.connect(_on_steam_lobby_joined)
+	Steam.joinLobby(lobby_id)
+	if _DEBUG_LOG: print("[NET-STEAM] Joining lobby %d..." % lobby_id)
+
+
+func _on_steam_lobby_joined(this_lobby_id: int, _permissions: int, _locked: bool, response: int) -> void:
+	if Steam.lobby_joined.is_connected(_on_steam_lobby_joined):
+		Steam.lobby_joined.disconnect(_on_steam_lobby_joined)
+
+	if response != Steam.CHAT_ROOM_ENTER_RESPONSE_SUCCESS:
+		var reason := "Unknown error"
+		match response:
+			Steam.CHAT_ROOM_ENTER_RESPONSE_DOESNT_EXIST: reason = "Lobby no longer exists"
+			Steam.CHAT_ROOM_ENTER_RESPONSE_NOT_ALLOWED: reason = "Not allowed to join"
+			Steam.CHAT_ROOM_ENTER_RESPONSE_FULL: reason = "Lobby is full"
+			Steam.CHAT_ROOM_ENTER_RESPONSE_ERROR: reason = "Unexpected error"
+			Steam.CHAT_ROOM_ENTER_RESPONSE_BANNED: reason = "Banned from lobby"
+		push_error("[NET-STEAM] Lobby join failed: %s" % reason)
+		use_steam = false
+		steam_lobby_id = 0
+		steam_lobby_join_failed.emit(reason)
+		connection_failed.emit()
+		return
+
+	steam_lobby_id = this_lobby_id
+
+	var peer := SteamMultiplayerPeer.new()
+	var err := peer.connect_to_lobby(steam_lobby_id)
+	if err != OK:
+		push_error("[NET-STEAM] connect_to_lobby failed: %s" % error_string(err))
+		Steam.leaveLobby(steam_lobby_id)
+		steam_lobby_id = 0
+		use_steam = false
+		connection_failed.emit()
+		return
+
+	multiplayer.multiplayer_peer = peer
+	multiplayer.peer_connected.connect(_on_peer_connected)
+	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	multiplayer.connected_to_server.connect(_on_connected_to_server)
+	multiplayer.connection_failed.connect(_on_connection_failed)
+
+	if _DEBUG_LOG: print("[NET-STEAM] Joined lobby %d, connecting to host..." % steam_lobby_id)
+
+
 func _cleanup_old_session() -> void:
+	if use_steam and steam_lobby_id != 0 and SteamManager.is_steam_ready:
+		Steam.leaveLobby(steam_lobby_id)
+		steam_lobby_id = 0
 	if multiplayer.multiplayer_peer:
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null
@@ -77,9 +197,15 @@ func _cleanup_old_session() -> void:
 		multiplayer.connected_to_server.disconnect(_on_connected_to_server)
 	if multiplayer.connection_failed.is_connected(_on_connection_failed):
 		multiplayer.connection_failed.disconnect(_on_connection_failed)
+	if SteamManager.is_steam_ready:
+		if Steam.lobby_created.is_connected(_on_steam_lobby_created):
+			Steam.lobby_created.disconnect(_on_steam_lobby_created)
+		if Steam.lobby_joined.is_connected(_on_steam_lobby_joined):
+			Steam.lobby_joined.disconnect(_on_steam_lobby_joined)
 	_spawned_peers.clear()
 	_player_data_cache.clear()
 	is_hosting = false
+	use_steam = false
 
 
 func disconnect_game() -> void:
