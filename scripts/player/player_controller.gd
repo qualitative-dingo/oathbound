@@ -4461,6 +4461,10 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 	tools_row.add_theme_constant_override("separation", 4)
 	equip_vbox.add_child(tools_row)
 
+	var equip_spacer := Control.new()
+	equip_spacer.custom_minimum_size = Vector2(0, 6)
+	equip_vbox.add_child(equip_spacer)
+
 	var equip_lbl := Label.new()
 	equip_lbl.text = "EQUIPMENT"
 	equip_lbl.add_theme_color_override("font_color", Color(0.6, 0.55, 0.4))
