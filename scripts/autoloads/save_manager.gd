@@ -6,6 +6,7 @@ const _DEBUG_LOG := false
 
 const SAVE_DIR := "user://saves/"
 const CHARACTERS_FILE := "user://characters.json"
+const SETTINGS_FILE := "user://settings.json"
 const AUTOSAVE_INTERVAL := 10.0
 
 var current_character: Dictionary = {}
@@ -13,10 +14,65 @@ var current_world: Dictionary = {}
 
 var _autosave_timer := 0.0
 var _game_active := false
+var _settings_loaded := false
 
 
 func _ready() -> void:
 	_ensure_save_dir()
+	load_and_apply_settings()
+
+
+func save_settings() -> void:
+	var music_idx := AudioServer.get_bus_index(&"Music")
+	var sfx_idx := AudioServer.get_bus_index(&"SFX")
+	var data := {
+		"music_volume": db_to_linear(AudioServer.get_bus_volume_db(music_idx)) if music_idx != -1 else 0.05,
+		"sfx_volume": db_to_linear(AudioServer.get_bus_volume_db(sfx_idx)) if sfx_idx != -1 else 0.07,
+		"window_mode": get_window().mode,
+		"window_width": DisplayServer.window_get_size().x,
+		"window_height": DisplayServer.window_get_size().y,
+	}
+	var file := FileAccess.open(SETTINGS_FILE, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(data, "\t"))
+
+
+func load_and_apply_settings() -> void:
+	if not FileAccess.file_exists(SETTINGS_FILE):
+		return
+	var file := FileAccess.open(SETTINGS_FILE, FileAccess.READ)
+	if not file:
+		return
+	var json := JSON.new()
+	if json.parse(file.get_as_text()) != OK:
+		return
+	var data = json.data
+	if data is not Dictionary:
+		return
+
+	_settings_loaded = true
+
+	var music_vol: float = float(data.get("music_volume", 0.05))
+	var sfx_vol: float = float(data.get("sfx_volume", 0.07))
+	var music_idx := AudioServer.get_bus_index(&"Music")
+	if music_idx != -1:
+		AudioServer.set_bus_volume_db(music_idx, linear_to_db(music_vol))
+	var sfx_idx := AudioServer.get_bus_index(&"SFX")
+	if sfx_idx != -1:
+		AudioServer.set_bus_volume_db(sfx_idx, linear_to_db(sfx_vol))
+
+	var win_mode: int = int(data.get("window_mode", Window.MODE_MAXIMIZED))
+	var win_w: int = int(data.get("window_width", 1920))
+	var win_h: int = int(data.get("window_height", 1080))
+
+	if win_mode in [Window.MODE_EXCLUSIVE_FULLSCREEN, Window.MODE_FULLSCREEN]:
+		get_window().mode = win_mode
+	else:
+		get_window().mode = Window.MODE_WINDOWED
+		get_window().borderless = false
+		get_window().size = Vector2i(win_w, win_h)
+		var screen_size := DisplayServer.screen_get_size()
+		get_window().position = (screen_size - Vector2i(win_w, win_h)) / 2
 
 
 func _process(delta: float) -> void:

@@ -444,12 +444,13 @@ func _ready() -> void:
 		return
 
 	if _DEBUG_LOG: print("[PLAYER] LOCAL player setup starting for peer %s (my_id=%d) pos=%s" % [name, multiplayer.get_unique_id(), str(global_position)])
-	var _music_bus := AudioServer.get_bus_index(&"Music")
-	if _music_bus != -1:
-		AudioServer.set_bus_volume_db(_music_bus, linear_to_db(0.05))
-	var _sfx_bus := AudioServer.get_bus_index(&"SFX")
-	if _sfx_bus != -1:
-		AudioServer.set_bus_volume_db(_sfx_bus, linear_to_db(0.07))
+	if not SaveManager._settings_loaded:
+		var _music_bus := AudioServer.get_bus_index(&"Music")
+		if _music_bus != -1:
+			AudioServer.set_bus_volume_db(_music_bus, linear_to_db(0.05))
+		var _sfx_bus := AudioServer.get_bus_index(&"SFX")
+		if _sfx_bus != -1:
+			AudioServer.set_bus_volume_db(_sfx_bus, linear_to_db(0.07))
 	current_health = max_health
 	current_stamina = max_stamina
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -3328,6 +3329,7 @@ func _build_pause_menu() -> void:
 		var idx := AudioServer.get_bus_index(&"Music")
 		if idx != -1:
 			AudioServer.set_bus_volume_db(idx, linear_to_db(val))
+		SaveManager.save_settings()
 	)
 
 	var sfx_idx := AudioServer.get_bus_index(&"SFX")
@@ -3337,6 +3339,7 @@ func _build_pause_menu() -> void:
 		var idx := AudioServer.get_bus_index(&"SFX")
 		if idx != -1:
 			AudioServer.set_bus_volume_db(idx, linear_to_db(val))
+		SaveManager.save_settings()
 	)
 
 	var res_row := HBoxContainer.new()
@@ -3501,6 +3504,7 @@ func _on_resolution_selected(idx: int) -> void:
 	get_window().position = (DisplayServer.screen_get_size() - r) / 2
 	if _pause_mode_options:
 		_pause_mode_options.selected = 0
+	SaveManager.save_settings()
 
 
 func _on_display_mode_selected(idx: int) -> void:
@@ -3515,6 +3519,7 @@ func _on_display_mode_selected(idx: int) -> void:
 			get_window().mode = Window.MODE_EXCLUSIVE_FULLSCREEN
 		2:
 			get_window().mode = Window.MODE_FULLSCREEN
+	SaveManager.save_settings()
 
 
 func _ensure_debug_panel() -> void:
