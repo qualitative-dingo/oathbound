@@ -61,6 +61,14 @@ func get_steam() -> Object:
 	return _s
 
 
+func open_invite_dialog() -> void:
+	if not _s or not is_steam_ready:
+		return
+	var lobby_id := NetworkManager.steam_lobby_id
+	if lobby_id > 0:
+		_s.activateGameOverlayInviteDialog(lobby_id)
+
+
 func _on_join_requested(this_lobby_id: int, friend_id: int) -> void:
 	var friend_name: String = _s.getFriendPersonaName(friend_id) if _s else str(friend_id)
 	if _DEBUG_LOG:

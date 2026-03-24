@@ -270,7 +270,7 @@ func _refresh_chat_log(pc_ref: PlayerController) -> void:
 	var messages := ChatManager.get_messages()
 	for msg in messages:
 		var lbl := Label.new()
-		var is_system := msg["sender"] == ""
+		var is_system: bool = msg["sender"] == ""
 		lbl.text = msg["text"] if is_system else "%s: %s" % [msg["sender"], msg["text"]]
 		lbl.add_theme_font_size_override("font_size", 13)
 		lbl.add_theme_color_override("font_color", Color(0.85, 0.75, 0.45) if is_system else Color(0.9, 0.88, 0.82))
