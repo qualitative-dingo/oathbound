@@ -1284,7 +1284,9 @@ static func _fbm2(px: float, pz: float) -> float:
 	return v
 
 static func is_dirt_patch(wx: float, wz: float, amount: float = 0.1) -> bool:
-	var n := _fbm2(wx * 0.018 + 500.0, wz * 0.018 + 700.0)
+	var warp_x := _fbm2(wx * 0.012 + 137.0, wz * 0.012 + 241.0) * 28.0
+	var warp_z := _fbm2(wx * 0.012 + 359.0, wz * 0.012 + 83.0) * 28.0
+	var n := _fbm2((wx + warp_x) * 0.018 + 500.0, (wz + warp_z) * 0.018 + 700.0)
 	var thresh := 0.5 + (0.5 - amount) * 0.6
 	return n > thresh
 
