@@ -3233,6 +3233,7 @@ func _toggle_inventory() -> void:
 	_auto_run = false
 	_inventory_open = not _inventory_open
 	if _inventory_open:
+		_cancel_drag()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		if _inventory_panel:
 			_inventory_panel.visible = true
@@ -8145,9 +8146,14 @@ func _on_inventory_hover(item_id: StringName) -> void:
 func _start_drag(item_id: StringName, from_slot: int) -> void:
 	_dragging_item = item_id
 	_drag_from_slot = from_slot
-	var icon_tex: Texture2D = ItemDatabase.get_icon(item_id)
-	if icon_tex and _drag_icon:
-		_drag_icon.texture = icon_tex
+	if _drag_icon:
+		var icon_tex: Texture2D = ItemDatabase.get_icon(item_id)
+		if icon_tex:
+			_drag_icon.texture = icon_tex
+		else:
+			var ph := PlaceholderTexture2D.new()
+			ph.size = Vector2(32, 32)
+			_drag_icon.texture = ph
 		_drag_icon.visible = true
 		_drag_icon.position = _hud_root.get_local_mouse_position() - Vector2(16, 16)
 
@@ -8252,8 +8258,9 @@ func _process(delta: float) -> void:
 		if global_position.distance_to(_chest_node.global_position) > 4.0:
 			_interaction.close_chest()
 
-	if _dragging_item != &"" and _drag_icon and _drag_icon.visible and _hud_root:
-		_drag_icon.position = _hud_root.get_local_mouse_position() - Vector2(16, 16)
+	if _dragging_item != &"" and _hud_root:
+		if _drag_icon and _drag_icon.visible:
+			_drag_icon.position = _hud_root.get_local_mouse_position() - Vector2(16, 16)
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			var drop_slot := _get_inv_slot_under_mouse()
 			if drop_slot >= 0:

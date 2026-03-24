@@ -43,7 +43,7 @@ func build_workbench_panel(root: Control) -> void:
 	pc._workbench_discard_btn.text = "🗑 Off"
 	pc._workbench_discard_btn.add_theme_font_size_override("font_size", 12)
 	pc._workbench_discard_btn.custom_minimum_size = Vector2(70, 28)
-	pc._workbench_discard_btn.tooltip_text = "Auto-discard: crafted items at or below this rarity are dropped on the ground"
+	pc._workbench_discard_btn.tooltip_text = "Auto-trash: crafted items at or below this rarity are instantly destroyed"
 	pc._workbench_discard_btn.pressed.connect(cycle_auto_discard)
 	var discard_style := StyleBoxFlat.new()
 	discard_style.bg_color = Color(0.15, 0.12, 0.1, 0.9)
@@ -815,7 +815,6 @@ func execute_craft(item_id: StringName) -> void:
 		if pc._workbench_auto_discard_star >= 0 and crafted_stars <= pc._workbench_auto_discard_star:
 			var craft_amount: int = int(ItemDatabase.get_item(crafted_id).get("craft_amount", 1))
 			Inventory.remove_item(crafted_id, craft_amount)
-			pc._drop_item_on_ground(crafted_id, craft_amount, 60.0)
 			spawn_discard_text(crafted_id)
 		else:
 			spawn_craft_text(crafted_id)
@@ -888,7 +887,7 @@ func spawn_discard_text(crafted_id: StringName) -> void:
 	num.outline_size = 6
 	num._velocity = Vector3(0, 1.5, 0)
 	if stars > 0:
-		num.text = "Discarded: %s " % display
+		num.text = "Trashed: %s " % display
 		var star_lbl := Label3D.new()
 		star_lbl.text = "★".repeat(stars)
 		star_lbl.font_size = 24
@@ -901,7 +900,7 @@ func spawn_discard_text(crafted_id: StringName) -> void:
 		star_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		num.add_child(star_lbl)
 	else:
-		num.text = "Discarded: %s" % display
+		num.text = "Trashed: %s" % display
 	pc.get_tree().current_scene.add_child(num)
 	var cam := pc.get_viewport().get_camera_3d()
 	var right_offset := cam.global_transform.basis.x * 5.1 if cam else Vector3(5.1, 0, 0)
