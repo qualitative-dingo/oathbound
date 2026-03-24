@@ -438,6 +438,12 @@ func _ready() -> void:
 		return
 
 	if _DEBUG_LOG: print("[PLAYER] LOCAL player setup starting for peer %s (my_id=%d) pos=%s" % [name, multiplayer.get_unique_id(), str(global_position)])
+	var _music_bus := AudioServer.get_bus_index(&"Music")
+	if _music_bus != -1:
+		AudioServer.set_bus_volume_db(_music_bus, linear_to_db(0.05))
+	var _sfx_bus := AudioServer.get_bus_index(&"SFX")
+	if _sfx_bus != -1:
+		AudioServer.set_bus_volume_db(_sfx_bus, linear_to_db(0.07))
 	current_health = max_health
 	current_stamina = max_stamina
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
