@@ -503,7 +503,7 @@ func tick_arrows(delta: float) -> void:
 				if not obj:
 					continue
 				if arrow.global_position.distance_to(obj.global_position + Vector3.UP * 0.5) < 1.5:
-					if obj.has_meta("harvestable") and obj.get_meta("drop_id", &"") != &"wood":
+					if obj.has_meta("harvestable") and obj.get_meta("drop_id", &"") != &"wood" and obj.get_meta("requires_tool", &"") == &"":
 						arrow.set_meta("hit", true)
 						hit_harvestable(obj, dmg)
 						stick_arrow(arrow)
