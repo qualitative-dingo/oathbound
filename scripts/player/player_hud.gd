@@ -425,6 +425,57 @@ func build_pause_menu() -> void:
 			AudioServer.set_bus_volume_db(idx, linear_to_db(val))
 	)
 
+	var res_row := HBoxContainer.new()
+	res_row.add_theme_constant_override("separation", 10)
+	res_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var res_label := Label.new()
+	res_label.text = "Resolution"
+	res_label.add_theme_font_size_override("font_size", 14)
+	res_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
+	res_row.add_child(res_label)
+	var res_options := OptionButton.new()
+	res_options.add_theme_font_size_override("font_size", 14)
+	var resolutions := [
+		Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1600, 900),
+		Vector2i(1920, 1080), Vector2i(2560, 1440), Vector2i(3840, 2160),
+	]
+	var current_size := DisplayServer.window_get_size()
+	var selected_idx := -1
+	for i in resolutions.size():
+		var r: Vector2i = resolutions[i]
+		res_options.add_item("%d x %d" % [r.x, r.y], i)
+		if r == current_size:
+			selected_idx = i
+	if selected_idx >= 0:
+		res_options.selected = selected_idx
+	res_options.item_selected.connect(func(idx: int) -> void:
+		var r: Vector2i = resolutions[idx]
+		DisplayServer.window_set_size(r)
+		var screen_size := DisplayServer.screen_get_size()
+		DisplayServer.window_set_position(Vector2i(
+			(screen_size.x - r.x) / 2, (screen_size.y - r.y) / 2
+		))
+	)
+	res_row.add_child(res_options)
+	vbox.add_child(res_row)
+
+	var fs_row := HBoxContainer.new()
+	fs_row.add_theme_constant_override("separation", 10)
+	fs_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var fs_check := CheckBox.new()
+	fs_check.text = "Fullscreen"
+	fs_check.button_pressed = DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+	fs_check.add_theme_font_size_override("font_size", 14)
+	fs_check.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
+	fs_check.toggled.connect(func(on: bool) -> void:
+		if on:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		else:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	)
+	fs_row.add_child(fs_check)
+	vbox.add_child(fs_row)
+
 	var dev_row := HBoxContainer.new()
 	dev_row.add_theme_constant_override("separation", 10)
 	dev_row.alignment = BoxContainer.ALIGNMENT_CENTER
