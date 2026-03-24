@@ -14,6 +14,33 @@ func _ready() -> void:
 	pass
 
 
+func send_system_message(text: String) -> void:
+	if not multiplayer.multiplayer_peer:
+		_receive_message("", text)
+		return
+	if multiplayer.is_server():
+		_receive_message("", text)
+		_broadcast_message.rpc("", text)
+
+
+func announce_join(player_name: String) -> void:
+	if multiplayer.is_server():
+		send_system_message("%s joined the game" % player_name)
+	elif multiplayer.has_multiplayer_peer():
+		_request_announce_join.rpc_id(1, player_name)
+
+
+@rpc("any_peer", "reliable")
+func _request_announce_join(player_name: String) -> void:
+	if multiplayer.is_server():
+		send_system_message("%s joined the game" % player_name)
+
+
+func announce_leave(player_name: String) -> void:
+	if multiplayer.is_server():
+		send_system_message("%s left the game" % player_name)
+
+
 func _get_my_display_name() -> String:
 	return str(SaveManager.current_character.get("name", "Player"))
 

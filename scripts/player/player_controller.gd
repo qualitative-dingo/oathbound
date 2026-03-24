@@ -509,6 +509,7 @@ func _ready() -> void:
 	if NetworkManager.is_connected_to_game():
 		character_display_name = str(SaveManager.current_character.get("name", "Unknown"))
 		call_deferred("_broadcast_display_name")
+		call_deferred("_announce_join")
 	_setup_floating_bars()
 	_build_hud()
 	if _spring_arm:
@@ -723,6 +724,12 @@ func _broadcast_display_name() -> void:
 	if not is_multiplayer_authority() or not multiplayer.has_multiplayer_peer():
 		return
 	_receive_display_name.rpc(character_display_name)
+
+
+func _announce_join() -> void:
+	if not is_multiplayer_authority() or not multiplayer.has_multiplayer_peer():
+		return
+	ChatManager.announce_join(character_display_name)
 
 
 @rpc("any_peer", "reliable")

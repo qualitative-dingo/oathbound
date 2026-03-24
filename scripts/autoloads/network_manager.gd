@@ -269,8 +269,12 @@ func _on_peer_connected(id: int) -> void:
 
 func _on_peer_disconnected(id: int) -> void:
 	if _DEBUG_LOG: print("[NET] Peer disconnected: %d" % id)
-	# 5c: Save player data before removing
 	if is_server():
+		var player_node := _get_player_by_peer(id)
+		if player_node and player_node.get("character_display_name"):
+			var leave_name: String = player_node.character_display_name
+			if leave_name != "":
+				ChatManager.announce_leave(leave_name)
 		_save_player_data(id)
 	despawn_player(id)
 	_player_data_cache.erase(id)
