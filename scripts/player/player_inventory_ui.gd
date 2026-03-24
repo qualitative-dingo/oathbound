@@ -1022,54 +1022,15 @@ func discard_inventory_slot(entry: Dictionary) -> void:
 
 
 func start_equip_progress(item_id: StringName, slot_idx: int) -> void:
-	cancel_equip_progress()
-	pc._equip_progress_item = item_id
-	pc._equip_progress_slot_idx = slot_idx
-	pc._equip_progress = 0.0
-	if pc._inventory_grid and slot_idx < pc._inventory_grid.get_child_count():
-		var slot_node: Control = pc._inventory_grid.get_child(slot_idx) as Control
-		if slot_node:
-			var bar := ProgressBar.new()
-			bar.custom_minimum_size = Vector2(56, 6)
-			bar.max_value = 1.0
-			bar.value = 0.0
-			bar.show_percentage = false
-			bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-			bar.offset_top = -8
-			bar.offset_bottom = -2
-			bar.offset_left = 2
-			bar.offset_right = -2
-			var bg_style := StyleBoxFlat.new()
-			bg_style.bg_color = Color(0.1, 0.1, 0.1, 0.8)
-			bg_style.set_corner_radius_all(2)
-			bar.add_theme_stylebox_override("background", bg_style)
-			var fill_style := StyleBoxFlat.new()
-			fill_style.bg_color = Color(0.9, 0.75, 0.3, 0.9)
-			fill_style.set_corner_radius_all(2)
-			bar.add_theme_stylebox_override("fill", fill_style)
-			slot_node.add_child(bar)
-			pc._equip_progress_bar = bar
+	pc._start_equip_progress(item_id, slot_idx)
 
 
 func cancel_equip_progress() -> void:
-	pc._equip_progress_item = &""
-	pc._equip_progress_slot_idx = -1
-	pc._equip_progress = 0.0
-	if pc._equip_progress_bar and is_instance_valid(pc._equip_progress_bar):
-		pc._equip_progress_bar.queue_free()
-	pc._equip_progress_bar = null
+	pc._cancel_equip_progress()
 
 
 func tick_equip_progress(delta: float) -> void:
-	if pc._equip_progress_item == &"":
-		return
-	pc._equip_progress += delta
-	if pc._equip_progress_bar and is_instance_valid(pc._equip_progress_bar):
-		pc._equip_progress_bar.value = clampf(pc._equip_progress / pc.EQUIP_HOLD_TIME, 0.0, 1.0)
-	if pc._equip_progress >= pc.EQUIP_HOLD_TIME:
-		var item_id := pc._equip_progress_item
-		cancel_equip_progress()
-		equip_item_deferred.call_deferred(item_id)
+	pc._tick_equip_progress(delta)
 
 
 func recheck_inventory_tooltip() -> void:

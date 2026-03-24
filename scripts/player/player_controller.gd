@@ -85,7 +85,7 @@ var _undying_cooldown: float = 0.0
 var _adrenaline_timer: float = 0.0
 var _regenerator_active: bool = false
 var _prev_velocity_y: float = 0.0
-var _fall_start_y: float = 0.0
+var _fall_start_y: float = NAN
 var _retaliation_timer: float = 0.0
 var _crushing_momentum_timer: float = 0.0
 var _aegis_shield: float = 0.0
@@ -231,10 +231,7 @@ var _drag_from_slot: int = -1
 var _drag_icon: TextureRect
 
 # Valheim-style equip progress bar
-var _equip_progress_item: StringName = &""
-var _equip_progress_slot_idx: int = -1
-var _equip_progress: float = 0.0
-var _equip_progress_bar: ProgressBar = null
+var _equip_progresses: Dictionary = {}  # slot_idx -> {item, progress, bar}
 const EQUIP_HOLD_TIME := 0.5
 
 @onready var _camera_pivot: Node3D = $CameraPivot
@@ -1074,7 +1071,7 @@ func _physics_process(delta: float) -> void:
 			_step_up_move_and_slide()
 
 		if was_in_air and is_on_floor():
-			var height_fallen := _fall_start_y - global_position.y
+			var height_fallen: float = 0.0 if is_nan(_fall_start_y) else _fall_start_y - global_position.y
 			if height_fallen > 5.0:
 				# True damage: 1 dmg/unit beyond 5u safe zone, only featherfall reduces
 				var fall_dmg := (height_fallen - 5.0) * 1.0
@@ -1089,6 +1086,8 @@ func _physics_process(delta: float) -> void:
 					if current_health <= 0.0:
 						_on_death()
 		elif not was_in_air and not is_on_floor():
+			_fall_start_y = global_position.y
+		if is_nan(_fall_start_y):
 			_fall_start_y = global_position.y
 		_prev_velocity_y = velocity.y
 
@@ -7831,10 +7830,9 @@ func _discard_inventory_slot(entry: Dictionary) -> void:
 
 
 func _start_equip_progress(item_id: StringName, slot_idx: int) -> void:
-	_cancel_equip_progress()
-	_equip_progress_item = item_id
-	_equip_progress_slot_idx = slot_idx
-	_equip_progress = 0.0
+	if _equip_progresses.has(slot_idx):
+		_cancel_equip_slot(slot_idx)
+	var entry := {"item": item_id, "progress": 0.0, "bar": null}
 	if _inventory_grid and slot_idx < _inventory_grid.get_child_count():
 		var slot_node: Control = _inventory_grid.get_child(slot_idx) as Control
 		if slot_node:
@@ -7857,27 +7855,37 @@ func _start_equip_progress(item_id: StringName, slot_idx: int) -> void:
 			fill_style.set_corner_radius_all(2)
 			bar.add_theme_stylebox_override("fill", fill_style)
 			slot_node.add_child(bar)
-			_equip_progress_bar = bar
+			entry["bar"] = bar
+	_equip_progresses[slot_idx] = entry
 
+
+func _cancel_equip_slot(slot_idx: int) -> void:
+	var entry: Dictionary = _equip_progresses.get(slot_idx, {})
+	var bar = entry.get("bar")
+	if bar and is_instance_valid(bar):
+		bar.queue_free()
+	_equip_progresses.erase(slot_idx)
 
 func _cancel_equip_progress() -> void:
-	_equip_progress_item = &""
-	_equip_progress_slot_idx = -1
-	_equip_progress = 0.0
-	if _equip_progress_bar and is_instance_valid(_equip_progress_bar):
-		_equip_progress_bar.queue_free()
-	_equip_progress_bar = null
+	for idx in _equip_progresses.keys():
+		_cancel_equip_slot(idx)
 
 
 func _tick_equip_progress(delta: float) -> void:
-	if _equip_progress_item == &"":
+	if _equip_progresses.is_empty():
 		return
-	_equip_progress += delta
-	if _equip_progress_bar and is_instance_valid(_equip_progress_bar):
-		_equip_progress_bar.value = clampf(_equip_progress / EQUIP_HOLD_TIME, 0.0, 1.0)
-	if _equip_progress >= EQUIP_HOLD_TIME:
-		var item_id := _equip_progress_item
-		_cancel_equip_progress()
+	var finished: Array = []
+	for idx in _equip_progresses:
+		var entry: Dictionary = _equip_progresses[idx]
+		entry["progress"] += delta
+		var bar = entry.get("bar")
+		if bar and is_instance_valid(bar):
+			bar.value = clampf(entry["progress"] / EQUIP_HOLD_TIME, 0.0, 1.0)
+		if entry["progress"] >= EQUIP_HOLD_TIME:
+			finished.append(idx)
+	for idx in finished:
+		var item_id: StringName = StringName(_equip_progresses[idx]["item"])
+		_cancel_equip_slot(idx)
 		_equip_item_deferred.call_deferred(item_id)
 
 
