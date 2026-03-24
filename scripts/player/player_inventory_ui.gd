@@ -262,6 +262,14 @@ func build_equip_bar(parent: VBoxContainer) -> void:
 	tools_row.add_theme_constant_override("separation", 4)
 	equip_vbox.add_child(tools_row)
 
+	var inner_sep := HSeparator.new()
+	var inner_sep_style := StyleBoxFlat.new()
+	inner_sep_style.color = Color(0.5, 0.42, 0.28, 0.4)
+	inner_sep_style.content_margin_top = 4
+	inner_sep_style.content_margin_bottom = 4
+	inner_sep.add_theme_stylebox_override("separator", inner_sep_style)
+	equip_vbox.add_child(inner_sep)
+
 	var equip_lbl := Label.new()
 	equip_lbl.text = "EQUIPMENT"
 	equip_lbl.add_theme_color_override("font_color", Color(0.6, 0.55, 0.4))
