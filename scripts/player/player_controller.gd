@@ -2708,7 +2708,7 @@ const ARROW_MAX_LIFETIME := 5.0
 const HEATSEEK_RADIUS := 12.0
 const HEATSEEK_CONE_DOT := 0.4
 const HEATSEEK_TURN_SPEED := 4.5
-const BOUNCE_SEARCH_RADIUS := 12.0
+const BOUNCE_SEARCH_RADIUS := 16.8
 
 
 func _find_bounce_target(arrow: Node3D, hit_enemy: Node3D, all_enemies: Array[Node]) -> Node3D:
@@ -2729,7 +2729,7 @@ func _find_bounce_target(arrow: Node3D, hit_enemy: Node3D, all_enemies: Array[No
 
 func _bounce_arrow_to(arrow: Node3D, target: Node3D) -> void:
 	var speed: float = (arrow.get_meta("velocity") as Vector3).length()
-	speed = maxf(speed, 12.0)
+	speed = maxf(speed * 0.5, 6.0)
 	var target_center := target.global_position + Vector3.UP * 0.8
 	var dir := (target_center - arrow.global_position).normalized()
 	arrow.set_meta("velocity", dir * speed)
