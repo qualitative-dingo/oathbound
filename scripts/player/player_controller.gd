@@ -3458,9 +3458,10 @@ func _build_pause_menu() -> void:
 		pvp_row.visible = false
 	vbox.add_child(pvp_row)
 
-	if NetworkManager.is_server() and NetworkManager.use_steam and NetworkManager.steam_lobby_id > 0:
+	if NetworkManager.use_steam and NetworkManager.steam_lobby_id > 0:
 		var invite_btn := _make_pause_button("Invite Friend (Steam)", Color(0.2, 0.35, 0.55))
 		invite_btn.pressed.connect(func() -> void:
+			_close_pause_menu()
 			SteamManager.open_invite_dialog()
 		)
 		vbox.add_child(invite_btn)

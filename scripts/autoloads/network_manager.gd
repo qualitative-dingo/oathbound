@@ -109,6 +109,8 @@ func _on_steam_lobby_created(result: int, this_lobby_id: int) -> void:
 	s.setLobbyData(steam_lobby_id, "seed", world_seed)
 	s.setLobbyData(steam_lobby_id, "game", "Oathbound")
 	s.allowP2PPacketRelay(true)
+	s.setRichPresence("connect", "+connect_lobby %d" % steam_lobby_id)
+	s.setRichPresence("status", "Hosting %s" % world_name)
 
 	var peer: MultiplayerPeer = ClassDB.instantiate(&"SteamMultiplayerPeer")
 	var err: int = peer.host_with_lobby(steam_lobby_id)
@@ -188,11 +190,16 @@ func _on_steam_lobby_joined(this_lobby_id: int, _permissions: int, _locked: bool
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 
+	s.setRichPresence("connect", "+connect_lobby %d" % steam_lobby_id)
+	s.setRichPresence("status", "Playing Oathbound")
+
 	if _DEBUG_LOG: print("[NET-STEAM] Joined lobby %d, connecting to host..." % steam_lobby_id)
 
 
 func _cleanup_old_session() -> void:
 	var s := SteamManager.get_steam() if SteamManager.is_steam_ready else null
+	if s:
+		s.clearRichPresence()
 	if use_steam and steam_lobby_id != 0 and s:
 		s.leaveLobby(steam_lobby_id)
 		steam_lobby_id = 0
