@@ -21,7 +21,7 @@ var _age := 0.0
 var _nameplate_timer := 0.0
 var pickup_grace := 0.0
 var spawn_delay := 0.0
-var drop_owner_peer: int = -1
+var drop_owner_peer: int = 0
 var _sprite: Sprite3D
 var _nameplate_label: Label3D
 var _stars_label: Label3D

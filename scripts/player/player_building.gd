@@ -1611,11 +1611,13 @@ func drop_item_on_ground(item_id: StringName, amount: int, despawn_time: float =
 	var drop_pos := pc.global_position + fwd_flat * 2.0 + Vector3.UP * 0.5
 	drop_pos += Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5))
 
+	var my_peer: int = pc.multiplayer.get_unique_id() if pc.multiplayer.has_multiplayer_peer() else 0
 	var drop := _LootDrop.new()
 	drop.item_id = item_id
 	drop.star_level = stars
 	drop.amount = amount
 	drop.pickup_grace = 6.0
+	drop.drop_owner_peer = my_peer
 	pc.get_tree().current_scene.add_child(drop)
 	drop.global_position = drop_pos
 

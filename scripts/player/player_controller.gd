@@ -6561,7 +6561,7 @@ func _drop_item_on_ground(item_id: StringName, amount: int, despawn_time: float 
 	var drop_pos := global_position + fwd_flat * 2.0 + Vector3.UP * 0.5
 	drop_pos += Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5))
 
-	var my_peer := multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else -1
+	var my_peer := multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 0
 	if NetworkManager.is_connected_to_game():
 		var wss := _get_world_state_sync()
 		if wss:
