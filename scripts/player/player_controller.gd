@@ -324,6 +324,12 @@ var _last_broadcast_clip: String = ""
 var _hud_root: Control
 var _pause_overlay: CanvasLayer
 var _pause_open := false
+var _pause_res_options: OptionButton
+var _pause_mode_options: OptionButton
+var _pause_resolutions: Array[Vector2i] = [
+	Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1600, 900),
+	Vector2i(1920, 1080), Vector2i(2560, 1440), Vector2i(3840, 2160),
+]
 var _debug_panel: Node  # DebugPanel (CanvasLayer)
 var _target_hud_panel: PanelContainer
 var _target_hud_name: Label
@@ -3333,8 +3339,6 @@ func _build_pause_menu() -> void:
 			AudioServer.set_bus_volume_db(idx, linear_to_db(val))
 	)
 
-	var mode_options_ref: OptionButton = null
-
 	var res_row := HBoxContainer.new()
 	res_row.add_theme_constant_override("separation", 10)
 	res_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -3343,37 +3347,19 @@ func _build_pause_menu() -> void:
 	res_label.add_theme_font_size_override("font_size", 14)
 	res_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
 	res_row.add_child(res_label)
-	var res_options := OptionButton.new()
-	res_options.add_theme_font_size_override("font_size", 14)
-	var resolutions := [
-		Vector2i(1280, 720), Vector2i(1366, 768), Vector2i(1600, 900),
-		Vector2i(1920, 1080), Vector2i(2560, 1440), Vector2i(3840, 2160),
-	]
+	_pause_res_options = OptionButton.new()
+	_pause_res_options.add_theme_font_size_override("font_size", 14)
 	var current_size := DisplayServer.window_get_size()
 	var selected_idx := -1
-	for i in resolutions.size():
-		var r: Vector2i = resolutions[i]
-		res_options.add_item("%d x %d" % [r.x, r.y], i)
+	for i in _pause_resolutions.size():
+		var r: Vector2i = _pause_resolutions[i]
+		_pause_res_options.add_item("%d x %d" % [r.x, r.y], i)
 		if r == current_size:
 			selected_idx = i
 	if selected_idx >= 0:
-		res_options.selected = selected_idx
-	res_options.item_selected.connect(func(idx: int) -> void:
-		var r: Vector2i = resolutions[idx]
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
-		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_RESIZE_DISABLED, false)
-		if mode_options_ref:
-			mode_options_ref.selected = 0
-		await get_tree().process_frame
-		DisplayServer.window_set_size(r)
-		await get_tree().process_frame
-		var screen_size := DisplayServer.screen_get_size()
-		DisplayServer.window_set_position(Vector2i(
-			(screen_size.x - r.x) / 2, (screen_size.y - r.y) / 2
-		))
-	)
-	res_row.add_child(res_options)
+		_pause_res_options.selected = selected_idx
+	_pause_res_options.item_selected.connect(_on_resolution_selected)
+	res_row.add_child(_pause_res_options)
 	vbox.add_child(res_row)
 
 	var mode_row := HBoxContainer.new()
@@ -3384,42 +3370,21 @@ func _build_pause_menu() -> void:
 	mode_label.add_theme_font_size_override("font_size", 14)
 	mode_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
 	mode_row.add_child(mode_label)
-	var mode_options := OptionButton.new()
-	mode_options.add_theme_font_size_override("font_size", 14)
-	mode_options.add_item("Windowed", 0)
-	mode_options.add_item("Fullscreen", 1)
-	mode_options.add_item("Windowed Fullscreen", 2)
-	var cur_mode := DisplayServer.window_get_mode()
-	if cur_mode in [DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]:
-		mode_options.selected = 1
-	elif cur_mode in [DisplayServer.WINDOW_MODE_FULLSCREEN]:
-		mode_options.selected = 2
-	elif cur_mode in [DisplayServer.WINDOW_MODE_MAXIMIZED]:
-		mode_options.selected = 0
+	_pause_mode_options = OptionButton.new()
+	_pause_mode_options.add_theme_font_size_override("font_size", 14)
+	_pause_mode_options.add_item("Windowed", 0)
+	_pause_mode_options.add_item("Fullscreen", 1)
+	_pause_mode_options.add_item("Windowed Fullscreen", 2)
+	var cur_wmode := get_window().mode
+	if cur_wmode == Window.MODE_EXCLUSIVE_FULLSCREEN:
+		_pause_mode_options.selected = 1
+	elif cur_wmode == Window.MODE_FULLSCREEN:
+		_pause_mode_options.selected = 2
 	else:
-		mode_options.selected = 0
-	mode_options.item_selected.connect(func(idx: int) -> void:
-		match idx:
-			0:
-				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-				DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
-				await get_tree().process_frame
-				var r: Vector2i = resolutions[res_options.selected] if res_options.selected >= 0 else Vector2i(1920, 1080)
-				DisplayServer.window_set_size(r)
-				await get_tree().process_frame
-				var screen_size := DisplayServer.screen_get_size()
-				DisplayServer.window_set_position(Vector2i(
-					(screen_size.x - r.x) / 2, (screen_size.y - r.y) / 2
-				))
-			1:
-				DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
-				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
-			2:
-				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
-	)
-	mode_row.add_child(mode_options)
+		_pause_mode_options.selected = 0
+	_pause_mode_options.item_selected.connect(_on_display_mode_selected)
+	mode_row.add_child(_pause_mode_options)
 	vbox.add_child(mode_row)
-	mode_options_ref = mode_options
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 6)
@@ -3526,6 +3491,30 @@ func _close_pause_menu() -> void:
 		get_tree().paused = false
 	AudioServer.set_bus_mute(AudioServer.get_bus_index(&"Master"), false)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _on_resolution_selected(idx: int) -> void:
+	var r: Vector2i = _pause_resolutions[idx]
+	get_window().mode = Window.MODE_WINDOWED
+	get_window().borderless = false
+	get_window().size = r
+	get_window().position = (DisplayServer.screen_get_size() - r) / 2
+	if _pause_mode_options:
+		_pause_mode_options.selected = 0
+
+
+func _on_display_mode_selected(idx: int) -> void:
+	match idx:
+		0:
+			get_window().mode = Window.MODE_WINDOWED
+			get_window().borderless = false
+			var r: Vector2i = _pause_resolutions[_pause_res_options.selected] if _pause_res_options and _pause_res_options.selected >= 0 else Vector2i(1920, 1080)
+			get_window().size = r
+			get_window().position = (DisplayServer.screen_get_size() - r) / 2
+		1:
+			get_window().mode = Window.MODE_EXCLUSIVE_FULLSCREEN
+		2:
+			get_window().mode = Window.MODE_FULLSCREEN
 
 
 func _ensure_debug_panel() -> void:
