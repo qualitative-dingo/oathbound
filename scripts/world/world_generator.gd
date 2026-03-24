@@ -661,6 +661,7 @@ func _generate_spawn_area() -> void:
 			zone_loaded.emit(pcoord)
 
 	_spawn_debug_portals()
+	_spawn_starter_goblins()
 
 
 const _PORTAL_FAR_X := 5120.0
@@ -678,6 +679,33 @@ func _spawn_debug_portals() -> void:
 	var pos_b := Vector3(_PORTAL_FAR_X, far_y + 0.5, _PORTAL_FAR_Z)
 
 	_DebugPortal.create_portal_pair(self, pos_a, self, pos_b)
+
+
+func _spawn_starter_goblins() -> void:
+	var center_x := 35.0
+	var center_z := 35.0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _seed_hash + 9999
+	var spawn_zone := world_to_zone(Vector3(center_x, 0.0, center_z))
+	var zone_root: Node3D = _loaded_zones.get(spawn_zone, null)
+	if not zone_root:
+		return
+	var zone_origin_x: float = spawn_zone.x * _ZonePopulator.ZONE_SIZE
+	var zone_origin_z: float = spawn_zone.y * _ZonePopulator.ZONE_SIZE
+	for i in 5:
+		var wx := center_x + rng.randf_range(-4.0, 4.0)
+		var wz := center_z + rng.randf_range(-4.0, 4.0)
+		var h := get_height_at(wx, wz)
+		if h < 0.3:
+			continue
+		var goblin := _ZonePopulator._create_enemy(&"hearthlands", rng, &"goblin")
+		if not goblin:
+			continue
+		goblin.name = "StarterGoblin_%d" % i
+		var lx := wx - zone_origin_x
+		var lz := wz - zone_origin_z
+		goblin.position = Vector3(lx, h + 0.1, lz)
+		zone_root.add_child(goblin)
 
 
 func _queue_zones_around(center: Vector2i) -> void:
@@ -1044,10 +1072,10 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			verts.append(Vector3(x * step, h, z * step))
 			uvs.append(Vector2(x as float / res, z as float / res))
 
-			# Micro-noise vertex color for surface variety
 			var cn := _color_noise.get_noise_2d(wx, wz)
 			var brightness := 0.92 + cn * 0.12
-			colors.append(Color(brightness, brightness * 1.01, brightness * 0.98))
+			var path_f := _ZonePopulator.get_path_factor(wx, wz)
+			colors.append(Color(path_f, brightness, brightness * 0.98))
 
 	for z in range(res + 1):
 		for x in range(res + 1):
@@ -1126,7 +1154,7 @@ func _init_biome_materials() -> void:
 
 	# Per-biome: [flat_texture_name, tint_color, tex_scale]
 	var biome_cfg: Dictionary = {
-		&"hearthlands":     ["grass",        Color(1.0, 1.0, 1.0),  0.5],
+		&"hearthlands":     ["grass",        Color(0.85, 0.95, 0.80),  0.5],
 		&"ocean":           ["sand",         Color(0.3, 0.5, 0.7),  0.5],
 	}
 
@@ -1150,6 +1178,7 @@ func _init_biome_materials() -> void:
 			mat.set_shader_parameter("tint_color", Vector3(tint.r, tint.g, tint.b))
 			mat.set_shader_parameter("texture_scale", tex_scale)
 			mat.set_shader_parameter("origin_shift", origin_shift)
+			mat.set_shader_parameter("path_color", Vector3(0.52, 0.34, 0.18))
 			_biome_materials[biome_id] = mat
 		else:
 			# Fallback if shader fails to load

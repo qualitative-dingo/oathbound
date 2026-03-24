@@ -13,8 +13,19 @@ uniform float slope_start : hint_range(0.0, 1.0) = 0.25;
 uniform float cliff_start : hint_range(0.0, 1.0) = 0.55;
 
 uniform vec3 origin_shift;
+uniform vec3 path_color : source_color = vec3(0.52, 0.34, 0.18);
+
+varying float v_path_mask;
+varying float v_brightness;
+
+void vertex() {
+	v_path_mask = COLOR.r;
+	v_brightness = COLOR.g;
+}
 
 void fragment() {
-	ALBEDO = vec3(0.3, 0.55, 0.2) * tint_color * COLOR.rgb;
-	ROUGHNESS = 0.85;
+	float pm = smoothstep(0.05, 0.5, v_path_mask);
+	vec3 ground = vec3(0.22, 0.45, 0.15) * tint_color * v_brightness;
+	ALBEDO = mix(ground, path_color, pm);
+	ROUGHNESS = mix(0.85, 0.7, pm);
 }

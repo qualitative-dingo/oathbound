@@ -994,6 +994,10 @@ static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, c
 	return false
 
 
+static func _grass_density_noise(wx: float, wz: float) -> float:
+	return _fbm2(wx * 0.055 + 1200.0, wz * 0.055 + 900.0)
+
+
 static func _scatter_grass(
 	zone_root: Node3D,
 	coord: Vector2i,
@@ -1004,15 +1008,15 @@ static func _scatter_grass(
 	if not _grass_shader or not _grass_quad_mesh:
 		return
 
-	# [texture, color, count, scale_min, scale_max, size_w, size_h]
-	var grass_types: Array = []
 	if biome != &"hearthlands":
 		return
-	grass_types = [
-		[_grass_textures[0], Color(0.15, 0.42, 0.10), 60, 0.9, 1.6, 1.8, 1.2],
-		[_grass_textures[2], Color(0.18, 0.40, 0.12), 55, 0.9, 1.7, 1.9, 1.1],
-		[_grass_textures[10], Color(0.14, 0.38, 0.08), 50, 1.0, 1.8, 1.6, 1.6],
-		[_grass_textures[16], Color(0.16, 0.38, 0.10), 40, 0.9, 1.6, 1.7, 1.4],
+
+	# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
+	var grass_types: Array = [
+		[_grass_textures[0], Color(0.13, 0.40, 0.08), 100, 0.9, 1.7, 1.8, 1.2],
+		[_grass_textures[2], Color(0.16, 0.38, 0.10), 90, 0.9, 1.8, 1.9, 1.1],
+		[_grass_textures[10], Color(0.12, 0.36, 0.06), 80, 1.0, 1.9, 1.6, 1.6],
+		[_grass_textures[16], Color(0.14, 0.36, 0.08), 65, 0.9, 1.7, 1.7, 1.4],
 	]
 
 	var origin_x: float = coord.x * ZONE_SIZE
@@ -1039,16 +1043,25 @@ static func _scatter_grass(
 			var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
 			var wx := origin_x + lx
 			var wz := origin_z + lz
+
+			var density := _grass_density_noise(wx, wz)
+			if density < 0.35:
+				continue
+
 			var h := float(height_func.call(wx, wz))
 			if h < 0.3 or h > 40.0:
 				continue
 			if is_dirt_patch(wx, wz):
 				continue
-
+			if is_on_path(wx, wz):
+				continue
 			if _is_near_structure(wx, wz):
 				continue
+
 			var ground_y := _snap_height_to_mesh(wx, wz, height_func)
-			var scale := rng.randf_range(scale_min, scale_max)
+			var cluster_boost := clampf((density - 0.35) * 2.5, 0.0, 1.0)
+			var scale := lerpf(scale_min, scale_max, cluster_boost)
+			scale *= rng.randf_range(0.85, 1.15)
 			var rot := rng.randf_range(0.0, TAU)
 
 			var sx := quad_w * scale
@@ -1107,6 +1120,8 @@ static func _scatter_saplings(
 		if h < 0.3 or h > 40.0:
 			continue
 		if is_dirt_patch(wx, wz):
+			continue
+		if is_on_path(wx, wz):
 			continue
 		if _is_near_structure(wx, wz):
 			continue
@@ -1277,6 +1292,28 @@ static func is_dirt_patch(wx: float, wz: float, amount: float = 0.1) -> bool:
 	var n := _fbm2(wx * 0.018 + 500.0, wz * 0.018 + 700.0)
 	var thresh := 0.5 + (0.5 - amount) * 0.6
 	return n > thresh
+
+
+static func get_path_factor(wx: float, wz: float) -> float:
+	var warp_x := _fbm2(wx * 0.008 + 300.0, wz * 0.008 + 150.0) * 40.0
+	var warp_z := _fbm2(wx * 0.008 + 800.0, wz * 0.008 + 550.0) * 40.0
+	var warped_x := wx + warp_x
+	var warped_z := wz + warp_z
+
+	var n1 := _vnoise(warped_x * 0.025, warped_z * 0.005)
+	var ridge1 := 1.0 - absf(n1 * 2.0 - 1.0)
+	ridge1 = ridge1 * ridge1 * ridge1
+
+	var n2 := _vnoise(warped_x * 0.006 + 50.0, warped_z * 0.028 + 70.0)
+	var ridge2 := 1.0 - absf(n2 * 2.0 - 1.0)
+	ridge2 = ridge2 * ridge2 * ridge2
+
+	var combined := maxf(ridge1, ridge2 * 0.85)
+	return clampf(combined * 1.8 - 0.15, 0.0, 1.0)
+
+
+static func is_on_path(wx: float, wz: float) -> bool:
+	return get_path_factor(wx, wz) > 0.25
 
 static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) -> float:
 	const STEP := ZONE_SIZE / 32.0
@@ -1809,10 +1846,10 @@ static var _creature_yaw_offsets: Dictionary = {
 }
 
 
-static func _create_enemy(biome: StringName, rng: RandomNumberGenerator = null) -> CharacterBody3D:
+static func _create_enemy(biome: StringName, rng: RandomNumberGenerator = null, forced_kind: StringName = &"") -> CharacterBody3D:
 	var creature: CharacterBody3D = _CreatureAI.new()
 
-	var kind := _pick_creature_kind(biome, rng)
+	var kind := forced_kind if forced_kind != &"" else _pick_creature_kind(biome, rng)
 	var stats := _creature_stats(kind)
 
 	# Roll creature star level (1-5 stars, weighted by rarity)
