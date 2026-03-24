@@ -3360,14 +3360,14 @@ func _build_pause_menu() -> void:
 		res_options.selected = selected_idx
 	res_options.item_selected.connect(func(idx: int) -> void:
 		var r: Vector2i = resolutions[idx]
-		if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_WINDOWED:
-			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
-			if mode_options_ref:
-				mode_options_ref.selected = 0
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
 		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_RESIZE_DISABLED, false)
-		DisplayServer.window_set_size(r)
+		if mode_options_ref:
+			mode_options_ref.selected = 0
 		await get_tree().process_frame
 		DisplayServer.window_set_size(r)
+		await get_tree().process_frame
 		var screen_size := DisplayServer.screen_get_size()
 		DisplayServer.window_set_position(Vector2i(
 			(screen_size.x - r.x) / 2, (screen_size.y - r.y) / 2
@@ -3390,23 +3390,29 @@ func _build_pause_menu() -> void:
 	mode_options.add_item("Fullscreen", 1)
 	mode_options.add_item("Windowed Fullscreen", 2)
 	var cur_mode := DisplayServer.window_get_mode()
-	if cur_mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+	if cur_mode in [DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]:
 		mode_options.selected = 1
-	elif cur_mode == DisplayServer.WINDOW_MODE_FULLSCREEN:
+	elif cur_mode in [DisplayServer.WINDOW_MODE_FULLSCREEN]:
 		mode_options.selected = 2
+	elif cur_mode in [DisplayServer.WINDOW_MODE_MAXIMIZED]:
+		mode_options.selected = 0
 	else:
 		mode_options.selected = 0
 	mode_options.item_selected.connect(func(idx: int) -> void:
 		match idx:
 			0:
 				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+				DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
+				await get_tree().process_frame
 				var r: Vector2i = resolutions[res_options.selected] if res_options.selected >= 0 else Vector2i(1920, 1080)
 				DisplayServer.window_set_size(r)
+				await get_tree().process_frame
 				var screen_size := DisplayServer.screen_get_size()
 				DisplayServer.window_set_position(Vector2i(
 					(screen_size.x - r.x) / 2, (screen_size.y - r.y) / 2
 				))
 			1:
+				DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
 				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
 			2:
 				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
