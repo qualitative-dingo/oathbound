@@ -1292,10 +1292,10 @@ static func is_dirt_patch(wx: float, wz: float, amount: float = 0.1) -> bool:
 
 
 static func get_path_factor(wx: float, wz: float) -> float:
-	var warp1_x := _fbm2(wx * 0.005 + 300.0, wz * 0.005 + 150.0) * 60.0
-	var warp1_z := _fbm2(wx * 0.005 + 800.0, wz * 0.005 + 550.0) * 60.0
-	var warp2_x := _vnoise(wx * 0.018 + 170.0, wz * 0.018 + 430.0) * 22.0
-	var warp2_z := _vnoise(wx * 0.018 + 610.0, wz * 0.018 + 290.0) * 22.0
+	var warp1_x := _fbm2(wx * 0.005 + 300.0, wz * 0.005 + 150.0) * 42.0
+	var warp1_z := _fbm2(wx * 0.005 + 800.0, wz * 0.005 + 550.0) * 42.0
+	var warp2_x := _vnoise(wx * 0.018 + 170.0, wz * 0.018 + 430.0) * 16.0
+	var warp2_z := _vnoise(wx * 0.018 + 610.0, wz * 0.018 + 290.0) * 16.0
 	var warped_x := wx + warp1_x + warp2_x
 	var warped_z := wz + warp1_z + warp2_z
 

@@ -115,8 +115,9 @@ void fragment() {
 	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w;
 	albedo = mix(albedo, dirt_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), dirt_mask);
 
-	// Clay paths from vertex color R channel — blend dirt texture with path tint
-	float pm = smoothstep(0.2, 0.7, v_path_mask) * flat_w;
+	// Clay paths from vertex color R channel — per-pixel noise breaks up vertex-grid edges
+	float path_perturb = (vnoise(world_pos.xz * 0.4 + vec2(777.0, 333.0)) - 0.5) * 0.25;
+	float pm = smoothstep(0.2, 0.7, v_path_mask + path_perturb) * flat_w;
 	vec3 dirt_detail = col_slope * 0.6 + col_flat * 0.15;
 	vec3 path_base = path_color * dirt_detail * 4.0;
 	path_base *= (0.85 + vnoise(world_pos.xz * 0.12 + vec2(900.0, 400.0)) * 0.2);
