@@ -4315,12 +4315,23 @@ func _build_inventory_panel(root: Control) -> void:
 
 
 func _build_equip_bar(parent: VBoxContainer) -> void:
+	var equip_label := Label.new()
+	equip_label.text = "EQUIPPED"
+	equip_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.4))
+	equip_label.add_theme_font_size_override("font_size", 14)
+	parent.add_child(equip_label)
+
 	var sep := HSeparator.new()
+	var sep_style := StyleBoxFlat.new()
+	sep_style.color = Color(0.4, 0.35, 0.25, 0.6)
+	sep_style.content_margin_top = 1
+	sep_style.content_margin_bottom = 1
+	sep.add_theme_stylebox_override("separator", sep_style)
 	parent.add_child(sep)
 
 	_equip_bar = HBoxContainer.new()
 	_equip_bar.add_theme_constant_override("separation", 4)
-	_equip_bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	_equip_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
 
 	const SLOT_ORDER: Array[String] = ["weapon", "sword", "bow", "pickaxe", "shield", "chest", "legs", "feet"]
 	const GHOST_ICONS := {
@@ -4333,13 +4344,26 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 		"legs": "res://textures/items/leather_pants.png",
 		"feet": "res://textures/items/leather_boots.png",
 	}
+	const SLOT_LABELS := {
+		"weapon": "Axe",
+		"sword": "Sword",
+		"bow": "Bow",
+		"pickaxe": "Pick",
+		"shield": "Shield",
+		"chest": "Chest",
+		"legs": "Legs",
+		"feet": "Boots",
+	}
 
 	for slot_name in SLOT_ORDER:
+		var slot_col := VBoxContainer.new()
+		slot_col.add_theme_constant_override("separation", 2)
+
 		var slot := PanelContainer.new()
 		slot.custom_minimum_size = Vector2(60, 60)
 		var slot_style := StyleBoxFlat.new()
-		slot_style.bg_color = Color(0.10, 0.10, 0.14, 0.9)
-		slot_style.border_color = Color(0.35, 0.30, 0.22)
+		slot_style.bg_color = Color(0.12, 0.11, 0.08, 0.9)
+		slot_style.border_color = Color(0.45, 0.38, 0.22)
 		slot_style.set_border_width_all(1)
 		slot_style.set_corner_radius_all(4)
 		slot_style.set_content_margin_all(2)
@@ -4355,7 +4379,7 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 		ghost.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
 		ghost.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		ghost.modulate = Color(1, 1, 1, 0.3)
+		ghost.modulate = Color(1, 1, 1, 0.25)
 		var ghost_path: String = GHOST_ICONS.get(slot_name, "")
 		if ghost_path != "" and ResourceLoader.exists(ghost_path):
 			ghost.texture = load(ghost_path) as Texture2D
@@ -4376,7 +4400,17 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 		slot.mouse_entered.connect(_on_equip_bar_hover.bind(slot_name))
 		slot.mouse_exited.connect(_hide_tooltip)
 		_equip_bar_slots[slot_name] = slot
-		_equip_bar.add_child(slot)
+		slot_col.add_child(slot)
+
+		var lbl := Label.new()
+		lbl.text = SLOT_LABELS.get(slot_name, slot_name)
+		lbl.add_theme_font_size_override("font_size", 10)
+		lbl.add_theme_color_override("font_color", Color(0.55, 0.5, 0.38))
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.custom_minimum_size.x = 60
+		slot_col.add_child(lbl)
+
+		_equip_bar.add_child(slot_col)
 
 	parent.add_child(_equip_bar)
 
@@ -4413,14 +4447,14 @@ func _refresh_equip_bar() -> void:
 				style.border_color = (eq_data["quality_color"] as Color).darkened(0.3)
 				style.set_border_width_all(1)
 			else:
-				style.border_color = Color(0.35, 0.30, 0.22)
+				style.border_color = Color(0.45, 0.38, 0.22)
 				style.set_border_width_all(1)
 			slot_panel.add_theme_stylebox_override("panel", style)
 		else:
 			icon.visible = false
 			ghost.visible = true
 			var style: StyleBoxFlat = slot_panel.get_theme_stylebox("panel").duplicate() as StyleBoxFlat
-			style.border_color = Color(0.35, 0.30, 0.22)
+			style.border_color = Color(0.45, 0.38, 0.22)
 			style.set_border_width_all(1)
 			slot_panel.add_theme_stylebox_override("panel", style)
 

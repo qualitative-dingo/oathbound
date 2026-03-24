@@ -5,7 +5,7 @@ const _DEBUG_LOG := false
 
 ## Deterministically scatters proper 3D objects into zones.
 ##
-## Trees = CylinderMesh trunk + SphereMesh canopy (Oathbound-style low-poly).
+## Trees = procedural trunk (root flare + buttress ridges) + billboard leaf canopy.
 ## Rocks = low-poly SphereMesh with triplanar stone texture.
 ## Bushes = small squished SphereMesh with triplanar leaf texture.
 ## All materials use TEXTURE_FILTER_NEAREST + triplanar mapping for pixel-art look.
@@ -1172,15 +1172,8 @@ static func _scatter_saplings(
 
 		var trunk_mi := MeshInstance3D.new()
 		trunk_mi.name = "Trunk"
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = trunk_r * 0.5
-		cyl.bottom_radius = trunk_r
-		cyl.height = trunk_h
-		cyl.radial_segments = 5
-		cyl.rings = 1
-		trunk_mi.mesh = cyl
+		trunk_mi.mesh = _build_trunk_mesh(trunk_r * 1.4, trunk_r * 0.5, trunk_h, 0, rng)
 		trunk_mi.set_surface_override_material(0, _mat_birch_bark if is_birch_sapling else _mat_bark)
-		trunk_mi.position.y = trunk_h * 0.5
 		trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(trunk_mi)
 
@@ -1347,8 +1340,89 @@ static func _terrain_normal_y(wx: float, wz: float, height_func: Callable) -> fl
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  TREE — 3D CylinderMesh trunk + 2D billboard leaf planes (Oathbound style)
+#  TREE — Procedural trunk with root flare + 2D billboard leaf planes
 # ═══════════════════════════════════════════════════════════════════════════════
+
+## Builds a trunk ArrayMesh with a flared base and buttress root ridges via
+## SurfaceTool. The radius follows a non-linear profile: wide flare at the
+## bottom that eases into a linear taper toward the top.  Buttress roots are
+## angular ridges whose protrusion fades out above the root zone.
+static func _build_trunk_mesh(
+	bot_r: float, top_r: float, height: float,
+	num_roots: int, rng: RandomNumberGenerator,
+) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	var radial_segs := 12
+	var h_rings := 14
+	var flare_mult := 1.7
+	var flare_zone := 0.12
+	var root_zone := 0.22
+
+	var root_angles := PackedFloat32Array()
+	if num_roots > 0:
+		var base_a := rng.randf_range(0.0, TAU)
+		for i in num_roots:
+			root_angles.append(
+				base_a + TAU * float(i) / float(num_roots)
+				+ rng.randf_range(-0.2, 0.2))
+
+	var all_rings: Array[PackedVector3Array] = []
+	for ri in range(h_rings + 1):
+		var t := float(ri) / float(h_rings)
+		var y := t * height
+
+		var r: float
+		if t < flare_zone:
+			var ft := t / flare_zone
+			r = lerpf(bot_r * flare_mult, bot_r, ft * ft)
+		else:
+			var tt := (t - flare_zone) / (1.0 - flare_zone)
+			r = lerpf(bot_r, top_r, tt)
+
+		var ring := PackedVector3Array()
+		ring.resize(radial_segs)
+		for si in radial_segs:
+			var angle := TAU * float(si) / float(radial_segs)
+			var vr := r
+
+			if t < root_zone and num_roots > 0:
+				var root_fade := 1.0 - t / root_zone
+				root_fade *= root_fade
+				for ra_idx in root_angles.size():
+					var ra: float = root_angles[ra_idx]
+					var da := absf(fmod(angle - ra + PI + TAU, TAU) - PI)
+					var root_w := 0.38
+					if da < root_w:
+						var strength := cos(da / root_w * PI * 0.5)
+						strength *= strength
+						vr += bot_r * 0.9 * strength * root_fade
+
+			vr += rng.randf_range(-0.012, 0.012) * r
+			ring[si] = Vector3(cos(angle) * vr, y, sin(angle) * vr)
+
+		all_rings.append(ring)
+
+	for ri in h_rings:
+		for si in radial_segs:
+			var ns := (si + 1) % radial_segs
+			var v00: Vector3 = all_rings[ri][si]
+			var v10: Vector3 = all_rings[ri][ns]
+			var v01: Vector3 = all_rings[ri + 1][si]
+			var v11: Vector3 = all_rings[ri + 1][ns]
+
+			st.add_vertex(v00)
+			st.add_vertex(v01)
+			st.add_vertex(v10)
+
+			st.add_vertex(v10)
+			st.add_vertex(v01)
+			st.add_vertex(v11)
+
+	st.generate_normals()
+	return st.commit()
+
 
 static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbiome: StringName = &"none") -> StaticBody3D:
 	var pooled := _ZonePool.get_tree_node()
@@ -1377,44 +1451,43 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	var trunk_bot_r: float
 	var trunk_top_r: float
 	var bark_mat: Material
+	var num_roots: int
 
 	if is_birch:
 		trunk_h = 40.5 * sf
-		trunk_bot_r = 0.6 * sf
-		trunk_top_r = 0.24 * sf
+		trunk_bot_r = 0.9 * sf
+		trunk_top_r = 0.4 * sf
 		bark_mat = _mat_birch_bark
+		num_roots = 3
 	elif is_pine:
 		trunk_h = 45.6 * sf
-		trunk_bot_r = 0.72 * sf
-		trunk_top_r = 0.18 * sf
+		trunk_bot_r = 1.1 * sf
+		trunk_top_r = 0.35 * sf
 		bark_mat = _mat_bark
+		num_roots = 3
 	elif is_willow:
 		trunk_h = 30.45 * sf
-		trunk_bot_r = 0.88 * sf
-		trunk_top_r = 0.44 * sf
+		trunk_bot_r = 1.3 * sf
+		trunk_top_r = 0.7 * sf
 		bark_mat = _mat_bark
+		num_roots = 4
 	elif is_palm:
 		trunk_h = 35.55 * sf
-		trunk_bot_r = 0.55 * sf
-		trunk_top_r = 0.33 * sf
+		trunk_bot_r = 0.85 * sf
+		trunk_top_r = 0.5 * sf
 		bark_mat = _mat_bark
+		num_roots = 2
 	else:
 		trunk_h = 38.1 * sf
-		trunk_bot_r = 0.77 * sf
-		trunk_top_r = 0.31 * sf
+		trunk_bot_r = 1.2 * sf
+		trunk_top_r = 0.5 * sf
 		bark_mat = _mat_bark
+		num_roots = 4
 
 	var trunk_mi := MeshInstance3D.new()
 	trunk_mi.name = "MeshInstance3D"
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = trunk_top_r
-	cyl.bottom_radius = trunk_bot_r
-	cyl.height = trunk_h
-	cyl.radial_segments = 10
-	cyl.rings = 3
-	trunk_mi.mesh = cyl
+	trunk_mi.mesh = _build_trunk_mesh(trunk_bot_r, trunk_top_r, trunk_h, num_roots, rng)
 	trunk_mi.set_surface_override_material(0, bark_mat)
-	trunk_mi.position.y = trunk_h * 0.5
 	trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	root.add_child(trunk_mi)
 
@@ -1560,10 +1633,10 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		canopy_parent.add_child(mmi)
 
-	# ── Collision ──
+	# ── Collision — wider at base to cover root flare ──
 	var col := CollisionShape3D.new()
 	var shape := CapsuleShape3D.new()
-	shape.radius = trunk_bot_r * 1.2
+	shape.radius = trunk_bot_r * 1.5
 	shape.height = trunk_h * 0.8
 	col.shape = shape
 	col.position.y = trunk_h * 0.4
