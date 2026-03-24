@@ -1295,25 +1295,25 @@ static func is_dirt_patch(wx: float, wz: float, amount: float = 0.1) -> bool:
 
 
 static func get_path_factor(wx: float, wz: float) -> float:
-	var warp_x := _fbm2(wx * 0.008 + 300.0, wz * 0.008 + 150.0) * 40.0
-	var warp_z := _fbm2(wx * 0.008 + 800.0, wz * 0.008 + 550.0) * 40.0
+	var warp_x := _fbm2(wx * 0.006 + 300.0, wz * 0.006 + 150.0) * 25.0
+	var warp_z := _fbm2(wx * 0.006 + 800.0, wz * 0.006 + 550.0) * 25.0
 	var warped_x := wx + warp_x
 	var warped_z := wz + warp_z
 
-	var n1 := _vnoise(warped_x * 0.025, warped_z * 0.005)
+	var n1 := _vnoise(warped_x * 0.03, warped_z * 0.006)
 	var ridge1 := 1.0 - absf(n1 * 2.0 - 1.0)
-	ridge1 = ridge1 * ridge1 * ridge1
+	ridge1 = ridge1 * ridge1 * ridge1 * ridge1
 
-	var n2 := _vnoise(warped_x * 0.006 + 50.0, warped_z * 0.028 + 70.0)
+	var n2 := _vnoise(warped_x * 0.007 + 50.0, warped_z * 0.032 + 70.0)
 	var ridge2 := 1.0 - absf(n2 * 2.0 - 1.0)
-	ridge2 = ridge2 * ridge2 * ridge2
+	ridge2 = ridge2 * ridge2 * ridge2 * ridge2
 
-	var combined := maxf(ridge1, ridge2 * 0.85)
-	return clampf(combined * 1.8 - 0.15, 0.0, 1.0)
+	var combined := maxf(ridge1, ridge2 * 0.8)
+	return clampf(combined * 1.4 - 0.3, 0.0, 1.0)
 
 
 static func is_on_path(wx: float, wz: float) -> bool:
-	return get_path_factor(wx, wz) > 0.25
+	return get_path_factor(wx, wz) > 0.3
 
 static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) -> float:
 	const STEP := ZONE_SIZE / 32.0
