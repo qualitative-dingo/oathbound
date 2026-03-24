@@ -101,15 +101,16 @@ void fragment() {
 	vec3 warm_shift = vec3(0.03, 0.015, -0.015) * (n_large - 0.5) * variation_strength;
 	albedo += warm_shift;
 
-	float mud = fbm2(world_pos.xz * 0.02 + vec2(200.0, 300.0));
-	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength;
-	albedo = mix(albedo, col_slope * 0.75, mud_mask * 0.8);
-
-	vec2 dirt_warp = vec2(
+	vec2 terrain_warp = vec2(
 		fbm2(world_pos.xz * 0.012 + vec2(137.0, 241.0)),
 		fbm2(world_pos.xz * 0.012 + vec2(359.0, 83.0))
 	) * 28.0;
-	float dirt_noise = fbm2((world_pos.xz + dirt_warp) * 0.018 + vec2(500.0, 700.0));
+
+	float mud = fbm2((world_pos.xz + terrain_warp) * 0.02 + vec2(200.0, 300.0));
+	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength;
+	albedo = mix(albedo, col_slope * 0.75, mud_mask * 0.8);
+
+	float dirt_noise = fbm2((world_pos.xz + terrain_warp) * 0.018 + vec2(500.0, 700.0));
 	float dirt_thresh = 0.5 + (0.5 - dirt_patch_amount) * 0.6;
 	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w;
 	albedo = mix(albedo, dirt_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), dirt_mask);
@@ -125,10 +126,10 @@ void fragment() {
 	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2;
 	albedo *= (1.0 - ao_mask);
 
-	float ground_shadow = flat_w * 0.22 * (1.0 - dirt_mask) * (1.0 - pm);
+	float ground_shadow = flat_w * 0.12 * (1.0 - dirt_mask) * (1.0 - pm);
 	albedo *= (1.0 - ground_shadow);
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
-	albedo = mix(albedo, vec3(luma), ground_shadow * 0.5);
+	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
 	ALBEDO = albedo * tint_color * v_brightness;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);

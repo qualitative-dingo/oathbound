@@ -4315,12 +4315,6 @@ func _build_inventory_panel(root: Control) -> void:
 
 
 func _build_equip_bar(parent: VBoxContainer) -> void:
-	var equip_label := Label.new()
-	equip_label.text = "EQUIPPED"
-	equip_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.4))
-	equip_label.add_theme_font_size_override("font_size", 14)
-	parent.add_child(equip_label)
-
 	var sep := HSeparator.new()
 	var sep_style := StyleBoxFlat.new()
 	sep_style.bg_color = Color(0.4, 0.35, 0.25, 0.6)
