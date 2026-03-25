@@ -1297,7 +1297,7 @@ static func _get_microbiome_counts(biome: StringName, micro: StringName) -> Pack
 			&"hills":
 				return PackedInt32Array([2, 4, 2, 2])
 			&"riverside":
-				return PackedInt32Array([5, 3, 8, 1])
+				return PackedInt32Array([5, 6, 8, 1])
 		return PackedInt32Array([6, 2, 4, 1])
 	return _get_biome_counts(biome)
 

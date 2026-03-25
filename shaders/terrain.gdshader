@@ -21,6 +21,10 @@ group_uniforms paths;
 uniform vec3 path_color : source_color = vec3(0.12, 0.07, 0.03);
 uniform float path_roughness : hint_range(0.0, 1.0) = 0.92;
 
+group_uniforms riverbank;
+uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
+uniform float bank_roughness : hint_range(0.0, 1.0) = 0.95;
+
 float hash12(vec2 p) {
 	float h = dot(p, vec2(127.1, 311.7));
 	return fract(sin(h) * 43758.5453);
@@ -63,13 +67,14 @@ uniform vec3 origin_shift;
 
 varying vec3 v_world_pos;
 varying float v_path_mask;
-
 varying float v_brightness;
+varying float v_river_bank;
 
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
 	v_path_mask = COLOR.r;
 	v_brightness = COLOR.g;
+	v_river_bank = COLOR.b;
 }
 
 void fragment() {
@@ -127,6 +132,14 @@ void fragment() {
 	path_base *= (0.9 + fbm2(world_pos.xz * 0.06 + vec2(150.0, 250.0)) * 0.15);
 	albedo = mix(albedo, path_base, pm);
 
+	// River bank blending — muddy/sandy shoreline near water from vertex B channel
+	float bank_noise = vnoise(world_pos.xz * 0.15 + vec2(444.0, 222.0));
+	float bank_detail = vnoise(world_pos.xz * 0.6 + vec2(111.0, 555.0));
+	float bank_mask = smoothstep(0.1, 0.6, v_river_bank + (bank_noise - 0.5) * 0.3);
+	vec3 bank_detail_col = col_slope * 0.5 + bank_color * 0.5;
+	bank_detail_col *= (0.8 + bank_detail * 0.25);
+	albedo = mix(albedo, bank_detail_col, bank_mask * flat_w);
+
 	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2;
 	albedo *= (1.0 - ao_mask);
 
@@ -138,6 +151,7 @@ void fragment() {
 	ALBEDO = albedo * tint_color * v_brightness;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
+	base_rough = mix(base_rough, bank_roughness, bank_mask * flat_w);
 	ROUGHNESS = mix(base_rough, path_roughness, pm);
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;

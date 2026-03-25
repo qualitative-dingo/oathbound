@@ -10,18 +10,19 @@ extends Node
 ##   var submerged := global_position.y < y
 
 # These MUST match the shader uniform defaults in water.gdshader
-const WAVE_SPEED := 0.4
-const WAVE_HEIGHT := 0.25
-const WAVE_FREQUENCY := 2.0
+const WAVE_SPEED := 0.08
+const WAVE_HEIGHT := 0.10
+const WAVE_FREQUENCY := 1.2
 
-const BASE_WATER_Y := 0.08  # water plane offset above WATER_LEVEL (0.0)
+const BASE_WATER_Y := -0.15
 
 
 func _wave(wx: float, wz: float, time: float) -> float:
-	var w1 := sin(wx * WAVE_FREQUENCY + time * WAVE_SPEED * 4.0) * 0.6
-	var w2 := sin(wz * WAVE_FREQUENCY * 0.7 + time * WAVE_SPEED * 3.2 + 1.5) * 0.4
-	var w3 := sin((wx + wz) * WAVE_FREQUENCY * 0.5 + time * WAVE_SPEED * 2.8) * 0.3
-	return (w1 + w2 + w3) * WAVE_HEIGHT
+	var w1 := sin(wx * WAVE_FREQUENCY + time * WAVE_SPEED * 4.0) * 0.5
+	var w2 := sin(wz * WAVE_FREQUENCY * 0.7 + time * WAVE_SPEED * 3.2 + 1.5) * 0.35
+	var w3 := sin((wx + wz) * WAVE_FREQUENCY * 0.5 + time * WAVE_SPEED * 2.8) * 0.25
+	var w4 := sin((wx * 0.3 - wz * 0.7) * WAVE_FREQUENCY * 1.3 + time * WAVE_SPEED * 5.0) * 0.15
+	return (w1 + w2 + w3 + w4) * WAVE_HEIGHT
 
 
 ## Returns the world-space Y of the water surface at (wx, wz).

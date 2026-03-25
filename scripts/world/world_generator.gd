@@ -58,9 +58,9 @@ var _microbiome_secondary: FastNoiseLite
 
 # ─── Watershed Grid ───────────────────────────────────────────────────────────
 
-const _WS_CELL := 64.0
-const _WS_RIVER_THRESH := 8.0
-const _WS_RIVER_FULL := 80.0
+const _WS_CELL := 48.0
+const _WS_RIVER_THRESH := 5.0
+const _WS_RIVER_FULL := 60.0
 
 const _D8X := [1, 1, 0, -1, -1, -1, 0, 1]
 const _D8Z := [0, -1, -1, -1, 0, 1, 1, 1]
@@ -387,8 +387,8 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var h := continent * height_scale * 0.6
 	h += maxf(mountain, 0.0) * height_scale * 1.5
 	var center_dist := Vector2(wx, wz).length()
-	if center_dist < 200.0:
-		h = lerpf(h, 2.0, 1.0 - smoothstep(0.0, 200.0, center_dist))
+	if center_dist < 100.0:
+		h = lerpf(h, 2.0, 1.0 - smoothstep(0.0, 100.0, center_dist))
 	return h
 
 
@@ -583,10 +583,20 @@ func get_height_at(x: float, z: float) -> float:
 
 	# Watershed river carving — accumulation drives depth and width
 	var accum := _ws_sample_accum(x, z)
-	if accum > _WS_RIVER_THRESH:
-		var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, accum)
-		var depth := lerpf(1.0, 6.0, t)
-		h = lerpf(h, WATER_LEVEL - depth, t)
+	if accum > _WS_RIVER_THRESH * 0.6:
+		# Noise-based widening: perturb the effective accumulation outward
+		var widen_n := _detail_noise.get_noise_2d(x * 0.08 + 3000.0, z * 0.08 + 3000.0)
+		var effective_accum := accum + widen_n * _WS_RIVER_THRESH * 0.5
+
+		if effective_accum > _WS_RIVER_THRESH:
+			var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, effective_accum)
+			var depth := lerpf(1.5, 8.0, t)
+			h = lerpf(h, WATER_LEVEL - depth, t)
+
+			# Gradual riverbank slope for natural shoreline
+			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.6, _WS_RIVER_THRESH, effective_accum)
+			var bank_depth := lerpf(0.0, 1.5, bank_t)
+			h = minf(h, lerpf(h, WATER_LEVEL + 0.2 - bank_depth, bank_t))
 
 	# Noise-driven lakes: carve proper basins with gradual shorelines
 	if _detail_noise:
@@ -1033,8 +1043,8 @@ func _create_global_water() -> void:
 	# Cover a large area around the player — bigger than the loaded zone radius
 	var water_extent := ZONE_SIZE * float(unload_radius_zones + 2) * 2.0
 	plane.size = Vector2(water_extent, water_extent)
-	plane.subdivide_width = 32
-	plane.subdivide_depth = 32
+	plane.subdivide_width = 64
+	plane.subdivide_depth = 64
 	_global_water_plane.mesh = plane
 
 	if _water_shader_mat:
@@ -1081,7 +1091,11 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			var cn := _color_noise.get_noise_2d(wx, wz)
 			var brightness := 0.92 + cn * 0.12
 			var path_f := _ZonePopulator.get_path_factor(wx, wz)
-			colors.append(Color(path_f, brightness, brightness * 0.98))
+			# Blue channel = river bank proximity (0..1) for muddy shoreline blending
+			var accum_here := _ws_sample_accum(wx, wz)
+			var river_bank := smoothstep(_WS_RIVER_THRESH * 0.3, _WS_RIVER_THRESH * 1.2, accum_here)
+			river_bank = clampf(river_bank, 0.0, 1.0)
+			colors.append(Color(path_f, brightness, river_bank))
 
 	for z in range(res + 1):
 		for x in range(res + 1):
@@ -1185,6 +1199,7 @@ func _init_biome_materials() -> void:
 			mat.set_shader_parameter("texture_scale", tex_scale)
 			mat.set_shader_parameter("origin_shift", origin_shift)
 			mat.set_shader_parameter("path_color", Vector3(0.12, 0.07, 0.03))
+			mat.set_shader_parameter("bank_color", Vector3(0.12, 0.09, 0.05))
 			_biome_materials[biome_id] = mat
 		else:
 			# Fallback if shader fails to load
