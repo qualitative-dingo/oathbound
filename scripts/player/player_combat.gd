@@ -559,7 +559,7 @@ func update_bow_draw_sprite() -> void:
 		return
 	if pc._bow_attack_frames.is_empty() or not pc._player_sprite:
 		return
-	var dir := pc._get_camera_relative_dir()
+	var dir: Vector3 = pc._get_camera_relative_dir()
 	if not pc._bow_attack_frames.has(dir):
 		return
 	var frames_arr: Array = Array(pc._bow_attack_frames[dir])
@@ -887,12 +887,12 @@ func apply_affix_stat_bonuses() -> void:
 	if affixes.has(&"endurance"):
 		new_max_stam += affix_val(&"endurance")
 	if new_max_hp != pc.max_health:
-		var hp_ratio := pc.current_health / pc.max_health if pc.max_health > 0 else 1.0
+		var hp_ratio: float = pc.current_health / pc.max_health if pc.max_health > 0 else 1.0
 		pc.max_health = new_max_hp
 		pc.current_health = pc.max_health * hp_ratio
 		GameEvents.player_health_changed.emit(pc.current_health, pc.max_health)
 	if new_max_stam != pc.max_stamina:
-		var stam_ratio := pc.current_stamina / pc.max_stamina if pc.max_stamina > 0 else 1.0
+		var stam_ratio: float = pc.current_stamina / pc.max_stamina if pc.max_stamina > 0 else 1.0
 		pc.max_stamina = new_max_stam
 		pc.current_stamina = pc.max_stamina * stam_ratio
 		GameEvents.player_stamina_changed.emit(pc.current_stamina, pc.max_stamina)
@@ -937,7 +937,7 @@ func try_attack() -> void:
 			tween.tween_property(pc._model, "position:z", 0.0, 0.15)
 
 	var is_tool := str(wpn_data.get("type", "weapon")) == "tool"
-	var is_unarmed := pc.equipped_weapon == &"fists" or is_tool
+	var is_unarmed: bool = pc.equipped_weapon == &"fists" or is_tool
 	var fist_data: Dictionary = ItemDatabase.get_item(&"fists")
 	var wpn_damage: float = float(fist_data.get("damage", 5.0)) if is_tool else get_weapon_stat("damage", 5.0)
 	var wpn_range: float = float(fist_data.get("range", 2.5)) if is_tool else get_weapon_stat("range", 2.5)
@@ -988,7 +988,7 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 
 	var affix_bonus := 0.0
 	if affixes.has(&"berserker"):
-		var missing_pct := 1.0 - (pc.current_health / pc.max_health)
+		var missing_pct: float = 1.0 - (pc.current_health / pc.max_health)
 		var berserk_cap := affix_val(&"berserker")
 		affix_bonus += minf(missing_pct * berserk_cap, berserk_cap)
 	if affixes.has(&"momentum"):
@@ -1129,10 +1129,10 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 			continue
 		if affixes.has(&"lifesteal"):
 			var heal_amt := dmg * affix_val(&"lifesteal")
-			var pre_hp := pc.current_health
+			var pre_hp: float = pc.current_health
 			pc.current_health = minf(pc.current_health + heal_amt, pc.max_health)
 			GameEvents.player_health_changed.emit(pc.current_health, pc.max_health)
-			var actual_heal := pc.current_health - pre_hp
+			var actual_heal: float = pc.current_health - pre_hp
 			if actual_heal > 0.5 and pc._camera_pivot:
 				_DamageNumber.spawn_heal(pc.get_tree(), pc.global_position, actual_heal, pc._camera_pivot.global_transform.basis)
 		if affixes.has(&"siphon"):
@@ -1423,15 +1423,15 @@ func destroy_rock(node: Node3D) -> void:
 
 
 func get_terrain_slope_dir(pos: Vector3) -> Vector3:
-	var wg := pc._find_world_generator()
+	var wg: Node = pc._find_world_generator()
 	if not wg:
 		return Vector3.ZERO
 	var sample_dist := 2.0
-	var h_center := wg.get_height_at_scene(pos.x, pos.z)
-	var h_px := wg.get_height_at_scene(pos.x + sample_dist, pos.z)
-	var h_nx := wg.get_height_at_scene(pos.x - sample_dist, pos.z)
-	var h_pz := wg.get_height_at_scene(pos.x, pos.z + sample_dist)
-	var h_nz := wg.get_height_at_scene(pos.x, pos.z - sample_dist)
+	var h_center: float = wg.get_height_at_scene(pos.x, pos.z)
+	var h_px: float = wg.get_height_at_scene(pos.x + sample_dist, pos.z)
+	var h_nx: float = wg.get_height_at_scene(pos.x - sample_dist, pos.z)
+	var h_pz: float = wg.get_height_at_scene(pos.x, pos.z + sample_dist)
+	var h_nz: float = wg.get_height_at_scene(pos.x, pos.z - sample_dist)
 	var slope := Vector3(h_nx - h_px, 0.0, h_nz - h_pz)
 	if slope.length_squared() < 0.001:
 		return Vector3.ZERO
@@ -1759,7 +1759,7 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 					break
 		dr_bonus += nearby_count * affix_val(&"battle_hardened")
 
-	var did_block := pc._is_blocking
+	var did_block: bool = pc._is_blocking
 	if pc._is_blocking:
 		if affixes.has(&"unbreakable") and pc.current_health / pc.max_health < 0.25:
 			dr_bonus += 0.90
@@ -1781,7 +1781,7 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 
 	pc.current_health = maxf(pc.current_health - final_amount, 0.0)
 	pc._hp_pulse = 1.0
-	var regen_delay := pc.health_regen_delay
+	var regen_delay: float = pc.health_regen_delay
 	if affixes.has(&"quick_recovery"):
 		regen_delay -= affix_val(&"quick_recovery")
 	pc._health_regen_timer = regen_delay
@@ -1816,11 +1816,11 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 
 	if affixes.has(&"second_wind") and pc._second_wind_cooldown <= 0.0:
 		if pc.current_health > 0.0 and pc.current_health / pc.max_health < 0.20:
-			var pre_hp := pc.current_health
+			var pre_hp: float = pc.current_health
 			pc.current_health = minf(pc.current_health + pc.max_health * affix_val(&"second_wind"), pc.max_health)
 			pc._second_wind_cooldown = 45.0
 			GameEvents.player_health_changed.emit(pc.current_health, pc.max_health)
-			var actual_heal := pc.current_health - pre_hp
+			var actual_heal: float = pc.current_health - pre_hp
 			if actual_heal > 0.5 and pc._camera_pivot:
 				_DamageNumber.spawn_heal(pc.get_tree(), pc.global_position, actual_heal, pc._camera_pivot.global_transform.basis)
 
@@ -1848,7 +1848,7 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 func handle_health_regen(delta: float) -> void:
 	pc._health_regen_timer -= delta
 	if pc._health_regen_timer <= 0.0 and pc.current_health < pc.max_health:
-		var regen := pc.health_regen_rate
+		var regen: float = pc.health_regen_rate
 		if has_affix(&"rejuvenation"):
 			regen *= (1.0 + affix_val(&"rejuvenation"))
 		pc.current_health = minf(pc.current_health + regen * delta, pc.max_health)
@@ -1914,7 +1914,7 @@ func respawn() -> void:
 	var spawn_x := 0.0
 	var spawn_z := 0.0
 	var spawn_y := 0.5
-	var wg := pc._find_world_generator()
+	var wg: Node = pc._find_world_generator()
 	if wg:
 		spawn_y = wg.get_height_at(spawn_x, spawn_z) + 0.2
 	if spawn_y > 5.0 or spawn_y < -5.0:
