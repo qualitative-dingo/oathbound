@@ -106,6 +106,7 @@ static var _grass_shader: Shader
 static var _grass_quad_mesh: ArrayMesh
 static var _leaf_unit_quad: QuadMesh
 static var _grass_textures: Array[ImageTexture] = []
+static var _flower_textures: Array[ImageTexture] = []
 
 static var _water_plants_ready := false
 static var _lily_pad_mesh: ArrayMesh
@@ -253,6 +254,10 @@ static func _ensure_textures() -> void:
 	_grass_textures.clear()
 	for gi in 20:
 		_grass_textures.append(_gen_grass_variety(gi))
+
+	_flower_textures.clear()
+	for fi in 10:
+		_flower_textures.append(_gen_flower_texture(fi))
 
 	# ── Creature 3D-enhancement shaders ──
 	if ResourceLoader.exists("res://shaders/creature_sprite.gdshader"):
@@ -858,7 +863,14 @@ static func populate_zone_phase(
 			_scatter_grass(zone_root, coord, biome, rng, height_func, phase - 3, phase - 2)
 		return false
 
-	# ── Phase 11: saplings + water plants ──
+	# ── Phases 11–15: wildflowers (2 types per frame) ──
+	if phase >= 11 and phase <= 15:
+		if not debug_skip_grass:
+			var fi_start := (phase - 11) * 2
+			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 2)
+		return false
+
+	# ── Phase 16: saplings + water plants ──
 	if not debug_skip_saplings:
 		_scatter_saplings(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 
@@ -876,7 +888,7 @@ static func populate_zone(
 	height_func: Callable,
 	microbiome: StringName = &"none",
 ) -> void:
-	for p in 6:
+	for p in 17:
 		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
 
 
@@ -1024,6 +1036,295 @@ static func _gen_grass_variety(idx: int) -> ImageTexture:
 		_punch_holes(img, rng.randi_range(2, 5), rng)
 
 	return ImageTexture.create_from_image(img)
+
+
+# ── Procedural wildflower texture generators ─────────────────────────────────
+# Each flower: thin green stem(s) + colored head. Grayscale image tinted by
+# the albedo_color in the shader material, so "color" is encoded as brightness
+# with actual hue coming from the material tint.
+
+static func _paint_stem(img: Image, cx: int, base_y: int, stem_h: int, bri: float, rng: RandomNumberGenerator) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	var curve := rng.randf_range(-0.03, 0.03)
+	for dy in stem_h:
+		var y := base_y - dy
+		if y < 0 or y >= h:
+			continue
+		var t := float(dy) / float(stem_h)
+		var v := clampf(lerpf(bri * 0.7, bri, t) + rng.randf_range(-0.03, 0.03), 0.15, 0.9)
+		var ox := int(curve * dy * dy * 0.01)
+		var px := cx + ox
+		if px >= 0 and px < w:
+			img.set_pixel(px, y, Color(v, v, v, 1.0))
+
+
+static func _paint_flower_head(img: Image, cx: int, cy: int, shape: int,
+		size: int, bri: float, rng: RandomNumberGenerator) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	match shape:
+		0:  # Round dot cluster (buttercup, dandelion, clover)
+			var r := maxi(size, 2)
+			for dy in range(-r, r + 1):
+				for dx in range(-r, r + 1):
+					if dx * dx + dy * dy > r * r:
+						continue
+					var px := cx + dx
+					var py := cy + dy
+					if px < 0 or px >= w or py < 0 or py >= h:
+						continue
+					var edge := 1.0 - float(dx * dx + dy * dy) / float(r * r)
+					var v := clampf(bri * (0.75 + edge * 0.25) + rng.randf_range(-0.04, 0.04), 0.2, 1.0)
+					img.set_pixel(px, py, Color(v, v, v, 1.0))
+		1:  # Star / daisy petals
+			var petals := rng.randi_range(4, 6)
+			var petal_len := maxi(size, 2)
+			for p in petals:
+				var angle := float(p) / float(petals) * TAU + rng.randf_range(-0.2, 0.2)
+				for d in petal_len:
+					var t := float(d) / float(petal_len)
+					var px := cx + int(cos(angle) * d)
+					var py := cy + int(sin(angle) * d)
+					if px < 0 or px >= w or py < 0 or py >= h:
+						continue
+					var v := clampf(bri * (1.0 - t * 0.3), 0.2, 1.0)
+					img.set_pixel(px, py, Color(v, v, v, 1.0))
+					if d < petal_len - 1:
+						for off in [-1, 1]:
+							var ppx := px + int(sin(angle) * off)
+							var ppy := py + int(cos(angle) * off)
+							if ppx >= 0 and ppx < w and ppy >= 0 and ppy < h:
+								img.set_pixel(ppx, ppy, Color(v * 0.9, v * 0.9, v * 0.9, 1.0))
+			# Center dot
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					var px := cx + dx
+					var py := cy + dy
+					if px >= 0 and px < w and py >= 0 and py < h:
+						img.set_pixel(px, py, Color(bri * 1.1, bri * 1.1, bri * 1.1, 1.0))
+		2:  # Vertical spike (lavender, loosestrife-like)
+			var spike_h := maxi(size * 2, 4)
+			var spike_w := maxi(size / 2, 1)
+			for dy in spike_h:
+				var y := cy - dy
+				if y < 0 or y >= h:
+					continue
+				var t := float(dy) / float(spike_h)
+				var bw := maxi(1, int(float(spike_w) * (1.0 - t * 0.6)))
+				var v := clampf(bri * (0.8 + t * 0.2) + rng.randf_range(-0.05, 0.05), 0.2, 1.0)
+				for dx in range(-bw, bw + 1):
+					if rng.randf() < 0.3:
+						continue
+					var px := cx + dx
+					if px >= 0 and px < w:
+						img.set_pixel(px, y, Color(v, v, v, 1.0))
+		3:  # Bell / drooping (bluebell)
+			var bell_h := maxi(size, 2)
+			var bell_w := maxi(size, 2)
+			for dy in bell_h:
+				var y := cy + dy
+				if y < 0 or y >= h:
+					continue
+				var t := float(dy) / float(bell_h)
+				var bw := int(float(bell_w) * sin(t * PI * 0.8 + 0.3))
+				var v := clampf(bri * (1.0 - t * 0.2), 0.2, 1.0)
+				for dx in range(-bw, bw + 1):
+					var px := cx + dx
+					if px >= 0 and px < w:
+						img.set_pixel(px, y, Color(v, v, v, 1.0))
+
+
+# Flower configs: [shape, head_size, stem_count, stem_h_min, stem_h_max, head_bri, stem_bri]
+static var _flower_configs: Array = [
+	# 0: Cornflower (blue) — star petals
+	[1, 4, 3, 14, 22, 0.85, 0.5],
+	# 1: Red Poppy — round dot
+	[0, 4, 2, 16, 24, 0.9, 0.45],
+	# 2: Buttercup (yellow) — small round
+	[0, 2, 4, 10, 18, 0.95, 0.5],
+	# 3: Lavender (purple) — vertical spike
+	[2, 3, 3, 12, 20, 0.8, 0.45],
+	# 4: White Daisy — star petals
+	[1, 5, 2, 16, 24, 0.95, 0.5],
+	# 5: Wild Violet — small round
+	[0, 3, 3, 10, 16, 0.85, 0.5],
+	# 6: Clover (pink) — round dot
+	[0, 3, 3, 12, 18, 0.9, 0.5],
+	# 7: Dandelion (yellow) — round dot
+	[0, 4, 2, 14, 22, 0.95, 0.5],
+	# 8: Chamomile (white-green) — small star
+	[1, 3, 4, 10, 16, 0.8, 0.55],
+	# 9: Bluebell — drooping bell
+	[3, 3, 2, 16, 24, 0.85, 0.5],
+]
+
+
+static func _gen_flower_texture(idx: int) -> ImageTexture:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 60000 + idx * 311
+	var cfg: Array = _flower_configs[idx]
+	var shape: int = cfg[0]
+	var head_size: int = cfg[1]
+	var stem_count: int = cfg[2]
+	var stem_h_min: int = cfg[3]
+	var stem_h_max: int = cfg[4]
+	var head_bri: float = cfg[5]
+	var stem_bri: float = cfg[6]
+
+	var sz_w := 32
+	var sz_h := 40
+	var img := Image.create(sz_w, sz_h, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+
+	for _s in stem_count:
+		var cx := rng.randi_range(8, sz_w - 9)
+		var stem_h := rng.randi_range(stem_h_min, stem_h_max)
+		_paint_stem(img, cx, sz_h - 1, stem_h, stem_bri, rng)
+		var flower_y := sz_h - 1 - stem_h
+		_paint_flower_head(img, cx, flower_y, shape, head_size + rng.randi_range(-1, 1), head_bri, rng)
+
+	return ImageTexture.create_from_image(img)
+
+
+static var _flower_types_table: Array = []
+
+
+static func _get_flower_types() -> Array:
+	if _flower_types_table.is_empty():
+		# [texture, color, count, scale_min, scale_max, quad_w, quad_h]
+		_flower_types_table = [
+			# 0: Cornflower — blue
+			[_flower_textures[0], Color(0.30, 0.40, 0.88), 50, 0.6, 1.1, 0.9, 1.1],
+			# 1: Red Poppy — red-orange
+			[_flower_textures[1], Color(0.90, 0.22, 0.15), 40, 0.6, 1.0, 0.8, 1.0],
+			# 2: Buttercup — bright yellow
+			[_flower_textures[2], Color(0.95, 0.85, 0.15), 70, 0.5, 0.9, 0.7, 0.8],
+			# 3: Lavender — purple
+			[_flower_textures[3], Color(0.60, 0.40, 0.80), 55, 0.6, 1.0, 0.8, 1.2],
+			# 4: White Daisy — white
+			[_flower_textures[4], Color(0.95, 0.95, 0.90), 45, 0.6, 1.1, 0.9, 1.0],
+			# 5: Wild Violet — deep purple-blue
+			[_flower_textures[5], Color(0.50, 0.30, 0.75), 55, 0.5, 0.9, 0.7, 0.9],
+			# 6: Clover — pink/rose
+			[_flower_textures[6], Color(0.85, 0.45, 0.55), 60, 0.5, 0.9, 0.7, 0.9],
+			# 7: Dandelion — bright yellow
+			[_flower_textures[7], Color(0.95, 0.80, 0.10), 50, 0.6, 1.0, 0.8, 1.0],
+			# 8: Chamomile — soft white-green
+			[_flower_textures[8], Color(0.80, 0.85, 0.70), 65, 0.5, 0.9, 0.7, 0.8],
+			# 9: Bluebell — soft blue
+			[_flower_textures[9], Color(0.45, 0.55, 0.85), 50, 0.6, 1.0, 0.8, 1.1],
+		]
+	return _flower_types_table
+
+
+static var _cached_flower_mats: Dictionary = {}
+
+
+static func _make_flower_mat(tex: ImageTexture, color: Color) -> ShaderMaterial:
+	var cache_key := str(tex.get_rid().get_id()) + "_f_" + color.to_html()
+	if _cached_flower_mats.has(cache_key):
+		return _cached_flower_mats[cache_key]
+	var mat := ShaderMaterial.new()
+	mat.shader = _grass_shader
+	mat.set_shader_parameter("albedo_texture", tex)
+	mat.set_shader_parameter("albedo_color", color)
+	mat.set_shader_parameter("alpha_cutoff", 0.35)
+	mat.set_shader_parameter("wind_strength", 0.35)
+	mat.set_shader_parameter("wind_speed", 1.2)
+	mat.set_shader_parameter("wind_turbulence", 0.5)
+	_cached_flower_mats[cache_key] = mat
+	return mat
+
+
+static func _scatter_flowers(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	rng: RandomNumberGenerator,
+	height_func: Callable,
+	type_start: int = 0,
+	type_end: int = -1,
+) -> void:
+	if not _grass_shader or not _grass_quad_mesh:
+		return
+	if biome != &"hearthlands":
+		return
+
+	var flower_types := _get_flower_types()
+	if type_end < 0:
+		type_end = flower_types.size()
+
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+
+	var structs: Array = []
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree:
+		structs = tree.get_nodes_in_group(&"structures")
+
+	for fi in range(type_start, type_end):
+		var cfg: Array = flower_types[fi]
+		var tex: ImageTexture = cfg[0]
+		var color: Color = cfg[1]
+		var count: int = cfg[2]
+		var scale_min: float = cfg[3]
+		var scale_max: float = cfg[4]
+		var quad_w: float = cfg[5]
+		var quad_h: float = cfg[6]
+
+		if not tex:
+			continue
+
+		var mat := _make_flower_mat(tex, Color(color, 1.0))
+
+		var transforms: Array[Transform3D] = []
+		for _i in count:
+			var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
+			var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
+			var wx := origin_x + lx
+			var wz := origin_z + lz
+
+			var density := _grass_density_noise(wx, wz)
+			if density < 0.22:
+				continue
+
+			var sn := _snap_and_normal(wx, wz, height_func)
+			var ground_y := sn.x
+			if ground_y < _MIN_LAND_Y or ground_y > 45.0:
+				continue
+			if sn.y < 0.88:
+				continue
+			if is_on_path(wx, wz):
+				continue
+			if _is_near_structure(wx, wz, 4.0, structs):
+				continue
+
+			var scale := rng.randf_range(scale_min, scale_max)
+			var rot := rng.randf_range(0.0, TAU)
+			var sx := quad_w * scale
+			var sy := quad_h * scale
+			var sz := quad_w * scale
+			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+			transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+
+		if transforms.is_empty():
+			continue
+
+		var mmi := MultiMeshInstance3D.new()
+		var mm := MultiMesh.new()
+		mm.mesh = _grass_quad_mesh
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = false
+		mm.instance_count = transforms.size()
+		mmi.multimesh = mm
+		for tidx in transforms.size():
+			mm.set_instance_transform(tidx, transforms[tidx])
+
+		mmi.name = "Flower_%d" % fi
+		mmi.material_override = mat
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		zone_root.add_child(mmi)
 
 
 static var _cached_grass_mats: Dictionary = {}
@@ -3275,7 +3576,7 @@ static func _scatter_water_plants(
 	var origin_z: float = coord.y * ZONE_SIZE
 
 	# ── Lily pads — float on water where terrain is submerged ──
-	var lily_count := rng.randi_range(8, 18)
+	var lily_count := rng.randi_range(40, 90)
 	for _i in lily_count:
 		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
