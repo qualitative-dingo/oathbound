@@ -247,24 +247,28 @@ func _update_tumble_leaves(delta: float, player: Node3D) -> void:
 		if not is_instance_valid(leaf):
 			continue
 		var drift: Vector3 = leaf.get_meta("drift_speed", Vector3.ZERO)
-		leaf.position += drift * wind_intensity * delta
+		leaf.global_position += drift * wind_intensity * delta
 
 		if player:
-			var dx := leaf.position.x - player.global_position.x
-			var dz := leaf.position.z - player.global_position.z
+			var gp := leaf.global_position
+			var dx := gp.x - player.global_position.x
+			var dz := gp.z - player.global_position.z
 			if dx > TUMBLE_SPREAD:
-				leaf.position.x -= TUMBLE_SPREAD * 2.0
+				leaf.global_position.x -= TUMBLE_SPREAD * 2.0
 			elif dx < -TUMBLE_SPREAD:
-				leaf.position.x += TUMBLE_SPREAD * 2.0
+				leaf.global_position.x += TUMBLE_SPREAD * 2.0
 			if dz > TUMBLE_SPREAD:
-				leaf.position.z -= TUMBLE_SPREAD * 2.0
+				leaf.global_position.z -= TUMBLE_SPREAD * 2.0
 			elif dz < -TUMBLE_SPREAD:
-				leaf.position.z += TUMBLE_SPREAD * 2.0
+				leaf.global_position.z += TUMBLE_SPREAD * 2.0
 
-			if wg and wg.has_method("get_height_at"):
-				var ground_y: float = wg.get_height_at(leaf.position.x, leaf.position.z)
+			if wg and wg.has_method("get_height_at_scene"):
+				var ground_y: float = wg.get_height_at_scene(leaf.global_position.x, leaf.global_position.z)
 				var offset: float = leaf.get_meta("ground_offset", 0.15)
-				leaf.position.y = lerpf(leaf.position.y, ground_y + offset, delta * 3.0)
+				var target_y := ground_y + offset
+				if target_y < wg.WATER_LEVEL:
+					target_y = wg.WATER_LEVEL + offset
+				leaf.global_position.y = lerpf(leaf.global_position.y, target_y, delta * 3.0)
 
 
 func _advance_weather() -> void:
