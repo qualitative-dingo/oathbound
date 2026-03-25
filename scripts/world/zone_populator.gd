@@ -1042,11 +1042,10 @@ static func populate_zone_phase(
 			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 2)
 		return false
 
-	# ── Phase 16: saplings + berry bushes + water plants ──
+	# ── Phase 16: saplings + water plants ──
 	if not debug_skip_saplings:
 		_scatter_saplings(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 
-	_scatter_berry_bushes(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 	_scatter_water_plants(zone_root, coord, biome, rng, height_func)
 
 	return true
