@@ -1491,6 +1491,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	var is_oak := tname == "Oak"
 
 	var sf := rng.randf_range(0.7, 1.3)
+	var wsf := rng.randf_range(0.9, 1.1)
 
 	# ── Trunk ──
 	var trunk_h: float
@@ -1501,32 +1502,32 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 	if is_birch:
 		trunk_h = 40.5 * sf
-		trunk_bot_r = 0.9 * sf
-		trunk_top_r = 0.4 * sf
+		trunk_bot_r = 0.9 * sf * wsf
+		trunk_top_r = 0.4 * sf * wsf
 		bark_mat = _mat_birch_bark
 		num_roots = 3
 	elif is_pine:
 		trunk_h = 45.6 * sf
-		trunk_bot_r = 1.1 * sf
-		trunk_top_r = 0.35 * sf
+		trunk_bot_r = 1.1 * sf * wsf
+		trunk_top_r = 0.35 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 3
 	elif is_willow:
 		trunk_h = 30.45 * sf
-		trunk_bot_r = 1.3 * sf
-		trunk_top_r = 0.7 * sf
+		trunk_bot_r = 1.3 * sf * wsf
+		trunk_top_r = 0.7 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 4
 	elif is_palm:
 		trunk_h = 35.55 * sf
-		trunk_bot_r = 0.85 * sf
-		trunk_top_r = 0.5 * sf
+		trunk_bot_r = 0.85 * sf * wsf
+		trunk_top_r = 0.5 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 2
 	else:
 		trunk_h = 38.1 * sf
-		trunk_bot_r = 1.2 * sf
-		trunk_top_r = 0.5 * sf
+		trunk_bot_r = 1.2 * sf * wsf
+		trunk_top_r = 0.5 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 4
 
@@ -1570,35 +1571,35 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	var plane_size_base: float
 
 	if is_birch:
-		canopy_spread = 6.05 * sf
+		canopy_spread = 6.05 * sf * wsf
 		canopy_base_y = trunk_h * 0.38
 		plane_count = rng.randi_range(32, 44)
-		plane_size_base = 6.0 * sf
+		plane_size_base = 6.0 * sf * wsf
 	elif is_pine:
-		canopy_spread = 4.4 * sf
+		canopy_spread = 4.4 * sf * wsf
 		canopy_base_y = trunk_h * 0.2
 		plane_count = rng.randi_range(18, 26)
-		plane_size_base = 5.0 * sf
+		plane_size_base = 5.0 * sf * wsf
 	elif is_willow:
-		canopy_spread = 7.7 * sf
+		canopy_spread = 7.7 * sf * wsf
 		canopy_base_y = trunk_h * 0.35
 		plane_count = rng.randi_range(18, 24)
-		plane_size_base = 7.5 * sf
+		plane_size_base = 7.5 * sf * wsf
 	elif is_palm:
-		canopy_spread = 5.5 * sf
+		canopy_spread = 5.5 * sf * wsf
 		canopy_base_y = trunk_h * 0.7
 		plane_count = rng.randi_range(10, 14)
-		plane_size_base = 7.0 * sf
+		plane_size_base = 7.0 * sf * wsf
 	elif is_oak:
-		canopy_spread = 6.6 * sf
+		canopy_spread = 6.6 * sf * wsf
 		canopy_base_y = trunk_h * 0.25
 		plane_count = rng.randi_range(48, 72)
-		plane_size_base = 6.5 * sf
+		plane_size_base = 6.5 * sf * wsf
 	else:
-		canopy_spread = 6.6 * sf
+		canopy_spread = 6.6 * sf * wsf
 		canopy_base_y = trunk_h * 0.35
 		plane_count = rng.randi_range(16, 24)
-		plane_size_base = 6.5 * sf
+		plane_size_base = 6.5 * sf * wsf
 
 	# Canopy must always extend above trunk top with overshoot
 	var canopy_overshoot := 3.25 * sf
