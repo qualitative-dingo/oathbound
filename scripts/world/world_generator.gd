@@ -53,6 +53,7 @@ var _seed_hash: int
 var _continent_noise: FastNoiseLite
 var _mountain_noise: FastNoiseLite
 var _detail_noise: FastNoiseLite
+var _ridge_noise: FastNoiseLite
 var _color_noise: FastNoiseLite
 var _microbiome_noise: FastNoiseLite
 var _microbiome_secondary: FastNoiseLite
@@ -347,21 +348,33 @@ func _init_noise_layers() -> void:
 	_continent_noise.seed = _seed_hash
 	_continent_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_continent_noise.frequency = base_frequency
-	_continent_noise.fractal_octaves = 2
+	_continent_noise.fractal_octaves = 4
 	_continent_noise.fractal_lacunarity = 2.0
-	_continent_noise.fractal_gain = 0.5
+	_continent_noise.fractal_gain = 0.45
 
 	_mountain_noise = FastNoiseLite.new()
 	_mountain_noise.seed = _seed_hash + 1000
 	_mountain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_mountain_noise.frequency = base_frequency * 2.0
-	_mountain_noise.fractal_octaves = 2
+	_mountain_noise.fractal_octaves = 4
+	_mountain_noise.fractal_lacunarity = 2.2
+	_mountain_noise.fractal_gain = 0.5
 
 	_detail_noise = FastNoiseLite.new()
 	_detail_noise.seed = _seed_hash + 2000
 	_detail_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_detail_noise.frequency = detail_frequency
-	_detail_noise.fractal_octaves = 1
+	_detail_noise.fractal_octaves = 3
+	_detail_noise.fractal_lacunarity = 2.0
+	_detail_noise.fractal_gain = 0.5
+
+	_ridge_noise = FastNoiseLite.new()
+	_ridge_noise.seed = _seed_hash + 3000
+	_ridge_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_ridge_noise.frequency = 0.008
+	_ridge_noise.fractal_octaves = 3
+	_ridge_noise.fractal_lacunarity = 2.0
+	_ridge_noise.fractal_gain = 0.5
 
 
 	_color_noise = FastNoiseLite.new()
@@ -397,6 +410,11 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var mountain := _mountain_noise.get_noise_2d(wx, wz)
 	var h := continent * height_scale * 0.6
 	h += maxf(mountain, 0.0) * height_scale * 1.5
+
+	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
+	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
+	h += ridge * height_scale * 0.4 - height_scale * 0.12
+
 	var center_dist := Vector2(wx, wz).length()
 	if center_dist < 100.0:
 		h = lerpf(h, 2.0, 1.0 - smoothstep(0.0, 100.0, center_dist))
@@ -587,7 +605,12 @@ func get_height_at(x: float, z: float) -> float:
 
 	var h := continent * height_scale * 0.6
 	h += maxf(mountain, 0.0) * height_scale * 1.5
-	h += detail * height_scale * 0.1
+
+	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
+	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
+	h += ridge * height_scale * 0.4 - height_scale * 0.12
+
+	h += detail * height_scale * 0.2
 
 	# Keep terrain well above water — prevents thin land strips near shores
 	h = maxf(h, WATER_LEVEL + 1.5)

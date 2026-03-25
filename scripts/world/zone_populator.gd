@@ -1153,7 +1153,7 @@ static func _scatter_grass(
 			var ground_y := sn.x
 			if ground_y < _MIN_LAND_Y or ground_y > 40.0:
 				continue
-			if sn.y < 0.85:
+			if sn.y < 0.91:
 				continue
 			if is_dirt_patch(wx, wz):
 				continue
@@ -1163,6 +1163,8 @@ static func _scatter_grass(
 				continue
 			var cluster_boost := clampf((density - 0.18) * 1.6, 0.0, 1.0)
 			var scale := lerpf(scale_min, scale_max, cluster_boost)
+			var slope_factor := clampf((sn.y - 0.91) / 0.09, 0.0, 1.0)
+			scale *= lerpf(0.4, 1.0, slope_factor)
 			scale *= rng.randf_range(0.85, 1.15)
 			var rot := rng.randf_range(0.0, TAU)
 
