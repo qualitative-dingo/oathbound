@@ -388,22 +388,22 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	if not _leaf_shader or not _leaf_tex_generic:
 		return null
 
-	var sf := rng.randf_range(0.4, 0.7)
-	var trunk_h := 2.5 * sf
-	var trunk_r := 0.06 * sf
+	var sf := rng.randf_range(0.44, 0.77)
+	var trunk_h := 1.8 * sf
+	var trunk_r := 0.03 * sf
 
 	var root := StaticBody3D.new()
 	root.name = "BlueberryBush"
 	root.collision_layer = 4
 	root.collision_mask = 0
 	root.add_to_group(&"interactables")
+	root.add_to_group(&"berry_bushes")
 
 	var col := CollisionShape3D.new()
-	var shape := CapsuleShape3D.new()
-	shape.radius = trunk_r * 3.0
-	shape.height = trunk_h * 0.6
+	var shape := SphereShape3D.new()
+	shape.radius = 0.8 * sf
 	col.shape = shape
-	col.position.y = trunk_h * 0.3
+	col.position.y = trunk_h * 0.5
 	root.add_child(col)
 
 	root.set_meta("harvestable", true)
@@ -415,10 +415,11 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	root.set_meta("harvest_type", &"bush")
 	root.set_meta("tree_name", "Blueberry Bush")
 	root.set_meta("trunk_h", trunk_h)
+	root.set_meta("berry_harvest", true)
 
 	var trunk_mi := MeshInstance3D.new()
 	trunk_mi.name = "Trunk"
-	trunk_mi.mesh = _build_trunk_mesh(trunk_r * 1.4, trunk_r * 0.5, trunk_h, 0, rng)
+	trunk_mi.mesh = _build_trunk_mesh(trunk_r * 1.2, trunk_r * 0.4, trunk_h, 0, rng)
 	trunk_mi.set_surface_override_material(0, _mat_bark)
 	trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(trunk_mi)
@@ -431,13 +432,13 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	var leaf_mat := _make_tree_leaf_mat(leaf_tex, leaf_color, rng)
 
 	var crown_y := trunk_h * 0.35
-	var crown_r := 1.0 * sf
-	var crown_h := trunk_h * 0.7
+	var crown_r := 1.1 * sf
+	var crown_h := trunk_h * 0.77
 
 	var leaf_xforms: Array[Transform3D] = []
 
 	for li in rng.randi_range(6, 9):
-		var leaf_size := rng.randf_range(2.0, 3.0) * sf
+		var leaf_size := rng.randf_range(2.2, 3.3) * sf
 		var pos := Vector3(
 			rng.randf_range(-crown_r * 0.5, crown_r * 0.5),
 			crown_y + rng.randf_range(-crown_h * 0.1, crown_h * 0.6),
@@ -450,7 +451,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 		leaf_xforms.append(Transform3D(basis, pos))
 
 	for li in rng.randi_range(5, 8):
-		var leaf_size := rng.randf_range(1.4, 2.4) * sf
+		var leaf_size := rng.randf_range(1.54, 2.64) * sf
 		var angle := rng.randf_range(0.0, TAU)
 		var r := rng.randf_range(crown_r * 0.3, crown_r)
 		var pos := Vector3(
@@ -487,7 +488,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 		var b_y := crown_y + rng.randf_range(-crown_h * 0.2, crown_h * 0.5)
 		var berry_mi := MeshInstance3D.new()
 		var bsphere := SphereMesh.new()
-		bsphere.radius = rng.randf_range(0.04, 0.07)
+		bsphere.radius = rng.randf_range(0.048, 0.084)
 		bsphere.height = bsphere.radius * 2.0
 		bsphere.radial_segments = 4
 		bsphere.rings = 2

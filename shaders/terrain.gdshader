@@ -201,7 +201,8 @@ void fragment() {
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
-	float rock_strength = (slope_w + cliff_w) * 0.6;
+	// Rock bump only on gentle slopes — dFdx/dFdy create hard edge lines on steep faces
+	float rock_strength = (slope_w + cliff_w) * 0.6 * (1.0 - steep_override);
 	if (rock_strength > 0.01) {
 		float rn1 = vnoise(world_pos.xz * 2.5 + vec2(311.0, 719.0));
 		float rn2 = vnoise(world_pos.xz * 6.0 + vec2(853.0, 127.0));
@@ -212,5 +213,15 @@ void fragment() {
 			0.0,
 			dFdy(rock_detail) * 40.0 * rock_strength
 		));
+	}
+	// Smooth world-space bump for steep terrain (no dFdx/dFdy edge artifacts)
+	if (steep_override > 0.01) {
+		float eps = 0.4;
+		vec2 sp = world_pos.xz * 1.5;
+		float bump_c = vnoise(sp + vec2(311.0, 719.0));
+		float bump_x = vnoise(sp + vec2(311.0 + eps, 719.0));
+		float bump_z = vnoise(sp + vec2(311.0, 719.0 + eps));
+		vec3 bump_dir = vec3(bump_x - bump_c, 0.0, bump_z - bump_c) / eps;
+		NORMAL = normalize(NORMAL + bump_dir * 12.0 * steep_override);
 	}
 }
