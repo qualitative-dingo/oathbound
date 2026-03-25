@@ -135,12 +135,12 @@ void fragment() {
 	float slope_path_fade = smoothstep(0.10, 0.03, slope);
 
 	float mud = fbm2((world_pos.xz + terrain_warp) * 0.02 + vec2(200.0, 300.0));
-	float mud_mask = smoothstep(0.3, 0.55, mud) * slope_path_fade * variation_strength;
+	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength;
 	albedo = mix(albedo, col_slope * 0.75, mud_mask * 0.8);
 
 	float dirt_noise = fbm2((world_pos.xz + terrain_warp) * 0.018 + vec2(500.0, 700.0));
 	float dirt_thresh = 0.5 + (0.5 - dirt_patch_amount) * 0.6;
-	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * slope_path_fade;
+	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w;
 	albedo = mix(albedo, dirt_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), dirt_mask);
 
 	// Clay paths from vertex color R channel — per-pixel noise breaks up vertex-grid edges
