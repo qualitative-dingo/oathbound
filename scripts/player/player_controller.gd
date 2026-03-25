@@ -5271,7 +5271,7 @@ func _enter_raft_placement() -> void:
 
 func _enter_build_mode() -> void:
 	_build_mode = true
-	_build_rotation = rotation.y
+	_build_rotation = 0.0
 	_build_snapped = false
 	_build_snap_side = 0
 	_build_height_offset = 0.0
@@ -5416,7 +5416,7 @@ func _update_build_ghost() -> void:
 				var exist_half: float = (exist_sz * SIDE_HALF_EXIST[_build_snap_side]).length() * 0.5
 				var new_half: float = (sz * SIDE_HALF_NEW[_build_snap_side]).length() * 0.5
 				place_pos = result_hit_node.global_position + side_dir * (exist_half + new_half)
-				use_rot = result_hit_node.rotation.y
+				use_rot = result_hit_node.rotation.y + _build_rotation
 				_build_snapped = true
 				if _build_snap_side_label:
 					_build_snap_side_label.visible = true
