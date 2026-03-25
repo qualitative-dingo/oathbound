@@ -9,8 +9,8 @@ uniform sampler2D tex_cliff : filter_nearest_mipmap, repeat_enable;
 group_uniforms settings;
 uniform float texture_scale : hint_range(0.01, 4.0) = 0.5;
 uniform vec3 tint_color : source_color = vec3(1.0, 1.0, 1.0);
-uniform float slope_start : hint_range(0.0, 1.0) = 0.25;
-uniform float cliff_start : hint_range(0.0, 1.0) = 0.55;
+uniform float slope_start : hint_range(0.0, 1.0) = 0.08;
+uniform float cliff_start : hint_range(0.0, 1.0) = 0.30;
 
 uniform vec3 origin_shift;
 uniform vec3 path_color : source_color = vec3(0.18, 0.11, 0.05);
@@ -46,8 +46,8 @@ void fragment() {
 	vec3 wpos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float slope = 1.0 - abs(world_normal.y);
-	float slope_noise = (vnoise_fast(wpos.xz * 0.12 + vec2(53.0, 97.0)) - 0.5) * 0.18;
-	float cliff_w = smoothstep(cliff_start, cliff_start + 0.25, slope + slope_noise);
+	float slope_noise = (vnoise_fast(wpos.xz * 0.12 + vec2(53.0, 97.0)) - 0.5) * 0.08;
+	float cliff_w = smoothstep(cliff_start, cliff_start + 0.18, slope + slope_noise);
 
 	float pm = smoothstep(0.2, 0.7, v_path_mask);
 	float bm = smoothstep(0.1, 0.6, v_river_bank);

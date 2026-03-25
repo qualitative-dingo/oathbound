@@ -9,8 +9,8 @@ uniform sampler2D tex_cliff : filter_nearest_mipmap, repeat_enable;
 group_uniforms settings;
 uniform float texture_scale : hint_range(0.01, 4.0) = 0.5;
 uniform vec3 tint_color : source_color = vec3(1.0, 1.0, 1.0);
-uniform float slope_start : hint_range(0.0, 1.0) = 0.12;
-uniform float cliff_start : hint_range(0.0, 1.0) = 0.40;
+uniform float slope_start : hint_range(0.0, 1.0) = 0.06;
+uniform float cliff_start : hint_range(0.0, 1.0) = 0.30;
 
 group_uniforms variation;
 uniform float variation_strength : hint_range(0.0, 1.0) = 0.5;
@@ -88,30 +88,30 @@ void fragment() {
 	float slope = 1.0 - abs(world_normal.y);
 
 	// Multi-scale noise to break up the slope contour into organic patches
-	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.15
-	                   + (vnoise(world_pos.xz * 0.6 + vec2(200.0, 140.0)) - 0.5) * 0.08;
+	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.08
+	                   + (vnoise(world_pos.xz * 0.6 + vec2(200.0, 140.0)) - 0.5) * 0.04;
 
-	// Domain-warped large blobs — grass "tongues" reaching into rocky slopes
+	// Domain-warped large blobs for organic slope transitions
 	vec2 warp = vec2(
 		fbm2(world_pos.xz * 0.025 + vec2(430.0, 170.0)),
 		fbm2(world_pos.xz * 0.025 + vec2(810.0, 560.0))
-	) * 40.0;
+	) * 25.0;
 	float patch_noise = fbm2((world_pos.xz + warp) * 0.03 + vec2(90.0, 260.0));
-	slope_noise += (patch_noise - 0.5) * 0.22;
+	slope_noise += (patch_noise - 0.5) * 0.10;
 
 	float noisy_slope = slope + slope_noise;
 
-	float flat_w  = smoothstep(slope_start + 0.20, slope_start, noisy_slope);
-	float cliff_w = smoothstep(cliff_start, cliff_start + 0.25, noisy_slope);
+	float flat_w  = smoothstep(slope_start + 0.12, slope_start, noisy_slope);
+	float cliff_w = smoothstep(cliff_start, cliff_start + 0.18, noisy_slope);
 	float slope_w = max(1.0 - flat_w - cliff_w, 0.0);
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
 	vec3 col_slope = triplanar(tex_slope, world_pos, blend, texture_scale);
 	vec3 col_cliff = triplanar(tex_cliff, world_pos, blend, texture_scale);
 
-	// Scatter grass patches surviving into the slope zone
+	// Subtle scatter on gentle slopes only — never on steep terrain
 	float scatter = vnoise(world_pos.xz * 0.35 + vec2(610.0, 390.0));
-	float scatter_mask = smoothstep(0.58, 0.75, scatter) * slope_w * 0.6;
+	float scatter_mask = smoothstep(0.62, 0.80, scatter) * slope_w * 0.3 * flat_w;
 	float adj_flat_w  = flat_w + scatter_mask;
 	float adj_slope_w = max(slope_w - scatter_mask, 0.0);
 

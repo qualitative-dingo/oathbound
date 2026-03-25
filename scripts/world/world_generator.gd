@@ -700,6 +700,12 @@ func _generate_spawn_area() -> void:
 				_terrain_mesh_cache[coord] = arrays
 				_terrain_shape_cache[coord] = shape
 				_finalize_zone(coord, arrays, shape)
+	# Spawn area collision must be active immediately for the player to stand
+	for col_shape in _deferred_collisions:
+		if is_instance_valid(col_shape):
+			col_shape.disabled = false
+	_deferred_collisions.clear()
+
 	# Spawn area must be fully populated before the player lands
 	while not _populate_backlog.is_empty():
 		var pitem: Dictionary = _populate_backlog.pop_front()
@@ -787,6 +793,7 @@ func _queue_zones_around(center: Vector2i) -> void:
 
 var _finalize_backlog: Array = []   # zones ready for mesh setup
 var _populate_backlog: Array = []   # zones with mesh ready, waiting for object spawning
+var _deferred_collisions: Array[CollisionShape3D] = []  # collision shapes to enable next frame
 
 func _is_in_load_range(coord: Vector2i) -> bool:
 	for p in _players:
@@ -796,7 +803,17 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 	return false
 
 
+const _PENDING_BUDGET_US := 6000  # max microseconds per frame for pending work
+
 func _process_pending_zones() -> void:
+	var t_start := Time.get_ticks_usec()
+
+	# 0. Enable collision shapes deferred from last frame (spreads physics rebuild)
+	for col_shape in _deferred_collisions:
+		if is_instance_valid(col_shape):
+			col_shape.disabled = false
+	_deferred_collisions.clear()
+
 	# 1. Collect completed background builds — discard stale ones immediately
 	_gen_mutex.lock()
 	var ready := _gen_ready_queue.duplicate()
@@ -814,8 +831,10 @@ func _process_pending_zones() -> void:
 
 	_evict_terrain_cache()
 
-	# 2. Populate one zone's objects (spread across 4 frames per zone)
+	# 2. Populate zone objects — run multiple phases within time budget
 	while not _populate_backlog.is_empty():
+		if Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
+			break
 		var pitem: Dictionary = _populate_backlog[0]
 		var pcoord: Vector2i = pitem["coord"]
 		var zone_root = pitem["zone_root"]  # untyped — may be freed between frames
@@ -838,18 +857,18 @@ func _process_pending_zones() -> void:
 			zone_loaded.emit(pcoord)
 		else:
 			pitem["phase"] = phase + 1
-		return  # don't finalize mesh AND populate on the same frame
 
-	# 3. Finalize up to 1 zone mesh per frame to avoid stalls
-	var finalized := 0
-	while finalized < 1 and not _finalize_backlog.is_empty():
-		var item: Dictionary = _finalize_backlog.pop_front()
-		var coord: Vector2i = item["coord"]
-		if not _is_in_load_range(coord):
-			continue
-		if coord not in _loaded_zones:
-			_finalize_zone(coord, item["arrays"], item["shape"])
-			finalized += 1
+	# 3. Finalize up to 1 zone mesh per frame (within budget)
+	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
+		var finalized := 0
+		while finalized < 1 and not _finalize_backlog.is_empty():
+			var item: Dictionary = _finalize_backlog.pop_front()
+			var coord: Vector2i = item["coord"]
+			if not _is_in_load_range(coord):
+				continue
+			if coord not in _loaded_zones:
+				_finalize_zone(coord, item["arrays"], item["shape"])
+				finalized += 1
 
 	# 4. Submit new zone builds — stop if backlog is already large
 	if _finalize_backlog.size() + _gen_in_flight.size() > 30:
@@ -1003,10 +1022,14 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 		if shape:
 			if col:
 				col.shape = shape
+				col.disabled = true
+				_deferred_collisions.append(col)
 			else:
 				col = CollisionShape3D.new()
 				col.name = "TerrainCol"
 				col.shape = shape
+				col.disabled = true
+				_deferred_collisions.append(col)
 				zone_root.add_child(col)
 		add_child(zone_root)
 	else:
@@ -1024,6 +1047,8 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 		collision.name = "TerrainCol"
 		if shape:
 			collision.shape = shape
+			collision.disabled = true
+			_deferred_collisions.append(collision)
 		zone_root.add_child(mesh_instance)
 		zone_root.add_child(collision)
 		add_child(zone_root)

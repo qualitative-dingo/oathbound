@@ -1462,37 +1462,20 @@ static func _scatter_grass(
 				continue
 			if sn.y < 0.97:
 				continue
-			# Wide-radius slope check: detect cliffs the 2m grid can't resolve
-			var _hc := ground_y
-			const _WIDE_STEP := 6.0
-			var h_l := _snap_height_to_mesh(wx - _WIDE_STEP, wz, height_func)
-			var h_r := _snap_height_to_mesh(wx + _WIDE_STEP, wz, height_func)
-			var h_u := _snap_height_to_mesh(wx, wz - _WIDE_STEP, height_func)
-			var h_d := _snap_height_to_mesh(wx, wz + _WIDE_STEP, height_func)
-			var wide_slope_x := absf(h_r - h_l) / (_WIDE_STEP * 2.0)
-			var wide_slope_z := absf(h_d - h_u) / (_WIDE_STEP * 2.0)
-			if wide_slope_x > 0.35 or wide_slope_z > 0.35:
+			# Slope check at 8m radius — reuse for cliff detection
+			const _SLOPE_R := 8.0
+			var h_l := _snap_height_to_mesh(wx - _SLOPE_R, wz, height_func)
+			var h_r := _snap_height_to_mesh(wx + _SLOPE_R, wz, height_func)
+			var h_u := _snap_height_to_mesh(wx, wz - _SLOPE_R, height_func)
+			var h_d := _snap_height_to_mesh(wx, wz + _SLOPE_R, height_func)
+			var slope_x := absf(h_r - h_l) / (_SLOPE_R * 2.0)
+			var slope_z := absf(h_d - h_u) / (_SLOPE_R * 2.0)
+			if slope_x > 0.20 or slope_z > 0.20:
 				continue
-			# Cliff-edge rejection: skip if any nearby sample differs too much
-			var _cliff_near := false
-			for _pd in [2.5, 4.0, 8.0]:
-				if _cliff_near:
-					break
-				var _md: float
-				if _pd < 3.0:
-					_md = 1.2
-				elif _pd < 5.0:
-					_md = 2.0
-				else:
-					_md = 3.5
-				if absf(_hc - _snap_height_to_mesh(wx + _pd, wz, height_func)) > _md \
-						or absf(_hc - _snap_height_to_mesh(wx - _pd, wz, height_func)) > _md \
-						or absf(_hc - _snap_height_to_mesh(wx, wz + _pd, height_func)) > _md \
-						or absf(_hc - _snap_height_to_mesh(wx, wz - _pd, height_func)) > _md \
-						or absf(_hc - _snap_height_to_mesh(wx + _pd * 0.7, wz + _pd * 0.7, height_func)) > _md \
-						or absf(_hc - _snap_height_to_mesh(wx - _pd * 0.7, wz + _pd * 0.7, height_func)) > _md:
-					_cliff_near = true
-			if _cliff_near:
+			# Cliff-edge rejection: check if nearby samples differ too much from center
+			var _hc := ground_y
+			if absf(_hc - h_l) > 3.0 or absf(_hc - h_r) > 3.0 \
+					or absf(_hc - h_u) > 3.0 or absf(_hc - h_d) > 3.0:
 				continue
 			if is_dirt_patch(wx, wz):
 				continue
@@ -1772,7 +1755,7 @@ static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) ->
 
 
 static func _terrain_normal_y(wx: float, wz: float, height_func: Callable) -> float:
-	const STEP := ZONE_SIZE / 48.0
+	const STEP := ZONE_SIZE / 32.0
 	var h_left := float(height_func.call(wx - STEP, wz))
 	var h_right := float(height_func.call(wx + STEP, wz))
 	var h_up := float(height_func.call(wx, wz - STEP))
@@ -1786,7 +1769,7 @@ static func _terrain_normal_y(wx: float, wz: float, height_func: Callable) -> fl
 ## instead of 8 (4 for snap + 4 for normal separately).
 ## Returns Vector2(snapped_height, normal_y).
 static func _snap_and_normal(wx: float, wz: float, height_func: Callable) -> Vector2:
-	const STEP := ZONE_SIZE / 48.0
+	const STEP := ZONE_SIZE / 32.0
 	var gx := floorf(wx / STEP) * STEP
 	var gz := floorf(wz / STEP) * STEP
 	var fx := (wx - gx) / STEP

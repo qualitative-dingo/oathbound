@@ -4158,6 +4158,8 @@ const _MINIMAP_LO := 36  # 180 / 5 â€” one pixel per stride cell
 var _minimap_lo_image: Image
 var _minimap_mask_lut: PackedByteArray  # 0=skip, 1=ring, 2=terrain
 var _minimap_ring_colors: PackedColorArray
+var _minimap_zone_color_cache: Dictionary = {}  # Vector2i -> Color
+var _minimap_last_pos: Vector3 = Vector3.ZERO
 
 func _ensure_minimap_lut() -> void:
 	if not _minimap_mask_lut.is_empty():
@@ -4202,8 +4204,6 @@ func _refresh_minimap() -> void:
 	var world_radius_map := _minimap_zoom * zone_size
 	var meters_per_lo_pixel := world_radius_map / float(half_lo)
 
-	var zone_cache: Dictionary = {}
-
 	for ly in _MINIMAP_LO:
 		for lx in _MINIMAP_LO:
 			var idx := ly * _MINIMAP_LO + lx
@@ -4222,8 +4222,8 @@ func _refresh_minimap() -> void:
 				floori(world_z / zone_size))
 
 			var col: Color
-			if zone_cache.has(zone_coord):
-				col = zone_cache[zone_coord] as Color
+			if _minimap_zone_color_cache.has(zone_coord):
+				col = _minimap_zone_color_cache[zone_coord] as Color
 			else:
 				var zx := (float(zone_coord.x) + 0.5) * zone_size
 				var zz := (float(zone_coord.y) + 0.5) * zone_size
@@ -4240,12 +4240,12 @@ func _refresh_minimap() -> void:
 						clampf(col.r * bright, 0.0, 1.0),
 						clampf(col.g * bright, 0.0, 1.0),
 						clampf(col.b * bright, 0.0, 1.0))
-				zone_cache[zone_coord] = col
+				_minimap_zone_color_cache[zone_coord] = col
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
-	var upscaled := _minimap_lo_image.duplicate()
-	upscaled.resize(MINIMAP_PX, MINIMAP_PX, Image.INTERPOLATE_NEAREST)
-	_minimap_image.copy_from(upscaled)
+	_minimap_lo_image.resize(MINIMAP_PX, MINIMAP_PX, Image.INTERPOLATE_NEAREST)
+	_minimap_image.copy_from(_minimap_lo_image)
+	_minimap_lo_image.resize(_MINIMAP_LO, _MINIMAP_LO, Image.INTERPOLATE_NEAREST)
 
 	_draw_arrow_on_image(_minimap_image, MINIMAP_PX / 2, 2.6)
 
@@ -8431,11 +8431,12 @@ func _process(delta: float) -> void:
 	if _tooltip_panel and _tooltip_panel.visible and _hud_root:
 		_tooltip_panel.position = _clamp_tooltip_pos(_hud_root.get_local_mouse_position())
 
-	# Minimap (always refreshes, instant on zoom)
+	# Minimap: longer interval when idle, shorter when moving
 	var _pc_tmm := Time.get_ticks_usec()
 	if not _minimap_paused:
 		_minimap_refresh_timer += delta
-		if _minimap_needs_refresh or _minimap_refresh_timer >= 0.8:
+		var refresh_interval := 0.8 if velocity.length_squared() > 1.0 else 2.0
+		if _minimap_needs_refresh or _minimap_refresh_timer >= refresh_interval:
 			_minimap_refresh_timer = 0.0
 			_refresh_minimap()
 	var _minimap_ms := float(Time.get_ticks_usec() - _pc_tmm) / 1000.0
