@@ -1013,10 +1013,10 @@ static func _scatter_grass(
 
 	# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
 	var grass_types: Array = [
-		[_grass_textures[0], Color(0.13, 0.40, 0.08), 100, 0.9, 1.7, 1.8, 1.2],
-		[_grass_textures[2], Color(0.16, 0.38, 0.10), 90, 0.9, 1.8, 1.9, 1.1],
-		[_grass_textures[10], Color(0.12, 0.36, 0.06), 80, 1.0, 1.9, 1.6, 1.6],
-		[_grass_textures[16], Color(0.14, 0.36, 0.08), 65, 0.9, 1.7, 1.7, 1.4],
+		[_grass_textures[0], Color(0.13, 0.40, 0.08), 300, 0.9, 1.7, 1.8, 1.2],
+		[_grass_textures[2], Color(0.16, 0.38, 0.10), 270, 0.9, 1.8, 1.9, 1.1],
+		[_grass_textures[10], Color(0.12, 0.36, 0.06), 240, 1.0, 1.9, 1.6, 1.6],
+		[_grass_textures[16], Color(0.14, 0.36, 0.08), 195, 0.9, 1.7, 1.7, 1.4],
 	]
 
 	var origin_x: float = coord.x * ZONE_SIZE
