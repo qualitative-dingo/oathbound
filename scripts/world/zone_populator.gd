@@ -40,6 +40,7 @@ static var _mat_leaves: Material
 static var _mat_pine_leaves: Material
 static var _mat_palm_leaves: Material
 static var _mat_stone: StandardMaterial3D
+static var _mat_pebble: StandardMaterial3D
 static var _rock_meshes: Array[ArrayMesh] = []
 static var _rock_convex_shapes: Array[ConvexPolygonShape3D] = []
 static var _mat_bush_leaves: Material
@@ -273,6 +274,14 @@ static func _ensure_textures() -> void:
 	# ── Stone material — wraps around SphereMesh rock ──
 	_mat_stone = _make_triplanar_mat(stone_tex, Color(0.5, 0.48, 0.45))
 	_mat_stone.uv1_scale = Vector3(3.0, 3.0, 3.0)
+	_mat_stone.normal_texture = _generate_stone_normal_map()
+	_mat_stone.normal_scale = 0.7
+
+	# ── Pebble material — flat, muted, no normal map ──
+	_mat_pebble = StandardMaterial3D.new()
+	_mat_pebble.albedo_color = Color(0.42, 0.40, 0.37)
+	_mat_pebble.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_mat_pebble.roughness = 0.95
 
 	# ── 30 unique procedural rock meshes ──
 	_rock_meshes.clear()
@@ -331,6 +340,25 @@ static func _generate_birch_bark_texture() -> ImageTexture:
 		if rng.randf() < 0.5 and sx + 1 < size:
 			img.set_pixel(sx + 1, sy, Color(dark + 0.05, dark * 0.9, dark * 0.75))
 
+	return ImageTexture.create_from_image(img)
+
+
+static func _generate_stone_normal_map() -> ImageTexture:
+	var size := 64
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5591
+	for y in range(size):
+		for x in range(size):
+			var fx := float(x) / float(size) * TAU
+			var fy := float(y) / float(size) * TAU
+			var n1 := sin(fx * 3.7 + fy * 2.3) * cos(fy * 4.1 - fx * 1.9)
+			var n2 := sin(fx * 7.3 - fy * 5.1) * 0.5
+			var n3 := cos(fx * 11.0 + fy * 9.7) * 0.3
+			var bump := (n1 + n2 + n3) * 0.3 + rng.randf_range(-0.08, 0.08)
+			var nx_val := clampf(0.5 + bump * 0.6, 0.0, 1.0)
+			var ny_val := clampf(0.5 + bump * 0.5 + rng.randf_range(-0.04, 0.04), 0.0, 1.0)
+			img.set_pixel(x, y, Color(nx_val, ny_val, 1.0))
 	return ImageTexture.create_from_image(img)
 
 
@@ -692,6 +720,20 @@ static func populate_zone_phase(
 				zone_root.add_child(obj)
 				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 				obj.position = Vector3(lx, ground_y, lz)
+
+			var pebble_n := rng.randi_range(rock_n * 2, rock_n * 4)
+			for i in pebble_n:
+				var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
+				var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
+				var wx := origin_x + lx
+				var wz := origin_z + lz
+				var h := float(height_func.call(wx, wz))
+				if h < 0.2:
+					continue
+				var peb := _create_pebble(rng)
+				zone_root.add_child(peb)
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				peb.position = Vector3(lx, ground_y + 0.05, lz)
 
 		if not debug_skip_stones:
 			var stone_n: int = rng.randi_range(1, 3)
@@ -1826,7 +1868,7 @@ static func _generate_rock_mesh(seed_idx: int) -> ArrayMesh:
 static func _create_rock(rng: RandomNumberGenerator) -> StaticBody3D:
 	var pooled := _ZonePool.get_rock_node()
 	if pooled:
-		var sf := rng.randf_range(0.2, 8.0)
+		var sf := rng.randf_range(1.2, 8.0)
 		pooled.set_meta("hp", 15.0 + sf * 5.0)
 		pooled.collision_mask = 0
 		return pooled
@@ -1837,21 +1879,27 @@ static func _create_rock(rng: RandomNumberGenerator) -> StaticBody3D:
 
 	var size_roll := rng.randf()
 	var sf: float
-	if size_roll < 0.5:
-		sf = rng.randf_range(0.2, 0.8)
-	elif size_roll < 0.8:
-		sf = rng.randf_range(0.8, 2.4)
-	elif size_roll < 0.95:
-		sf = rng.randf_range(2.4, 5.0)
+	if size_roll < 0.45:
+		sf = rng.randf_range(1.2, 2.5)
+	elif size_roll < 0.75:
+		sf = rng.randf_range(2.5, 4.0)
+	elif size_roll < 0.93:
+		sf = rng.randf_range(4.0, 6.0)
 	else:
-		sf = rng.randf_range(5.0, 8.0)
+		sf = rng.randf_range(6.0, 8.0)
 
 	var mesh_idx := rng.randi_range(0, _rock_meshes.size() - 1)
+
+	var tinted_mat := _mat_stone.duplicate() as StandardMaterial3D
+	tinted_mat.albedo_color = Color(
+		rng.randf_range(0.88, 1.12),
+		rng.randf_range(0.88, 1.12),
+		rng.randf_range(0.88, 1.12))
 
 	var rock_mi := MeshInstance3D.new()
 	rock_mi.name = "MeshInstance3D"
 	rock_mi.mesh = _rock_meshes[mesh_idx]
-	rock_mi.set_surface_override_material(0, _mat_stone)
+	rock_mi.set_surface_override_material(0, tinted_mat)
 	rock_mi.scale = Vector3(sf, sf, sf)
 	rock_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(rock_mi)
@@ -1872,6 +1920,27 @@ static func _create_rock(rng: RandomNumberGenerator) -> StaticBody3D:
 	root.set_meta("drop_min", maxi(3, int(sf * 1.5)))
 	root.set_meta("drop_max", maxi(6, int(sf * 2.4)))
 	root.set_meta("requires_tool", &"stone_pickaxe")
+
+	return root
+
+
+static func _create_pebble(rng: RandomNumberGenerator) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Pebble"
+
+	var sf := rng.randf_range(0.15, 0.45)
+	var mesh_idx := rng.randi_range(0, _rock_meshes.size() - 1)
+
+	var peb_mi := MeshInstance3D.new()
+	peb_mi.mesh = _rock_meshes[mesh_idx]
+	peb_mi.set_surface_override_material(0, _mat_pebble)
+	peb_mi.scale = Vector3(sf, sf * rng.randf_range(0.5, 0.8), sf)
+	peb_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(peb_mi)
+
+	root.rotation.y = rng.randf_range(0.0, TAU)
+	root.rotation.x = rng.randf_range(-0.2, 0.2)
+	root.rotation.z = rng.randf_range(-0.2, 0.2)
 
 	return root
 
