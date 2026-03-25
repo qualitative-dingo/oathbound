@@ -95,6 +95,11 @@ void fragment() {
 	// ── Shore alpha fade — smoothly hides the mesh/water intersection ──
 	float shore_alpha = smoothstep(0.0, 0.6, depth_diff);
 
+	// Suppress water on steep slope intersections where the water plane
+	// clips through hillsides — detected via rapid depth_diff change per pixel
+	float depth_grad = length(vec2(dFdx(depth_diff), dFdy(depth_diff)));
+	float slope_mask = 1.0 - smoothstep(0.5, 3.0, depth_grad);
+
 	// ── Foam along shoreline ──
 	float foam_noise = vnoise(world_pos.xz * 1.5 + vec2(TIME * 0.3, TIME * 0.2));
 	float foam_noise2 = vnoise(world_pos.xz * 3.0 - vec2(TIME * 0.2, TIME * 0.4));
@@ -111,7 +116,7 @@ void fragment() {
 	vec4 final_col = mix(water_col, foam_color, total_foam);
 
 	ALBEDO = final_col.rgb;
-	ALPHA = max(final_col.a * shore_alpha, total_foam * 0.9);
+	ALPHA = max(final_col.a * shore_alpha, total_foam * 0.9) * slope_mask;
 	ROUGHNESS = mix(0.08, 0.35, total_foam);
 	METALLIC = mix(0.08, 0.0, total_foam);
 	SPECULAR = mix(0.5, 0.1, total_foam);
