@@ -181,7 +181,7 @@ var _cave_instance: Node3D = null
 var _cave_return_pos: Vector3 = Vector3.ZERO
 var _cave_entrance_node: Node3D = null
 
-# Movement audio — dedicated looping players (one per sound type, no stacking)
+# Movement audio â€” dedicated looping players (one per sound type, no stacking)
 var _footstep_player: AudioStreamPlayer
 var _gallop_player: AudioStreamPlayer
 var _gallop_fast_stream: AudioStream
@@ -921,18 +921,18 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 			if _build_snapped:
-				_build_rotation -= deg_to_rad(90.0)
+				_build_rotation = snappedf(_build_rotation - deg_to_rad(45.0), deg_to_rad(45.0))
 			else:
 				_build_rotation -= deg_to_rad(15.0)
 			return
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			if _build_snapped:
-				_build_rotation += deg_to_rad(90.0)
+				_build_rotation = snappedf(_build_rotation + deg_to_rad(45.0), deg_to_rad(45.0))
 			else:
 				_build_rotation += deg_to_rad(15.0)
 			return
 
-	# Map zoom with scroll wheel — smooth target, no instant rebuild
+	# Map zoom with scroll wheel â€” smooth target, no instant rebuild
 	if _map_open and event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -1237,7 +1237,7 @@ func _apply_gravity(delta: float) -> void:
 	var grounded := is_on_floor()
 
 	if submersion > 0.2 and (not grounded or submersion > 0.6):
-		# Under water — apply buoyancy and damping instead of gravity
+		# Under water â€” apply buoyancy and damping instead of gravity
 		# When grounded (walking on riverbed), require deeper submersion to swim
 		_is_swimming = true
 		var buoy := submersion * BUOYANCY_FORCE
@@ -1245,7 +1245,7 @@ func _apply_gravity(delta: float) -> void:
 		velocity.y -= velocity.y * WATER_DAMPING * delta
 		velocity.y = clampf(velocity.y, -6.0, 4.0)
 	elif submersion > -0.3 and velocity.y < 0.0 and not grounded:
-		# Near surface falling — gentle decel (bobbing zone)
+		# Near surface falling â€” gentle decel (bobbing zone)
 		# Only when airborne; grounded players follow terrain normally
 		_is_swimming = true
 		velocity.y *= 1.0 - 3.0 * delta
@@ -1299,7 +1299,7 @@ func _clamp_to_terrain() -> void:
 
 	var surface_y: float = result["position"].y
 	var below_surface := surface_y - global_position.y
-	# Don't snap upward when airborne — let gravity work
+	# Don't snap upward when airborne â€” let gravity work
 	if not is_on_floor():
 		return
 	var snap_threshold := 0.05 if _mounted else 0.15
@@ -1345,7 +1345,7 @@ func _step_up_move_and_slide() -> void:
 
 	move_and_slide()
 
-	# If we left the floor (walked off an edge), let gravity take over — don't retry
+	# If we left the floor (walked off an edge), let gravity take over â€” don't retry
 	if not is_on_floor():
 		return
 
@@ -1676,7 +1676,7 @@ func _setup_player_sprite() -> void:
 		_player_sprite.position.y = _base_sprite_y
 		if _model:
 			_model.add_child(_player_sprite)
-		if _DEBUG_LOG: print("[PLAYER MODEL] Loaded %s — scale=%.2f" % [gltf_path.get_file(), s])
+		if _DEBUG_LOG: print("[PLAYER MODEL] Loaded %s â€” scale=%.2f" % [gltf_path.get_file(), s])
 		_gltf_anim_player = _find_anim_player(_player_sprite)
 		if _gltf_anim_player:
 			_gltf_anim_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
@@ -1717,7 +1717,7 @@ func _setup_player_sprite() -> void:
 			_apply_oathbound_shader()
 			_enhance_character_model()
 		else:
-			if _DEBUG_LOG: print("[PLAYER MODEL] Tripo model — skipping Blockbench shaders")
+			if _DEBUG_LOG: print("[PLAYER MODEL] Tripo model â€” skipping Blockbench shaders")
 		call_deferred("_update_equipped_weapon_model")
 		call_deferred("_update_armor_visuals")
 	else:
@@ -3842,7 +3842,7 @@ func _set_target_creature(creature: Node3D) -> void:
 	if stars > 0:
 		var star_str := " "
 		for i in stars:
-			star_str += "★"
+			star_str += "â˜…"
 		_target_hud_stars.text = star_str
 		_target_hud_stars.add_theme_color_override("font_color", ItemDatabase.get_rarity_color(stars))
 		_target_hud_stars.visible = true
@@ -3896,7 +3896,7 @@ func _build_minimap(root: Control) -> void:
 	root.add_child(outer)
 	_minimap_outer = outer
 
-	# ── Biome name banner (grey translucent box, like WoW's "Mulgore") ──
+	# â”€â”€ Biome name banner (grey translucent box, like WoW's "Mulgore") â”€â”€
 	var banner := PanelContainer.new()
 	banner.name = "BiomeBanner"
 	var bstyle := StyleBoxFlat.new()
@@ -3928,7 +3928,7 @@ func _build_minimap(root: Control) -> void:
 	_minimap_biome_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	banner.add_child(_minimap_biome_label)
 
-	# ── Map circle area (the circular texture) ──
+	# â”€â”€ Map circle area (the circular texture) â”€â”€
 	var map_clip := Control.new()
 	map_clip.name = "MapClip"
 	map_clip.position = Vector2(circle_x, circle_y)
@@ -3947,7 +3947,7 @@ func _build_minimap(root: Control) -> void:
 	_minimap_tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_clip.add_child(_minimap_tex_rect)
 
-	# ── "N" compass indicator at top of circle ──
+	# â”€â”€ "N" compass indicator at top of circle â”€â”€
 	var north_lbl := Label.new()
 	north_lbl.text = "N"
 	north_lbl.add_theme_font_size_override("font_size", 13)
@@ -3961,11 +3961,11 @@ func _build_minimap(root: Control) -> void:
 	north_lbl.z_index = 6
 	map_clip.add_child(north_lbl)
 
-	# ── Icons placed on the circle ring edge ──
+	# â”€â”€ Icons placed on the circle ring edge â”€â”€
 	var half_d := float(circle_d) / 2.0
 	var ring_r := half_d - 1.0
 
-	# Weather icon — top-right (about 1:30 on a clock, ~60° from top)
+	# Weather icon â€” top-right (about 1:30 on a clock, ~60Â° from top)
 	var weather_angle := -PI * 0.28
 	var wx := circle_x + half_d + ring_r * sin(weather_angle) - 14.0
 	var wy := circle_y + half_d - ring_r * cos(weather_angle) - 14.0
@@ -3975,7 +3975,7 @@ func _build_minimap(root: Control) -> void:
 
 	_minimap_weather_label = Label.new()
 	_minimap_weather_label.name = "WeatherIcon"
-	_minimap_weather_label.text = "☀"
+	_minimap_weather_label.text = "â˜€"
 	_minimap_weather_label.add_theme_font_size_override("font_size", 16)
 	_minimap_weather_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.75))
 	_minimap_weather_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -3985,7 +3985,7 @@ func _build_minimap(root: Control) -> void:
 	_minimap_weather_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	weather_frame.add_child(_minimap_weather_label)
 
-	# Zoom + button — bottom-right (about 4 o'clock, ~120° from top)
+	# Zoom + button â€” bottom-right (about 4 o'clock, ~120Â° from top)
 	var zp_angle := PI * 0.35
 	var zp_x := circle_x + half_d + ring_r * sin(zp_angle) - 13.0
 	var zp_y := circle_y + half_d - ring_r * cos(zp_angle) - 13.0
@@ -4006,7 +4006,7 @@ func _build_minimap(root: Control) -> void:
 	zoom_in_btn.pressed.connect(func() -> void: _minimap_do_zoom(-MINIMAP_ZOOM_STEP))
 	zoom_in_frame.add_child(zoom_in_btn)
 
-	# Zoom - button — below + (about 5 o'clock, ~150° from top)
+	# Zoom - button â€” below + (about 5 o'clock, ~150Â° from top)
 	var zm_angle := PI * 0.45
 	var zm_x := circle_x + half_d + ring_r * sin(zm_angle) - 13.0
 	var zm_y := circle_y + half_d - ring_r * cos(zm_angle) - 13.0
@@ -4027,7 +4027,7 @@ func _build_minimap(root: Control) -> void:
 	zoom_out_btn.pressed.connect(func() -> void: _minimap_do_zoom(MINIMAP_ZOOM_STEP))
 	zoom_out_frame.add_child(zoom_out_btn)
 
-	# ── Time label (bottom center, in a small dark banner) ──
+	# â”€â”€ Time label (bottom center, in a small dark banner) â”€â”€
 	var time_banner := PanelContainer.new()
 	time_banner.name = "TimeBanner"
 	var tstyle := StyleBoxFlat.new()
@@ -4059,7 +4059,7 @@ func _build_minimap(root: Control) -> void:
 	_minimap_time_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	time_banner.add_child(_minimap_time_label)
 
-	# ── Pre-compute circular mask (ring = gold, inside = white, outside = transparent) ──
+	# â”€â”€ Pre-compute circular mask (ring = gold, inside = white, outside = transparent) â”€â”€
 	_minimap_image = Image.create(MINIMAP_PX, MINIMAP_PX, false, Image.FORMAT_RGBA8)
 	_minimap_image_tex = ImageTexture.new()
 	_minimap_circle_mask = Image.create(MINIMAP_PX, MINIMAP_PX, false, Image.FORMAT_RGBA8)
@@ -4153,7 +4153,7 @@ func _draw_arrow_on_image(img: Image, half_px: int, scale: float = 1.0) -> void:
 		img.set_pixel(half_px, half_px, center_col)
 
 
-const _MINIMAP_LO := 36  # 180 / 5 — one pixel per stride cell
+const _MINIMAP_LO := 36  # 180 / 5 â€” one pixel per stride cell
 
 var _minimap_lo_image: Image
 var _minimap_mask_lut: PackedByteArray  # 0=skip, 1=ring, 2=terrain
@@ -4514,12 +4514,12 @@ func _build_inventory_panel(root: Control) -> void:
 	info_rtl.fit_content = true
 	info_rtl.scroll_active = false
 	info_rtl.add_theme_font_size_override("normal_font_size", 11)
-	info_rtl.text = "[color=#e6c84a]★ Material Quality System[/color]\n\n" \
-		+ "[color=#aaaaaa]Items can drop with [/color][color=#ffffff]star ratings (0-5★)[/color][color=#aaaaaa] from monsters and resources. " \
+	info_rtl.text = "[color=#e6c84a]â˜… Material Quality System[/color]\n\n" \
+		+ "[color=#aaaaaa]Items can drop with [/color][color=#ffffff]star ratings (0-5â˜…)[/color][color=#aaaaaa] from monsters and resources. " \
 		+ "Higher stars = better quality.[/color]\n\n" \
 		+ "[color=#e6c84a]Non-Equipment Crafting[/color]\n" \
 		+ "[color=#aaaaaa]Building pieces, tools, arrows, and other non-equipment recipes " \
-		+ "only consume [/color][color=#ffffff]unstarred (0★)[/color][color=#aaaaaa] materials. " \
+		+ "only consume [/color][color=#ffffff]unstarred (0â˜…)[/color][color=#aaaaaa] materials. " \
 		+ "Your starred materials are kept safe for equipment crafting.[/color]\n\n" \
 		+ "[color=#e6c84a]Equipment Crafting[/color]\n" \
 		+ "[color=#aaaaaa]Weapons and armor use starred materials based on the quality tier " \
@@ -4784,7 +4784,7 @@ func _on_equip_bar_hover(slot_name: String) -> void:
 func _build_stats_panel(root: Control) -> void:
 	_stats_arrow = Button.new()
 	_stats_arrow.name = "StatsArrow"
-	_stats_arrow.text = "▶"
+	_stats_arrow.text = "â–¶"
 	_stats_arrow.custom_minimum_size = Vector2(20, 60)
 	_stats_arrow.add_theme_font_size_override("font_size", 14)
 	_stats_arrow.add_theme_color_override("font_color", Color(0.8, 0.75, 0.55))
@@ -4874,7 +4874,7 @@ func _build_stats_panel(root: Control) -> void:
 		row.add_child(name_lbl)
 
 		var val_lbl := Label.new()
-		val_lbl.text = "—"
+		val_lbl.text = "â€”"
 		val_lbl.add_theme_font_size_override("font_size", 12)
 		val_lbl.add_theme_color_override("font_color", Color(0.95, 0.9, 0.75))
 		val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -4889,7 +4889,7 @@ func _build_stats_panel(root: Control) -> void:
 func _toggle_stats_panel() -> void:
 	_stats_open = not _stats_open
 	_stats_panel.visible = _stats_open
-	_stats_arrow.text = "◀" if _stats_open else "▶"
+	_stats_arrow.text = "â—€" if _stats_open else "â–¶"
 	if _stats_open:
 		_refresh_stats_panel()
 	_position_stats_panel()
@@ -5046,7 +5046,7 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	{"id": &"stone_door", "name": "Stone Door", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 8}],
 	 "mesh": "door", "color": Color(0.4, 0.4, 0.42), "size": Vector3(3.6, 5.0, 0.20)},
-	# Roofing – Building tab (wood)
+	# Roofing â€“ Building tab (wood)
 	{"id": &"thatch_roof_45", "name": "Thatch Roof 45\u00b0", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 6}],
 	 "mesh": "roof_45", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 2.0, 2.0),
@@ -5070,7 +5070,7 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	{"id": &"thatch_roof_ridge", "name": "Thatch Ridge Cap", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 2}],
 	 "mesh": "roof_ridge", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 0.15, 0.4)},
-	# Roofing – Heavy Build tab (stone)
+	# Roofing â€“ Heavy Build tab (stone)
 	{"id": &"slate_roof_45", "name": "Slate Roof 45\u00b0", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 6}],
 	 "mesh": "roof_45", "color": Color(0.35, 0.35, 0.4), "size": Vector3(2.0, 2.0, 2.0)},
@@ -5918,7 +5918,7 @@ func _get_build_recipe(build_id: StringName) -> Dictionary:
 	return {}
 
 
-# ── Building material cache ──────────────────────────────────────────────────
+# â”€â”€ Building material cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static var _bmat_wood: StandardMaterial3D
 static var _bmat_stone: StandardMaterial3D
 static var _bmat_thatch: StandardMaterial3D
@@ -5981,7 +5981,7 @@ func _make_ghost_material(build_id: StringName, fallback_color: Color) -> Standa
 	return mat
 
 
-# ── Roof wedge mesh ──────────────────────────────────────────────────────────
+# â”€â”€ Roof wedge mesh â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 static func _build_roof_mesh(sz: Vector3, rise: float) -> ArrayMesh:
 	var hw := sz.x * 0.5
 	var hd := sz.z * 0.5
@@ -6082,15 +6082,15 @@ static func _build_roof_icorner_mesh(sz: Vector3, rise: float) -> ArrayMesh:
 	var bl := Vector3(-hw, 0.0, -hd)
 	var br := Vector3( hw, 0.0, -hd)
 	var fl := Vector3(-hw, 0.0,  hd)
-	# Left slope: tl → fl → valley (triangle covering -X side)
+	# Left slope: tl â†’ fl â†’ valley (triangle covering -X side)
 	st.set_uv(Vector2(0, 0)); st.add_vertex(tl)
 	st.set_uv(Vector2(0, 1)); st.add_vertex(fl)
 	st.set_uv(Vector2(1, 1)); st.add_vertex(valley)
-	# Front slope: tl → valley → tb (the inner valley surface)
+	# Front slope: tl â†’ valley â†’ tb (the inner valley surface)
 	st.set_uv(Vector2(0, 0)); st.add_vertex(tl)
 	st.set_uv(Vector2(1, 1)); st.add_vertex(valley)
 	st.set_uv(Vector2(1, 0)); st.add_vertex(tb)
-	# Right slope: tb → valley → br (triangle covering -Z side)
+	# Right slope: tb â†’ valley â†’ br (triangle covering -Z side)
 	st.set_uv(Vector2(0, 0)); st.add_vertex(tb)
 	st.set_uv(Vector2(0, 1)); st.add_vertex(valley)
 	st.set_uv(Vector2(1, 1)); st.add_vertex(br)
@@ -6230,7 +6230,7 @@ static func _add_stair_collision(structure: StaticBody3D, sz: Vector3, _step_cou
 		structure.add_child(col_shape)
 
 
-# ── Snap system ──────────────────────────────────────────────────────────────
+# â”€â”€ Snap system â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const Z_FIGHT_OFFSET := 0.001
 
 const SNAP_COMPAT: Dictionary = {
@@ -6803,7 +6803,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	if not smoke_tex:
 		smoke_tex = _make_solid_tex(16, 16, Color(0.6, 0.6, 0.65, 0.15))
 
-	# ── Static logs beneath the fire (3 crossing logs, flat and centered) ──
+	# â”€â”€ Static logs beneath the fire (3 crossing logs, flat and centered) â”€â”€
 	for i in 3:
 		var log_sp := Sprite3D.new()
 		log_sp.texture = log_tex
@@ -6818,7 +6818,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		log_sp.rotation.x = -PI * 0.5 + randf_range(-0.08, 0.08)
 		structure.add_child(log_sp)
 
-	# ── Ember bed (glowing coal sprite flat on the ground) ──
+	# â”€â”€ Ember bed (glowing coal sprite flat on the ground) â”€â”€
 	var ember_sp := Sprite3D.new()
 	ember_sp.texture = ember_tex
 	ember_sp.pixel_size = 0.012
@@ -6834,7 +6834,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	# hiding the log/base artwork baked into the bottom of the generated PNGs.
 	var flame_region := Rect2(0, 0, 48, 30)
 
-	# ── Main campfire sprite (core flame — largest, always visible) ──
+	# â”€â”€ Main campfire sprite (core flame â€” largest, always visible) â”€â”€
 	var main_fire := Sprite3D.new()
 	main_fire.name = "MainFire"
 	main_fire.texture = fire_full_tex
@@ -6849,7 +6849,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	main_fire.modulate = Color(1.0, 0.95, 0.85, 0.95)
 	structure.add_child(main_fire)
 
-	# ── Multiple overlapping flame layers for depth and movement ──
+	# â”€â”€ Multiple overlapping flame layers for depth and movement â”€â”€
 	var flame_sprites: Array[Sprite3D] = []
 	flame_sprites.append(main_fire)
 
@@ -6901,7 +6901,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	structure.add_child(flame4)
 	flame_sprites.append(flame4)
 
-	# ── Smoke wisps (2 layers rising above the fire) ──
+	# â”€â”€ Smoke wisps (2 layers rising above the fire) â”€â”€
 	var smoke_sprites: Array[Sprite3D] = []
 	for si in 2:
 		var smoke := Sprite3D.new()
@@ -6917,7 +6917,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		structure.add_child(smoke)
 		smoke_sprites.append(smoke)
 
-	# ── Main fire light ──
+	# â”€â”€ Main fire light â”€â”€
 	var light := OmniLight3D.new()
 	light.name = "FireLight"
 	light.light_color = Color(1.0, 0.55, 0.15)
@@ -6928,7 +6928,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	light.position.y = 0.8
 	structure.add_child(light)
 
-	# ── Warm fill light at base ──
+	# â”€â”€ Warm fill light at base â”€â”€
 	var fill := OmniLight3D.new()
 	fill.light_color = Color(1.0, 0.3, 0.05)
 	fill.light_energy = 1.2
@@ -6938,13 +6938,13 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	fill.position.y = 0.15
 	structure.add_child(fill)
 
-	# ── Animate everything ──
+	# â”€â”€ Animate everything â”€â”€
 	_start_campfire_animation(structure, light, flame_sprites, smoke_sprites, ember_sp, fire_full_tex, fire_only_tex, flame_anim_frames)
 
-	# ── Campfire looping sound (non-positional via AudioManager for reliability) ──
+	# â”€â”€ Campfire looping sound (non-positional via AudioManager for reliability) â”€â”€
 	_start_campfire_sound(structure)
 
-	# ── Distance culling — hide fire visuals beyond render distance ──
+	# â”€â”€ Distance culling â€” hide fire visuals beyond render distance â”€â”€
 	_setup_campfire_distance_cull(structure)
 
 
@@ -7107,7 +7107,7 @@ func _start_campfire_animation(
 	var has_anim := frames_copy.size() >= 3
 	var frame_count := frames_copy.size()
 
-	# ── Frame-by-frame fire animation via a persistent Timer node ──
+	# â”€â”€ Frame-by-frame fire animation via a persistent Timer node â”€â”€
 	if has_anim:
 		var frame_idx := [0]
 		# Each flame layer starts at a different offset for varied motion
@@ -7136,7 +7136,7 @@ func _start_campfire_animation(
 			if is_instance_valid(flames[fi]):
 				flames[fi].texture = frames_copy[offsets[fi]] as Texture2D
 
-	# ── Flame dance + light flicker (runs every 0.08-0.2s) ──
+	# â”€â”€ Flame dance + light flicker (runs every 0.08-0.2s) â”€â”€
 	var _tick := [0]
 	var _flicker_ref: Array[Callable] = [Callable()]
 	_flicker_ref[0] = func() -> void:
@@ -7180,7 +7180,7 @@ func _start_campfire_animation(
 		tw.tween_callback(_flicker_ref[0])
 	_flicker_ref[0].call()
 
-	# ── Smoke drift (continuous rising wisps) ──
+	# â”€â”€ Smoke drift (continuous rising wisps) â”€â”€
 	var _smoke_ref: Array[Callable] = [Callable()]
 	_smoke_ref[0] = func() -> void:
 		if not is_instance_valid(structure):
@@ -7210,7 +7210,7 @@ func _start_campfire_animation(
 		timer.timeout.connect(_smoke_ref[0])
 	_smoke_ref[0].call()
 
-	# ── Ember sparks (small bright particles rising and dying) ──
+	# â”€â”€ Ember sparks (small bright particles rising and dying) â”€â”€
 	var spark_pool: Array[Sprite3D] = []
 	var spark_count := 6
 	var spark_img := Image.create(3, 3, false, Image.FORMAT_RGBA8)
@@ -7629,10 +7629,10 @@ func _refresh_map() -> void:
 					if px + sx < MAP_PX and py + sy < MAP_PX:
 						_map_image.set_pixel(px + sx, py + sy, col)
 
-	# ── Structure markers ──
+	# â”€â”€ Structure markers â”€â”€
 	_draw_structure_markers(half_px, zones_per_pixel, zone_size)
 
-	# ── Player marker — directional arrow ──
+	# â”€â”€ Player marker â€” directional arrow â”€â”€
 	_draw_player_arrow(half_px)
 
 	_map_image_tex.set_image(_map_image)
@@ -7767,7 +7767,7 @@ func _show_tooltip_for_item(item_id: StringName) -> void:
 		var rc: Color = ItemDatabase.get_rarity_color(tip_stars)
 		var hex := "#%02x%02x%02x" % [int(rc.r * 255), int(rc.g * 255), int(rc.b * 255)]
 		var rarity_name: String = ItemDatabase.RARITY_NAMES[clampi(tip_stars, 0, 5)]
-		text += "[color=%s][b]%s[/b] %s[/color]\n" % [hex, display_name, "★".repeat(tip_stars)]
+		text += "[color=%s][b]%s[/b] %s[/color]\n" % [hex, display_name, "â˜…".repeat(tip_stars)]
 		text += "[color=%s]%s[/color]\n" % [hex, rarity_name]
 	elif data.has("quality_color"):
 		var qc: Color = data["quality_color"] as Color
@@ -7808,7 +7808,7 @@ func _show_tooltip_for_item(item_id: StringName) -> void:
 	var tip_affixes: Array = parsed_tip.get("affixes", [])
 	var tip_rolls: Dictionary = parsed_tip.get("affix_rolls", {})
 	if not tip_affixes.is_empty():
-		text += "\n\n[color=#666666]───────────────[/color]"
+		text += "\n\n[color=#666666]â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€[/color]"
 		for affix_id in tip_affixes:
 			var affix_data: Dictionary = ItemDatabase.get_affix_data(affix_id)
 			if affix_data.is_empty():
@@ -7850,7 +7850,7 @@ func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id
 			max_stars = int(sv)
 		total += int(variants[sv])
 
-	var text := "[b]%s[/b]  ×%d\n" % [display_name, total]
+	var text := "[b]%s[/b]  Ã—%d\n" % [display_name, total]
 	text += "Type: %s\n" % item_type.capitalize()
 
 	if data.has("damage"):
@@ -7860,7 +7860,7 @@ func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id
 	if data.has("armor_slot"):
 		text += "Slot: %s\n" % str(data["armor_slot"]).capitalize()
 	if Inventory.is_equipped(display_id):
-		text += "◆ Equipped\n"
+		text += "â—† Equipped\n"
 		text += "[color=#999999]Right-click to unequip[/color]\n"
 	elif data.has("armor_slot"):
 		text += "[color=#999999]Right-click to equip[/color]\n"
@@ -7878,7 +7878,7 @@ func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id
 			if s == 0:
 				text += "  [color=%s]Common: %d[/color]\n" % [hex, amt]
 			else:
-				text += "  [color=%s]%s %s: %d[/color]\n" % [hex, "★".repeat(s), rarity_name, amt]
+				text += "  [color=%s]%s %s: %d[/color]\n" % [hex, "â˜…".repeat(s), rarity_name, amt]
 
 	if data.has("description"):
 		text += "\n%s" % str(data["description"])
@@ -7928,7 +7928,7 @@ func _on_hotbar_hover(slot_idx: int) -> void:
 
 
 # ===================================================================
-# INVENTORY REFRESH — drag weapons, right-click armor
+# INVENTORY REFRESH â€” drag weapons, right-click armor
 # ===================================================================
 
 func _refresh_inventory_ui() -> void:
@@ -8128,7 +8128,7 @@ func _spawn_craft_text(crafted_id: StringName) -> void:
 		num.text = "%s%s " % [prefix, display]
 		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		var star_lbl := Label3D.new()
-		star_lbl.text = "★".repeat(stars)
+		star_lbl.text = "â˜…".repeat(stars)
 		star_lbl.font_size = 28
 		star_lbl.pixel_size = 0.01
 		star_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -8744,7 +8744,7 @@ func _apply_damage_to_creature(creature: Node3D, amount: float) -> void:
 					var wss: WorldStateSync = wss_nodes[0] as WorldStateSync
 					wss.request_creature_damage.rpc_id(1, zx, zz, cidx, amount, NetworkManager.get_peer_id())
 				else:
-					if _DEBUG_LOG: print("[COMBAT] WorldStateSync not found — damage not sent")
+					if _DEBUG_LOG: print("[COMBAT] WorldStateSync not found â€” damage not sent")
 			else:
 				if _DEBUG_LOG: print("[COMBAT] Could not parse zone name '%s' for creature '%s'" % [zone_name, creature.name])
 	else:
@@ -9131,7 +9131,7 @@ func _hit_harvestable(node: Node3D, damage: float) -> void:
 	hp -= effective_dmg
 	node.set_meta("hp", hp)
 
-	# Trunk: very subtle wobble at the base — it's anchored in the ground
+	# Trunk: very subtle wobble at the base â€” it's anchored in the ground
 	var mesh := node.get_node_or_null("MeshInstance3D")
 	if not mesh:
 		mesh = node.get_node_or_null("Trunk")
@@ -9142,7 +9142,7 @@ func _hit_harvestable(node: Node3D, damage: float) -> void:
 		tween.tween_property(mesh, "rotation:z", deg_to_rad(0.4), 0.06)
 		tween.tween_property(mesh, "rotation:z", 0.0, 0.1)
 
-	# Canopy: big dramatic sway — momentum builds at the top
+	# Canopy: big dramatic sway â€” momentum builds at the top
 	var canopy := node.get_node_or_null("Canopy") as Node3D
 	if canopy:
 		var base_rz: float = canopy.rotation.z
@@ -9748,7 +9748,7 @@ func _try_interact() -> void:
 		_dismount()
 		return
 
-	# Cave exit — check first if inside a cave
+	# Cave exit â€” check first if inside a cave
 	if _in_cave:
 		for node in get_tree().get_nodes_in_group(&"interactables"):
 			var n3d := node as Node3D
@@ -10542,7 +10542,7 @@ func _rebuild_bow_draw_animation() -> void:
 		var parts := path.get_concatenated_names().split("/")
 		bone_paths[parts[-1] if parts.size() > 0 else path.get_concatenated_names()] = path
 
-	# 5 phases: idle → nock (reach to quiver) → raise → mid-draw → full draw
+	# 5 phases: idle â†’ nock (reach to quiver) â†’ raise â†’ mid-draw â†’ full draw
 	var times: PackedFloat32Array = PackedFloat32Array([0.0, 0.15, 0.40, 0.70, 1.0])
 	var kf: Dictionary = {
 		"L_UpperArm": {
@@ -10610,7 +10610,7 @@ func _rebuild_bow_release_animation() -> void:
 		var parts := path.get_concatenated_names().split("/")
 		bone_paths[parts[-1] if parts.size() > 0 else path.get_concatenated_names()] = path
 
-	# Release: snap → recoil → hold follow-through → return to idle
+	# Release: snap â†’ recoil â†’ hold follow-through â†’ return to idle
 	var times: PackedFloat32Array = PackedFloat32Array([0.0, 0.06, 0.15, 0.30, 0.45])
 	var kf: Dictionary = {
 		"R_UpperArm": {
@@ -10877,13 +10877,13 @@ func _apply_viking_texture() -> void:
 				mi.set_surface_override_material(surf_idx, glb_materials[mat_idx])
 				mat_idx += 1
 			else:
-				# More FBX surfaces than GLB materials — reuse last material
+				# More FBX surfaces than GLB materials â€” reuse last material
 				if not glb_materials.is_empty():
 					mi.set_surface_override_material(surf_idx, glb_materials[glb_materials.size() - 1])
 
 	if _DEBUG_LOG: print("[PLAYER MODEL] Applied %d materials to FBX meshes (%d surfaces)" % [glb_materials.size(), mat_idx])
 
-	# Free the temporary GLB instance — we only needed its materials
+	# Free the temporary GLB instance â€” we only needed its materials
 	glb_inst.queue_free()
 
 
@@ -11478,14 +11478,14 @@ func _create_stone_axe_2h() -> Node3D:
 	_add_box_part(root, "grip_hi1", Vector3(0.035, 0.020, 0.035), Vector3(0, -0.08, 0), leather_mat)
 	_add_box_part(root, "grip_hi2", Vector3(0.035, 0.020, 0.035), Vector3(0, -0.03, 0), leather_mat)
 
-	# ── Axe head — single-edge crescent blade ──
+	# â”€â”€ Axe head â€” single-edge crescent blade â”€â”€
 	# Core block where head meets handle
 	_add_box_part(root, "head_core", Vector3(0.09, 0.11, 0.034), Vector3(0.04, 0.33, 0), stone_mat)
 	# Main blade body
 	_add_box_part(root, "blade_body", Vector3(0.07, 0.16, 0.024), Vector3(0.10, 0.33, 0), stone_mat)
-	# Blade edge — taller crescent profile
+	# Blade edge â€” taller crescent profile
 	_add_box_part(root, "blade_edge", Vector3(0.05, 0.20, 0.016), Vector3(0.155, 0.33, 0), edge_mat)
-	# Blade tip — thin crescent point
+	# Blade tip â€” thin crescent point
 	_add_box_part(root, "blade_tip", Vector3(0.025, 0.17, 0.010), Vector3(0.19, 0.33, 0), edge_mat)
 	# Poll (back of head, small counterweight)
 	_add_box_part(root, "poll", Vector3(0.03, 0.06, 0.028), Vector3(-0.025, 0.33, 0), stone_mat)
@@ -11493,7 +11493,7 @@ func _create_stone_axe_2h() -> Node3D:
 	_add_box_part(root, "head_top", Vector3(0.07, 0.018, 0.030), Vector3(0.06, 0.40, 0), stone_mat)
 	_add_box_part(root, "head_bot", Vector3(0.07, 0.018, 0.030), Vector3(0.06, 0.26, 0), stone_mat)
 
-	# Leather bindings at head–shaft junction
+	# Leather bindings at headâ€“shaft junction
 	_add_box_part(root, "bind1", Vector3(0.044, 0.013, 0.044), Vector3(0, 0.26, 0), leather_mat)
 	_add_box_part(root, "bind2", Vector3(0.044, 0.013, 0.044), Vector3(0, 0.28, 0), leather_mat)
 	_add_box_part(root, "bind_x", Vector3(0.013, 0.06, 0.044), Vector3(0.005, 0.30, 0), leather_mat)
