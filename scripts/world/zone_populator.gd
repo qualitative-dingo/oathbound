@@ -1293,7 +1293,15 @@ static func _scatter_flowers(
 			var ground_y := sn.x
 			if ground_y < _MIN_LAND_Y or ground_y > 45.0:
 				continue
-			if sn.y < 0.88:
+			if sn.y < 0.93:
+				continue
+			var _fp := 1.5
+			var _fmd := 2.0
+			var _fhc := sn.x
+			if absf(_fhc - float(height_func.call(wx + _fp, wz))) > _fmd \
+					or absf(_fhc - float(height_func.call(wx - _fp, wz))) > _fmd \
+					or absf(_fhc - float(height_func.call(wx, wz + _fp))) > _fmd \
+					or absf(_fhc - float(height_func.call(wx, wz - _fp))) > _fmd:
 				continue
 			if is_on_path(wx, wz):
 				continue
@@ -1454,7 +1462,16 @@ static func _scatter_grass(
 			var ground_y := sn.x
 			if ground_y < _MIN_LAND_Y or ground_y > 40.0:
 				continue
-			if sn.y < 0.91:
+			if sn.y < 0.93:
+				continue
+			# Cliff-edge rejection: probe heights at quad-width offsets
+			var _probe := 2.0
+			var _max_drop := 2.5
+			var _hc := sn.x
+			if absf(_hc - float(height_func.call(wx + _probe, wz))) > _max_drop \
+					or absf(_hc - float(height_func.call(wx - _probe, wz))) > _max_drop \
+					or absf(_hc - float(height_func.call(wx, wz + _probe))) > _max_drop \
+					or absf(_hc - float(height_func.call(wx, wz - _probe))) > _max_drop:
 				continue
 			if is_dirt_patch(wx, wz):
 				continue
@@ -1464,8 +1481,8 @@ static func _scatter_grass(
 				continue
 			var cluster_boost := clampf((density - 0.18) * 1.6, 0.0, 1.0)
 			var scale := lerpf(scale_min, scale_max, cluster_boost)
-			var slope_factor := clampf((sn.y - 0.91) / 0.09, 0.0, 1.0)
-			scale *= lerpf(0.4, 1.0, slope_factor)
+			var slope_factor := clampf((sn.y - 0.93) / 0.07, 0.0, 1.0)
+			scale *= lerpf(0.35, 1.0, slope_factor)
 			scale *= rng.randf_range(0.85, 1.15)
 			var rot := rng.randf_range(0.0, TAU)
 
