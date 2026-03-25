@@ -3474,7 +3474,7 @@ func _build_speech_bubble(_root: Control) -> void:
 	bg_mat.no_depth_test = true
 	bg_mat.render_priority = 1
 	_speech_bg.material_override = bg_mat
-	_speech_bg.position = Vector3(0.0, 3.6, 0.0)
+	_speech_bg.position = Vector3(0.0, 4.8, 0.0)
 	_speech_bg.visible = false
 	add_child(_speech_bg)
 
@@ -3492,7 +3492,7 @@ func _build_speech_bubble(_root: Control) -> void:
 	_speech_label_3d.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_speech_label_3d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_speech_label_3d.width = 500.0
-	_speech_label_3d.position = Vector3(0.0, 3.6, 0.01)
+	_speech_label_3d.position = Vector3(0.0, 4.8, 0.01)
 	_speech_label_3d.render_priority = 2
 	_speech_label_3d.visible = false
 	add_child(_speech_label_3d)

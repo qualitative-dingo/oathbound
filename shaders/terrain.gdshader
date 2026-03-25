@@ -81,17 +81,19 @@ void fragment() {
 	vec3 world_pos = v_world_pos;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 
-	vec3 blend = abs(world_normal);
-	blend = pow(blend, vec3(8.0));
-	blend /= (blend.x + blend.y + blend.z + 0.0001);
-
 	float slope = 1.0 - abs(world_normal.y);
 
 	// Fix 1: fade vertex-color features on slopes to prevent zigzag mesh artifacts
 	float slope_path_fade = smoothstep(0.10, 0.03, slope);
 
-	// Fix 2: conservative steep override — only truly steep faces get procedural color
-	float steep_override = smoothstep(0.30, 0.55, slope);
+	// Fix 2: procedural color override on slopes — lower threshold catches moderate slopes too
+	float steep_override = smoothstep(0.20, 0.45, slope);
+
+	// Soften triplanar blending on steep terrain to reduce projection seam stripes
+	float blend_power = mix(8.0, 2.0, steep_override);
+	vec3 blend = abs(world_normal);
+	blend = pow(blend, vec3(blend_power));
+	blend /= (blend.x + blend.y + blend.z + 0.0001);
 
 	// Multi-scale noise to break up the slope contour into organic patches
 	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.08
