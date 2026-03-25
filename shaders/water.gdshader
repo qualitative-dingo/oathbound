@@ -13,7 +13,7 @@ uniform vec4 foam_color    : source_color = vec4(0.82, 0.88, 0.90, 0.85);
 
 group_uniforms depth;
 uniform float depth_distance : hint_range(0.1, 20.0)  = 3.0;
-uniform float foam_width : hint_range(0.01, 2.0)      = 0.5;
+uniform float foam_width : hint_range(0.01, 2.0)      = 1.2;
 
 group_uniforms surface;
 uniform float fresnel_power : hint_range(1.0, 8.0)  = 3.5;
@@ -111,7 +111,7 @@ void fragment() {
 	vec4 final_col = mix(water_col, foam_color, total_foam);
 
 	ALBEDO = final_col.rgb;
-	ALPHA = max(final_col.a * shore_alpha, total_foam * shore_alpha * 0.8);
+	ALPHA = max(final_col.a * shore_alpha, total_foam * 0.9);
 	ROUGHNESS = mix(0.08, 0.35, total_foam);
 	METALLIC = mix(0.08, 0.0, total_foam);
 	SPECULAR = mix(0.5, 0.1, total_foam);
