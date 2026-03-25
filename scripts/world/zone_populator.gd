@@ -1195,25 +1195,25 @@ static func _get_flower_types() -> Array:
 		# [texture, color, count, scale_min, scale_max, quad_w, quad_h]
 		_flower_types_table = [
 			# 0: Cornflower — blue
-			[_flower_textures[0], Color(0.30, 0.40, 0.88), 50, 0.6, 1.1, 0.9, 1.1],
+			[_flower_textures[0], Color(0.30, 0.40, 0.88), 10, 0.6, 1.1, 0.9, 1.1],
 			# 1: Red Poppy — red-orange
-			[_flower_textures[1], Color(0.90, 0.22, 0.15), 40, 0.6, 1.0, 0.8, 1.0],
+			[_flower_textures[1], Color(0.90, 0.22, 0.15), 8, 0.6, 1.0, 0.8, 1.0],
 			# 2: Buttercup — bright yellow
-			[_flower_textures[2], Color(0.95, 0.85, 0.15), 70, 0.5, 0.9, 0.7, 0.8],
+			[_flower_textures[2], Color(0.95, 0.85, 0.15), 14, 0.5, 0.9, 0.7, 0.8],
 			# 3: Lavender — purple
-			[_flower_textures[3], Color(0.60, 0.40, 0.80), 55, 0.6, 1.0, 0.8, 1.2],
+			[_flower_textures[3], Color(0.60, 0.40, 0.80), 11, 0.6, 1.0, 0.8, 1.2],
 			# 4: White Daisy — white
-			[_flower_textures[4], Color(0.95, 0.95, 0.90), 45, 0.6, 1.1, 0.9, 1.0],
+			[_flower_textures[4], Color(0.95, 0.95, 0.90), 9, 0.6, 1.1, 0.9, 1.0],
 			# 5: Wild Violet — deep purple-blue
-			[_flower_textures[5], Color(0.50, 0.30, 0.75), 55, 0.5, 0.9, 0.7, 0.9],
+			[_flower_textures[5], Color(0.50, 0.30, 0.75), 11, 0.5, 0.9, 0.7, 0.9],
 			# 6: Clover — pink/rose
-			[_flower_textures[6], Color(0.85, 0.45, 0.55), 60, 0.5, 0.9, 0.7, 0.9],
+			[_flower_textures[6], Color(0.85, 0.45, 0.55), 12, 0.5, 0.9, 0.7, 0.9],
 			# 7: Dandelion — bright yellow
-			[_flower_textures[7], Color(0.95, 0.80, 0.10), 50, 0.6, 1.0, 0.8, 1.0],
+			[_flower_textures[7], Color(0.95, 0.80, 0.10), 10, 0.6, 1.0, 0.8, 1.0],
 			# 8: Chamomile — soft white-green
-			[_flower_textures[8], Color(0.80, 0.85, 0.70), 65, 0.5, 0.9, 0.7, 0.8],
+			[_flower_textures[8], Color(0.80, 0.85, 0.70), 13, 0.5, 0.9, 0.7, 0.8],
 			# 9: Bluebell — soft blue
-			[_flower_textures[9], Color(0.45, 0.55, 0.85), 50, 0.6, 1.0, 0.8, 1.1],
+			[_flower_textures[9], Color(0.45, 0.55, 0.85), 10, 0.6, 1.0, 0.8, 1.1],
 		]
 	return _flower_types_table
 
@@ -3642,7 +3642,7 @@ static func _scatter_water_plants(
 			zone_root.add_child(cattail)
 
 	# ── Purple Loosestrife — damp bank just above the waterline ──
-	var loosestrife_count := rng.randi_range(8, 20)
+	var loosestrife_count := rng.randi_range(16, 40)
 	for _i in loosestrife_count:
 		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
