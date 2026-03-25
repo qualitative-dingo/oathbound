@@ -3573,7 +3573,7 @@ static func _ensure_water_plants() -> void:
 	# Lily flower — detailed pink/white bloom with vertex color gradient
 	_lily_flower_mesh = _gen_lily_flower_mesh()
 	_lily_flower_mat = StandardMaterial3D.new()
-	_lily_flower_mat.albedo_color = Color.WHITE
+	_lily_flower_mat.albedo_color = Color(1.0, 0.85, 0.90)
 	_lily_flower_mat.vertex_color_use_as_albedo = true
 	_lily_flower_mat.roughness = 0.75
 	_lily_flower_mat.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
@@ -3662,10 +3662,10 @@ static func _gen_lily_flower_mesh() -> ArrayMesh:
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 
-	var white := Color(1.0, 0.97, 0.95)
-	var pink_base := Color(0.92, 0.38, 0.58)
-	var pink_deep := Color(0.82, 0.22, 0.45)
-	var yellow := Color(0.95, 0.85, 0.25)
+	var white := Color(0.98, 0.80, 0.85)
+	var pink_base := Color(0.95, 0.40, 0.55)
+	var pink_deep := Color(0.85, 0.18, 0.38)
+	var yellow := Color(0.95, 0.75, 0.25)
 
 	# Outer petals — 8 wide, gently cupped petals with 3 segments each
 	for p in 8:
@@ -4038,7 +4038,7 @@ static func _scatter_water_plants(
 			flower.mesh = _lily_flower_mesh
 			flower.material_override = _lily_flower_mat
 			flower.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			flower.scale = Vector3(5.1, 5.1, 5.1)
+			flower.scale = Vector3(0.65, 0.65, 0.65)
 			var off_angle := rng.randf_range(0.0, TAU)
 			var off_dist := rng.randf_range(0.0, 0.12)
 			flower.position = Vector3(cos(off_angle) * off_dist, 0.0, sin(off_angle) * off_dist)
@@ -4091,9 +4091,9 @@ static func _scatter_water_plants(
 		return
 	var reed_hash := absf(sin(float(coord.x * 97 + coord.y * 163) * 0.1))
 	var num_clumps := 0
-	if reed_hash > 0.3:
-		var reed_d := (reed_hash - 0.3) / 0.7
-		num_clumps = rng.randi_range(int(3.0 + reed_d * 6.0), int(6.0 + reed_d * 15.0))
+	if reed_hash > 0.88:
+		var reed_d := (reed_hash - 0.88) / 0.12
+		num_clumps = rng.randi_range(int(2.0 + reed_d * 4.0), int(4.0 + reed_d * 8.0))
 
 	var transforms: Array[Transform3D] = []
 	for _c in num_clumps:
@@ -4109,10 +4109,10 @@ static func _scatter_water_plants(
 				break
 		if not found:
 			continue
-		var reeds_in_clump := rng.randi_range(8, 22)
+		var reeds_in_clump := rng.randi_range(30, 70)
 		for _r in reeds_in_clump:
-			var ox := rng.randf_range(-1.8, 1.8)
-			var oz := rng.randf_range(-1.8, 1.8)
+			var ox := rng.randf_range(-5.4, 5.4)
+			var oz := rng.randf_range(-5.4, 5.4)
 			var wx := origin_x + cx + ox
 			var wz := origin_z + cz + oz
 			var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
