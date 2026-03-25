@@ -81,21 +81,21 @@ void fragment() {
 	vec3 world_pos = v_world_pos;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 
-	float slope = 1.0 - abs(world_normal.y);
-
-	// Slope-driven overrides computed once, used throughout to suppress detail effects
-	float steep_override = smoothstep(0.15, 0.40, slope);
-	float steep_bump = smoothstep(0.35, 0.55, slope);
-
-	// Soften triplanar blending on steep terrain so adjacent faces don't show seams
-	float blend_power = mix(8.0, 2.0, smoothstep(0.12, 0.35, slope));
 	vec3 blend = abs(world_normal);
-	blend = pow(blend, vec3(blend_power));
+	blend = pow(blend, vec3(8.0));
 	blend /= (blend.x + blend.y + blend.z + 0.0001);
 
+	float slope = 1.0 - abs(world_normal.y);
+
+	// Fix 1: fade vertex-color features on slopes to prevent zigzag mesh artifacts
+	float slope_path_fade = smoothstep(0.10, 0.03, slope);
+
+	// Fix 2: conservative steep override — only truly steep faces get procedural color
+	float steep_override = smoothstep(0.30, 0.55, slope);
+
 	// Multi-scale noise to break up the slope contour into organic patches
-	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.15
-	                   + (vnoise(world_pos.xz * 0.6 + vec2(200.0, 140.0)) - 0.5) * 0.08;
+	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.08
+	                   + (vnoise(world_pos.xz * 0.6 + vec2(200.0, 140.0)) - 0.5) * 0.04;
 
 	// Domain-warped large blobs for organic slope transitions
 	vec2 warp = vec2(
@@ -103,17 +103,12 @@ void fragment() {
 		fbm2(world_pos.xz * 0.025 + vec2(810.0, 560.0))
 	) * 25.0;
 	float patch_noise = fbm2((world_pos.xz + warp) * 0.03 + vec2(90.0, 260.0));
-	slope_noise += (patch_noise - 0.5) * 0.18;
-
-	// High-frequency noise at mesh-grid scale to break up per-triangle stripe artifacts
-	float hf_break = (vnoise(world_pos.xz * 2.5 + vec2(311.0, 527.0)) - 0.5) * 0.12
-	               + (vnoise(world_pos.xz * 5.0 + vec2(719.0, 163.0)) - 0.5) * 0.06;
-	slope_noise += hf_break * smoothstep(0.08, 0.25, slope);
+	slope_noise += (patch_noise - 0.5) * 0.10;
 
 	float noisy_slope = slope + slope_noise;
 
-	float flat_w  = smoothstep(slope_start + 0.18, slope_start, noisy_slope);
-	float cliff_w = smoothstep(cliff_start, cliff_start + 0.25, noisy_slope);
+	float flat_w  = smoothstep(slope_start + 0.12, slope_start, noisy_slope);
+	float cliff_w = smoothstep(cliff_start, cliff_start + 0.18, noisy_slope);
 	float slope_w = max(1.0 - flat_w - cliff_w, 0.0);
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
@@ -126,10 +121,7 @@ void fragment() {
 	float adj_flat_w  = flat_w + scatter_mask;
 	float adj_slope_w = max(slope_w - scatter_mask, 0.0);
 
-	// Blend slope/cliff toward grass texture for a mossy rock look, then darken
-	vec3 mossy_slope = mix(col_slope, col_flat, 0.40) * vec3(0.55, 0.52, 0.42);
-	vec3 mossy_cliff = mix(col_cliff, col_flat, 0.30) * vec3(0.48, 0.46, 0.38);
-	vec3 albedo = col_flat * adj_flat_w + mossy_slope * adj_slope_w + mossy_cliff * cliff_w;
+	vec3 albedo = col_flat * adj_flat_w + col_slope * adj_slope_w + col_cliff * cliff_w;
 
 	float n_large = fbm2(world_pos.xz * 0.012);
 	float n_med   = fbm2(world_pos.xz * 0.04 + vec2(50.0, 80.0));
@@ -145,58 +137,48 @@ void fragment() {
 		fbm2(world_pos.xz * 0.012 + vec2(359.0, 83.0))
 	) * 28.0;
 
-	// Tight slope fade for all vertex-color features to prevent zigzag mesh artifacts
-	float slope_path_fade = smoothstep(0.10, 0.03, slope);
-
-	// Solid colors for detail overlays — avoid raw triplanar col_slope which streaks on slopes
-	vec3 mud_color = vec3(0.18, 0.15, 0.10);
-	vec3 path_detail_col = vec3(0.14, 0.10, 0.06);
-
 	float mud = fbm2((world_pos.xz + terrain_warp) * 0.02 + vec2(200.0, 300.0));
-	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength * (1.0 - steep_override);
-	albedo = mix(albedo, mud_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), mud_mask * 0.8);
+	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength;
+	albedo = mix(albedo, col_slope * 0.75, mud_mask * 0.8);
 
 	float dirt_noise = fbm2((world_pos.xz + terrain_warp) * 0.018 + vec2(500.0, 700.0));
 	float dirt_thresh = 0.5 + (0.5 - dirt_patch_amount) * 0.6;
-	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w * (1.0 - steep_override);
+	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w;
 	albedo = mix(albedo, dirt_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), dirt_mask);
 
-	// Clay paths from vertex color R channel — per-pixel noise breaks up vertex-grid edges
-	float path_perturb = (vnoise(world_pos.xz * 0.4 + vec2(777.0, 333.0)) - 0.5) * 0.35
-	                    + (vnoise(world_pos.xz * 1.2 + vec2(191.0, 573.0)) - 0.5) * 0.15;
+	// Clay paths — use slope_path_fade instead of flat_w to kill zigzags on slopes
+	float path_perturb = (vnoise(world_pos.xz * 0.4 + vec2(777.0, 333.0)) - 0.5) * 0.25;
 	float pm = smoothstep(0.2, 0.7, v_path_mask + path_perturb) * slope_path_fade;
-	vec3 path_base = path_color * path_detail_col * 8.0;
+	vec3 dirt_detail = col_slope * 0.6 + col_flat * 0.15;
+	vec3 path_base = path_color * dirt_detail * 4.0;
 	path_base *= (0.85 + vnoise(world_pos.xz * 0.12 + vec2(900.0, 400.0)) * 0.2);
 	path_base *= (0.9 + fbm2(world_pos.xz * 0.06 + vec2(150.0, 250.0)) * 0.15);
 	albedo = mix(albedo, path_base, pm);
 
-	// River bank blending — muddy/sandy shoreline near water from vertex B channel
+	// River bank — use slope_path_fade instead of flat_w to kill zigzags on slopes
 	float bank_noise = vnoise(world_pos.xz * 0.15 + vec2(444.0, 222.0));
 	float bank_detail = vnoise(world_pos.xz * 0.6 + vec2(111.0, 555.0));
 	float bank_mask = smoothstep(0.1, 0.6, v_river_bank + (bank_noise - 0.5) * 0.3);
-	vec3 bank_detail_col = mud_color * 0.7 + bank_color * 0.3;
+	vec3 bank_detail_col = col_slope * 0.5 + bank_color * 0.5;
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
 	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
 
-	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2 * (1.0 - steep_override);
+	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2;
 	albedo *= (1.0 - ao_mask);
 
-	float ground_shadow = flat_w * 0.12 * (1.0 - dirt_mask) * (1.0 - pm) * (1.0 - steep_override);
+	float ground_shadow = flat_w * 0.12 * (1.0 - dirt_mask) * (1.0 - pm);
 	albedo *= (1.0 - ground_shadow);
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// Replace triplanar texture with solid procedural color on slopes
+	// Fix 2: replace triplanar texture with solid procedural color on steep faces
 	float rock_n = fbm2(world_pos.xz * 0.06 + vec2(421.0, 637.0));
 	float rock_d = vnoise(world_pos.xz * 0.25 + vec2(159.0, 843.0));
-	float rock_h = vnoise(vec2(world_pos.y * 0.08, (world_pos.x + world_pos.z) * 0.04) + vec2(283.0, 941.0));
-	vec3 unified_steep = vec3(0.36, 0.38, 0.29) * (0.75 + rock_n * 0.25 + rock_d * 0.12 + rock_h * 0.10);
+	vec3 unified_steep = vec3(0.36, 0.38, 0.29) * (0.80 + rock_n * 0.20 + rock_d * 0.10);
 	albedo = mix(albedo, unified_steep, steep_override);
 
-	// Biome tint — steep terrain gets strong biome color
-	float tint_strength = flat_w * (1.0 - steep_override) + steep_override * 0.80
-	                    + slope_w * 0.90 * (1.0 - steep_override)
-	                    + cliff_w * 0.60 * (1.0 - steep_override);
+	// Biome tint — steep terrain gets biome color so it blends with surroundings
+	float tint_strength = flat_w + slope_w * 0.25 + steep_override * 0.70;
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
 	ALBEDO = albedo * final_tint * v_brightness;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
@@ -206,7 +188,7 @@ void fragment() {
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
-	// Rock bump only on gentle slopes — dFdx/dFdy create hard edge lines on steep faces
+	// Fix 3: gate dFdx/dFdy bump — hard edge lines on steep faces
 	float rock_strength = (slope_w + cliff_w) * 0.6 * (1.0 - steep_override);
 	if (rock_strength > 0.01) {
 		float rn1 = vnoise(world_pos.xz * 2.5 + vec2(311.0, 719.0));
@@ -218,15 +200,5 @@ void fragment() {
 			0.0,
 			dFdy(rock_detail) * 40.0 * rock_strength
 		));
-	}
-	// Subtle smooth bump only on truly steep terrain
-	if (steep_bump > 0.01) {
-		float eps = 0.5;
-		vec2 sp = world_pos.xz * 0.6;
-		float bump_c = fbm2(sp + vec2(311.0, 719.0));
-		float bump_x = fbm2(sp + vec2(311.0 + eps, 719.0));
-		float bump_z = fbm2(sp + vec2(311.0, 719.0 + eps));
-		vec3 bump_dir = vec3(bump_x - bump_c, 0.0, bump_z - bump_c) / eps;
-		NORMAL = normalize(NORMAL + bump_dir * 3.0 * steep_bump);
 	}
 }
