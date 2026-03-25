@@ -139,7 +139,7 @@ func fire_bow() -> void:
 	var aim_dir := (aim_target - spawn_pos).normalized()
 	var affixes := get_active_affixes()
 	var crit_chance: float = 5.0 + pc.base_dexterity * 0.5
-	var crit_dmg_mult := (150.0 + pc.base_strength * 2.0) / 100.0
+	var crit_dmg_mult: float = (150.0 + pc.base_strength * 2.0) / 100.0
 	if affixes.has(&"steady_aim") and pc.velocity.length() < 0.5:
 		crit_chance += affix_val(&"steady_aim")
 	if randf() < crit_chance / 100.0:
@@ -1003,7 +1003,7 @@ func resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, s
 	var kb := wpn_knockback
 
 	var crit_chance: float = 5.0 + pc.base_dexterity * 0.5
-	var crit_mult := (150.0 + pc.base_strength * 2.0) / 100.0
+	var crit_mult: float = (150.0 + pc.base_strength * 2.0) / 100.0
 	if affixes.has(&"sharpened"):
 		crit_chance += affix_val(&"sharpened")
 	if affixes.has(&"savage"):
