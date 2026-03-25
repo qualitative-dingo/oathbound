@@ -6,6 +6,7 @@ extends Node
 ## ItemDatabase, AudioManager) are NOT prefixed.
 
 var pc: PlayerController
+var _active_craft_labels: int = 0
 
 
 func build_workbench_panel(root: Control) -> void:
@@ -944,14 +945,16 @@ func spawn_craft_text(crafted_id: StringName) -> void:
 	lbl.add_theme_color_override("default_color", Color.WHITE)
 	lbl.custom_minimum_size = Vector2(400, 0)
 
-	var anchor_pos := Vector2(pc.get_viewport().get_visible_rect().size.x * 0.5 - 200, pc.get_viewport().get_visible_rect().size.y * 0.15)
+	var base_y := pc.get_viewport().get_visible_rect().size.y * 0.15
+	var anchor_pos := Vector2(pc.get_viewport().get_visible_rect().size.x * 0.5 - 200, base_y + _active_craft_labels * 32.0)
 	lbl.position = anchor_pos
 	pc._hud_root.add_child(lbl)
+	_active_craft_labels += 1
 
 	var tween := lbl.create_tween()
 	tween.tween_property(lbl, "position:y", anchor_pos.y - 60.0, 2.5).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 	tween.parallel().tween_property(lbl, "modulate:a", 0.0, 1.0).set_delay(1.5).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-	tween.tween_callback(lbl.queue_free)
+	tween.tween_callback(func(): _active_craft_labels = maxi(0, _active_craft_labels - 1); lbl.queue_free())
 
 
 func get_item_fallback_color(item_id: StringName) -> Color:
