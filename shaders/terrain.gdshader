@@ -99,6 +99,11 @@ void fragment() {
 	float patch_noise = fbm2((world_pos.xz + warp) * 0.03 + vec2(90.0, 260.0));
 	slope_noise += (patch_noise - 0.5) * 0.18;
 
+	// High-frequency noise at mesh-grid scale to break up per-triangle stripe artifacts
+	float hf_break = (vnoise(world_pos.xz * 2.5 + vec2(311.0, 527.0)) - 0.5) * 0.12
+	               + (vnoise(world_pos.xz * 5.0 + vec2(719.0, 163.0)) - 0.5) * 0.06;
+	slope_noise += hf_break * smoothstep(0.08, 0.25, slope);
+
 	float noisy_slope = slope + slope_noise;
 
 	float flat_w  = smoothstep(slope_start + 0.18, slope_start, noisy_slope);
@@ -172,8 +177,17 @@ void fragment() {
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
+	// On steep terrain, override per-triangle classification with a single unified
+	// mossy-rock color to eliminate venetian-blind stripe artifacts
+	float steep_override = smoothstep(0.15, 0.40, slope);
+	vec3 unified_steep = mix(mossy_slope, mossy_cliff, smoothstep(0.20, 0.55, slope));
+	unified_steep *= brightness;
+	albedo = mix(albedo, unified_steep, steep_override);
+
 	// Biome tint applied uniformly — slopes/cliffs get mossy green from the biome
-	float tint_strength = flat_w + slope_w * 0.90 + cliff_w * 0.60;
+	float tint_strength = flat_w * (1.0 - steep_override) + steep_override * 0.80
+	                    + slope_w * 0.90 * (1.0 - steep_override)
+	                    + cliff_w * 0.60 * (1.0 - steep_override);
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
 	ALBEDO = albedo * final_tint * v_brightness;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
