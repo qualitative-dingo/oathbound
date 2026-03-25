@@ -132,17 +132,20 @@ void fragment() {
 	) * 28.0;
 
 	float mud = fbm2((world_pos.xz + terrain_warp) * 0.02 + vec2(200.0, 300.0));
-	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength;
+	float mud_mask = smoothstep(0.3, 0.55, mud) * slope_path_fade * variation_strength;
 	albedo = mix(albedo, col_slope * 0.75, mud_mask * 0.8);
 
 	float dirt_noise = fbm2((world_pos.xz + terrain_warp) * 0.018 + vec2(500.0, 700.0));
 	float dirt_thresh = 0.5 + (0.5 - dirt_patch_amount) * 0.6;
-	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w;
+	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * slope_path_fade;
 	albedo = mix(albedo, dirt_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), dirt_mask);
 
 	// Clay paths from vertex color R channel — per-pixel noise breaks up vertex-grid edges
-	float path_perturb = (vnoise(world_pos.xz * 0.4 + vec2(777.0, 333.0)) - 0.5) * 0.25;
-	float pm = smoothstep(0.2, 0.7, v_path_mask + path_perturb) * flat_w;
+	// Extra slope fade kills paths on even moderate slopes to prevent zigzag mesh artifacts
+	float slope_path_fade = smoothstep(0.10, 0.03, slope);
+	float path_perturb = (vnoise(world_pos.xz * 0.4 + vec2(777.0, 333.0)) - 0.5) * 0.35
+	                    + (vnoise(world_pos.xz * 1.2 + vec2(191.0, 573.0)) - 0.5) * 0.15;
+	float pm = smoothstep(0.2, 0.7, v_path_mask + path_perturb) * slope_path_fade;
 	vec3 dirt_detail = col_slope * 0.6 + col_flat * 0.15;
 	vec3 path_base = path_color * dirt_detail * 4.0;
 	path_base *= (0.85 + vnoise(world_pos.xz * 0.12 + vec2(900.0, 400.0)) * 0.2);
@@ -155,7 +158,7 @@ void fragment() {
 	float bank_mask = smoothstep(0.1, 0.6, v_river_bank + (bank_noise - 0.5) * 0.3);
 	vec3 bank_detail_col = col_slope * 0.5 + bank_color * 0.5;
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
-	albedo = mix(albedo, bank_detail_col, bank_mask * flat_w);
+	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
 
 	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2;
 	albedo *= (1.0 - ao_mask);
