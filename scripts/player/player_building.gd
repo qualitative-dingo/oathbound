@@ -12,7 +12,7 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	# Misc
 	{"id": &"campfire", "name": "Campfire", "tab": "Misc",
 	 "cost": [{"item": &"stone", "amount": 5}, {"item": &"wood", "amount": 2}],
-	 "mesh": "campfire", "color": Color(0.5, 0.3, 0.15), "size": Vector3(0.6, 0.3, 0.6)},
+	 "mesh": "campfire", "color": Color(0.5, 0.3, 0.15), "size": Vector3(0.72, 0.36, 0.72)},
 	{"id": &"torch_post", "name": "Standing Torch", "tab": "Misc",
 	 "cost": [{"item": &"wood", "amount": 1}, {"item": &"resin", "amount": 2}],
 	 "mesh": "cylinder", "color": Color(0.35, 0.25, 0.1), "size": Vector3(0.15, 1.8, 0.15),
@@ -1805,7 +1805,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	light.name = "FireLight"
 	light.light_color = Color(1.0, 0.55, 0.15)
 	light.light_energy = 9.0
-	light.omni_range = 30.0
+	light.omni_range = 60.0
 	light.omni_attenuation = 1.2
 	light.shadow_enabled = true
 	light.position.y = 0.8
@@ -1815,7 +1815,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	var fill := OmniLight3D.new()
 	fill.light_color = Color(1.0, 0.3, 0.05)
 	fill.light_energy = 3.6
-	fill.omni_range = 15.0
+	fill.omni_range = 30.0
 	fill.omni_attenuation = 2.0
 	fill.shadow_enabled = false
 	fill.position.y = 0.15
@@ -2031,7 +2031,7 @@ func start_campfire_animation(
 		var dur := randf_range(0.08, 0.2)
 		var tw := structure.create_tween()
 
-		var energy := randf_range(6.0, 15.0)
+		var energy := randf_range(12.0, 30.0)
 		var col_g := randf_range(0.3, 0.65)
 		tw.tween_property(light, "light_energy", energy, dur)
 		tw.parallel().tween_property(light, "light_color", Color(randf_range(0.9, 1.0), col_g, 0.08), dur)

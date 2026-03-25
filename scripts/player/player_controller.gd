@@ -5352,7 +5352,7 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	# Misc
 	{"id": &"campfire", "name": "Campfire", "tab": "Misc",
 	 "cost": [{"item": &"stone", "amount": 5}, {"item": &"wood", "amount": 2}],
-	 "mesh": "campfire", "color": Color(0.5, 0.3, 0.15), "size": Vector3(0.6, 0.3, 0.6)},
+	 "mesh": "campfire", "color": Color(0.5, 0.3, 0.15), "size": Vector3(0.72, 0.36, 0.72)},
 	{"id": &"torch_post", "name": "Standing Torch", "tab": "Misc",
 	 "cost": [{"item": &"wood", "amount": 1}, {"item": &"resin", "amount": 2}],
 	 "mesh": "cylinder", "color": Color(0.35, 0.25, 0.1), "size": Vector3(0.15, 1.8, 0.15),
