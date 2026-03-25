@@ -931,6 +931,8 @@ static func populate_zone_phase(
 					continue
 				if _is_near_structure(wx, wz, 4.0, structs):
 					continue
+				if _is_steep_edge(wx, wz, ground_y, height_func):
+					continue
 				var obj := _create_rock(rng)
 				zone_root.add_child(obj)
 				obj.position = Vector3(lx, ground_y, lz)
@@ -943,6 +945,8 @@ static func populate_zone_phase(
 				var wz := origin_z + lz
 				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 				if ground_y < _MIN_LAND_Y:
+					continue
+				if _is_steep_edge(wx, wz, ground_y, height_func):
 					continue
 				var peb := _create_pebble(rng)
 				zone_root.add_child(peb)
@@ -959,6 +963,8 @@ static func populate_zone_phase(
 				if ground_y < _MIN_LAND_Y:
 					continue
 				if _is_near_structure(wx, wz, 4.0, structs):
+					continue
+				if _is_steep_edge(wx, wz, ground_y, height_func):
 					continue
 				var stone := _create_ground_stone(rng)
 				zone_root.add_child(stone)
