@@ -420,6 +420,67 @@ var _hud_module: PlayerHUD
 var _interaction: PlayerInteraction
 var _anim: PlayerAnimation
 
+# ── Character Speech ──
+var _speech_panel: PanelContainer
+var _speech_label: Label
+var _speech_tween: Tween
+var _speech_timer := 0.0
+var _speech_cooldown := 0.0
+var _speech_trigger_cooldowns: Dictionary = {}
+const _SPEECH_DISPLAY_TIME := 5.0
+const _SPEECH_GLOBAL_COOLDOWN := 45.0
+const _SPEECH_TRIGGER_COOLDOWN := 120.0
+const _SPEECH_CHECK_INTERVAL := 3.0
+var _speech_check_timer := 0.0
+var _speech_low_health_warned := false
+var _speech_low_stamina_warned := false
+
+const _LINES_DARK := [
+	"It's getting dark out there, I could use a light source.",
+	"Shadows are growing long. A torch would be wise.",
+	"Hard to see the path... where did I put my light?",
+	"The sun is abandoning me. I need a flame.",
+	"Cursed darkness. A man needs a torch in these woods.",
+]
+const _LINES_INVENTORY_FULL := [
+	"My pack is heavy enough... I need to leave some of this behind.",
+	"No more room. I'm carrying half the forest already.",
+	"My shoulders are aching. I can't take another ounce.",
+	"I've no space for this. Time to head back to the village.",
+	"If I pick up one more stone, my belt will snap.",
+]
+const _LINES_DROWNING := [
+	"The current is winning... I need to find land.",
+	"Arms are getting heavy. I'm going to go under!",
+	"Deep water is no place for a tired man.",
+	"Lungs... burning... land, I need land!",
+	"If I don't reach the shore soon, the lake will keep me.",
+]
+const _LINES_LOW_HEALTH := [
+	"Everything is growing dim... I'm losing too much blood.",
+	"I've taken a nasty hit. Need to patch this up.",
+	"Can't take much more of this... I need to retreat.",
+	"Stay standing... just a bit longer...",
+	"A grim end awaits if I don't find a way to heal.",
+]
+const _LINES_FIVE_STAR := [
+	"By the gods... look at the craftsmanship on this!",
+	"Now this is a prize worth the blood spilled.",
+	"I've never seen anything quite like this. Exquisite.",
+	"A legend's tool. This will change everything.",
+	"Luck favors the bold today! A truly rare find.",
+	"The ancestors must be watching over me today... what a beauty!",
+	"Perfectly balanced. This wasn't made by any ordinary smith.",
+	"This... this belongs in a King's hall, not in my muddy hands.",
+	"I can feel the power thrumming through it. Incredible.",
+	"A find like this makes all the scars worth it.",
+	"Songs will be sung of the day I found this.",
+	"Is this a dream? I've hunted for something like this my whole life.",
+	"Steady now... don't want to drop a treasure as rare as this.",
+	"Look at the way it catches the light. Pure perfection.",
+	"Fate has smiled upon me. I'll put this to good use.",
+]
+
 
 func _set_player_sprite_tex(_tex: Texture2D) -> void:
 	pass
@@ -531,6 +592,8 @@ func _ready() -> void:
 	call_deferred("_snap_to_terrain")
 	_setup_movement_audio()
 	GameEvents.inventory_changed.connect(_on_inventory_changed)
+	GameEvents.item_picked_up.connect(_on_item_picked_up_speech)
+	GameEvents.inventory_changed.connect(_on_inventory_changed_speech)
 	if NetworkManager.is_connected_to_game():
 		NetworkManager.chest_contents_received.connect(_on_chest_contents_received)
 
@@ -3321,7 +3384,124 @@ func _build_hud() -> void:
 	_build_fps_counter(_hud_root)
 	_build_target_hud(_hud_root)
 	_hud_module.build_chat_ui(_hud_root)
+	_build_speech_bubble(_hud_root)
 	_build_pause_menu()
+
+
+func _build_speech_bubble(root: Control) -> void:
+	_speech_panel = PanelContainer.new()
+	_speech_panel.name = "SpeechBubble"
+	_speech_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_speech_panel.visible = false
+
+	_speech_panel.anchor_left = 0.5
+	_speech_panel.anchor_right = 0.5
+	_speech_panel.anchor_top = 1.0
+	_speech_panel.anchor_bottom = 1.0
+	_speech_panel.offset_left = -220.0
+	_speech_panel.offset_right = 220.0
+	_speech_panel.offset_top = -175.0
+	_speech_panel.offset_bottom = -120.0
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.06, 0.04, 0.85)
+	style.set_border_width_all(2)
+	style.border_color = Color(0.55, 0.45, 0.25, 0.9)
+	style.set_corner_radius_all(6)
+	style.set_content_margin_all(12)
+	_speech_panel.add_theme_stylebox_override("panel", style)
+
+	_speech_label = Label.new()
+	_speech_label.name = "SpeechText"
+	_speech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_speech_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_speech_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_speech_label.add_theme_font_size_override("font_size", 15)
+	_speech_label.add_theme_color_override("font_color", Color(0.92, 0.85, 0.70))
+	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_speech_panel.add_child(_speech_label)
+
+	root.add_child(_speech_panel)
+
+
+func _show_speech(lines: Array, trigger_key: StringName) -> void:
+	if _speech_cooldown > 0.0:
+		return
+	if _speech_trigger_cooldowns.has(trigger_key) and _speech_trigger_cooldowns[trigger_key] > 0.0:
+		return
+	if not _speech_panel or not _speech_label:
+		return
+
+	var idx := randi() % lines.size()
+	_speech_label.text = "\" " + str(lines[idx]) + " \""
+
+	if _speech_tween and _speech_tween.is_valid():
+		_speech_tween.kill()
+
+	_speech_panel.modulate = Color(1, 1, 1, 0)
+	_speech_panel.visible = true
+	_speech_tween = create_tween()
+	_speech_tween.tween_property(_speech_panel, "modulate:a", 1.0, 0.4)
+	_speech_tween.tween_interval(_SPEECH_DISPLAY_TIME)
+	_speech_tween.tween_property(_speech_panel, "modulate:a", 0.0, 0.6)
+	_speech_tween.tween_callback(func(): _speech_panel.visible = false)
+
+	_speech_cooldown = _SPEECH_GLOBAL_COOLDOWN
+	_speech_trigger_cooldowns[trigger_key] = _SPEECH_TRIGGER_COOLDOWN
+
+
+func _check_speech_triggers(delta: float) -> void:
+	_speech_cooldown = maxf(_speech_cooldown - delta, 0.0)
+	for key in _speech_trigger_cooldowns.keys():
+		_speech_trigger_cooldowns[key] = maxf(float(_speech_trigger_cooldowns[key]) - delta, 0.0)
+
+	_speech_check_timer += delta
+	if _speech_check_timer < _SPEECH_CHECK_INTERVAL:
+		return
+	_speech_check_timer = 0.0
+
+	# 1. Light source warning: dark + no torch
+	var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree() and get_tree().current_scene else null
+	if dnc and dnc.has_method("is_daytime"):
+		if not dnc.is_daytime() and not _torch_light:
+			_show_speech(_LINES_DARK, &"dark")
+			return
+
+	# 2. Stamina drowning: swimming + stamina < 20%
+	if _is_swimming and max_stamina > 0.0 and current_stamina / max_stamina < 0.20:
+		if not _speech_low_stamina_warned:
+			_speech_low_stamina_warned = true
+			_show_speech(_LINES_DROWNING, &"drowning")
+			return
+	else:
+		_speech_low_stamina_warned = false
+
+	# 3. Low health: < 25%
+	if max_health > 0.0 and current_health / max_health < 0.25 and current_health > 0.0:
+		if not _speech_low_health_warned:
+			_speech_low_health_warned = true
+			_show_speech(_LINES_LOW_HEALTH, &"low_health")
+			return
+	else:
+		_speech_low_health_warned = false
+
+
+func _on_item_picked_up_speech(item_id: StringName, _amount: int) -> void:
+	var parsed := ItemDatabase.parse_star_id(item_id)
+	if parsed["stars"] >= 5:
+		_show_speech(_LINES_FIVE_STAR, &"five_star")
+
+
+func _on_inventory_changed_speech() -> void:
+	var inv := Inventory._local
+	if not inv:
+		return
+	var used := 0
+	for sid: StringName in inv._order:
+		if sid != &"" and inv._slots.has(sid):
+			used += 1
+	if used >= PlayerInventory.TOTAL_SLOTS:
+		_show_speech(_LINES_INVENTORY_FULL, &"inv_full")
 
 
 func _build_pause_menu() -> void:
@@ -7754,6 +7934,9 @@ func _show_tooltip_for_item(item_id: StringName) -> void:
 	var parsed_tip := ItemDatabase.parse_star_id(item_id)
 	var tip_stars: int = parsed_tip["stars"]
 
+	if tip_stars >= 5:
+		_show_speech(_LINES_FIVE_STAR, &"five_star")
+
 	var text := ""
 	if tip_stars > 0:
 		var rc: Color = ItemDatabase.get_rarity_color(tip_stars)
@@ -8394,6 +8577,7 @@ func _process(delta: float) -> void:
 	_tick_equip_progress(delta)
 	if _hud_module:
 		_hud_module.update_chat_fade(self, delta)
+	_check_speech_triggers(delta)
 
 	# Phase 5: Clients report player data to host for save on disconnect
 	if is_multiplayer_authority() and NetworkManager.is_connected_to_game() and not NetworkManager.is_server():
