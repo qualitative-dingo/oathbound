@@ -907,10 +907,6 @@ static func load_building_mat(path: String, tint: Color, rough: float, uv_scale:
 	mat.roughness = rough
 	mat.uv1_scale = uv_scale
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.set_flag(BaseMaterial3D.FLAG_DONT_RECEIVE_SHADOWS, true)
-	mat.emission_enabled = true
-	mat.emission = tint
-	mat.emission_energy_multiplier = 0.25
 	return mat
 
 func get_building_material(build_id: StringName) -> StandardMaterial3D:
