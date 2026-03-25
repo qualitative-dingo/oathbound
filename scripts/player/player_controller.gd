@@ -421,8 +421,7 @@ var _interaction: PlayerInteraction
 var _anim: PlayerAnimation
 
 # ── Character Speech ──
-var _speech_panel: PanelContainer
-var _speech_label: Label
+var _speech_label_3d: Label3D
 var _speech_tween: Tween
 var _speech_timer := 0.0
 var _speech_cooldown := 0.0
@@ -3460,40 +3459,24 @@ func _build_hud() -> void:
 	_build_pause_menu()
 
 
-func _build_speech_bubble(root: Control) -> void:
-	_speech_panel = PanelContainer.new()
-	_speech_panel.name = "SpeechBubble"
-	_speech_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_speech_panel.visible = false
-
-	_speech_panel.anchor_left = 0.5
-	_speech_panel.anchor_right = 0.5
-	_speech_panel.anchor_top = 1.0
-	_speech_panel.anchor_bottom = 1.0
-	_speech_panel.offset_left = -220.0
-	_speech_panel.offset_right = 220.0
-	_speech_panel.offset_top = -175.0
-	_speech_panel.offset_bottom = -120.0
-
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.06, 0.04, 0.85)
-	style.set_border_width_all(2)
-	style.border_color = Color(0.55, 0.45, 0.25, 0.9)
-	style.set_corner_radius_all(6)
-	style.set_content_margin_all(12)
-	_speech_panel.add_theme_stylebox_override("panel", style)
-
-	_speech_label = Label.new()
-	_speech_label.name = "SpeechText"
-	_speech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_speech_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_speech_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_speech_label.add_theme_font_size_override("font_size", 15)
-	_speech_label.add_theme_color_override("font_color", Color(0.92, 0.85, 0.70))
-	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_speech_panel.add_child(_speech_label)
-
-	root.add_child(_speech_panel)
+func _build_speech_bubble(_root: Control) -> void:
+	_speech_label_3d = Label3D.new()
+	_speech_label_3d.name = "SpeechBubble3D"
+	_speech_label_3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_speech_label_3d.no_depth_test = true
+	_speech_label_3d.fixed_size = true
+	_speech_label_3d.pixel_size = 0.0012
+	_speech_label_3d.font_size = 48
+	_speech_label_3d.outline_size = 12
+	_speech_label_3d.modulate = Color(0.95, 0.88, 0.72)
+	_speech_label_3d.outline_modulate = Color(0.05, 0.04, 0.02, 0.9)
+	_speech_label_3d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_speech_label_3d.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_speech_label_3d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_speech_label_3d.width = 600.0
+	_speech_label_3d.position = Vector3(0.0, 5.0, 0.0)
+	_speech_label_3d.visible = false
+	add_child(_speech_label_3d)
 
 
 func _show_speech(lines: Array, trigger_key: StringName) -> void:
@@ -3501,22 +3484,23 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 		return
 	if _speech_trigger_cooldowns.has(trigger_key) and _speech_trigger_cooldowns[trigger_key] > 0.0:
 		return
-	if not _speech_panel or not _speech_label:
+	if not _speech_label_3d:
 		return
 
 	var idx := randi() % lines.size()
-	_speech_label.text = "\" " + str(lines[idx]) + " \""
+	_speech_label_3d.text = "\" " + str(lines[idx]) + " \""
 
 	if _speech_tween and _speech_tween.is_valid():
 		_speech_tween.kill()
 
-	_speech_panel.modulate = Color(1, 1, 1, 0)
-	_speech_panel.visible = true
+	var base_color := Color(0.95, 0.88, 0.72, 0.0)
+	_speech_label_3d.modulate = base_color
+	_speech_label_3d.visible = true
 	_speech_tween = create_tween()
-	_speech_tween.tween_property(_speech_panel, "modulate:a", 1.0, 0.4)
+	_speech_tween.tween_property(_speech_label_3d, "modulate:a", 1.0, 0.4)
 	_speech_tween.tween_interval(_SPEECH_DISPLAY_TIME)
-	_speech_tween.tween_property(_speech_panel, "modulate:a", 0.0, 0.6)
-	_speech_tween.tween_callback(func(): _speech_panel.visible = false)
+	_speech_tween.tween_property(_speech_label_3d, "modulate:a", 0.0, 0.6)
+	_speech_tween.tween_callback(func(): _speech_label_3d.visible = false)
 
 	_speech_cooldown = _SPEECH_GLOBAL_COOLDOWN
 	_speech_trigger_cooldowns[trigger_key] = _SPEECH_TRIGGER_COOLDOWN
