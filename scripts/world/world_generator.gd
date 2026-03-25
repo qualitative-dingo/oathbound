@@ -37,7 +37,7 @@ const ZONE_SIZE := 64.0
 @export var load_radius_zones: int = 2
 @export var unload_radius_zones: int = 3
 const MAX_ZONES_PER_FRAME := 2  # can be higher now since builds happen off-thread
-const MESH_RESOLUTION := 32
+const MESH_RESOLUTION := 48
 
 @export_group("Terrain")
 @export var height_scale: float = 30.0
