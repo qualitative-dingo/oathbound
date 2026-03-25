@@ -558,7 +558,7 @@ func update_bow_draw_sprite() -> void:
 		return
 	if pc._bow_attack_frames.is_empty() or not pc._player_sprite:
 		return
-	var dir: Vector3 = pc._get_camera_relative_dir()
+	var dir: String = pc._get_camera_relative_dir()
 	if not pc._bow_attack_frames.has(dir):
 		return
 	var frames_arr: Array = Array(pc._bow_attack_frames[dir])
