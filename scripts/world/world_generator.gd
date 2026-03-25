@@ -541,8 +541,8 @@ func _trace_lake_outflows() -> void:
 			var best_eh := 999999.0
 			for sr in range(1, 15):
 				for d in 8:
-					var ex := gx + _D8X[d] * sr
-					var ez := gz + _D8Z[d] * sr
+					var ex: int = gx + _D8X[d] * sr
+					var ez: int = gz + _D8Z[d] * sr
 					if ex < 1 or ex >= _ws_dim - 1 or ez < 1 or ez >= _ws_dim - 1:
 						continue
 					var ewx := -world_radius + float(ex) * _WS_CELL
@@ -580,11 +580,11 @@ func _trace_lake_outflows() -> void:
 				var best_d := -1
 				var best_s := -999.0
 				for d in 8:
-					var nx := cgx + _D8X[d]
-					var nz := cgz + _D8Z[d]
+					var nx: int = cgx + _D8X[d]
+					var nz: int = cgz + _D8Z[d]
 					if nx < 0 or nx >= _ws_dim or nz < 0 or nz >= _ws_dim:
 						continue
-					var s := (_ws_heights[cidx] - _ws_heights[nz * _ws_dim + nx]) / _D8DIST[d]
+					var s: float = (_ws_heights[cidx] - _ws_heights[nz * _ws_dim + nx]) / _D8DIST[d]
 					if s > best_s:
 						best_s = s
 						best_d = d

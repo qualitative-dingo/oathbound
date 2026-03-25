@@ -4114,8 +4114,8 @@ static func _scatter_water_plants(
 			var oz := rng.randf_range(-3.0, 3.0)
 			var wx := origin_x + cx + ox
 			var wz := origin_z + cz + oz
-		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
-		if mesh_h < -0.3 or mesh_h > _WATER_LEVEL:
+			var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+			if mesh_h < -0.3 or mesh_h > _WATER_LEVEL:
 				continue
 			if _is_near_structure(wx, wz):
 				continue
