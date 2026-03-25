@@ -173,14 +173,11 @@ void fragment() {
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// Fix 2: replace triplanar texture with solid procedural color on steep faces
-	float rock_n = fbm2(world_pos.xz * 0.06 + vec2(421.0, 637.0));
-	float rock_d = vnoise(world_pos.xz * 0.25 + vec2(159.0, 843.0));
-	vec3 unified_steep = vec3(0.36, 0.38, 0.29) * (0.80 + rock_n * 0.20 + rock_d * 0.10);
-	albedo = mix(albedo, unified_steep, steep_override);
+	// Tint slope textures to match biome — preserves texture detail, just shifts color
+	albedo *= mix(vec3(1.0), vec3(0.70, 0.75, 0.65), steep_override);
 
-	// Biome tint — steep terrain gets biome color so it blends with surroundings
-	float tint_strength = flat_w + slope_w * 0.25 + steep_override * 0.70;
+	// Strong biome tint on slopes so rocky textures blend into surrounding environment
+	float tint_strength = flat_w + slope_w * 0.50 + steep_override * 0.80;
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
 	ALBEDO = albedo * final_tint * v_brightness;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
