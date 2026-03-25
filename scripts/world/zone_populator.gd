@@ -18,6 +18,8 @@ const _FishIdle := preload("res://scripts/creatures/fish_idle.gd")
 const _ZonePool := preload("res://scripts/world/zone_pool.gd")
 
 const ZONE_SIZE := 64.0
+const _MIN_LAND_Y := 0.5
+const _WATER_LEVEL := 0.0
 
 # ─── Floating origin offset (set by WorldGenerator on each origin shift) ──────
 static var origin_shift := Vector3.ZERO
@@ -693,8 +695,8 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var h := float(height_func.call(wx, wz))
-				if h < 0.2:
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				if ground_y < _MIN_LAND_Y:
 					continue
 				if is_dirt_patch(wx, wz):
 					continue
@@ -702,7 +704,6 @@ static func populate_zone_phase(
 					continue
 				var obj := _create_tree(biome, rng, microbiome)
 				zone_root.add_child(obj)
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 				obj.position = Vector3(lx, ground_y - 1.5, lz)
 
 		return false
@@ -731,8 +732,8 @@ static func populate_zone_phase(
 					var lz := clampf(cz + sin(angle) * dist, 4.0, ZONE_SIZE - 4.0)
 					var wx := origin_x + lx
 					var wz := origin_z + lz
-					var h := float(height_func.call(wx, wz))
-					if h < 0.2:
+					var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+					if ground_y < _MIN_LAND_Y:
 						continue
 					if is_dirt_patch(wx, wz):
 						continue
@@ -740,7 +741,6 @@ static func populate_zone_phase(
 						continue
 					var obj := _create_tree(biome, rng, microbiome)
 					zone_root.add_child(obj)
-					var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 					obj.position = Vector3(lx, ground_y - 1.5, lz)
 
 		if not debug_skip_rocks:
@@ -749,14 +749,13 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var h := float(height_func.call(wx, wz))
-				if h < 0.2:
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				if ground_y < _MIN_LAND_Y:
 					continue
 				if _is_near_structure(wx, wz, 4.0, structs):
 					continue
 				var obj := _create_rock(rng)
 				zone_root.add_child(obj)
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 				obj.position = Vector3(lx, ground_y, lz)
 
 			var pebble_n := rng.randi_range(rock_n * 2, rock_n * 4)
@@ -765,12 +764,11 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var h := float(height_func.call(wx, wz))
-				if h < 0.2:
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				if ground_y < _MIN_LAND_Y:
 					continue
 				var peb := _create_pebble(rng)
 				zone_root.add_child(peb)
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 				peb.position = Vector3(lx, ground_y + 0.05, lz)
 
 		if not debug_skip_stones:
@@ -780,14 +778,13 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var h := float(height_func.call(wx, wz))
-				if h < 0.2:
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				if ground_y < _MIN_LAND_Y:
 					continue
 				if _is_near_structure(wx, wz, 4.0, structs):
 					continue
 				var stone := _create_ground_stone(rng)
 				zone_root.add_child(stone)
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 				stone.position = Vector3(lx, ground_y + 0.1, lz)
 
 		return false
