@@ -1487,8 +1487,8 @@ func add_torch_light(structure: Node3D, offset: Vector3) -> void:
 	var light := OmniLight3D.new()
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
-	light.light_energy = 3.0
-	light.omni_range = 17.5
+	light.light_energy = 9.0
+	light.omni_range = 52.5
 	light.shadow_enabled = true
 	light.position = offset
 	structure.add_child(light)
@@ -1545,8 +1545,8 @@ func build_wall_torch_visual(structure: StaticBody3D) -> void:
 	var light := OmniLight3D.new()
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
-	light.light_energy = 3.5
-	light.omni_range = 20.0
+	light.light_energy = 10.5
+	light.omni_range = 60.0
 	light.shadow_enabled = true
 	light.position = Vector3(0.0, 2.15, 0.12)
 	structure.add_child(light)
@@ -1808,8 +1808,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	var light := OmniLight3D.new()
 	light.name = "FireLight"
 	light.light_color = Color(1.0, 0.55, 0.15)
-	light.light_energy = 3.0
-	light.omni_range = 10.0
+	light.light_energy = 9.0
+	light.omni_range = 30.0
 	light.omni_attenuation = 1.2
 	light.shadow_enabled = true
 	light.position.y = 0.8
@@ -1818,8 +1818,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	# ── Warm fill light at base ──
 	var fill := OmniLight3D.new()
 	fill.light_color = Color(1.0, 0.3, 0.05)
-	fill.light_energy = 1.2
-	fill.omni_range = 5.0
+	fill.light_energy = 3.6
+	fill.omni_range = 15.0
 	fill.omni_attenuation = 2.0
 	fill.shadow_enabled = false
 	fill.position.y = 0.15
@@ -2035,7 +2035,7 @@ func start_campfire_animation(
 		var dur := randf_range(0.08, 0.2)
 		var tw := structure.create_tween()
 
-		var energy := randf_range(2.0, 5.0)
+		var energy := randf_range(6.0, 15.0)
 		var col_g := randf_range(0.3, 0.65)
 		tw.tween_property(light, "light_energy", energy, dur)
 		tw.parallel().tween_property(light, "light_color", Color(randf_range(0.9, 1.0), col_g, 0.08), dur)

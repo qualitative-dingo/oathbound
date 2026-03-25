@@ -1564,11 +1564,6 @@ func _setup_floating_bars() -> void:
 	_mount_stam_bar.visible = false
 	_bar_anchor.add_child(_mount_stam_bar)
 
-	_swim_fatigue_bar = _make_shader_bar(BAR_W, STAM_H,
-		Color(0.05, 0.15, 0.45), Color(0.15, 0.55, 0.95))
-	_swim_fatigue_bar.position = Vector3(0.0, -(BAR_H * 0.5 + STAM_H * 0.5 + GAP) - (STAM_H + GAP), 0.0)
-	_swim_fatigue_bar.visible = false
-	_bar_anchor.add_child(_swim_fatigue_bar)
 
 
 func _make_shader_bar(w: float, h: float, col_a: Color, col_b: Color) -> MeshInstance3D:
@@ -1626,16 +1621,7 @@ func _update_floating_bars(delta: float) -> void:
 			if mmat:
 				mmat.set_shader_parameter("fill_ratio", clampf(_mount_stamina / _mount_max_stamina, 0.0, 1.0))
 
-	_swim_fatigue_pulse = move_toward(_swim_fatigue_pulse, 0.0, delta * 3.0)
-	if _swim_fatigue_bar:
-		var show_fatigue := _swim_fatigue > 0.0 and current_health > 0.0
-		_swim_fatigue_bar.visible = show_fatigue
-		if show_fatigue:
-			var remaining := clampf(1.0 - _swim_fatigue / SWIM_FATIGUE_MAX, 0.0, 1.0)
-			var fmat: ShaderMaterial = _swim_fatigue_bar.get_surface_override_material(0) as ShaderMaterial
-			if fmat:
-				fmat.set_shader_parameter("fill_ratio", remaining)
-				fmat.set_shader_parameter("pulse", _swim_fatigue_pulse)
+	_update_drown_bar()
 
 
 # ===================================================================
@@ -2246,6 +2232,7 @@ func _tick_idle_animation(delta: float) -> void:
 func _tick_swim_fatigue(delta: float) -> void:
 	if current_health <= 0.0:
 		return
+	_swim_fatigue_pulse = move_toward(_swim_fatigue_pulse, 0.0, delta * 3.0)
 	var in_water := _is_swimming and not _on_raft
 	if in_water:
 		if _mounted:
@@ -2255,24 +2242,30 @@ func _tick_swim_fatigue(delta: float) -> void:
 			_swim_fatigue_pulse = 1.0
 		if _swim_fatigue >= SWIM_FATIGUE_MAX:
 			_swim_fatigue = SWIM_FATIGUE_MAX
-			current_health = 0.0
-			GameEvents.player_health_changed.emit(current_health, max_health)
-			var drown_num := DamageNumber.new()
-			drown_num.text = "Drowned!"
-			drown_num.font_size = 26
-			drown_num.pixel_size = 0.01
-			drown_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-			drown_num.no_depth_test = true
-			drown_num.modulate = Color(0.3, 0.6, 1.0)
-			drown_num.outline_modulate = Color.BLACK
-			drown_num.outline_size = 6
-			drown_num._velocity = Vector3(0, 2.5, 0)
-			get_tree().current_scene.add_child(drown_num)
-			drown_num.global_position = global_position + Vector3.UP * 2.5
-			_on_death()
+			_drown_tick_timer += delta
+			if _drown_tick_timer >= _DROWN_TICK_INTERVAL:
+				_drown_tick_timer -= _DROWN_TICK_INTERVAL
+				var dmg := max_health * _DROWN_TICK_FRACTION
+				current_health = maxf(current_health - dmg, 0.0)
+				GameEvents.player_health_changed.emit(current_health, max_health)
+				var drown_num := DamageNumber.new()
+				drown_num.text = str(int(dmg))
+				drown_num.font_size = 22
+				drown_num.pixel_size = 0.01
+				drown_num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+				drown_num.no_depth_test = true
+				drown_num.modulate = Color(0.3, 0.6, 1.0)
+				drown_num.outline_modulate = Color.BLACK
+				drown_num.outline_size = 6
+				drown_num._velocity = Vector3(0, 2.5, 0)
+				get_tree().current_scene.add_child(drown_num)
+				drown_num.global_position = global_position + Vector3.UP * 2.5
+				if current_health <= 0.0:
+					_on_death()
 	else:
 		if _swim_fatigue > 0.0:
 			_swim_fatigue = maxf(_swim_fatigue - SWIM_FATIGUE_RECOVER_RATE * delta, 0.0)
+		_drown_tick_timer = 0.0
 
 
 func _tick_swim_visual(delta: float) -> void:
@@ -3308,6 +3301,7 @@ func _build_hud() -> void:
 	hud.add_child(_hud_root)
 
 	_build_hotbar(_hud_root)
+	_build_drown_bar(_hud_root)
 	_build_inventory_panel(_hud_root)
 	_build_tooltip(_hud_root)
 	_build_map_panel(_hud_root)
@@ -3452,6 +3446,16 @@ func _build_pause_menu() -> void:
 	mode_row.add_child(_pause_mode_options)
 	vbox.add_child(mode_row)
 
+	var rd_initial: float = float(SaveManager.render_distance)
+	_add_render_distance_slider(vbox, "Render Distance", rd_initial, func(val: float) -> void:
+		var r := int(val)
+		SaveManager.render_distance = r
+		var wg := get_tree().get_first_node_in_group(&"world_generator")
+		if wg and wg.has_method(&"set_render_distance"):
+			wg.set_render_distance(r)
+		SaveManager.save_settings()
+	)
+
 	var pvp_row := HBoxContainer.new()
 	pvp_row.add_theme_constant_override("separation", 10)
 	pvp_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -3555,6 +3559,49 @@ func _add_volume_slider(parent: VBoxContainer, label_text: String, initial: floa
 	grabber_style.set_corner_radius_all(4)
 
 	slider.value_changed.connect(func(val: float) -> void: on_change.call(val))
+	row.add_child(slider)
+	parent.add_child(row)
+
+
+func _add_render_distance_slider(parent: VBoxContainer, label_text: String, initial: float, on_change: Callable) -> void:
+	var row := VBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.add_theme_font_size_override("font_size", 15)
+	lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	header.add_child(lbl)
+
+	var val_lbl := Label.new()
+	val_lbl.text = str(int(initial))
+	val_lbl.add_theme_font_size_override("font_size", 15)
+	val_lbl.add_theme_color_override("font_color", Color(0.85, 0.75, 0.55))
+	header.add_child(val_lbl)
+
+	row.add_child(header)
+
+	var slider := HSlider.new()
+	slider.min_value = 1.0
+	slider.max_value = 5.0
+	slider.step = 1.0
+	slider.value = initial
+	slider.custom_minimum_size = Vector2(0, 24)
+
+	var slider_style := StyleBoxFlat.new()
+	slider_style.bg_color = Color(0.18, 0.18, 0.22)
+	slider_style.set_corner_radius_all(4)
+	slider_style.content_margin_top = 8
+	slider_style.content_margin_bottom = 8
+	slider.add_theme_stylebox_override("slider", slider_style)
+
+	slider.value_changed.connect(func(val: float) -> void:
+		val_lbl.text = str(int(val))
+		on_change.call(val)
+	)
 	row.add_child(slider)
 	parent.add_child(row)
 
@@ -4285,6 +4332,78 @@ func _build_hotbar(root: Control) -> void:
 		_hotbar_qty_labels.append(qty_label)
 
 	_update_hotbar_selection()
+
+
+func _build_drown_bar(root: Control) -> void:
+	_drown_bar_container = Control.new()
+	_drown_bar_container.name = "DrownBar"
+	_drown_bar_container.anchor_left = 0.5
+	_drown_bar_container.anchor_right = 0.5
+	_drown_bar_container.anchor_top = 1.0
+	_drown_bar_container.anchor_bottom = 1.0
+	_drown_bar_container.offset_left = -160
+	_drown_bar_container.offset_right = 160
+	_drown_bar_container.offset_top = -90
+	_drown_bar_container.offset_bottom = -76
+	_drown_bar_container.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_drown_bar_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_drown_bar_container.visible = false
+	root.add_child(_drown_bar_container)
+
+	_drown_bar_bg = ColorRect.new()
+	_drown_bar_bg.color = Color(0.02, 0.04, 0.08, 0.85)
+	_drown_bar_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_drown_bar_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_drown_bar_container.add_child(_drown_bar_bg)
+
+	var border := ColorRect.new()
+	border.color = Color(0.15, 0.35, 0.55, 0.9)
+	border.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	border.offset_left = -1
+	border.offset_right = 1
+	border.offset_top = -1
+	border.offset_bottom = 1
+	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	border.z_index = -1
+	_drown_bar_container.add_child(border)
+
+	_drown_bar_fill = ColorRect.new()
+	_drown_bar_fill.color = Color(0.15, 0.55, 0.95, 0.95)
+	_drown_bar_fill.anchor_left = 0.0
+	_drown_bar_fill.anchor_right = 1.0
+	_drown_bar_fill.anchor_top = 0.0
+	_drown_bar_fill.anchor_bottom = 1.0
+	_drown_bar_fill.offset_left = 0
+	_drown_bar_fill.offset_right = 0
+	_drown_bar_fill.offset_top = 0
+	_drown_bar_fill.offset_bottom = 0
+	_drown_bar_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_drown_bar_container.add_child(_drown_bar_fill)
+
+	var icon_label := Label.new()
+	icon_label.text = "O2"
+	icon_label.add_theme_font_size_override("font_size", 10)
+	icon_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0, 0.9))
+	icon_label.add_theme_constant_override("outline_size", 2)
+	icon_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.8))
+	icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	icon_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_drown_bar_container.add_child(icon_label)
+
+
+func _update_drown_bar() -> void:
+	if not _drown_bar_container:
+		return
+	var show_bar := _swim_fatigue > 0.0 and current_health > 0.0
+	_drown_bar_container.visible = show_bar
+	if show_bar:
+		var remaining := clampf(1.0 - _swim_fatigue / SWIM_FATIGUE_MAX, 0.0, 1.0)
+		_drown_bar_fill.anchor_right = remaining
+		var pulse := _swim_fatigue_pulse * 0.3
+		_drown_bar_fill.color = Color(
+			0.15 + pulse, 0.55 - pulse * 0.3, 0.95 - pulse * 0.5, 0.95)
 
 
 func _build_inventory_panel(root: Control) -> void:
@@ -10028,6 +10147,7 @@ func _respawn() -> void:
 	_is_swimming = false
 	_swim_time = 0.0
 	_swim_fatigue = 0.0
+	_drown_tick_timer = 0.0
 	if _player_sprite:
 		_player_sprite.visible = true
 		if not _gltf_all_meshes.is_empty():

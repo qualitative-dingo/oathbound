@@ -72,23 +72,23 @@ const SUN_COLOR_KEYS := [
 ]
 
 const AMBIENT_ENERGY_KEYS := [
-	[0.0,    0.03],   # midnight — pitch dark
-	[0.125,  0.03],   # 03:00 — pitch dark
-	[0.146,  0.15],   # 03:30 — first glow
-	[0.167,  0.30],   # 04:00 — dawn ambient
+	[0.0,    0.15],   # midnight — dark but navigable
+	[0.125,  0.15],   # 03:00 — dark but navigable
+	[0.146,  0.22],   # 03:30 — first glow
+	[0.167,  0.35],   # 04:00 — dawn ambient
 	[0.229,  0.55],   # 05:30 — full day
 	[0.50,   0.70],   # noon
 	[0.80,   0.55],   # afternoon
 	[0.875,  0.45],   # 21:00 — sunset
-	[0.917,  0.25],   # 22:00 — golden
-	[0.958,  0.08],   # 23:00 — last light
-	[0.98,   0.03],   # near midnight
-	[1.0,    0.03],   # midnight
+	[0.917,  0.30],   # 22:00 — golden
+	[0.958,  0.18],   # 23:00 — dusk fading
+	[0.98,   0.15],   # near midnight
+	[1.0,    0.15],   # midnight
 ]
 
 const AMBIENT_COLOR_KEYS := [
-	[0.0,    Color(0.08, 0.08, 0.15)],  # midnight deep blue
-	[0.125,  Color(0.08, 0.08, 0.15)],  # 03:00
+	[0.0,    Color(0.18, 0.20, 0.32)],  # midnight — moonlit blue
+	[0.125,  Color(0.18, 0.20, 0.32)],  # 03:00 — moonlit blue
 	[0.146,  Color(0.35, 0.28, 0.40)],  # dawn purple
 	[0.167,  Color(0.45, 0.38, 0.50)],  # 04:00 purple-pink
 	[0.229,  Color(0.40, 0.45, 0.60)],  # morning
@@ -96,14 +96,14 @@ const AMBIENT_COLOR_KEYS := [
 	[0.80,   Color(0.40, 0.45, 0.60)],  # afternoon
 	[0.875,  Color(0.45, 0.40, 0.48)],  # 21:00 sunset warm
 	[0.917,  Color(0.35, 0.28, 0.40)],  # golden warm
-	[0.958,  Color(0.15, 0.15, 0.25)],  # dusk
-	[0.98,   Color(0.08, 0.08, 0.15)],  # near midnight
-	[1.0,    Color(0.08, 0.08, 0.15)],  # midnight
+	[0.958,  Color(0.22, 0.22, 0.32)],  # dusk
+	[0.98,   Color(0.18, 0.20, 0.32)],  # near midnight
+	[1.0,    Color(0.18, 0.20, 0.32)],  # midnight
 ]
 
 const SKY_TOP_KEYS := [
-	[0.0,    Color(0.02, 0.02, 0.06)],  # pitch dark sky
-	[0.125,  Color(0.02, 0.02, 0.06)],  # 03:00
+	[0.0,    Color(0.05, 0.05, 0.12)],  # night sky — faint starlight
+	[0.125,  Color(0.05, 0.05, 0.12)],  # 03:00
 	[0.146,  Color(0.10, 0.08, 0.22)],  # pre-dawn
 	[0.167,  Color(0.15, 0.12, 0.30)],  # dawn purple
 	[0.229,  Color(0.18, 0.35, 0.70)],  # morning blue
@@ -111,14 +111,14 @@ const SKY_TOP_KEYS := [
 	[0.80,   Color(0.18, 0.35, 0.70)],  # afternoon
 	[0.875,  Color(0.22, 0.25, 0.50)],  # 21:00 sunset blue-purple
 	[0.917,  Color(0.18, 0.12, 0.30)],  # golden purple
-	[0.958,  Color(0.06, 0.05, 0.14)],  # near dark
-	[0.98,   Color(0.02, 0.02, 0.06)],  # dark
-	[1.0,    Color(0.02, 0.02, 0.06)],  # midnight
+	[0.958,  Color(0.08, 0.07, 0.16)],  # near dark
+	[0.98,   Color(0.05, 0.05, 0.12)],  # dark
+	[1.0,    Color(0.05, 0.05, 0.12)],  # midnight
 ]
 
 const SKY_HORIZON_KEYS := [
-	[0.0,    Color(0.04, 0.04, 0.08)],  # pitch dark
-	[0.125,  Color(0.04, 0.04, 0.08)],  # 03:00
+	[0.0,    Color(0.07, 0.07, 0.12)],  # night horizon
+	[0.125,  Color(0.07, 0.07, 0.12)],  # 03:00
 	[0.146,  Color(0.55, 0.30, 0.18)],  # dawn orange
 	[0.167,  Color(0.85, 0.50, 0.28)],  # golden orange horizon
 	[0.229,  Color(0.60, 0.65, 0.78)],  # morning
@@ -127,8 +127,8 @@ const SKY_HORIZON_KEYS := [
 	[0.875,  Color(0.85, 0.50, 0.25)],  # 21:00 sunset orange
 	[0.917,  Color(0.80, 0.35, 0.18)],  # golden deep orange
 	[0.958,  Color(0.25, 0.12, 0.10)],  # last glow
-	[0.98,   Color(0.04, 0.04, 0.08)],  # dark
-	[1.0,    Color(0.04, 0.04, 0.08)],  # midnight
+	[0.98,   Color(0.07, 0.07, 0.12)],  # dark
+	[1.0,    Color(0.07, 0.07, 0.12)],  # midnight
 ]
 
 const FOG_DENSITY_KEYS := [

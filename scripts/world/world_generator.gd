@@ -212,6 +212,7 @@ func _ready() -> void:
 	_compute_watershed()
 	_init_biome_materials()
 	_init_water_material()
+	set_render_distance(SaveManager.render_distance)
 	_generate_spawn_area()
 	_create_global_water()
 	_theme_songs = [

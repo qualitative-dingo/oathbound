@@ -12,6 +12,8 @@ const AUTOSAVE_INTERVAL := 10.0
 var current_character: Dictionary = {}
 var current_world: Dictionary = {}
 
+var render_distance: int = 2
+
 var _autosave_timer := 0.0
 var _game_active := false
 var _settings_loaded := false
@@ -74,6 +76,8 @@ func load_and_apply_settings() -> void:
 		get_window().size = Vector2i(win_w, win_h)
 		var screen_size := DisplayServer.screen_get_size()
 		get_window().position = (screen_size - Vector2i(win_w, win_h)) / 2
+
+	render_distance = clampi(int(data.get("render_distance", 2)), 1, 5)
 
 
 func _process(delta: float) -> void:
