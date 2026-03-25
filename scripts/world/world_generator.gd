@@ -682,6 +682,15 @@ func _generate_spawn_area() -> void:
 
 	_spawn_debug_portals()
 	_spawn_starter_goblins()
+	_dismiss_loading_screen.call_deferred()
+
+
+func _dismiss_loading_screen() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var ls := get_tree().root.get_node_or_null("LoadingScreen")
+	if ls and ls.has_method("dismiss"):
+		ls.dismiss()
 
 
 const _PORTAL_FAR_X := 5120.0

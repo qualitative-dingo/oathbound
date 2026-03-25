@@ -459,6 +459,10 @@ func _launch_world(world_data: Dictionary) -> void:
 			default_player.queue_free()
 			if _DEBUG_LOG: print("[MENU] Removed default Player node for multiplayer")
 
+	var loading := LoadingScreen.new()
+	loading.name = "LoadingScreen"
+	get_tree().root.add_child(loading)
+
 	get_tree().root.add_child(world_instance)
 	get_tree().current_scene = world_instance
 
