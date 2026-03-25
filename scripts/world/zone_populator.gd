@@ -1293,15 +1293,13 @@ static func _scatter_flowers(
 			var ground_y := sn.x
 			if ground_y < _MIN_LAND_Y or ground_y > 45.0:
 				continue
-			if sn.y < 0.93:
+			if sn.y < 0.95:
 				continue
-			var _fp := 1.5
-			var _fmd := 2.0
 			var _fhc := sn.x
-			if absf(_fhc - float(height_func.call(wx + _fp, wz))) > _fmd \
-					or absf(_fhc - float(height_func.call(wx - _fp, wz))) > _fmd \
-					or absf(_fhc - float(height_func.call(wx, wz + _fp))) > _fmd \
-					or absf(_fhc - float(height_func.call(wx, wz - _fp))) > _fmd:
+			if absf(_fhc - float(height_func.call(wx + 2.0, wz))) > 1.5 \
+					or absf(_fhc - float(height_func.call(wx - 2.0, wz))) > 1.5 \
+					or absf(_fhc - float(height_func.call(wx, wz + 2.0))) > 1.5 \
+					or absf(_fhc - float(height_func.call(wx, wz - 2.0))) > 1.5:
 				continue
 			if is_on_path(wx, wz):
 				continue
@@ -1462,16 +1460,21 @@ static func _scatter_grass(
 			var ground_y := sn.x
 			if ground_y < _MIN_LAND_Y or ground_y > 40.0:
 				continue
-			if sn.y < 0.93:
+			if sn.y < 0.95:
 				continue
-			# Cliff-edge rejection: probe heights at quad-width offsets
-			var _probe := 2.0
-			var _max_drop := 2.5
+			# Cliff-edge rejection: probe heights at cardinal + diagonal offsets
 			var _hc := sn.x
-			if absf(_hc - float(height_func.call(wx + _probe, wz))) > _max_drop \
-					or absf(_hc - float(height_func.call(wx - _probe, wz))) > _max_drop \
-					or absf(_hc - float(height_func.call(wx, wz + _probe))) > _max_drop \
-					or absf(_hc - float(height_func.call(wx, wz - _probe))) > _max_drop:
+			var _cliff_near := false
+			for _pd in [2.5, 4.0]:
+				if _cliff_near:
+					break
+				var _md: float = 1.5 if _pd < 3.0 else 2.5
+				if absf(_hc - float(height_func.call(wx + _pd, wz))) > _md \
+						or absf(_hc - float(height_func.call(wx - _pd, wz))) > _md \
+						or absf(_hc - float(height_func.call(wx, wz + _pd))) > _md \
+						or absf(_hc - float(height_func.call(wx, wz - _pd))) > _md:
+					_cliff_near = true
+			if _cliff_near:
 				continue
 			if is_dirt_patch(wx, wz):
 				continue
@@ -1481,8 +1484,8 @@ static func _scatter_grass(
 				continue
 			var cluster_boost := clampf((density - 0.18) * 1.6, 0.0, 1.0)
 			var scale := lerpf(scale_min, scale_max, cluster_boost)
-			var slope_factor := clampf((sn.y - 0.93) / 0.07, 0.0, 1.0)
-			scale *= lerpf(0.35, 1.0, slope_factor)
+			var slope_factor := clampf((sn.y - 0.95) / 0.05, 0.0, 1.0)
+			scale *= lerpf(0.3, 1.0, slope_factor)
 			scale *= rng.randf_range(0.85, 1.15)
 			var rot := rng.randf_range(0.0, TAU)
 
