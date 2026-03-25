@@ -268,6 +268,7 @@ func _process(delta: float) -> void:
 	_push_weather_to_day_night(delta)
 
 	if not is_instance_valid(_cached_player):
+		_cached_player = null
 		var players := get_tree().get_nodes_in_group(&"player")
 		if not players.is_empty():
 			_cached_player = players[0] as Node3D
@@ -301,7 +302,7 @@ func _process(delta: float) -> void:
 
 
 func _update_horizon_silhouettes(delta: float, player: Node3D) -> void:
-	if not player or not is_instance_valid(_horizon_parent):
+	if not player or not is_instance_valid(player) or not is_instance_valid(_horizon_parent):
 		return
 	var pp := player.global_position
 	for mi in _horizon_meshes:
@@ -318,6 +319,8 @@ func _update_horizon_silhouettes(delta: float, player: Node3D) -> void:
 
 func _update_tumble_leaves(delta: float, player: Node3D) -> void:
 	if not is_instance_valid(_tumble_parent):
+		return
+	if player and not is_instance_valid(player):
 		return
 	var wg: Node = null
 	var scene := get_tree().current_scene
