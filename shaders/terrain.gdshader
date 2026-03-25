@@ -115,7 +115,10 @@ void fragment() {
 	float adj_flat_w  = flat_w + scatter_mask;
 	float adj_slope_w = max(slope_w - scatter_mask, 0.0);
 
-	vec3 albedo = col_flat * adj_flat_w + col_slope * adj_slope_w + col_cliff * cliff_w;
+	// Darken slope/cliff textures so they aren't washed-out white
+	vec3 slope_toned = col_slope * vec3(0.55, 0.50, 0.42);
+	vec3 cliff_toned = col_cliff * vec3(0.50, 0.48, 0.40);
+	vec3 albedo = col_flat * adj_flat_w + slope_toned * adj_slope_w + cliff_toned * cliff_w;
 
 	float n_large = fbm2(world_pos.xz * 0.012);
 	float n_med   = fbm2(world_pos.xz * 0.04 + vec2(50.0, 80.0));
