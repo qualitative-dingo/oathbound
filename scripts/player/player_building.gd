@@ -1487,8 +1487,8 @@ func add_torch_light(structure: Node3D, offset: Vector3) -> void:
 	var light := OmniLight3D.new()
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
-	light.light_energy = 2.0
-	light.omni_range = 7.0
+	light.light_energy = 3.0
+	light.omni_range = 17.5
 	light.shadow_enabled = true
 	light.position = offset
 	structure.add_child(light)
@@ -1545,8 +1545,8 @@ func build_wall_torch_visual(structure: StaticBody3D) -> void:
 	var light := OmniLight3D.new()
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
-	light.light_energy = 2.5
-	light.omni_range = 8.0
+	light.light_energy = 3.5
+	light.omni_range = 20.0
 	light.shadow_enabled = true
 	light.position = Vector3(0.0, 2.15, 0.12)
 	structure.add_child(light)

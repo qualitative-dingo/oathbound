@@ -105,6 +105,17 @@ static var _grass_quad_mesh: ArrayMesh
 static var _leaf_unit_quad: QuadMesh
 static var _grass_textures: Array[ImageTexture] = []
 
+static var _water_plants_ready := false
+static var _lily_pad_mesh: ArrayMesh
+static var _lily_pad_mat: StandardMaterial3D
+static var _lily_flower_mesh: ArrayMesh
+static var _lily_flower_mat: StandardMaterial3D
+static var _cattail_mat: StandardMaterial3D
+static var _cattail_head_mat: StandardMaterial3D
+static var _loosestrife_mat: StandardMaterial3D
+static var _loosestrife_flower_mat: StandardMaterial3D
+static var _reed_mat: ShaderMaterial
+
 static var _textures_loaded := false
 
 
@@ -324,6 +335,8 @@ static func _ensure_textures() -> void:
 	_leaf_tex_willow = _gen_leaf_tex_willow()
 	_leaf_tex_palm = _gen_leaf_tex_palm()
 	_leaf_tex_generic = _gen_leaf_tex_generic()
+
+	_ensure_water_plants()
 
 
 static func _generate_birch_bark_texture() -> ImageTexture:
@@ -631,9 +644,13 @@ static func _make_triplanar_mat(tex: Texture2D, fallback_color: Color) -> Standa
 
 # ─── Zone Population ───────────────────────────────────────────────────────────
 
-## Populate a zone in two phases to spread the work across frames.
-## phase=0: villages + trees + rocks + stones (heavy: many add_child for StaticBody3D)
-## phase=1: creatures + horses + fish + grass + saplings (lighter)
+## Populate a zone across 6 phases to spread work across frames.
+## phase=0: villages + scatter trees
+## phase=1: cluster trees + rocks + pebbles + stones
+## phase=2: creatures + caves + horses + fish
+## phase=3: grass types 0-3
+## phase=4: grass types 4-7
+## phase=5: saplings
 ## Returns true when ALL phases are done.
 static func populate_zone_phase(
 	zone_root: Node3D,
@@ -840,12 +857,23 @@ static func populate_zone_phase(
 
 		return false
 
-	# ── Phase 3: grass + saplings ──
-	if not debug_skip_grass:
-		_scatter_grass(zone_root, coord, biome, rng, height_func)
+	# ── Phase 3: grass types 0-3 ──
+	if phase == 3:
+		if not debug_skip_grass:
+			_scatter_grass(zone_root, coord, biome, rng, height_func, 0, 4)
+		return false
 
+	# ── Phase 4: grass types 4-7 ──
+	if phase == 4:
+		if not debug_skip_grass:
+			_scatter_grass(zone_root, coord, biome, rng, height_func, 4, 8)
+		return false
+
+	# ── Phase 5: saplings + water plants ──
 	if not debug_skip_saplings:
 		_scatter_saplings(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
+
+	_scatter_water_plants(zone_root, coord, biome, rng, height_func)
 
 	return true
 
@@ -859,7 +887,7 @@ static func populate_zone(
 	height_func: Callable,
 	microbiome: StringName = &"none",
 ) -> void:
-	for p in 4:
+	for p in 6:
 		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
 
 
@@ -1061,12 +1089,32 @@ static func _grass_density_noise(wx: float, wz: float) -> float:
 	return _fbm2(wx * 0.055 + 1200.0, wz * 0.055 + 900.0)
 
 
+static var _grass_types_table: Array = []
+
+static func _get_grass_types() -> Array:
+	if _grass_types_table.is_empty():
+		# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
+		_grass_types_table = [
+			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 700, 0.9, 1.7, 1.8, 1.2],
+			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 650, 0.8, 1.6, 1.7, 1.1],
+			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 650, 0.9, 1.8, 1.9, 1.1],
+			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 600, 0.8, 1.5, 1.6, 1.0],
+			[_grass_textures[10], Color(0.12, 0.36, 0.06), 550, 1.0, 1.9, 1.6, 1.6],
+			[_grass_textures[12], Color(0.14, 0.34, 0.07), 500, 0.9, 1.7, 1.5, 1.5],
+			[_grass_textures[16], Color(0.14, 0.36, 0.08), 500, 0.9, 1.7, 1.7, 1.4],
+			[_grass_textures[18], Color(0.12, 0.39, 0.06), 450, 0.8, 1.6, 1.8, 1.3],
+		]
+	return _grass_types_table
+
+
 static func _scatter_grass(
 	zone_root: Node3D,
 	coord: Vector2i,
 	biome: StringName,
 	rng: RandomNumberGenerator,
 	height_func: Callable,
+	type_start: int = 0,
+	type_end: int = -1,
 ) -> void:
 	if not _grass_shader or not _grass_quad_mesh:
 		return
@@ -1074,22 +1122,19 @@ static func _scatter_grass(
 	if biome != &"hearthlands":
 		return
 
-	# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
-	var grass_types: Array = [
-		[_grass_textures[0],  Color(0.13, 0.40, 0.08), 700, 0.9, 1.7, 1.8, 1.2],
-		[_grass_textures[1],  Color(0.15, 0.42, 0.09), 650, 0.8, 1.6, 1.7, 1.1],
-		[_grass_textures[2],  Color(0.16, 0.38, 0.10), 650, 0.9, 1.8, 1.9, 1.1],
-		[_grass_textures[4],  Color(0.11, 0.37, 0.07), 600, 0.8, 1.5, 1.6, 1.0],
-		[_grass_textures[10], Color(0.12, 0.36, 0.06), 550, 1.0, 1.9, 1.6, 1.6],
-		[_grass_textures[12], Color(0.14, 0.34, 0.07), 500, 0.9, 1.7, 1.5, 1.5],
-		[_grass_textures[16], Color(0.14, 0.36, 0.08), 500, 0.9, 1.7, 1.7, 1.4],
-		[_grass_textures[18], Color(0.12, 0.39, 0.06), 450, 0.8, 1.6, 1.8, 1.3],
-	]
+	var grass_types := _get_grass_types()
+	if type_end < 0:
+		type_end = grass_types.size()
 
 	var origin_x: float = coord.x * ZONE_SIZE
 	var origin_z: float = coord.y * ZONE_SIZE
 
-	for gi in grass_types.size():
+	var structs: Array = []
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree:
+		structs = tree.get_nodes_in_group(&"structures")
+
+	for gi in range(type_start, type_end):
 		var cfg: Array = grass_types[gi]
 		var tex: ImageTexture = cfg[0]
 		var color: Color = cfg[1]
@@ -1122,7 +1167,7 @@ static func _scatter_grass(
 				continue
 			if is_on_path(wx, wz):
 				continue
-			if _is_near_structure(wx, wz):
+			if _is_near_structure(wx, wz, 4.0, structs):
 				continue
 			if _terrain_normal_y(wx, wz, height_func) < 0.85:
 				continue
@@ -2973,3 +3018,352 @@ static func _restore_saved_horses_in_zone(zone_root: Node, coord: Vector2i, heig
 		var local_z := hz - origin_z
 		var snap_y := _snap_height_to_mesh(hx, hz, height_func)
 		horse.position = Vector3(local_x, snap_y, local_z)
+
+
+# ─── Water Plants ─────────────────────────────────────────────────────────────
+
+const _WATER_LEVEL := 0.0
+
+static func _ensure_water_plants() -> void:
+	if _water_plants_ready:
+		return
+	_water_plants_ready = true
+
+	# Lily pad — flat green disc
+	_lily_pad_mesh = _gen_lily_pad_mesh()
+	_lily_pad_mat = StandardMaterial3D.new()
+	_lily_pad_mat.albedo_color = Color(0.15, 0.42, 0.12)
+	_lily_pad_mat.roughness = 0.9
+	_lily_pad_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_lily_pad_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+
+	# Lily flower — small pink/white bloom
+	_lily_flower_mesh = _gen_lily_flower_mesh()
+	_lily_flower_mat = StandardMaterial3D.new()
+	_lily_flower_mat.albedo_color = Color(0.95, 0.75, 0.85)
+	_lily_flower_mat.roughness = 0.85
+	_lily_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+
+	# Cattail stalk
+	_cattail_mat = StandardMaterial3D.new()
+	_cattail_mat.albedo_color = Color(0.22, 0.38, 0.15)
+	_cattail_mat.roughness = 0.9
+	_cattail_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+
+	# Cattail brown head
+	_cattail_head_mat = StandardMaterial3D.new()
+	_cattail_head_mat.albedo_color = Color(0.35, 0.22, 0.10)
+	_cattail_head_mat.roughness = 0.95
+	_cattail_head_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+
+	# Loosestrife stalk
+	_loosestrife_mat = StandardMaterial3D.new()
+	_loosestrife_mat.albedo_color = Color(0.20, 0.35, 0.12)
+	_loosestrife_mat.roughness = 0.9
+	_loosestrife_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+
+	# Loosestrife purple flower
+	_loosestrife_flower_mat = StandardMaterial3D.new()
+	_loosestrife_flower_mat.albedo_color = Color(0.62, 0.18, 0.58)
+	_loosestrife_flower_mat.roughness = 0.85
+	_loosestrife_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+
+	# Reeds — tall grass-like, reuse grass shader for wind sway
+	if _grass_shader:
+		_reed_mat = ShaderMaterial.new()
+		_reed_mat.shader = _grass_shader
+		var reed_tex := _gen_reed_texture()
+		_reed_mat.set_shader_parameter("albedo_texture", reed_tex)
+		_reed_mat.set_shader_parameter("albedo_color", Color(0.20, 0.40, 0.14))
+		_reed_mat.set_shader_parameter("alpha_cutoff", 0.4)
+		_reed_mat.set_shader_parameter("wind_strength", 0.3)
+		_reed_mat.set_shader_parameter("wind_speed", 1.2)
+		_reed_mat.set_shader_parameter("wind_turbulence", 0.6)
+
+
+static func _gen_lily_pad_mesh() -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var segs := 10
+	var radius := 0.5
+	verts.append(Vector3.ZERO)
+	normals.append(Vector3.UP)
+	uvs.append(Vector2(0.5, 0.5))
+	var notch_start := 7
+	var notch_end := 9
+	for i in segs:
+		var angle := float(i) / segs * TAU
+		if i >= notch_start and i <= notch_end:
+			var r := radius * 0.35
+			verts.append(Vector3(cos(angle) * r, 0.0, sin(angle) * r))
+		else:
+			var wobble := 0.9 + 0.1 * sin(float(i) * 3.7)
+			verts.append(Vector3(cos(angle) * radius * wobble, 0.0, sin(angle) * radius * wobble))
+		normals.append(Vector3.UP)
+		uvs.append(Vector2(0.5 + cos(angle) * 0.5, 0.5 + sin(angle) * 0.5))
+	for i in segs:
+		var next := (i % segs) + 1
+		var after := ((i + 1) % segs) + 1
+		indices.append(0)
+		indices.append(next)
+		indices.append(after)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+static func _gen_lily_flower_mesh() -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var petals := 5
+	var petal_len := 0.12
+	var petal_w := 0.06
+	for p in petals:
+		var angle := float(p) / petals * TAU
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var side := Vector3(-sin(angle), 0.0, cos(angle))
+		var bi := verts.size()
+		verts.append(Vector3(0.0, 0.08, 0.0))
+		verts.append(dir * petal_len + side * petal_w + Vector3(0, 0.10, 0))
+		verts.append(dir * petal_len * 1.5 + Vector3(0, 0.12, 0))
+		verts.append(dir * petal_len - side * petal_w + Vector3(0, 0.10, 0))
+		for _n in 4:
+			normals.append(Vector3.UP)
+			uvs.append(Vector2(0.5, 0.5))
+		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
+		indices.append(bi); indices.append(bi + 2); indices.append(bi + 3)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+static func _gen_reed_texture() -> ImageTexture:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 55123
+	var w := 32
+	var h := 64
+	var img := Image.create(w, h, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for _blade in rng.randi_range(3, 5):
+		var cx := rng.randi_range(8, w - 9)
+		var blade_h := rng.randi_range(40, h - 4)
+		var blade_w := rng.randi_range(1, 3)
+		var curve := rng.randf_range(-0.04, 0.04)
+		for dy in blade_h:
+			var t := float(dy) / float(blade_h)
+			var bri := lerpf(0.45, 0.8, t)
+			var width := int(lerpf(float(blade_w), 1.0, t * 0.8))
+			var ox := int(curve * dy * dy * 0.01)
+			for dx in range(-width, width + 1):
+				var px := cx + dx + ox
+				var py := h - 1 - dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, Color(bri, bri, bri, 1.0))
+	return ImageTexture.create_from_image(img)
+
+
+static func _create_cattail(rng: RandomNumberGenerator) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Cattail"
+	var stalk_h := rng.randf_range(1.2, 2.0)
+	var stalk := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.015
+	cyl.bottom_radius = 0.025
+	cyl.height = stalk_h
+	cyl.radial_segments = 5
+	cyl.rings = 1
+	stalk.mesh = cyl
+	stalk.material_override = _cattail_mat
+	stalk.position.y = stalk_h * 0.5
+	stalk.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(stalk)
+	var head := MeshInstance3D.new()
+	var head_cyl := CylinderMesh.new()
+	head_cyl.top_radius = 0.04
+	head_cyl.bottom_radius = 0.045
+	head_cyl.height = 0.20
+	head_cyl.radial_segments = 5
+	head_cyl.rings = 1
+	head.mesh = head_cyl
+	head.material_override = _cattail_head_mat
+	head.position.y = stalk_h - 0.05
+	head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(head)
+	return root
+
+
+static func _create_loosestrife(rng: RandomNumberGenerator) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Loosestrife"
+	var stem_h := rng.randf_range(0.6, 1.1)
+	var stem := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.012
+	cyl.bottom_radius = 0.018
+	cyl.height = stem_h
+	cyl.radial_segments = 4
+	cyl.rings = 1
+	stem.mesh = cyl
+	stem.material_override = _loosestrife_mat
+	stem.position.y = stem_h * 0.5
+	stem.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(stem)
+	var flower_cluster_h := rng.randf_range(0.15, 0.28)
+	var num_blobs := rng.randi_range(3, 6)
+	for _bi in num_blobs:
+		var blob := MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = rng.randf_range(0.03, 0.06)
+		sphere.height = sphere.radius * 2.0
+		sphere.radial_segments = 4
+		sphere.rings = 2
+		blob.mesh = sphere
+		blob.material_override = _loosestrife_flower_mat
+		blob.position = Vector3(
+			rng.randf_range(-0.04, 0.04),
+			stem_h - 0.05 + rng.randf_range(0.0, flower_cluster_h),
+			rng.randf_range(-0.04, 0.04))
+		blob.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(blob)
+	return root
+
+
+static func _scatter_water_plants(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	rng: RandomNumberGenerator,
+	height_func: Callable,
+) -> void:
+	if biome != &"hearthlands":
+		return
+	if not _water_plants_ready:
+		return
+
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+
+	# ── Lily pads — float on water where terrain is submerged ──
+	var lily_count := rng.randi_range(8, 18)
+	for _i in lily_count:
+		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+		var h := float(height_func.call(wx, wz))
+		if h > -0.3 or h < -4.0:
+			continue
+		var pad := MeshInstance3D.new()
+		pad.mesh = _lily_pad_mesh
+		pad.material_override = _lily_pad_mat
+		pad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var pad_scale := rng.randf_range(0.3, 0.7)
+		pad.scale = Vector3(pad_scale, 1.0, pad_scale)
+		pad.rotation.y = rng.randf_range(0.0, TAU)
+		pad.position = Vector3(lx, _WATER_LEVEL + 0.02, lz)
+		zone_root.add_child(pad)
+		if rng.randf() < 0.3 and _lily_flower_mesh:
+			var flower := MeshInstance3D.new()
+			flower.mesh = _lily_flower_mesh
+			flower.material_override = _lily_flower_mat
+			flower.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			flower.position = Vector3(0.0, 0.0, 0.0)
+			pad.add_child(flower)
+
+	# ── Cattails — river/lake edges, shallow water ──
+	var cattail_count := rng.randi_range(5, 12)
+	for _i in cattail_count:
+		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+		var h := float(height_func.call(wx, wz))
+		if h < -1.0 or h > 0.6:
+			continue
+		if _is_near_structure(wx, wz):
+			continue
+		var clump_size := rng.randi_range(2, 4)
+		for _ci in clump_size:
+			var ox := rng.randf_range(-0.4, 0.4)
+			var oz := rng.randf_range(-0.4, 0.4)
+			var cattail := _create_cattail(rng)
+			var ground_y := maxf(_snap_height_to_mesh(wx + ox, wz + oz, height_func), _WATER_LEVEL - 0.1)
+			cattail.position = Vector3(lx + ox, ground_y, lz + oz)
+			zone_root.add_child(cattail)
+
+	# ── Purple Loosestrife — at water's edge, must be above water ──
+	var loosestrife_count := rng.randi_range(4, 10)
+	for _i in loosestrife_count:
+		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+		var h := float(height_func.call(wx, wz))
+		if h < -0.2 or h > 1.2:
+			continue
+		if _is_near_structure(wx, wz):
+			continue
+		var clump := rng.randi_range(1, 3)
+		for _ci in clump:
+			var ox := rng.randf_range(-0.5, 0.5)
+			var oz := rng.randf_range(-0.5, 0.5)
+			var plant := _create_loosestrife(rng)
+			var ground_y := _snap_height_to_mesh(wx + ox, wz + oz, height_func)
+			plant.position = Vector3(lx + ox, ground_y, lz + oz)
+			zone_root.add_child(plant)
+
+	# ── Reeds — tall grass at water edges, MultiMesh for performance ──
+	if not _reed_mat or not _grass_quad_mesh:
+		return
+	var transforms: Array[Transform3D] = []
+	var reed_attempts := rng.randi_range(60, 120)
+	for _i in reed_attempts:
+		var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
+		var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+		var h := float(height_func.call(wx, wz))
+		if h < -0.5 or h > 1.0:
+			continue
+		if _is_near_structure(wx, wz):
+			continue
+		var ground_y := maxf(_snap_height_to_mesh(wx, wz, height_func), _WATER_LEVEL - 0.15)
+		var scale := rng.randf_range(1.5, 2.8)
+		var rot := rng.randf_range(0.0, TAU)
+		var sx := 0.6 * scale
+		var sy := 1.2 * scale
+		var sz := 0.6 * scale
+		var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+		transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+	if transforms.is_empty():
+		return
+	var mmi := MultiMeshInstance3D.new()
+	var mm := MultiMesh.new()
+	mm.mesh = _grass_quad_mesh
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	mm.instance_count = transforms.size()
+	for idx in transforms.size():
+		mm.set_instance_transform(idx, transforms[idx])
+	mmi.multimesh = mm
+	mmi.name = "Reeds"
+	mmi.material_override = _reed_mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	zone_root.add_child(mmi)
