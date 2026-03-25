@@ -169,8 +169,8 @@ void fragment() {
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// Fade biome tint on steep surfaces so cliff rock shows natural stone color
-	float tint_strength = flat_w + slope_w * 0.25;
+	// Fade biome tint on steep surfaces — cliffs stay stone-colored, slopes get biome tint
+	float tint_strength = flat_w + slope_w * 0.7 + cliff_w * 0.15;
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
 	ALBEDO = albedo * final_tint * v_brightness;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
