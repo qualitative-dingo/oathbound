@@ -181,7 +181,7 @@ var _cave_instance: Node3D = null
 var _cave_return_pos: Vector3 = Vector3.ZERO
 var _cave_entrance_node: Node3D = null
 
-# Movement audio â€” dedicated looping players (one per sound type, no stacking)
+# Movement audio - dedicated looping players (one per sound type, no stacking)
 var _footstep_player: AudioStreamPlayer
 var _gallop_player: AudioStreamPlayer
 var _gallop_fast_stream: AudioStream
@@ -1067,7 +1067,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_build_rotation += deg_to_rad(15.0)
 			return
 
-	# Map zoom with scroll wheel â€” smooth target, no instant rebuild
+	# Map zoom with scroll wheel - smooth target, no instant rebuild
 	if _map_open and event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -1372,7 +1372,7 @@ func _apply_gravity(delta: float) -> void:
 	var grounded := is_on_floor()
 
 	if submersion > 0.2 and (not grounded or submersion > 0.6):
-		# Under water â€” apply buoyancy and damping instead of gravity
+		# Under water - apply buoyancy and damping instead of gravity
 		# When grounded (walking on riverbed), require deeper submersion to swim
 		_is_swimming = true
 		var buoy := submersion * BUOYANCY_FORCE
@@ -1380,7 +1380,7 @@ func _apply_gravity(delta: float) -> void:
 		velocity.y -= velocity.y * WATER_DAMPING * delta
 		velocity.y = clampf(velocity.y, -6.0, 4.0)
 	elif submersion > -0.3 and velocity.y < 0.0 and not grounded:
-		# Near surface falling â€” gentle decel (bobbing zone)
+		# Near surface falling - gentle decel (bobbing zone)
 		# Only when airborne; grounded players follow terrain normally
 		_is_swimming = true
 		velocity.y *= 1.0 - 3.0 * delta
@@ -1434,7 +1434,7 @@ func _clamp_to_terrain() -> void:
 
 	var surface_y: float = result["position"].y
 	var below_surface := surface_y - global_position.y
-	# Don't snap upward when airborne â€” let gravity work
+	# Don't snap upward when airborne - let gravity work
 	if not is_on_floor():
 		return
 	var snap_threshold := 0.05 if _mounted else 0.15
@@ -1480,7 +1480,7 @@ func _step_up_move_and_slide() -> void:
 
 	move_and_slide()
 
-	# If we left the floor (walked off an edge), let gravity take over â€” don't retry
+	# If we left the floor (walked off an edge), let gravity take over - don't retry
 	if not is_on_floor():
 		return
 
@@ -1811,7 +1811,7 @@ func _setup_player_sprite() -> void:
 		_player_sprite.position.y = _base_sprite_y
 		if _model:
 			_model.add_child(_player_sprite)
-		if _DEBUG_LOG: print("[PLAYER MODEL] Loaded %s â€” scale=%.2f" % [gltf_path.get_file(), s])
+		if _DEBUG_LOG: print("[PLAYER MODEL] Loaded %s - scale=%.2f" % [gltf_path.get_file(), s])
 		_gltf_anim_player = _find_anim_player(_player_sprite)
 		if _gltf_anim_player:
 			_gltf_anim_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
@@ -1852,7 +1852,7 @@ func _setup_player_sprite() -> void:
 			_apply_oathbound_shader()
 			_enhance_character_model()
 		else:
-			if _DEBUG_LOG: print("[PLAYER MODEL] Tripo model â€” skipping Blockbench shaders")
+			if _DEBUG_LOG: print("[PLAYER MODEL] Tripo model - skipping Blockbench shaders")
 		call_deferred("_update_equipped_weapon_model")
 		call_deferred("_update_armor_visuals")
 	else:
@@ -4311,7 +4311,7 @@ func _build_minimap(root: Control) -> void:
 	var half_d := float(circle_d) / 2.0
 	var ring_r := half_d - 1.0
 
-	# Weather icon â€” top-right (about 1:30 on a clock, ~60Â° from top)
+	# Weather icon - top-right (about 1:30 on a clock, ~60Â° from top)
 	var weather_angle := -PI * 0.28
 	var wx := circle_x + half_d + ring_r * sin(weather_angle) - 14.0
 	var wy := circle_y + half_d - ring_r * cos(weather_angle) - 14.0
@@ -4331,7 +4331,7 @@ func _build_minimap(root: Control) -> void:
 	_minimap_weather_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	weather_frame.add_child(_minimap_weather_label)
 
-	# Zoom + button â€” bottom-right (about 4 o'clock, ~120Â° from top)
+	# Zoom + button - bottom-right (about 4 o'clock, ~120Â° from top)
 	var zp_angle := PI * 0.35
 	var zp_x := circle_x + half_d + ring_r * sin(zp_angle) - 13.0
 	var zp_y := circle_y + half_d - ring_r * cos(zp_angle) - 13.0
@@ -4352,7 +4352,7 @@ func _build_minimap(root: Control) -> void:
 	zoom_in_btn.pressed.connect(func() -> void: _minimap_do_zoom(-MINIMAP_ZOOM_STEP))
 	zoom_in_frame.add_child(zoom_in_btn)
 
-	# Zoom - button â€” below + (about 5 o'clock, ~150Â° from top)
+	# Zoom - button - below + (about 5 o'clock, ~150Â° from top)
 	var zm_angle := PI * 0.45
 	var zm_x := circle_x + half_d + ring_r * sin(zm_angle) - 13.0
 	var zm_y := circle_y + half_d - ring_r * cos(zm_angle) - 13.0
@@ -4499,7 +4499,7 @@ func _draw_arrow_on_image(img: Image, half_px: int, scale: float = 1.0) -> void:
 		img.set_pixel(half_px, half_px, center_col)
 
 
-const _MINIMAP_LO := 36  # 180 / 5 â€” one pixel per stride cell
+const _MINIMAP_LO := 36  # 180 / 5 - one pixel per stride cell
 
 var _minimap_lo_image: Image
 var _minimap_mask_lut: PackedByteArray  # 0=skip, 1=ring, 2=terrain
@@ -5216,7 +5216,7 @@ func _build_stats_panel(root: Control) -> void:
 		row.add_child(name_lbl)
 
 		var val_lbl := Label.new()
-		val_lbl.text = "â€”"
+		val_lbl.text = "-"
 		val_lbl.add_theme_font_size_override("font_size", 12)
 		val_lbl.add_theme_color_override("font_color", Color(0.95, 0.9, 0.75))
 		val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -5231,7 +5231,7 @@ func _build_stats_panel(root: Control) -> void:
 func _toggle_stats_panel() -> void:
 	_stats_open = not _stats_open
 	_stats_panel.visible = _stats_open
-	_stats_arrow.text = "â—€" if _stats_open else "â–¶"
+	_stats_arrow.text = "â-€" if _stats_open else "â–¶"
 	if _stats_open:
 		_refresh_stats_panel()
 	_position_stats_panel()
@@ -5388,7 +5388,7 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	{"id": &"stone_door", "name": "Stone Door", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 8}],
 	 "mesh": "door", "color": Color(0.4, 0.4, 0.42), "size": Vector3(3.6, 5.0, 0.20)},
-	# Roofing â€“ Building tab (wood)
+	# Roofing  - Building tab (wood)
 	{"id": &"thatch_roof_45", "name": "Thatch Roof 45\u00b0", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 6}],
 	 "mesh": "roof_45", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 2.0, 2.0),
@@ -5412,7 +5412,7 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	{"id": &"thatch_roof_ridge", "name": "Thatch Ridge Cap", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 2}],
 	 "mesh": "roof_ridge", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 0.15, 0.4)},
-	# Roofing â€“ Heavy Build tab (stone)
+	# Roofing  - Heavy Build tab (stone)
 	{"id": &"slate_roof_45", "name": "Slate Roof 45\u00b0", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 6}],
 	 "mesh": "roof_45", "color": Color(0.35, 0.35, 0.4), "size": Vector3(2.0, 2.0, 2.0)},
@@ -7172,7 +7172,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	# hiding the log/base artwork baked into the bottom of the generated PNGs.
 	var flame_region := Rect2(0, 0, 48, 30)
 
-	# â”€â”€ Main campfire sprite (core flame â€” largest, always visible) â”€â”€
+	# â”€â”€ Main campfire sprite (core flame - largest, always visible) â”€â”€
 	var main_fire := Sprite3D.new()
 	main_fire.name = "MainFire"
 	main_fire.texture = fire_full_tex
@@ -7282,7 +7282,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	# â”€â”€ Campfire looping sound (non-positional via AudioManager for reliability) â”€â”€
 	_start_campfire_sound(structure)
 
-	# â”€â”€ Distance culling â€” hide fire visuals beyond render distance â”€â”€
+	# â”€â”€ Distance culling - hide fire visuals beyond render distance â”€â”€
 	_setup_campfire_distance_cull(structure)
 
 
@@ -7970,7 +7970,7 @@ func _refresh_map() -> void:
 	# â”€â”€ Structure markers â”€â”€
 	_draw_structure_markers(half_px, zones_per_pixel, zone_size)
 
-	# â”€â”€ Player marker â€” directional arrow â”€â”€
+	# â”€â”€ Player marker - directional arrow â”€â”€
 	_draw_player_arrow(half_px)
 
 	_map_image_tex.set_image(_map_image)
@@ -8191,7 +8191,7 @@ func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id
 			max_stars = int(sv)
 		total += int(variants[sv])
 
-	var text := "[b]%s[/b]  Ã—%d\n" % [display_name, total]
+	var text := "[b]%s[/b]  Ã-%d\n" % [display_name, total]
 	text += "Type: %s\n" % item_type.capitalize()
 
 	if data.has("damage"):
@@ -8201,7 +8201,7 @@ func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id
 	if data.has("armor_slot"):
 		text += "Slot: %s\n" % str(data["armor_slot"]).capitalize()
 	if Inventory.is_equipped(display_id):
-		text += "â—† Equipped\n"
+		text += "â-† Equipped\n"
 		text += "[color=#999999]Right-click to unequip[/color]\n"
 	elif data.has("armor_slot"):
 		text += "[color=#999999]Right-click to equip[/color]\n"
@@ -8269,7 +8269,7 @@ func _on_hotbar_hover(slot_idx: int) -> void:
 
 
 # ===================================================================
-# INVENTORY REFRESH â€” drag weapons, right-click armor
+# INVENTORY REFRESH - drag weapons, right-click armor
 # ===================================================================
 
 func _refresh_inventory_ui() -> void:
@@ -9087,7 +9087,7 @@ func _apply_damage_to_creature(creature: Node3D, amount: float) -> void:
 					var wss: WorldStateSync = wss_nodes[0] as WorldStateSync
 					wss.request_creature_damage.rpc_id(1, zx, zz, cidx, amount, NetworkManager.get_peer_id())
 				else:
-					if _DEBUG_LOG: print("[COMBAT] WorldStateSync not found â€” damage not sent")
+					if _DEBUG_LOG: print("[COMBAT] WorldStateSync not found - damage not sent")
 			else:
 				if _DEBUG_LOG: print("[COMBAT] Could not parse zone name '%s' for creature '%s'" % [zone_name, creature.name])
 	else:
@@ -9474,7 +9474,7 @@ func _hit_harvestable(node: Node3D, damage: float) -> void:
 	hp -= effective_dmg
 	node.set_meta("hp", hp)
 
-	# Trunk: very subtle wobble at the base â€” it's anchored in the ground
+	# Trunk: very subtle wobble at the base - it's anchored in the ground
 	var mesh := node.get_node_or_null("MeshInstance3D")
 	if not mesh:
 		mesh = node.get_node_or_null("Trunk")
@@ -9485,7 +9485,7 @@ func _hit_harvestable(node: Node3D, damage: float) -> void:
 		tween.tween_property(mesh, "rotation:z", deg_to_rad(0.4), 0.06)
 		tween.tween_property(mesh, "rotation:z", 0.0, 0.1)
 
-	# Canopy: big dramatic sway â€” momentum builds at the top
+	# Canopy: big dramatic sway - momentum builds at the top
 	var canopy := node.get_node_or_null("Canopy") as Node3D
 	if canopy:
 		var base_rz: float = canopy.rotation.z
@@ -10147,7 +10147,7 @@ func _try_interact() -> void:
 		_dismount()
 		return
 
-	# Cave exit â€” check first if inside a cave
+	# Cave exit - check first if inside a cave
 	if _in_cave:
 		for node in get_tree().get_nodes_in_group(&"interactables"):
 			var n3d := node as Node3D
@@ -11276,13 +11276,13 @@ func _apply_viking_texture() -> void:
 				mi.set_surface_override_material(surf_idx, glb_materials[mat_idx])
 				mat_idx += 1
 			else:
-				# More FBX surfaces than GLB materials â€” reuse last material
+				# More FBX surfaces than GLB materials - reuse last material
 				if not glb_materials.is_empty():
 					mi.set_surface_override_material(surf_idx, glb_materials[glb_materials.size() - 1])
 
 	if _DEBUG_LOG: print("[PLAYER MODEL] Applied %d materials to FBX meshes (%d surfaces)" % [glb_materials.size(), mat_idx])
 
-	# Free the temporary GLB instance â€” we only needed its materials
+	# Free the temporary GLB instance - we only needed its materials
 	glb_inst.queue_free()
 
 
@@ -11877,14 +11877,14 @@ func _create_stone_axe_2h() -> Node3D:
 	_add_box_part(root, "grip_hi1", Vector3(0.035, 0.020, 0.035), Vector3(0, -0.08, 0), leather_mat)
 	_add_box_part(root, "grip_hi2", Vector3(0.035, 0.020, 0.035), Vector3(0, -0.03, 0), leather_mat)
 
-	# â”€â”€ Axe head â€” single-edge crescent blade â”€â”€
+	# â”€â”€ Axe head - single-edge crescent blade â”€â”€
 	# Core block where head meets handle
 	_add_box_part(root, "head_core", Vector3(0.09, 0.11, 0.034), Vector3(0.04, 0.33, 0), stone_mat)
 	# Main blade body
 	_add_box_part(root, "blade_body", Vector3(0.07, 0.16, 0.024), Vector3(0.10, 0.33, 0), stone_mat)
-	# Blade edge â€” taller crescent profile
+	# Blade edge - taller crescent profile
 	_add_box_part(root, "blade_edge", Vector3(0.05, 0.20, 0.016), Vector3(0.155, 0.33, 0), edge_mat)
-	# Blade tip â€” thin crescent point
+	# Blade tip - thin crescent point
 	_add_box_part(root, "blade_tip", Vector3(0.025, 0.17, 0.010), Vector3(0.19, 0.33, 0), edge_mat)
 	# Poll (back of head, small counterweight)
 	_add_box_part(root, "poll", Vector3(0.03, 0.06, 0.028), Vector3(-0.025, 0.33, 0), stone_mat)
@@ -11892,7 +11892,7 @@ func _create_stone_axe_2h() -> Node3D:
 	_add_box_part(root, "head_top", Vector3(0.07, 0.018, 0.030), Vector3(0.06, 0.40, 0), stone_mat)
 	_add_box_part(root, "head_bot", Vector3(0.07, 0.018, 0.030), Vector3(0.06, 0.26, 0), stone_mat)
 
-	# Leather bindings at headâ€“shaft junction
+	# Leather bindings at head -shaft junction
 	_add_box_part(root, "bind1", Vector3(0.044, 0.013, 0.044), Vector3(0, 0.26, 0), leather_mat)
 	_add_box_part(root, "bind2", Vector3(0.044, 0.013, 0.044), Vector3(0, 0.28, 0), leather_mat)
 	_add_box_part(root, "bind_x", Vector3(0.013, 0.06, 0.044), Vector3(0.005, 0.30, 0), leather_mat)
