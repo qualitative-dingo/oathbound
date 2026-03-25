@@ -1160,7 +1160,7 @@ func _init_biome_materials() -> void:
 
 	# Per-biome: [flat_texture_name, tint_color, tex_scale]
 	var biome_cfg: Dictionary = {
-		&"hearthlands":     ["grass",        Color(0.28, 0.50, 0.18),  0.5],
+		&"hearthlands":     ["grass",        Color(0.20, 0.40, 0.12),  0.5],
 		&"ocean":           ["sand",         Color(0.3, 0.5, 0.7),  0.5],
 	}
 
@@ -1184,7 +1184,7 @@ func _init_biome_materials() -> void:
 			mat.set_shader_parameter("tint_color", Vector3(tint.r, tint.g, tint.b))
 			mat.set_shader_parameter("texture_scale", tex_scale)
 			mat.set_shader_parameter("origin_shift", origin_shift)
-			mat.set_shader_parameter("path_color", Vector3(0.18, 0.11, 0.05))
+			mat.set_shader_parameter("path_color", Vector3(0.12, 0.07, 0.03))
 			_biome_materials[biome_id] = mat
 		else:
 			# Fallback if shader fails to load
@@ -1211,7 +1211,7 @@ func _load_tex(path: String) -> Texture2D:
 func _get_biome_terrain_color(biome: StringName) -> Color:
 	if biome == &"ocean":
 		return Color(0.08, 0.18, 0.38)
-	return Color(0.28, 0.50, 0.18)
+	return Color(0.20, 0.40, 0.12)
 
 
 func _check_biome_change(player_zone: Vector2i) -> void:

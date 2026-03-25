@@ -15,10 +15,10 @@ uniform float cliff_start : hint_range(0.0, 1.0) = 0.55;
 group_uniforms variation;
 uniform float variation_strength : hint_range(0.0, 1.0) = 0.5;
 uniform float dirt_patch_amount : hint_range(0.0, 0.5) = 0.1;
-uniform vec3 dirt_color : source_color = vec3(0.35, 0.28, 0.16);
+uniform vec3 dirt_color : source_color = vec3(0.25, 0.19, 0.10);
 
 group_uniforms paths;
-uniform vec3 path_color : source_color = vec3(0.18, 0.11, 0.05);
+uniform vec3 path_color : source_color = vec3(0.12, 0.07, 0.03);
 uniform float path_roughness : hint_range(0.0, 1.0) = 0.92;
 
 float hash12(vec2 p) {

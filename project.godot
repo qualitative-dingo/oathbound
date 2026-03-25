@@ -32,6 +32,7 @@ WeatherSystem="*res://scripts/autoloads/weather_system.gd"
 SteamManager="*res://scripts/autoloads/steam_manager.gd"
 NetworkManager="*res://scripts/autoloads/network_manager.gd"
 ChatManager="*res://scripts/network/chat_manager.gd"
+MCPGameBridge="res://addons/godot_mcp/game_bridge/mcp_game_bridge.gd"
 
 [display]
 
