@@ -857,19 +857,13 @@ static func populate_zone_phase(
 
 		return false
 
-	# ── Phase 3: grass types 0-3 ──
-	if phase == 3:
+	# ── Phases 3–10: one grass type per frame ──
+	if phase >= 3 and phase <= 10:
 		if not debug_skip_grass:
-			_scatter_grass(zone_root, coord, biome, rng, height_func, 0, 4)
+			_scatter_grass(zone_root, coord, biome, rng, height_func, phase - 3, phase - 2)
 		return false
 
-	# ── Phase 4: grass types 4-7 ──
-	if phase == 4:
-		if not debug_skip_grass:
-			_scatter_grass(zone_root, coord, biome, rng, height_func, 4, 8)
-		return false
-
-	# ── Phase 5: saplings + water plants ──
+	# ── Phase 11: saplings + water plants ──
 	if not debug_skip_saplings:
 		_scatter_saplings(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 
@@ -1095,14 +1089,14 @@ static func _get_grass_types() -> Array:
 	if _grass_types_table.is_empty():
 		# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
 		_grass_types_table = [
-			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 700, 0.9, 1.7, 1.8, 1.2],
-			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 650, 0.8, 1.6, 1.7, 1.1],
-			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 650, 0.9, 1.8, 1.9, 1.1],
-			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 600, 0.8, 1.5, 1.6, 1.0],
-			[_grass_textures[10], Color(0.12, 0.36, 0.06), 550, 1.0, 1.9, 1.6, 1.6],
-			[_grass_textures[12], Color(0.14, 0.34, 0.07), 500, 0.9, 1.7, 1.5, 1.5],
-			[_grass_textures[16], Color(0.14, 0.36, 0.08), 500, 0.9, 1.7, 1.7, 1.4],
-			[_grass_textures[18], Color(0.12, 0.39, 0.06), 450, 0.8, 1.6, 1.8, 1.3],
+			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 500, 0.9, 1.7, 1.8, 1.2],
+			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 480, 0.8, 1.6, 1.7, 1.1],
+			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 480, 0.9, 1.8, 1.9, 1.1],
+			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 450, 0.8, 1.5, 1.6, 1.0],
+			[_grass_textures[10], Color(0.12, 0.36, 0.06), 400, 1.0, 1.9, 1.6, 1.6],
+			[_grass_textures[12], Color(0.14, 0.34, 0.07), 380, 0.9, 1.7, 1.5, 1.5],
+			[_grass_textures[16], Color(0.14, 0.36, 0.08), 380, 0.9, 1.7, 1.7, 1.4],
+			[_grass_textures[18], Color(0.12, 0.39, 0.06), 350, 0.8, 1.6, 1.8, 1.3],
 		]
 	return _grass_types_table
 
@@ -1169,10 +1163,11 @@ static func _scatter_grass(
 				continue
 			if _is_near_structure(wx, wz, 4.0, structs):
 				continue
-			if _terrain_normal_y(wx, wz, height_func) < 0.85:
-				continue
 
-			var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+			var sn := _snap_and_normal(wx, wz, height_func)
+			if sn.y < 0.85:
+				continue
+			var ground_y := sn.x
 			var cluster_boost := clampf((density - 0.18) * 1.6, 0.0, 1.0)
 			var scale := lerpf(scale_min, scale_max, cluster_boost)
 			scale *= rng.randf_range(0.85, 1.15)
@@ -1438,7 +1433,6 @@ static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) ->
 	var h01 := float(height_func.call(gx, gz + STEP))
 	var h11 := float(height_func.call(gx + STEP, gz + STEP))
 
-	# Match the terrain mesh triangulation (diagonal from h10 to h01)
 	if fx + fz <= 1.0:
 		return h00 + (h10 - h00) * fx + (h01 - h00) * fz
 	return h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
@@ -1453,6 +1447,34 @@ static func _terrain_normal_y(wx: float, wz: float, height_func: Callable) -> fl
 	var tx := Vector3(2.0 * STEP, h_right - h_left, 0.0)
 	var tz := Vector3(0.0, h_down - h_up, 2.0 * STEP)
 	return tz.cross(tx).normalized().y
+
+
+## Combined snap + normal in one pass — samples height grid only 4 times
+## instead of 8 (4 for snap + 4 for normal separately).
+## Returns Vector2(snapped_height, normal_y).
+static func _snap_and_normal(wx: float, wz: float, height_func: Callable) -> Vector2:
+	const STEP := ZONE_SIZE / 32.0
+	var gx := floorf(wx / STEP) * STEP
+	var gz := floorf(wz / STEP) * STEP
+	var fx := (wx - gx) / STEP
+	var fz := (wz - gz) / STEP
+
+	var h00 := float(height_func.call(gx, gz))
+	var h10 := float(height_func.call(gx + STEP, gz))
+	var h01 := float(height_func.call(gx, gz + STEP))
+	var h11 := float(height_func.call(gx + STEP, gz + STEP))
+
+	var snapped: float
+	if fx + fz <= 1.0:
+		snapped = h00 + (h10 - h00) * fx + (h01 - h00) * fz
+	else:
+		snapped = h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
+
+	var tx := Vector3(2.0 * STEP, h10 - h00 + h11 - h01, 0.0)
+	var tz := Vector3(0.0, h01 - h00 + h11 - h10, 2.0 * STEP)
+	var ny := tz.cross(tx).normalized().y
+
+	return Vector2(snapped, ny)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

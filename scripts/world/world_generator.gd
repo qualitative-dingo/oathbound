@@ -37,7 +37,7 @@ const ZONE_SIZE := 64.0
 @export var load_radius_zones: int = 2
 @export var unload_radius_zones: int = 3
 const MAX_ZONES_PER_FRAME := 2  # can be higher now since builds happen off-thread
-const MESH_RESOLUTION := 48
+const MESH_RESOLUTION := 32
 
 @export_group("Terrain")
 @export var height_scale: float = 30.0
@@ -60,8 +60,8 @@ var _microbiome_secondary: FastNoiseLite
 # ─── Watershed Grid ───────────────────────────────────────────────────────────
 
 const _WS_CELL := 48.0
-const _WS_RIVER_THRESH := 5.0
-const _WS_RIVER_FULL := 60.0
+const _WS_RIVER_THRESH := 3.0
+const _WS_RIVER_FULL := 80.0
 
 const _D8X := [1, 1, 0, -1, -1, -1, 0, 1]
 const _D8Z := [0, -1, -1, -1, 0, 1, 1, 1]
@@ -593,24 +593,35 @@ func get_height_at(x: float, z: float) -> float:
 
 	# Watershed river carving — accumulation drives depth and width
 	var accum := _ws_sample_accum(x, z)
-	if accum > _WS_RIVER_THRESH * 0.6:
-		# Noise-based widening: perturb the effective accumulation outward
-		var widen_n := _detail_noise.get_noise_2d(x * 0.08 + 3000.0, z * 0.08 + 3000.0)
-		var effective_accum := accum + widen_n * _WS_RIVER_THRESH * 0.5
+	if accum > _WS_RIVER_THRESH * 0.2:
+		# Low-frequency noise for smooth, organic river-edge curves
+		var widen_n := _detail_noise.get_noise_2d(x * 0.025 + 3000.0, z * 0.025 + 3000.0)
+		var effective_accum := accum + widen_n * _WS_RIVER_THRESH * 1.2
 
+		# Bank slope — WIDE zone that gently lowers terrain toward water level.
+		# Applied OUTSIDE the carve gate so shoreline has a gradual incline.
+		var bank_t := smoothstep(_WS_RIVER_THRESH * 0.3, _WS_RIVER_THRESH * 1.2, effective_accum)
+		if bank_t > 0.0:
+			h = lerpf(h, WATER_LEVEL + 0.15, bank_t)
+
+		# Channel carving — push below water for the actual riverbed
 		if effective_accum > _WS_RIVER_THRESH:
 			var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, effective_accum)
-			var depth := lerpf(1.5, 8.0, t)
-			h = lerpf(h, WATER_LEVEL - depth, t)
+			var depth := lerpf(2.0, 8.0, t)
+			var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
+			h = lerpf(h, WATER_LEVEL - depth, carve)
 
-			# Gradual riverbank slope for natural shoreline
-			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.6, _WS_RIVER_THRESH, effective_accum)
-			var bank_depth := lerpf(0.0, 1.5, bank_t)
-			h = minf(h, lerpf(h, WATER_LEVEL + 0.2 - bank_depth, bank_t))
-
-	# Noise-driven lakes: carve proper basins with gradual shorelines
+	# Noise-driven lakes with river-confluence bias
 	if _detail_noise:
 		var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0)
+		# Lakes form more easily near rivers (moderate accumulation = natural confluences)
+		var accum_bias := smoothstep(1.0, _WS_RIVER_THRESH * 0.8, accum) * 0.08
+		lake_n -= accum_bias
+		# Gradual shore slope around lake edges (-0.10 to -0.18 transition zone)
+		if lake_n < -0.10 and lake_n >= -0.18:
+			var shore_t := smoothstep(-0.10, -0.18, lake_n)
+			h = lerpf(h, WATER_LEVEL + 0.15, shore_t)
+		# Full lake basin carve
 		if lake_n < -0.18:
 			var lake_t := smoothstep(-0.18, -0.50, lake_n)
 			var lake_depth := lerpf(1.5, 5.0, lake_t)
@@ -810,9 +821,9 @@ func _process_pending_zones() -> void:
 			pitem["phase"] = phase + 1
 		return  # don't finalize mesh AND populate on the same frame
 
-	# 3. Finalize up to 2 zones' meshes per frame
+	# 3. Finalize up to 1 zone mesh per frame to avoid stalls
 	var finalized := 0
-	while finalized < 2 and not _finalize_backlog.is_empty():
+	while finalized < 1 and not _finalize_backlog.is_empty():
 		var item: Dictionary = _finalize_backlog.pop_front()
 		var coord: Vector2i = item["coord"]
 		if not _is_in_load_range(coord):
