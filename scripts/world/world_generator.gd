@@ -70,6 +70,7 @@ const _D8DIST := [1.0, 1.414, 1.0, 1.414, 1.0, 1.414, 1.0, 1.414]
 
 var _ws_dim: int = 0
 var _ws_accum: PackedFloat32Array
+var _ws_heights: PackedFloat32Array
 
 # ─── Floating Origin ──────────────────────────────────────────────────────────
 # Periodically re-centers the scene around the player so the GPU always works
@@ -436,8 +437,9 @@ func _compute_watershed() -> void:
 	var n: int = _ws_dim * _ws_dim
 
 	# Step 1 — sample coarse base heights
-	var heights := PackedFloat32Array()
-	heights.resize(n)
+	_ws_heights = PackedFloat32Array()
+	_ws_heights.resize(n)
+	var heights := _ws_heights
 	for gz in _ws_dim:
 		for gx in _ws_dim:
 			var wx: float = -world_radius + float(gx) * _WS_CELL
@@ -509,6 +511,102 @@ func _compute_watershed() -> void:
 			in_deg[nidx] -= 1
 			if in_deg[nidx] == 0:
 				queue.append(nidx)
+
+	# Step 5 — trace winding outflow streams from noise-driven lakes
+	_trace_lake_outflows()
+
+
+func _trace_lake_outflows() -> void:
+	var claimed := {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _seed_hash + 77777
+
+	for gz in range(3, _ws_dim - 3, 3):
+		for gx in range(3, _ws_dim - 3, 3):
+			var wx: float = -world_radius + float(gx) * _WS_CELL
+			var wz: float = -world_radius + float(gz) * _WS_CELL
+			var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
+			if lake_n > -0.50:
+				continue
+			if _ws_accum[gz * _ws_dim + gx] > _WS_RIVER_THRESH:
+				continue
+			var region := Vector2i(gx / 10, gz / 10)
+			if claimed.has(region):
+				continue
+			claimed[region] = true
+
+			# Find the outflow point: lowest non-lake neighbor
+			var best_ex := -1
+			var best_ez := -1
+			var best_eh := 999999.0
+			for sr in range(1, 15):
+				for d in 8:
+					var ex := gx + _D8X[d] * sr
+					var ez := gz + _D8Z[d] * sr
+					if ex < 1 or ex >= _ws_dim - 1 or ez < 1 or ez >= _ws_dim - 1:
+						continue
+					var ewx := -world_radius + float(ex) * _WS_CELL
+					var ewz := -world_radius + float(ez) * _WS_CELL
+					var e_lake := _continent_noise.get_noise_2d(ewx * 0.7 + 5000.0, ewz * 0.7 + 5000.0)
+					if e_lake >= -0.38:
+						var eh := _ws_heights[ez * _ws_dim + ex]
+						if eh < best_eh:
+							best_eh = eh
+							best_ex = ex
+							best_ez = ez
+				if best_ex >= 0:
+					break
+
+			if best_ex < 0:
+				continue
+
+			# Trace a winding stream from the outflow point
+			var stream_accum := rng.randf_range(5.0, 10.0)
+			var pos := Vector2(float(best_ex), float(best_ez))
+			var prev_dir := Vector2.ZERO
+
+			for step in 200:
+				var cgx := clampi(int(round(pos.x)), 1, _ws_dim - 2)
+				var cgz := clampi(int(round(pos.y)), 1, _ws_dim - 2)
+				var cidx := cgz * _ws_dim + cgx
+
+				if _ws_accum[cidx] > _WS_RIVER_THRESH * 0.8:
+					_ws_accum[cidx] += stream_accum * 0.5
+					break
+
+				_ws_accum[cidx] = maxf(_ws_accum[cidx], stream_accum)
+
+				# Steepest descent direction
+				var best_d := -1
+				var best_s := -999.0
+				for d in 8:
+					var nx := cgx + _D8X[d]
+					var nz := cgz + _D8Z[d]
+					if nx < 0 or nx >= _ws_dim or nz < 0 or nz >= _ws_dim:
+						continue
+					var s := (_ws_heights[cidx] - _ws_heights[nz * _ws_dim + nx]) / _D8DIST[d]
+					if s > best_s:
+						best_s = s
+						best_d = d
+
+				if best_d < 0 or best_s <= 0.0:
+					break
+
+				var base_dir := Vector2(float(_D8X[best_d]), float(_D8Z[best_d])).normalized()
+
+				# Noise-driven lateral winding
+				var swx := -world_radius + pos.x * _WS_CELL
+				var swz := -world_radius + pos.y * _WS_CELL
+				var wander := _detail_noise.get_noise_2d(swx * 0.03 + 9000.0, swz * 0.03 + 9000.0)
+				var lateral := Vector2(-base_dir.y, base_dir.x)
+
+				var dir := base_dir * 0.7 + lateral * wander * 0.6
+				if prev_dir != Vector2.ZERO:
+					dir = prev_dir * 0.3 + dir * 0.7
+				dir = dir.normalized()
+				prev_dir = dir
+
+				pos += dir
 
 
 func _ws_sample_accum(wx: float, wz: float) -> float:
