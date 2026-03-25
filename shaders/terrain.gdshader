@@ -131,6 +131,9 @@ void fragment() {
 		fbm2(world_pos.xz * 0.012 + vec2(359.0, 83.0))
 	) * 28.0;
 
+	// Tight slope fade for all vertex-color features to prevent zigzag mesh artifacts
+	float slope_path_fade = smoothstep(0.10, 0.03, slope);
+
 	float mud = fbm2((world_pos.xz + terrain_warp) * 0.02 + vec2(200.0, 300.0));
 	float mud_mask = smoothstep(0.3, 0.55, mud) * slope_path_fade * variation_strength;
 	albedo = mix(albedo, col_slope * 0.75, mud_mask * 0.8);
@@ -141,8 +144,6 @@ void fragment() {
 	albedo = mix(albedo, dirt_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), dirt_mask);
 
 	// Clay paths from vertex color R channel — per-pixel noise breaks up vertex-grid edges
-	// Extra slope fade kills paths on even moderate slopes to prevent zigzag mesh artifacts
-	float slope_path_fade = smoothstep(0.10, 0.03, slope);
 	float path_perturb = (vnoise(world_pos.xz * 0.4 + vec2(777.0, 333.0)) - 0.5) * 0.35
 	                    + (vnoise(world_pos.xz * 1.2 + vec2(191.0, 573.0)) - 0.5) * 0.15;
 	float pm = smoothstep(0.2, 0.7, v_path_mask + path_perturb) * slope_path_fade;
