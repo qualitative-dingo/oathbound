@@ -168,15 +168,8 @@ func _process(delta: float) -> void:
 
 
 func _advance_weather() -> void:
-	var roll := _rng.randf()
-	var accum := 0.0
-	var new_w := Weather.SUN
-	for i in WEATHER_WEIGHTS.size():
-		accum += WEATHER_WEIGHTS[i]
-		if roll < accum:
-			new_w = i as Weather
-			break
-	current_weather = new_w
+	# TODO: re-enable weather variety once FPS cost is addressed
+	current_weather = Weather.SUN
 	_target_intensity = WEATHER_WIND[current_weather]
 	_cloud_target_color = WEATHER_CLOUD_COLOR[current_weather]
 	_target_sun_mult = WEATHER_SUN_MULT[current_weather]

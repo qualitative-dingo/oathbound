@@ -286,15 +286,15 @@ static func _ensure_textures() -> void:
 		smat.set_shader_parameter("moss_threshold", 0.55)
 		smat.set_shader_parameter("moss_blend_sharpness", 3.0)
 		smat.set_shader_parameter("moss_noise_scale", 2.5)
-		smat.set_shader_parameter("normal_strength", 2.5)
-		smat.set_shader_parameter("ao_strength", 0.6)
-		smat.set_shader_parameter("triplanar_scale", 3.0)
+		smat.set_shader_parameter("normal_strength", 0.8)
+		smat.set_shader_parameter("ao_strength", 0.8)
+		smat.set_shader_parameter("triplanar_scale", 1.0)
 		_mat_stone = smat
 	else:
 		var fallback := _make_triplanar_mat(stone_tex, Color(0.5, 0.48, 0.45))
-		fallback.uv1_scale = Vector3(3.0, 3.0, 3.0)
+		fallback.uv1_scale = Vector3(1.0, 1.0, 1.0)
 		fallback.normal_texture = _generate_stone_normal_map()
-		fallback.normal_scale = 0.7
+		fallback.normal_scale = 0.3
 		_mat_stone = fallback
 
 	# ── Pebble material — flat, muted, no normal map ──
