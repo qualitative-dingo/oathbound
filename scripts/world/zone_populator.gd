@@ -1447,12 +1447,12 @@ static func _build_trunk_mesh(
 			var v11: Vector3 = all_rings[ri + 1][ns]
 
 			st.add_vertex(v00)
-			st.add_vertex(v01)
 			st.add_vertex(v10)
+			st.add_vertex(v01)
 
 			st.add_vertex(v10)
-			st.add_vertex(v01)
 			st.add_vertex(v11)
+			st.add_vertex(v01)
 
 	# --- Bottom cap (triangle fan, facing down) ---
 	var bot_ring: PackedVector3Array = all_rings[0]
