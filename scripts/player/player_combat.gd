@@ -1469,9 +1469,11 @@ func fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tru
 	else:
 		fall_angle = override_angle + randf_range(-0.15, 0.15)
 
+	var is_sapling := trunk_h < 8.0
 	AudioManager.play_sfx("tree_fall", 4.0, 0.08)
 
-	spawn_tree_stump(node, tree_base)
+	if not is_sapling:
+		spawn_tree_stump(node, tree_base)
 
 	var fall_tween := node.create_tween()
 	fall_tween.set_ease(Tween.EASE_IN)

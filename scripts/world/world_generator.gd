@@ -133,6 +133,7 @@ var _zone_microbiome_cache: Dictionary = {}
 var _biome_materials: Dictionary = {}
 var _pending_zones: Array[Vector2i] = []
 var _players: Array[Node3D] = []
+var _player_cache_timer := 0.0
 var _last_player_biome: StringName = &""
 var _needs_player_placement := true
 var _global_water_plane: MeshInstance3D
@@ -289,10 +290,19 @@ func _physics_process(delta: float) -> void:
 		_perf_max_total_ms = 0.0
 		_perf_pending_size_max = 0
 
-	_players.clear()
-	for n in get_tree().get_nodes_in_group(&"player"):
-		if n is Node3D:
-			_players.append(n)
+	_player_cache_timer -= delta
+	var _need_refresh := _player_cache_timer <= 0.0 or _players.is_empty()
+	if not _need_refresh:
+		for p in _players:
+			if not is_instance_valid(p):
+				_need_refresh = true
+				break
+	if _need_refresh:
+		_player_cache_timer = 1.0
+		_players.clear()
+		for n in get_tree().get_nodes_in_group(&"player"):
+			if n is Node3D and is_instance_valid(n):
+				_players.append(n)
 	if _players.is_empty():
 		return
 	_check_origin_shift()
@@ -972,8 +982,16 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 		var cname: String = child.name
 		if cname == "TerrainMesh" or cname == "TerrainCol":
 			continue
-		if cname.begins_with("Grass_") or cname.begins_with("Sapling"):
+		var is_vegetation := cname.begins_with("Grass_") or cname.begins_with("Flower_") \
+			or cname == "Reeds" or cname.begins_with("Sapling") or cname == "BirchSapling"
+		if is_vegetation:
 			child.visible = new_lod <= 1
+		else:
+			child.visible = new_lod <= 1
+		if child is StaticBody3D:
+			for sub in child.get_children():
+				if sub is CollisionShape3D:
+					sub.set_deferred("disabled", new_lod >= 2)
 
 
 ## Runs on a WorkerThreadPool thread — pure computation, no scene access.
@@ -1120,8 +1138,8 @@ func _create_global_water() -> void:
 	_global_water_plane.name = "GlobalWater"
 	var plane := PlaneMesh.new()
 	plane.size = _water_plane_size()
-	plane.subdivide_width = 64
-	plane.subdivide_depth = 64
+	plane.subdivide_width = 32
+	plane.subdivide_depth = 32
 	_global_water_plane.mesh = plane
 
 	if _water_shader_mat:

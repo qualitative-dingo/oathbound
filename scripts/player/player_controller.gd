@@ -4243,13 +4243,9 @@ func _refresh_minimap() -> void:
 				_minimap_zone_color_cache[zone_coord] = col
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
-	_minimap_lo_image.resize(MINIMAP_PX, MINIMAP_PX, Image.INTERPOLATE_NEAREST)
-	_minimap_image.copy_from(_minimap_lo_image)
-	_minimap_lo_image.resize(_MINIMAP_LO, _MINIMAP_LO, Image.INTERPOLATE_NEAREST)
+	_draw_arrow_on_image(_minimap_lo_image, _MINIMAP_LO / 2, 0.52)
 
-	_draw_arrow_on_image(_minimap_image, MINIMAP_PX / 2, 2.6)
-
-	_minimap_image_tex.set_image(_minimap_image)
+	_minimap_image_tex.set_image(_minimap_lo_image)
 	if _minimap_tex_rect.texture != _minimap_image_tex:
 		_minimap_tex_rect.texture = _minimap_image_tex
 

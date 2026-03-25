@@ -700,8 +700,13 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				var sn := _snap_and_normal(wx, wz, height_func)
+				var ground_y := sn.x
 				if ground_y < _MIN_LAND_Y:
+					continue
+				if sn.y < 0.82:
+					continue
+				if _is_steep_edge(wx, wz, ground_y, height_func):
 					continue
 				if is_dirt_patch(wx, wz):
 					continue
@@ -737,8 +742,13 @@ static func populate_zone_phase(
 					var lz := clampf(cz + sin(angle) * dist, 4.0, ZONE_SIZE - 4.0)
 					var wx := origin_x + lx
 					var wz := origin_z + lz
-					var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+					var sn := _snap_and_normal(wx, wz, height_func)
+					var ground_y := sn.x
 					if ground_y < _MIN_LAND_Y:
+						continue
+					if sn.y < 0.82:
+						continue
+					if _is_steep_edge(wx, wz, ground_y, height_func):
 						continue
 					if is_dirt_patch(wx, wz):
 						continue
@@ -1542,8 +1552,13 @@ static func _scatter_saplings(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+		var sn := _snap_and_normal(wx, wz, height_func)
+		var ground_y := sn.x
 		if ground_y < _MIN_LAND_Y or ground_y > 40.0:
+			continue
+		if sn.y < 0.85:
+			continue
+		if _is_steep_edge(wx, wz, ground_y, height_func):
 			continue
 		if is_dirt_patch(wx, wz):
 			continue
@@ -1791,6 +1806,25 @@ static func _snap_and_normal(wx: float, wz: float, height_func: Callable) -> Vec
 	var ny := tz.cross(tx).normalized().y
 
 	return Vector2(snapped, ny)
+
+
+## Returns true when the point sits on or near a steep mountain edge.
+## Uses a wide-radius height probe to catch cliff transitions that
+## local normals miss (e.g., a flat ledge right at the edge of a drop).
+static func _is_steep_edge(wx: float, wz: float, ground_y: float, height_func: Callable) -> bool:
+	const R := 10.0
+	var h_l := _snap_height_to_mesh(wx - R, wz, height_func)
+	var h_r := _snap_height_to_mesh(wx + R, wz, height_func)
+	var h_u := _snap_height_to_mesh(wx, wz - R, height_func)
+	var h_d := _snap_height_to_mesh(wx, wz + R, height_func)
+	var slope_x := absf(h_r - h_l) / (R * 2.0)
+	var slope_z := absf(h_d - h_u) / (R * 2.0)
+	if slope_x > 0.28 or slope_z > 0.28:
+		return true
+	if absf(ground_y - h_l) > 5.0 or absf(ground_y - h_r) > 5.0 \
+			or absf(ground_y - h_u) > 5.0 or absf(ground_y - h_d) > 5.0:
+		return true
+	return false
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3373,12 +3407,15 @@ static func _ensure_water_plants() -> void:
 	_lily_pad_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	_lily_pad_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
-	# Lily flower — small pink/white bloom
+	# Lily flower — detailed pink/white bloom with vertex color gradient
 	_lily_flower_mesh = _gen_lily_flower_mesh()
 	_lily_flower_mat = StandardMaterial3D.new()
-	_lily_flower_mat.albedo_color = Color(0.92, 0.38, 0.58)
-	_lily_flower_mat.roughness = 0.85
+	_lily_flower_mat.albedo_color = Color.WHITE
+	_lily_flower_mat.vertex_color_use_as_albedo = true
+	_lily_flower_mat.roughness = 0.75
+	_lily_flower_mat.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 	_lily_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_lily_flower_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 	# Cattail stalk
 	_cattail_mat = StandardMaterial3D.new()
@@ -3459,60 +3496,157 @@ static func _gen_lily_flower_mesh() -> ArrayMesh:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
+	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 
-	# Outer petals — 6 wider, flatter petals
-	for p in 6:
-		var angle := float(p) / 6.0 * TAU
+	var white := Color(1.0, 0.97, 0.95)
+	var pink_base := Color(0.92, 0.38, 0.58)
+	var pink_deep := Color(0.82, 0.22, 0.45)
+	var yellow := Color(0.95, 0.85, 0.25)
+
+	# Outer petals — 8 wide, gently cupped petals with 3 segments each
+	for p in 8:
+		var angle := float(p) / 8.0 * TAU + 0.04
 		var dir := Vector3(cos(angle), 0.0, sin(angle))
 		var side := Vector3(-sin(angle), 0.0, cos(angle))
-		var bi := verts.size()
-		verts.append(Vector3(0.0, 0.06, 0.0))
-		verts.append(dir * 0.07 + side * 0.05 + Vector3(0, 0.08, 0))
-		verts.append(dir * 0.15 + Vector3(0, 0.09, 0))
-		verts.append(dir * 0.07 - side * 0.05 + Vector3(0, 0.08, 0))
-		for _n in 4:
-			normals.append(Vector3.UP)
-			uvs.append(Vector2(0.5, 0.5))
-		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
-		indices.append(bi); indices.append(bi + 2); indices.append(bi + 3)
+		var petal_n := (dir * 0.3 + Vector3.UP).normalized()
 
-	# Inner petals — 6 narrower, more upright, offset half-step
-	for p in 6:
-		var angle := (float(p) + 0.5) / 6.0 * TAU
-		var dir := Vector3(cos(angle), 0.0, sin(angle))
-		var side := Vector3(-sin(angle), 0.0, cos(angle))
 		var bi := verts.size()
-		verts.append(Vector3(0.0, 0.09, 0.0))
-		verts.append(dir * 0.04 + side * 0.03 + Vector3(0, 0.12, 0))
-		verts.append(dir * 0.09 + Vector3(0, 0.14, 0))
-		verts.append(dir * 0.04 - side * 0.03 + Vector3(0, 0.12, 0))
-		for _n in 4:
-			normals.append(Vector3.UP)
-			uvs.append(Vector2(0.5, 0.5))
-		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
-		indices.append(bi); indices.append(bi + 2); indices.append(bi + 3)
-
-	# Center bud — small cone
-	var cb := verts.size()
-	verts.append(Vector3(0.0, 0.16, 0.0))
-	normals.append(Vector3.UP)
-	uvs.append(Vector2(0.5, 0.5))
-	for i in 8:
-		var a := float(i) / 8.0 * TAU
-		verts.append(Vector3(cos(a) * 0.02, 0.11, sin(a) * 0.02))
+		# Base (center attachment)
+		verts.append(Vector3(0.0, 0.05, 0.0))
 		normals.append(Vector3.UP)
-		uvs.append(Vector2(0.5, 0.5))
-	for i in 8:
+		colors.append(white)
+		uvs.append(Vector2(0.5, 0.0))
+		# Mid-left
+		verts.append(dir * 0.06 + side * 0.045 + Vector3(0, 0.07, 0))
+		normals.append(petal_n)
+		colors.append(lerp(white, pink_base, 0.3))
+		uvs.append(Vector2(0.25, 0.4))
+		# Mid-right
+		verts.append(dir * 0.06 - side * 0.045 + Vector3(0, 0.07, 0))
+		normals.append(petal_n)
+		colors.append(lerp(white, pink_base, 0.3))
+		uvs.append(Vector2(0.75, 0.4))
+		# Wide-left
+		verts.append(dir * 0.11 + side * 0.055 + Vector3(0, 0.065, 0))
+		normals.append(petal_n)
+		colors.append(lerp(pink_base, pink_deep, 0.3))
+		uvs.append(Vector2(0.15, 0.7))
+		# Wide-right
+		verts.append(dir * 0.11 - side * 0.055 + Vector3(0, 0.065, 0))
+		normals.append(petal_n)
+		colors.append(lerp(pink_base, pink_deep, 0.3))
+		uvs.append(Vector2(0.85, 0.7))
+		# Tip (slightly drooping)
+		verts.append(dir * 0.16 + Vector3(0, 0.055, 0))
+		normals.append((dir * 0.5 + Vector3.UP * 0.5).normalized())
+		colors.append(pink_deep)
+		uvs.append(Vector2(0.5, 1.0))
+
+		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
+		indices.append(bi + 1); indices.append(bi + 3); indices.append(bi + 5)
+		indices.append(bi + 1); indices.append(bi + 5); indices.append(bi + 2)
+		indices.append(bi + 2); indices.append(bi + 5); indices.append(bi + 4)
+
+	# Middle petals — 8 narrower, angled upward, offset half-step
+	for p in 8:
+		var angle := (float(p) + 0.5) / 8.0 * TAU
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var side := Vector3(-sin(angle), 0.0, cos(angle))
+		var petal_n := (dir * 0.2 + Vector3.UP * 0.8).normalized()
+
+		var bi := verts.size()
+		verts.append(Vector3(0.0, 0.08, 0.0))
+		normals.append(Vector3.UP)
+		colors.append(white)
+		uvs.append(Vector2(0.5, 0.0))
+		verts.append(dir * 0.04 + side * 0.035 + Vector3(0, 0.11, 0))
+		normals.append(petal_n)
+		colors.append(lerp(white, pink_base, 0.5))
+		uvs.append(Vector2(0.3, 0.4))
+		verts.append(dir * 0.04 - side * 0.035 + Vector3(0, 0.11, 0))
+		normals.append(petal_n)
+		colors.append(lerp(white, pink_base, 0.5))
+		uvs.append(Vector2(0.7, 0.4))
+		verts.append(dir * 0.10 + Vector3(0, 0.13, 0))
+		normals.append(petal_n)
+		colors.append(pink_base)
+		uvs.append(Vector2(0.5, 1.0))
+
+		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
+		indices.append(bi + 1); indices.append(bi + 3); indices.append(bi + 2)
+
+	# Inner petals — 6 small, steep, cupping the center
+	for p in 6:
+		var angle := float(p) / 6.0 * TAU + 0.12
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var side := Vector3(-sin(angle), 0.0, cos(angle))
+		var petal_n := (dir * 0.15 + Vector3.UP).normalized()
+
+		var bi := verts.size()
+		verts.append(Vector3(0.0, 0.11, 0.0))
+		normals.append(Vector3.UP)
+		colors.append(lerp(white, yellow, 0.2))
+		uvs.append(Vector2(0.5, 0.0))
+		verts.append(dir * 0.025 + side * 0.02 + Vector3(0, 0.14, 0))
+		normals.append(petal_n)
+		colors.append(lerp(white, pink_base, 0.4))
+		uvs.append(Vector2(0.3, 0.5))
+		verts.append(dir * 0.025 - side * 0.02 + Vector3(0, 0.14, 0))
+		normals.append(petal_n)
+		colors.append(lerp(white, pink_base, 0.4))
+		uvs.append(Vector2(0.7, 0.5))
+		verts.append(dir * 0.055 + Vector3(0, 0.155, 0))
+		normals.append(petal_n)
+		colors.append(pink_base)
+		uvs.append(Vector2(0.5, 1.0))
+
+		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
+		indices.append(bi + 1); indices.append(bi + 3); indices.append(bi + 2)
+
+	# Center pistil — yellow dome with stamens
+	var cb := verts.size()
+	verts.append(Vector3(0.0, 0.17, 0.0))
+	normals.append(Vector3.UP)
+	colors.append(Color(0.95, 0.90, 0.20))
+	uvs.append(Vector2(0.5, 0.5))
+	for i in 10:
+		var a := float(i) / 10.0 * TAU
+		verts.append(Vector3(cos(a) * 0.025, 0.12, sin(a) * 0.025))
+		normals.append(Vector3(cos(a), 0.3, sin(a)).normalized())
+		colors.append(Color(0.90, 0.80, 0.15))
+		uvs.append(Vector2(0.5 + cos(a) * 0.5, 0.5 + sin(a) * 0.5))
+	for i in 10:
 		indices.append(cb)
 		indices.append(cb + 1 + i)
-		indices.append(cb + 1 + (i + 1) % 8)
+		indices.append(cb + 1 + (i + 1) % 10)
+
+	# Stamens — thin spikes radiating from center
+	for s in 12:
+		var a := float(s) / 12.0 * TAU + 0.15
+		var sd := Vector3(cos(a), 0.0, sin(a))
+		var bi := verts.size()
+		verts.append(Vector3(cos(a) * 0.015, 0.13, sin(a) * 0.015))
+		normals.append(Vector3.UP)
+		colors.append(Color(0.85, 0.75, 0.10))
+		uvs.append(Vector2(0.5, 0.0))
+		verts.append(sd * 0.04 + Vector3(0, 0.155 + sin(a * 3.0) * 0.01, 0))
+		normals.append((sd + Vector3.UP).normalized())
+		colors.append(yellow)
+		uvs.append(Vector2(0.5, 0.8))
+		# Anther tip — small triangle cap
+		verts.append(sd * 0.045 + Vector3(0.003, 0.16 + sin(a * 3.0) * 0.01, 0))
+		normals.append(Vector3.UP)
+		colors.append(Color(0.98, 0.92, 0.30))
+		uvs.append(Vector2(0.5, 1.0))
+		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = indices
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
@@ -3660,7 +3794,7 @@ static func _scatter_water_plants(
 			flower.mesh = _lily_flower_mesh
 			flower.material_override = _lily_flower_mat
 			flower.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			flower.scale = Vector3(3.0, 3.0, 3.0)
+			flower.scale = Vector3(5.1, 5.1, 5.1)
 			var off_angle := rng.randf_range(0.0, TAU)
 			var off_dist := rng.randf_range(0.0, 0.12)
 			flower.position = Vector3(cos(off_angle) * off_dist, 0.0, sin(off_angle) * off_dist)
@@ -3715,7 +3849,7 @@ static func _scatter_water_plants(
 	var num_clumps := 0
 	if reed_hash > 0.3:
 		var reed_d := (reed_hash - 0.3) / 0.7
-		num_clumps = rng.randi_range(int(1.0 + reed_d * 2.0), int(2.0 + reed_d * 5.0))
+		num_clumps = rng.randi_range(int(3.0 + reed_d * 6.0), int(6.0 + reed_d * 15.0))
 
 	var transforms: Array[Transform3D] = []
 	for _c in num_clumps:
@@ -3726,7 +3860,7 @@ static func _scatter_water_plants(
 			cx = rng.randf_range(4.0, ZONE_SIZE - 4.0)
 			cz = rng.randf_range(4.0, ZONE_SIZE - 4.0)
 			var ch := _snap_height_to_mesh(origin_x + cx, origin_z + cz, height_func)
-			if ch >= -0.15 and ch <= 0.3:
+			if ch >= -1.0 and ch <= _WATER_LEVEL:
 				found = true
 				break
 		if not found:
@@ -3738,7 +3872,7 @@ static func _scatter_water_plants(
 			var wx := origin_x + cx + ox
 			var wz := origin_z + cz + oz
 			var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
-			if mesh_h < -0.15 or mesh_h > 0.4:
+			if mesh_h < -1.5 or mesh_h > _WATER_LEVEL:
 				continue
 			if _is_near_structure(wx, wz):
 				continue
