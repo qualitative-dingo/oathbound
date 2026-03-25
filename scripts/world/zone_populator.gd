@@ -3422,29 +3422,28 @@ static func _gen_lily_pad_mesh() -> ArrayMesh:
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-	var segs := 10
+	var segs := 32
 	var radius := 0.5
+	var slit_half := deg_to_rad(8.0)
+	var arc := TAU - 2.0 * slit_half
+
 	verts.append(Vector3.ZERO)
 	normals.append(Vector3.UP)
 	uvs.append(Vector2(0.5, 0.5))
-	var notch_start := 7
-	var notch_end := 9
-	for i in segs:
-		var angle := float(i) / segs * TAU
-		if i >= notch_start and i <= notch_end:
-			var r := radius * 0.35
-			verts.append(Vector3(cos(angle) * r, 0.0, sin(angle) * r))
-		else:
-			var wobble := 0.9 + 0.1 * sin(float(i) * 3.7)
-			verts.append(Vector3(cos(angle) * radius * wobble, 0.0, sin(angle) * radius * wobble))
+
+	for i in range(segs + 1):
+		var angle := slit_half + float(i) / float(segs) * arc
+		var wobble := 0.97 + 0.03 * sin(float(i) * 4.1 + 2.7)
+		var r := radius * wobble
+		verts.append(Vector3(cos(angle) * r, 0.0, sin(angle) * r))
 		normals.append(Vector3.UP)
 		uvs.append(Vector2(0.5 + cos(angle) * 0.5, 0.5 + sin(angle) * 0.5))
-	for i in segs:
-		var next := (i % segs) + 1
-		var after := ((i + 1) % segs) + 1
+
+	for i in range(segs):
 		indices.append(0)
-		indices.append(next)
-		indices.append(after)
+		indices.append(i + 1)
+		indices.append(i + 2)
+
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -3461,23 +3460,54 @@ static func _gen_lily_flower_mesh() -> ArrayMesh:
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-	var petals := 5
-	var petal_len := 0.12
-	var petal_w := 0.06
-	for p in petals:
-		var angle := float(p) / petals * TAU
+
+	# Outer petals — 6 wider, flatter petals
+	for p in 6:
+		var angle := float(p) / 6.0 * TAU
 		var dir := Vector3(cos(angle), 0.0, sin(angle))
 		var side := Vector3(-sin(angle), 0.0, cos(angle))
 		var bi := verts.size()
-		verts.append(Vector3(0.0, 0.08, 0.0))
-		verts.append(dir * petal_len + side * petal_w + Vector3(0, 0.10, 0))
-		verts.append(dir * petal_len * 1.5 + Vector3(0, 0.12, 0))
-		verts.append(dir * petal_len - side * petal_w + Vector3(0, 0.10, 0))
+		verts.append(Vector3(0.0, 0.06, 0.0))
+		verts.append(dir * 0.07 + side * 0.05 + Vector3(0, 0.08, 0))
+		verts.append(dir * 0.15 + Vector3(0, 0.09, 0))
+		verts.append(dir * 0.07 - side * 0.05 + Vector3(0, 0.08, 0))
 		for _n in 4:
 			normals.append(Vector3.UP)
 			uvs.append(Vector2(0.5, 0.5))
 		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
 		indices.append(bi); indices.append(bi + 2); indices.append(bi + 3)
+
+	# Inner petals — 6 narrower, more upright, offset half-step
+	for p in 6:
+		var angle := (float(p) + 0.5) / 6.0 * TAU
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		var side := Vector3(-sin(angle), 0.0, cos(angle))
+		var bi := verts.size()
+		verts.append(Vector3(0.0, 0.09, 0.0))
+		verts.append(dir * 0.04 + side * 0.03 + Vector3(0, 0.12, 0))
+		verts.append(dir * 0.09 + Vector3(0, 0.14, 0))
+		verts.append(dir * 0.04 - side * 0.03 + Vector3(0, 0.12, 0))
+		for _n in 4:
+			normals.append(Vector3.UP)
+			uvs.append(Vector2(0.5, 0.5))
+		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
+		indices.append(bi); indices.append(bi + 2); indices.append(bi + 3)
+
+	# Center bud — small cone
+	var cb := verts.size()
+	verts.append(Vector3(0.0, 0.16, 0.0))
+	normals.append(Vector3.UP)
+	uvs.append(Vector2(0.5, 0.5))
+	for i in 8:
+		var a := float(i) / 8.0 * TAU
+		verts.append(Vector3(cos(a) * 0.02, 0.11, sin(a) * 0.02))
+		normals.append(Vector3.UP)
+		uvs.append(Vector2(0.5, 0.5))
+	for i in 8:
+		indices.append(cb)
+		indices.append(cb + 1 + i)
+		indices.append(cb + 1 + (i + 1) % 8)
+
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -3615,7 +3645,7 @@ static func _scatter_water_plants(
 		pad.rotation.y = rng.randf_range(0.0, TAU)
 		pad.position = Vector3(lx, _WATER_LEVEL + 0.02, lz)
 		zone_root.add_child(pad)
-		if rng.randf() < 0.6 and _lily_flower_mesh:
+		if rng.randf() < 0.1 and _lily_flower_mesh:
 			var flower := MeshInstance3D.new()
 			flower.mesh = _lily_flower_mesh
 			flower.material_override = _lily_flower_mat
