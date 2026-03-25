@@ -36,19 +36,24 @@ func _cache_biomes() -> void:
 		fname = dir.get_next()
 
 func _on_biome_changed(biome_id: StringName) -> void:
-	if not _env:
-		return
 	var data: BiomeData = _biome_cache.get(biome_id)
 	if not data:
 		return
-
-	if _tween and _tween.is_valid():
-		_tween.kill()
-	_tween = create_tween().set_parallel(true).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
-	_tween.tween_property(_env, "fog_light_color", data.fog_color, BIOME_TRANSITION_TIME)
-	_tween.tween_property(_env, "fog_density", data.fog_density, BIOME_TRANSITION_TIME)
-	_tween.tween_property(_env, "ambient_light_color", data.ambient_color, BIOME_TRANSITION_TIME)
-	_tween.tween_property(_env, "volumetric_fog_albedo", data.fog_color.lerp(Color(0.65, 0.62, 0.55), 0.5), BIOME_TRANSITION_TIME)
+	var dnc := get_node_or_null("DayNightCycle")
+	if dnc:
+		if _tween and _tween.is_valid():
+			_tween.kill()
+		_tween = create_tween().set_parallel(true).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
+		_tween.tween_property(dnc, "_base_fog_density", data.fog_density, BIOME_TRANSITION_TIME)
+		_tween.tween_property(dnc, "_base_fog_color", data.fog_color, BIOME_TRANSITION_TIME)
+		_tween.tween_property(dnc, "_base_ambient_color", data.ambient_color, BIOME_TRANSITION_TIME)
+	elif _env:
+		if _tween and _tween.is_valid():
+			_tween.kill()
+		_tween = create_tween().set_parallel(true).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_CUBIC)
+		_tween.tween_property(_env, "fog_light_color", data.fog_color, BIOME_TRANSITION_TIME)
+		_tween.tween_property(_env, "fog_density", data.fog_density, BIOME_TRANSITION_TIME)
+		_tween.tween_property(_env, "ambient_light_color", data.ambient_color, BIOME_TRANSITION_TIME)
 
 func _on_child_entered(node: Node) -> void:
 	if force_nearest_filter:

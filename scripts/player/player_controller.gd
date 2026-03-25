@@ -4201,8 +4201,12 @@ func _refresh_minimap() -> void:
 	if _minimap_weather_label:
 		_minimap_weather_label.text = WeatherSystem.get_weather_emoji()
 	if _minimap_time_label:
-		var dict := Time.get_time_dict_from_system()
-		_minimap_time_label.text = "%02d:%02d" % [dict["hour"], dict["minute"]]
+		var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree().current_scene else null
+		if dnc and dnc.has_method("get_time_string"):
+			_minimap_time_label.text = dnc.get_time_string()
+		else:
+			var dict := Time.get_time_dict_from_system()
+			_minimap_time_label.text = "%02d:%02d" % [dict["hour"], dict["minute"]]
 
 
 func _build_hotbar(root: Control) -> void:

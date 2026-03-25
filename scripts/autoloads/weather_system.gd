@@ -1,6 +1,7 @@
 extends Node
 ## Global weather system. Cycles between sun/wind/rain/storm.
 ## Other systems read current_weather and wind_intensity.
+## Pushes lighting multipliers to DayNightCycle when weather changes.
 
 enum Weather { SUN, WIND, RAIN, STORM }
 
@@ -22,6 +23,7 @@ const CLOUD_COUNT := 18
 const CLOUD_Y := 80.0
 const CLOUD_SPREAD := 200.0
 var _cached_player: Node3D
+var _cached_day_night: Node
 
 const WEATHER_DURATIONS := {
 	Weather.SUN:   Vector2(90.0, 200.0),
@@ -44,7 +46,32 @@ const WEATHER_CLOUD_COLOR := {
 	Weather.STORM: Color(0.32, 0.33, 0.38, 0.9),
 }
 
+const WEATHER_SUN_MULT := {
+	Weather.SUN:   1.0,
+	Weather.WIND:  0.9,
+	Weather.RAIN:  0.45,
+	Weather.STORM: 0.25,
+}
+
+const WEATHER_FOG_MULT := {
+	Weather.SUN:   1.0,
+	Weather.WIND:  1.3,
+	Weather.RAIN:  2.5,
+	Weather.STORM: 4.0,
+}
+
+const WEATHER_AMBIENT_MULT := {
+	Weather.SUN:   1.0,
+	Weather.WIND:  0.95,
+	Weather.RAIN:  0.7,
+	Weather.STORM: 0.5,
+}
+
 const WEATHER_WEIGHTS := [0.40, 0.25, 0.20, 0.15]
+
+var _target_sun_mult: float = 1.0
+var _target_fog_mult: float = 1.0
+var _target_ambient_mult: float = 1.0
 
 
 func _ready() -> void:
@@ -98,16 +125,17 @@ func _spawn_clouds() -> void:
 
 
 func _process(delta: float) -> void:
-	# Weather cycling disabled during development — locked to SUN
-	#_timer += delta
-	#if _timer >= _next_change:
-	#	_timer = 0.0
-	#	_advance_weather()
+	_timer += delta
+	if _timer >= _next_change:
+		_timer = 0.0
+		_advance_weather()
 
 	wind_intensity = move_toward(wind_intensity, _target_intensity, delta * 0.15)
 	RenderingServer.global_shader_parameter_set(&"leaf_wind_multiplier", wind_intensity)
 
 	_cloud_current_color = _cloud_current_color.lerp(_cloud_target_color, delta * 0.2)
+
+	_push_weather_to_day_night(delta)
 
 	if not is_instance_valid(_cached_player):
 		var players := get_tree().get_nodes_in_group(&"player")
@@ -151,8 +179,24 @@ func _advance_weather() -> void:
 	current_weather = new_w
 	_target_intensity = WEATHER_WIND[current_weather]
 	_cloud_target_color = WEATHER_CLOUD_COLOR[current_weather]
+	_target_sun_mult = WEATHER_SUN_MULT[current_weather]
+	_target_fog_mult = WEATHER_FOG_MULT[current_weather]
+	_target_ambient_mult = WEATHER_AMBIENT_MULT[current_weather]
 	_pick_next_duration()
 	weather_changed.emit(current_weather)
+
+
+func _push_weather_to_day_night(delta: float) -> void:
+	if not is_instance_valid(_cached_day_night):
+		var scene := get_tree().current_scene
+		if scene:
+			_cached_day_night = scene.get_node_or_null("DayNightCycle")
+	if not _cached_day_night:
+		return
+	var lerp_speed := delta * 0.3
+	_cached_day_night.weather_sun_mult = lerpf(_cached_day_night.weather_sun_mult, _target_sun_mult, lerp_speed)
+	_cached_day_night.weather_fog_mult = lerpf(_cached_day_night.weather_fog_mult, _target_fog_mult, lerp_speed)
+	_cached_day_night.weather_ambient_mult = lerpf(_cached_day_night.weather_ambient_mult, _target_ambient_mult, lerp_speed)
 
 
 func _pick_next_duration() -> void:

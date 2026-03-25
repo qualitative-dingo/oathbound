@@ -25,7 +25,7 @@ var weather_fog_mult: float = 1.0
 var weather_ambient_mult: float = 1.0
 
 # ── Sun arc parameters ──────────────────────────────────────────────────
-const SUN_AXIS := Vector3(-1.0, 0.0, -0.5).normalized()
+var SUN_AXIS := Vector3(-1.0, 0.0, -0.5).normalized()
 const MOON_OFFSET := PI  # moon is opposite the sun
 
 # ── Gradient keyframes: time → value ────────────────────────────────────
