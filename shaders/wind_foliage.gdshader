@@ -21,7 +21,11 @@ void vertex() {
 	float height_factor = clamp(VERTEX.y * 0.5 + 0.5, 0.0, 1.0);
 	height_factor *= height_factor;
 
-	float t = TIME * wind_speed * mix(0.6, 1.0, wm);
+	// Per-area tempo variation for organic rustling
+	float local_tempo = 0.7 + 0.6 * (sin(world_pos.x * 0.07 + world_pos.z * 0.09 + 31.7)
+	                                 * sin(world_pos.z * 0.05 - world_pos.x * 0.06 + 74.3)
+	                                 * 0.5 + 0.5);
+	float t = TIME * wind_speed * mix(0.6, 1.0, wm) * local_tempo;
 	float wave_x = sin(world_pos.x * 0.8 + t) * 0.6
 	             + sin(world_pos.x * 1.7 + world_pos.z * 0.9 + t * 1.3) * 0.4;
 	float wave_z = cos(world_pos.z * 0.7 + t * 0.9) * 0.5
@@ -29,7 +33,7 @@ void vertex() {
 	float gust = sin(world_pos.x * 0.3 + world_pos.z * 0.2 + t * 0.4) * 0.5 + 0.5;
 	gust = gust * wind_turbulence;
 
-	float sway = wind_strength * wm * height_factor * (1.0 + gust * 0.5);
+	float sway = wind_strength * wm * height_factor * (1.0 + gust * 0.5) * local_tempo;
 	VERTEX.x += wave_x * sway;
 	VERTEX.z += wave_z * sway * 0.7;
 	VERTEX.y += sin(world_pos.x * 1.2 + world_pos.z * 0.8 + t * 1.5) * sway * 0.15;

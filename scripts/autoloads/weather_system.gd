@@ -25,6 +25,11 @@ const CLOUD_SPREAD := 200.0
 var _cached_player: Node3D
 var _cached_day_night: Node
 
+var _tumble_parent: Node3D
+var _tumble_leaves: Array[MeshInstance3D] = []
+const TUMBLE_COUNT := 12
+const TUMBLE_SPREAD := 60.0
+
 const WEATHER_DURATIONS := {
 	Weather.SUN:   Vector2(90.0, 200.0),
 	Weather.WIND:  Vector2(60.0, 150.0),
@@ -78,6 +83,7 @@ func _ready() -> void:
 	_rng.seed = int(Time.get_unix_time_from_system())
 	_pick_next_duration()
 	call_deferred("_spawn_clouds")
+	call_deferred("_spawn_tumble_leaves")
 
 
 func _spawn_clouds() -> void:
@@ -124,6 +130,66 @@ func _spawn_clouds() -> void:
 		_clouds.append(mi)
 
 
+func _spawn_tumble_leaves() -> void:
+	_tumble_parent = Node3D.new()
+	_tumble_parent.name = "TumblingLeaves"
+	get_tree().current_scene.add_child.call_deferred(_tumble_parent)
+	await get_tree().process_frame
+
+	var shader: Shader
+	if ResourceLoader.exists("res://shaders/tumbling_leaf.gdshader"):
+		shader = load("res://shaders/tumbling_leaf.gdshader") as Shader
+
+	var leaf_colors := [
+		Color(0.50, 0.38, 0.12),  # dry brown
+		Color(0.55, 0.30, 0.10),  # autumn brown
+		Color(0.60, 0.45, 0.15),  # golden
+		Color(0.35, 0.45, 0.12),  # greenish
+		Color(0.65, 0.25, 0.10),  # rusty orange
+	]
+
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.3, 0.3)
+
+	for i in TUMBLE_COUNT:
+		var mi := MeshInstance3D.new()
+		mi.name = "TumbleLeaf%d" % i
+		mi.mesh = quad
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var mat: Material
+		if shader:
+			var smat := ShaderMaterial.new()
+			smat.shader = shader
+			var col: Color = leaf_colors[i % leaf_colors.size()]
+			col = col.lerp(Color(_rng.randf_range(0.3, 0.7), _rng.randf_range(0.2, 0.5), _rng.randf_range(0.05, 0.2)), 0.3)
+			smat.set_shader_parameter("albedo_color", Color(col, 1.0))
+			smat.set_shader_parameter("tumble_speed", _rng.randf_range(1.5, 4.0))
+			mat = smat
+		else:
+			var smat := StandardMaterial3D.new()
+			smat.albedo_color = leaf_colors[i % leaf_colors.size()]
+			smat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mat = smat
+		mi.set_surface_override_material(0, mat)
+
+		var scale := _rng.randf_range(0.6, 1.4)
+		mi.scale = Vector3(scale, scale, scale)
+		mi.position = Vector3(
+			_rng.randf_range(-TUMBLE_SPREAD, TUMBLE_SPREAD),
+			0.15,
+			_rng.randf_range(-TUMBLE_SPREAD, TUMBLE_SPREAD))
+
+		mi.set_meta("drift_speed", Vector3(
+			_rng.randf_range(1.5, 5.0),
+			0.0,
+			_rng.randf_range(-1.0, 1.0)))
+		mi.set_meta("ground_offset", _rng.randf_range(0.08, 0.25))
+
+		_tumble_parent.add_child(mi)
+		_tumble_leaves.append(mi)
+
+
 func _process(delta: float) -> void:
 	_timer += delta
 	if _timer >= _next_change:
@@ -165,6 +231,40 @@ func _process(delta: float) -> void:
 		var cloud_mat := cloud.get_surface_override_material(0) as StandardMaterial3D
 		if cloud_mat:
 			cloud_mat.albedo_color = _cloud_current_color
+
+	_update_tumble_leaves(delta, player)
+
+
+func _update_tumble_leaves(delta: float, player: Node3D) -> void:
+	if not is_instance_valid(_tumble_parent):
+		return
+	var wg: Node = null
+	var scene := get_tree().current_scene
+	if scene:
+		wg = scene.get_node_or_null("WorldGenerator")
+
+	for leaf in _tumble_leaves:
+		if not is_instance_valid(leaf):
+			continue
+		var drift: Vector3 = leaf.get_meta("drift_speed", Vector3.ZERO)
+		leaf.position += drift * wind_intensity * delta
+
+		if player:
+			var dx := leaf.position.x - player.global_position.x
+			var dz := leaf.position.z - player.global_position.z
+			if dx > TUMBLE_SPREAD:
+				leaf.position.x -= TUMBLE_SPREAD * 2.0
+			elif dx < -TUMBLE_SPREAD:
+				leaf.position.x += TUMBLE_SPREAD * 2.0
+			if dz > TUMBLE_SPREAD:
+				leaf.position.z -= TUMBLE_SPREAD * 2.0
+			elif dz < -TUMBLE_SPREAD:
+				leaf.position.z += TUMBLE_SPREAD * 2.0
+
+			if wg and wg.has_method("get_height_at"):
+				var ground_y: float = wg.get_height_at(leaf.position.x, leaf.position.z)
+				var offset: float = leaf.get_meta("ground_offset", 0.15)
+				leaf.position.y = lerpf(leaf.position.y, ground_y + offset, delta * 3.0)
 
 
 func _advance_weather() -> void:
