@@ -3376,7 +3376,7 @@ static func _ensure_water_plants() -> void:
 	# Lily flower — small pink/white bloom
 	_lily_flower_mesh = _gen_lily_flower_mesh()
 	_lily_flower_mat = StandardMaterial3D.new()
-	_lily_flower_mat.albedo_color = Color(0.95, 0.75, 0.85)
+	_lily_flower_mat.albedo_color = Color(0.92, 0.38, 0.58)
 	_lily_flower_mat.roughness = 0.85
 	_lily_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 
@@ -3650,8 +3650,10 @@ static func _scatter_water_plants(
 			flower.mesh = _lily_flower_mesh
 			flower.material_override = _lily_flower_mat
 			flower.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			flower.scale = Vector3(2.0, 2.0, 2.0)
-			flower.position = Vector3(0.0, 0.0, 0.0)
+			flower.scale = Vector3(3.0, 3.0, 3.0)
+			var off_angle := rng.randf_range(0.0, TAU)
+			var off_dist := rng.randf_range(0.0, 0.12)
+			flower.position = Vector3(cos(off_angle) * off_dist, 0.0, sin(off_angle) * off_dist)
 			pad.add_child(flower)
 
 	# ── Cattails — emergent plants right at the waterline ──
