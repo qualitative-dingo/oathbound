@@ -612,6 +612,11 @@ func get_height_at(x: float, z: float) -> float:
 
 	h += detail * height_scale * 0.2
 
+	var elev_t := clampf((h - 8.0) / 15.0, 0.0, 1.0)
+	if elev_t > 0.0:
+		var crag := _detail_noise.get_noise_2d(x * 0.12 + 7000.0, z * 0.12 + 7000.0)
+		h += crag * height_scale * 0.08 * elev_t
+
 	# Keep terrain well above water — prevents thin land strips near shores
 	h = maxf(h, WATER_LEVEL + 1.5)
 

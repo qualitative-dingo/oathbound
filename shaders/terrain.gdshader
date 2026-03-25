@@ -175,4 +175,17 @@ void fragment() {
 	ROUGHNESS = mix(base_rough, path_roughness, pm);
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
+
+	float rock_strength = (slope_w + cliff_w) * 0.6;
+	if (rock_strength > 0.01) {
+		float rn1 = vnoise(world_pos.xz * 2.5 + vec2(311.0, 719.0));
+		float rn2 = vnoise(world_pos.xz * 6.0 + vec2(853.0, 127.0));
+		float rn3 = vnoise(world_pos.xz * 14.0 + vec2(491.0, 953.0));
+		float rock_detail = (rn1 - 0.5) * 0.5 + (rn2 - 0.5) * 0.3 + (rn3 - 0.5) * 0.2;
+		NORMAL = normalize(NORMAL + vec3(
+			dFdx(rock_detail) * 40.0 * rock_strength,
+			0.0,
+			dFdy(rock_detail) * 40.0 * rock_strength
+		));
+	}
 }
