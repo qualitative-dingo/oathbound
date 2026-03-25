@@ -411,7 +411,7 @@ const _REPORT_DATA_INTERVAL := 8.0
 var _report_data_timer := 0.0
 
 var _movement: PlayerMovement
-var _combat: PlayerCombat
+var _combat: Node
 var _building: PlayerBuilding
 var _inventory_ui: PlayerInventoryUI
 var _workbench_ui: PlayerWorkbenchUI
