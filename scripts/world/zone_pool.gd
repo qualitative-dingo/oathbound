@@ -20,7 +20,7 @@ static var _saplings: Array[StaticBody3D] = []
 const MAX_TREES := 30
 const MAX_ROCKS := 10
 const MAX_SAPLINGS := 30
-const MAX_GRASS := 8
+const MAX_GRASS := 16
 const MAX_ZONE_ROOTS := 5
 
 static var _stats_recycled := 0
