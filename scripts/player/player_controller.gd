@@ -313,6 +313,7 @@ const ATTACK_FRAME_DURATION_BOW := 0.08
 var _current_attack_frame_duration := 0.06
 const _DamageNumber := preload("res://scripts/ui/damage_number.gd")
 const _LootDrop := preload("res://scripts/items/loot_drop.gd")
+const _PlayerCombat := preload("res://scripts/player/player_combat.gd")
 
 # Floating bars above player (3D, shader-driven)
 var _bar_anchor: Node3D
@@ -474,7 +475,7 @@ func _ready() -> void:
 	add_child(_movement)
 	_movement.pc = self
 
-	_combat = PlayerCombat.new()
+	_combat = _PlayerCombat.new()
 	_combat.name = "PlayerCombat"
 	add_child(_combat)
 	_combat.pc = self

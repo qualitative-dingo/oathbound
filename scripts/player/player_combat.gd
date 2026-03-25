@@ -1,8 +1,7 @@
-class_name PlayerCombat
 extends Node
 ## Combat sub-module for PlayerController: bow, melee, harvestables, damage, death.
 
-var pc: CharacterBody3D
+var pc: PlayerController
 
 const MELEE_HIT_DELAY := 0.18
 const BOW_MAX_DRAW_TIME := 1.2
