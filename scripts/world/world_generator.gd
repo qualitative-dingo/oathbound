@@ -546,7 +546,7 @@ func _determine_microbiome(zone: Vector2i) -> StringName:
 	var micro: StringName
 
 	# River areas: near rivers/streams
-	if accum > _WS_RIVER_THRESH * 0.4:
+	if accum > _WS_RIVER_THRESH * 0.6:
 		micro = &"riverside"
 	# Hilly terrain: high elevation + mountainous noise
 	elif height > 10.0:
@@ -588,42 +588,37 @@ func get_height_at(x: float, z: float) -> float:
 	h += maxf(mountain, 0.0) * height_scale * 1.5
 	h += detail * height_scale * 0.1
 
-	# Keep terrain above water unless carved by rivers/lakes
-	h = maxf(h, WATER_LEVEL + 0.4)
+	# Keep terrain well above water — prevents thin land strips near shores
+	h = maxf(h, WATER_LEVEL + 1.5)
 
 	# Watershed river carving — accumulation drives depth and width
 	var accum := _ws_sample_accum(x, z)
-	if accum > _WS_RIVER_THRESH * 0.2:
-		# Low-frequency noise for smooth, organic river-edge curves
+	if accum > _WS_RIVER_THRESH * 0.5:
 		var widen_n := _detail_noise.get_noise_2d(x * 0.025 + 3000.0, z * 0.025 + 3000.0)
-		var effective_accum := accum + widen_n * _WS_RIVER_THRESH * 1.2
+		var effective_accum := accum + widen_n * _WS_RIVER_THRESH * 0.35
 
-		# Bank slope — WIDE zone that gently lowers terrain toward water level.
-		# Applied OUTSIDE the carve gate so shoreline has a gradual incline.
-		var bank_t := smoothstep(_WS_RIVER_THRESH * 0.3, _WS_RIVER_THRESH * 1.2, effective_accum)
+		# Bank slope toward water level
+		var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum)
 		if bank_t > 0.0:
 			h = lerpf(h, WATER_LEVEL + 0.15, bank_t)
 
-		# Channel carving — push below water for the actual riverbed
+		# Channel carving below water for the riverbed
 		if effective_accum > _WS_RIVER_THRESH:
 			var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, effective_accum)
 			var depth := lerpf(2.0, 8.0, t)
 			var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
 			h = lerpf(h, WATER_LEVEL - depth, carve)
 
-	# Noise-driven lakes with river-confluence bias
+	# Noise-driven lakes — restricted to ~20% of terrain
 	if _detail_noise:
 		var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0)
-		# Lakes form more easily near rivers (moderate accumulation = natural confluences)
-		var accum_bias := smoothstep(1.0, _WS_RIVER_THRESH * 0.8, accum) * 0.08
-		lake_n -= accum_bias
-		# Gradual shore slope around lake edges (-0.10 to -0.18 transition zone)
-		if lake_n < -0.10 and lake_n >= -0.18:
-			var shore_t := smoothstep(-0.10, -0.18, lake_n)
+		# Gradual shore slope (-0.30 to -0.42 transition = wide smooth shoreline)
+		if lake_n < -0.30 and lake_n >= -0.42:
+			var shore_t := smoothstep(-0.30, -0.42, lake_n)
 			h = lerpf(h, WATER_LEVEL + 0.15, shore_t)
 		# Full lake basin carve
-		if lake_n < -0.18:
-			var lake_t := smoothstep(-0.18, -0.50, lake_n)
+		if lake_n < -0.42:
+			var lake_t := smoothstep(-0.42, -0.65, lake_n)
 			var lake_depth := lerpf(1.5, 5.0, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
@@ -1123,7 +1118,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			var path_f := _ZonePopulator.get_path_factor(wx, wz)
 			# Blue channel = river bank proximity (0..1) for muddy shoreline blending
 			var accum_here := _ws_sample_accum(wx, wz)
-			var river_bank := smoothstep(_WS_RIVER_THRESH * 0.3, _WS_RIVER_THRESH * 1.2, accum_here)
+			var river_bank := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, accum_here)
 			river_bank = clampf(river_bank, 0.0, 1.0)
 			colors.append(Color(path_f, brightness, river_bank))
 
