@@ -3410,7 +3410,7 @@ static func _ensure_water_plants() -> void:
 		_reed_mat.shader = _grass_shader
 		var reed_tex := _gen_reed_texture()
 		_reed_mat.set_shader_parameter("albedo_texture", reed_tex)
-		_reed_mat.set_shader_parameter("albedo_color", Color(0.20, 0.40, 0.14))
+		_reed_mat.set_shader_parameter("albedo_color", Color(1.0, 1.0, 1.0))
 		_reed_mat.set_shader_parameter("alpha_cutoff", 0.4)
 		_reed_mat.set_shader_parameter("wind_strength", 0.3)
 		_reed_mat.set_shader_parameter("wind_speed", 1.2)
@@ -3526,6 +3526,8 @@ static func _gen_reed_texture() -> ImageTexture:
 	var h := 64
 	var img := Image.create(w, h, true, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
+	var wheat := Color(0.72, 0.62, 0.35)
+	var green := Color(0.30, 0.52, 0.18)
 	for _blade in rng.randi_range(3, 5):
 		var cx := rng.randi_range(8, w - 9)
 		var blade_h := rng.randi_range(40, h - 4)
@@ -3533,14 +3535,17 @@ static func _gen_reed_texture() -> ImageTexture:
 		var curve := rng.randf_range(-0.04, 0.04)
 		for dy in blade_h:
 			var t := float(dy) / float(blade_h)
-			var bri := lerpf(0.45, 0.8, t)
 			var width := int(lerpf(float(blade_w), 1.0, t * 0.8))
 			var ox := int(curve * dy * dy * 0.01)
+			var col_t := smoothstep(0.20, 0.35, t)
+			var blade_col := wheat.lerp(green, col_t)
+			blade_col *= lerpf(0.7, 1.0, t)
+			blade_col.a = 1.0
 			for dx in range(-width, width + 1):
 				var px := cx + dx + ox
 				var py := h - 1 - dy
 				if px >= 0 and px < w and py >= 0 and py < h:
-					img.set_pixel(px, py, Color(bri, bri, bri, 1.0))
+					img.set_pixel(px, py, blade_col)
 	return ImageTexture.create_from_image(img)
 
 
@@ -3627,7 +3632,12 @@ static func _scatter_water_plants(
 	var origin_z: float = coord.y * ZONE_SIZE
 
 	# ── Lily pads — float on water where terrain is submerged ──
-	var lily_count := rng.randi_range(40, 90)
+	# Per-zone hash: ~40% of zones get no lilies, rest get varying density (max 40% of old count)
+	var lily_hash := absf(sin(float(coord.x * 73 + coord.y * 137) * 0.1))
+	var lily_count := 0
+	if lily_hash > 0.4:
+		var lily_d := (lily_hash - 0.4) / 0.6
+		lily_count = rng.randi_range(int(3.0 + lily_d * 10.0), int(8.0 + lily_d * 28.0))
 	for _i in lily_count:
 		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
@@ -3698,29 +3708,46 @@ static func _scatter_water_plants(
 			plant.position = Vector3(lx + ox, ground_y, lz + oz)
 			zone_root.add_child(plant)
 
-	# ── Reeds — tall grass at the waterline, MultiMesh for performance ──
+	# ── Reeds — clumped along water edges, per-zone variation ──
 	if not _reed_mat or not _grass_quad_mesh:
 		return
+	var reed_hash := absf(sin(float(coord.x * 97 + coord.y * 163) * 0.1))
+	var num_clumps := 0
+	if reed_hash > 0.3:
+		var reed_d := (reed_hash - 0.3) / 0.7
+		num_clumps = rng.randi_range(int(1.0 + reed_d * 2.0), int(2.0 + reed_d * 5.0))
+
 	var transforms: Array[Transform3D] = []
-	var reed_attempts := rng.randi_range(60, 120)
-	for _i in reed_attempts:
-		var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
-		var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
-		var wx := origin_x + lx
-		var wz := origin_z + lz
-		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
-		if mesh_h < -0.1 or mesh_h > 0.4:
+	for _c in num_clumps:
+		var cx := 0.0
+		var cz := 0.0
+		var found := false
+		for _try in 20:
+			cx = rng.randf_range(4.0, ZONE_SIZE - 4.0)
+			cz = rng.randf_range(4.0, ZONE_SIZE - 4.0)
+			var ch := _snap_height_to_mesh(origin_x + cx, origin_z + cz, height_func)
+			if ch >= -0.15 and ch <= 0.3:
+				found = true
+				break
+		if not found:
 			continue
-		if _is_near_structure(wx, wz):
-			continue
-		var ground_y := maxf(mesh_h, _WATER_LEVEL - 0.15)
-		var scale := rng.randf_range(1.5, 2.8)
-		var rot := rng.randf_range(0.0, TAU)
-		var sx := 0.6 * scale
-		var sy := 1.2 * scale
-		var sz := 0.6 * scale
-		var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
-		transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+		var reeds_in_clump := rng.randi_range(8, 22)
+		for _r in reeds_in_clump:
+			var ox := rng.randf_range(-1.8, 1.8)
+			var oz := rng.randf_range(-1.8, 1.8)
+			var wx := origin_x + cx + ox
+			var wz := origin_z + cz + oz
+			var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+			if mesh_h < -0.15 or mesh_h > 0.4:
+				continue
+			if _is_near_structure(wx, wz):
+				continue
+			var ground_y := maxf(mesh_h, _WATER_LEVEL - 0.15)
+			var sc := rng.randf_range(1.5, 2.8)
+			var rot := rng.randf_range(0.0, TAU)
+			var basis := Basis(Vector3.UP, rot).scaled(Vector3(0.6 * sc, 1.2 * sc, 0.6 * sc))
+			transforms.append(Transform3D(basis, Vector3(cx + ox, ground_y, cz + oz)))
+
 	if transforms.is_empty():
 		return
 	var mmi := MultiMeshInstance3D.new()
