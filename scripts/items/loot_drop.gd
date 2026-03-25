@@ -6,7 +6,7 @@ extends StaticBody3D
 @export var amount: int = 1
 @export var star_level: int = 0
 
-const DESPAWN_TIME := 180.0
+const DESPAWN_TIME := 60.0
 const DESPAWN_FADE := 5.0
 const MAX_LOOT_NODES := 150
 const STACK_RADIUS_SQ := 2.25
