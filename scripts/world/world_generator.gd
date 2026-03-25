@@ -601,8 +601,8 @@ func get_height_at(x: float, z: float) -> float:
 	# Noise-driven lakes: carve proper basins with gradual shorelines
 	if _detail_noise:
 		var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0)
-		if lake_n < -0.25:
-			var lake_t := smoothstep(-0.25, -0.45, lake_n)
+		if lake_n < -0.18:
+			var lake_t := smoothstep(-0.18, -0.50, lake_n)
 			var lake_depth := lerpf(1.5, 5.0, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 

@@ -1427,7 +1427,7 @@ static func is_on_path(wx: float, wz: float) -> bool:
 	return get_path_factor(wx, wz) > 0.3
 
 static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) -> float:
-	const STEP := ZONE_SIZE / 32.0
+	const STEP := ZONE_SIZE / 48.0
 	var gx := floorf(wx / STEP) * STEP
 	var gz := floorf(wz / STEP) * STEP
 	var fx := (wx - gx) / STEP
@@ -1445,7 +1445,7 @@ static func _snap_height_to_mesh(wx: float, wz: float, height_func: Callable) ->
 
 
 static func _terrain_normal_y(wx: float, wz: float, height_func: Callable) -> float:
-	const STEP := ZONE_SIZE / 32.0
+	const STEP := ZONE_SIZE / 48.0
 	var h_left := float(height_func.call(wx - STEP, wz))
 	var h_right := float(height_func.call(wx + STEP, wz))
 	var h_up := float(height_func.call(wx, wz - STEP))
