@@ -48,6 +48,7 @@ const WATER_LEVEL := 0.0
 
 # ─── Noise Layers ──────────────────────────────────────────────────────────────
 
+var _theme_songs: Array[String] = []
 var _seed_hash: int
 var _continent_noise: FastNoiseLite
 var _mountain_noise: FastNoiseLite
@@ -213,7 +214,7 @@ func _ready() -> void:
 	_init_water_material()
 	_generate_spawn_area()
 	_create_global_water()
-	var theme_songs: Array[String] = [
+	_theme_songs = [
 		"misty_forest_echoes.mp3",
 		"misty_forest_lament.mp3",
 		"misty_forest_wanderer_otpjsobu.mp3",
@@ -222,12 +223,21 @@ func _ready() -> void:
 		"nordic_wilderness_echoes.mp3",
 		"whispers_of_the_northern_wild.mp3",
 	]
-	AudioManager.play_music_playlist(theme_songs, 4.0)
+	AudioManager.play_music_playlist(_theme_songs, 4.0)
+	GameEvents.day_night_changed.connect(_on_day_night_changed)
 
 	if multiplayer.has_multiplayer_peer():
 		var csm := CreatureSyncManager.new()
 		csm.name = "CreatureSyncManager"
 		get_parent().call_deferred("add_child", csm, true)
+
+
+func _on_day_night_changed(is_day: bool) -> void:
+	if is_day:
+		if not _theme_songs.is_empty():
+			AudioManager.play_music_playlist(_theme_songs, 4.0)
+	else:
+		AudioManager.stop_music(3.0)
 
 
 var _diag_timer := 0.0
