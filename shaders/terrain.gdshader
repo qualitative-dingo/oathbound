@@ -9,8 +9,8 @@ uniform sampler2D tex_cliff : filter_nearest_mipmap, repeat_enable;
 group_uniforms settings;
 uniform float texture_scale : hint_range(0.01, 4.0) = 0.5;
 uniform vec3 tint_color : source_color = vec3(1.0, 1.0, 1.0);
-uniform float slope_start : hint_range(0.0, 1.0) = 0.25;
-uniform float cliff_start : hint_range(0.0, 1.0) = 0.55;
+uniform float slope_start : hint_range(0.0, 1.0) = 0.12;
+uniform float cliff_start : hint_range(0.0, 1.0) = 0.40;
 
 group_uniforms variation;
 uniform float variation_strength : hint_range(0.0, 1.0) = 0.5;
@@ -81,9 +81,12 @@ void fragment() {
 	blend /= (blend.x + blend.y + blend.z + 0.0001);
 
 	float slope = 1.0 - abs(world_normal.y);
+	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.12
+	                   + (vnoise(world_pos.xz * 0.6 + vec2(200.0, 140.0)) - 0.5) * 0.06;
+	float noisy_slope = slope + slope_noise;
 
-	float flat_w  = smoothstep(slope_start + 0.1, slope_start, slope);
-	float cliff_w = smoothstep(cliff_start, cliff_start + 0.15, slope);
+	float flat_w  = smoothstep(slope_start + 0.08, slope_start, noisy_slope);
+	float cliff_w = smoothstep(cliff_start, cliff_start + 0.12, noisy_slope);
 	float slope_w = max(1.0 - flat_w - cliff_w, 0.0);
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
