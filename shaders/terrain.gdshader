@@ -181,7 +181,7 @@ void fragment() {
 
 	// On steep terrain, replace texture-based color with a solid procedural color.
 	// Textures cause vertical streak artifacts on near-vertical faces; smooth noise doesn't.
-	float steep_override = smoothstep(0.10, 0.30, slope);
+	float steep_override = smoothstep(0.25, 0.50, slope);
 	float rock_n = fbm2(world_pos.xz * 0.06 + vec2(421.0, 637.0));
 	float rock_d = vnoise(world_pos.xz * 0.25 + vec2(159.0, 843.0));
 	float rock_h = vnoise(vec2(world_pos.y * 0.08, (world_pos.x + world_pos.z) * 0.04) + vec2(283.0, 941.0));
@@ -214,14 +214,14 @@ void fragment() {
 			dFdy(rock_detail) * 40.0 * rock_strength
 		));
 	}
-	// Smooth world-space bump for steep terrain (no dFdx/dFdy edge artifacts)
+	// Subtle smooth bump for steep terrain (no dFdx/dFdy edge artifacts)
 	if (steep_override > 0.01) {
-		float eps = 0.4;
-		vec2 sp = world_pos.xz * 1.5;
-		float bump_c = vnoise(sp + vec2(311.0, 719.0));
-		float bump_x = vnoise(sp + vec2(311.0 + eps, 719.0));
-		float bump_z = vnoise(sp + vec2(311.0, 719.0 + eps));
+		float eps = 0.5;
+		vec2 sp = world_pos.xz * 0.6;
+		float bump_c = fbm2(sp + vec2(311.0, 719.0));
+		float bump_x = fbm2(sp + vec2(311.0 + eps, 719.0));
+		float bump_z = fbm2(sp + vec2(311.0, 719.0 + eps));
 		vec3 bump_dir = vec3(bump_x - bump_c, 0.0, bump_z - bump_c) / eps;
-		NORMAL = normalize(NORMAL + bump_dir * 12.0 * steep_override);
+		NORMAL = normalize(NORMAL + bump_dir * 3.0 * steep_override);
 	}
 }
