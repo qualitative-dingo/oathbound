@@ -1065,9 +1065,7 @@ func _create_global_water() -> void:
 	_global_water_plane = MeshInstance3D.new()
 	_global_water_plane.name = "GlobalWater"
 	var plane := PlaneMesh.new()
-	# Cover a large area around the player — bigger than the loaded zone radius
-	var water_extent := ZONE_SIZE * float(unload_radius_zones + 2) * 2.0
-	plane.size = Vector2(water_extent, water_extent)
+	plane.size = _water_plane_size()
 	plane.subdivide_width = 64
 	plane.subdivide_depth = 64
 	_global_water_plane.mesh = plane
@@ -1087,6 +1085,22 @@ func _create_global_water() -> void:
 	_global_water_plane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_global_water_plane)
 	_global_water_plane.global_position.y = WATER_LEVEL - 0.15
+
+
+func _water_plane_size() -> Vector2:
+	var extent := ZONE_SIZE * float(load_radius_zones + 1) * 2.0
+	return Vector2(extent, extent)
+
+
+func _resize_water_plane() -> void:
+	if _global_water_plane and _global_water_plane.mesh is PlaneMesh:
+		(_global_water_plane.mesh as PlaneMesh).size = _water_plane_size()
+
+
+func set_render_distance(radius: int) -> void:
+	load_radius_zones = clampi(radius, 1, 5)
+	unload_radius_zones = load_radius_zones + 1
+	_resize_water_plane()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

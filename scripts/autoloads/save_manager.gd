@@ -31,6 +31,7 @@ func save_settings() -> void:
 		"window_mode": get_window().mode,
 		"window_width": DisplayServer.window_get_size().x,
 		"window_height": DisplayServer.window_get_size().y,
+		"render_distance": render_distance,
 	}
 	var file := FileAccess.open(SETTINGS_FILE, FileAccess.WRITE)
 	if file:

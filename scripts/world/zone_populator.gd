@@ -799,8 +799,8 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(8.0, ZONE_SIZE - 8.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var h := float(height_func.call(wx, wz))
-				if h < 0.5:
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				if ground_y < _MIN_LAND_Y:
 					continue
 				var enemy := _create_enemy(biome, rng)
 				if not enemy:
@@ -808,7 +808,6 @@ static func populate_zone_phase(
 				enemy.name = "Creature_%d" % creature_idx
 				creature_idx += 1
 				zone_root.add_child(enemy)
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 				var spawn_y := ground_y + 0.1
 				if enemy.get("is_flying"):
 					spawn_y = ground_y + enemy.get("fly_height")
@@ -825,15 +824,14 @@ static func populate_zone_phase(
 					var lz := rng.randf_range(10.0, ZONE_SIZE - 10.0)
 					var wx := origin_x + lx
 					var wz := origin_z + lz
-					var h := float(height_func.call(wx, wz))
-					if h > 0.5:
-						if _has_saved_horses:
-							rng.randf()
-						else:
-							var horse := _create_horse(rng)
-							zone_root.add_child(horse)
-							var ground_y := _snap_height_to_mesh(wx, wz, height_func)
-							horse.position = Vector3(lx, ground_y, lz)
+				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				if ground_y > _MIN_LAND_Y:
+					if _has_saved_horses:
+						rng.randf()
+					else:
+						var horse := _create_horse(rng)
+						zone_root.add_child(horse)
+						horse.position = Vector3(lx, ground_y, lz)
 							horse.set_meta("spawn_zone", coord)
 
 			_restore_saved_horses_in_zone(zone_root, coord, height_func)
@@ -846,8 +844,8 @@ static func populate_zone_phase(
 					var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
 					var wx := origin_x + lx
 					var wz := origin_z + lz
-					var h := float(height_func.call(wx, wz))
-					if h < -0.5:
+					var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+					if mesh_h < -0.5:
 						var fish := _create_fish(rng)
 						zone_root.add_child(fish)
 						fish.position = Vector3(lx, -0.1, lz)
@@ -1151,8 +1149,11 @@ static func _scatter_grass(
 			if density < 0.18:
 				continue
 
-			var h := float(height_func.call(wx, wz))
-			if h < 0.3 or h > 40.0:
+			var sn := _snap_and_normal(wx, wz, height_func)
+			var ground_y := sn.x
+			if ground_y < _MIN_LAND_Y or ground_y > 40.0:
+				continue
+			if sn.y < 0.85:
 				continue
 			if is_dirt_patch(wx, wz):
 				continue
@@ -1160,11 +1161,6 @@ static func _scatter_grass(
 				continue
 			if _is_near_structure(wx, wz, 4.0, structs):
 				continue
-
-			var sn := _snap_and_normal(wx, wz, height_func)
-			if sn.y < 0.85:
-				continue
-			var ground_y := sn.x
 			var cluster_boost := clampf((density - 0.18) * 1.6, 0.0, 1.0)
 			var scale := lerpf(scale_min, scale_max, cluster_boost)
 			scale *= rng.randf_range(0.85, 1.15)
@@ -1222,8 +1218,8 @@ static func _scatter_saplings(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var h := float(height_func.call(wx, wz))
-		if h < 0.3 or h > 40.0:
+		var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+		if ground_y < _MIN_LAND_Y or ground_y > 40.0:
 			continue
 		if is_dirt_patch(wx, wz):
 			continue
@@ -1232,7 +1228,6 @@ static func _scatter_saplings(
 		if _is_near_structure(wx, wz):
 			continue
 
-		var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 		var sf := rng.randf_range(0.6, 1.4)
 		var trunk_h := 4.5 * sf
 		var trunk_r := 0.1 * sf
@@ -3041,8 +3036,6 @@ static func _restore_saved_horses_in_zone(zone_root: Node, coord: Vector2i, heig
 
 # ─── Water Plants ─────────────────────────────────────────────────────────────
 
-const _WATER_LEVEL := 0.0
-
 static func _ensure_water_plants() -> void:
 	if _water_plants_ready:
 		return
@@ -3286,8 +3279,8 @@ static func _scatter_water_plants(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var h := float(height_func.call(wx, wz))
-		if h > -0.3 or h < -4.0:
+		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+		if mesh_h > -0.3 or mesh_h < -4.0:
 			continue
 		var pad := MeshInstance3D.new()
 		pad.mesh = _lily_pad_mesh
@@ -3314,8 +3307,8 @@ static func _scatter_water_plants(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var h := float(height_func.call(wx, wz))
-		if h < -0.15 or h > 0.25:
+		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+		if mesh_h < -0.15 or mesh_h > 0.25:
 			continue
 		if _is_near_structure(wx, wz):
 			continue
@@ -3335,8 +3328,8 @@ static func _scatter_water_plants(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var h := float(height_func.call(wx, wz))
-		if h < 0.0 or h > 0.5:
+		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+		if mesh_h < 0.0 or mesh_h > 0.5:
 			continue
 		if _is_near_structure(wx, wz):
 			continue
@@ -3359,12 +3352,12 @@ static func _scatter_water_plants(
 		var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var h := float(height_func.call(wx, wz))
-		if h < -0.1 or h > 0.4:
+		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+		if mesh_h < -0.1 or mesh_h > 0.4:
 			continue
 		if _is_near_structure(wx, wz):
 			continue
-		var ground_y := maxf(_snap_height_to_mesh(wx, wz, height_func), _WATER_LEVEL - 0.15)
+		var ground_y := maxf(mesh_h, _WATER_LEVEL - 0.15)
 		var scale := rng.randf_range(1.5, 2.8)
 		var rot := rng.randf_range(0.0, TAU)
 		var sx := 0.6 * scale

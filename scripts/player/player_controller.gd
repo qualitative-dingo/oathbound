@@ -216,8 +216,15 @@ const SWIM_STAMINA_COST := 6.0
 var _swim_fatigue: float = 0.0
 const SWIM_FATIGUE_MAX: float = 15.0
 const SWIM_FATIGUE_RECOVER_RATE: float = 5.0
-var _swim_fatigue_bar: MeshInstance3D
 var _swim_fatigue_pulse: float = 0.0
+var _drown_tick_timer: float = 0.0
+const _DROWN_TICK_INTERVAL: float = 2.0
+const _DROWN_TICK_FRACTION: float = 0.13
+
+# HUD drown bar (2D, above hotbar)
+var _drown_bar_container: Control
+var _drown_bar_fill: ColorRect
+var _drown_bar_bg: ColorRect
 
 # Jump animation
 var _is_jumping := false
