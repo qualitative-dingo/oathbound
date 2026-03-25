@@ -185,11 +185,11 @@ func build_workbench_panel(root: Control) -> void:
 	info_rtl.add_theme_font_size_override("normal_font_size", 12)
 	info_rtl.add_theme_font_size_override("bold_font_size", 12)
 	info_rtl.text = "[b]Controls which materials are used when crafting weapons and armor.[/b]\n\n" \
-		+ "[color=#ffffff]Low[/color] — Uses 0–1★ materials only. Consumes [color=#aaaaaa]lowest[/color] quality first.\n" \
+		+ "[color=#ffffff]Low[/color] — Uses 0–1* materials only. Consumes [color=#aaaaaa]lowest[/color] quality first.\n" \
 		+ "  Ideal for basic crafts without spending starred materials.\n\n" \
-		+ "[color=#55aaff]Medium[/color] — Uses 1–3★ materials only (ignores 0★). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
+		+ "[color=#55aaff]Medium[/color] — Uses 1–3* materials only (ignores 0*). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
 		+ "  Good balance — uses your mid-tier materials for a reasonable star chance.\n\n" \
-		+ "[color=#ff4444]High[/color] — Uses 3–5★ materials only (ignores 0–2★). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
+		+ "[color=#ff4444]High[/color] — Uses 3–5* materials only (ignores 0–2*). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
 		+ "  Best chance at high-star gear, but requires rare materials.\n\n" \
 		+ "[color=#ccaa66]Higher quality materials increase the chance of crafting starred gear with powerful affixes.\n" \
 		+ "Select an item to see exact material consumption and star chances before crafting.[/color]"
@@ -759,7 +759,7 @@ func _show_selected_detail() -> void:
 			for sl: int in consumed.keys():
 				var qty: int = int(consumed[sl])
 				if qty > 0:
-					var stars_str := "★".repeat(sl) if sl > 0 else "0★"
+					var stars_str := "*".repeat(sl) if sl > 0 else "0*"
 					var col: Color = ItemDatabase.RARITY_COLORS[sl]
 					var hex := "%02x%02x%02x" % [int(col.r * 255), int(col.g * 255), int(col.b * 255)]
 					using_parts.append("[color=#%s]%dx %s[/color] %s" % [hex, qty, stars_str, mat_name])
@@ -777,7 +777,7 @@ func _show_selected_detail() -> void:
 				continue
 			var col: Color = ItemDatabase.RARITY_COLORS[ti]
 			var hex := "%02x%02x%02x" % [int(col.r * 255), int(col.g * 255), int(col.b * 255)]
-			chance_parts.append("[color=#%s]%d★  %d%%[/color]" % [hex, ti, roundi(pct)])
+			chance_parts.append("[color=#%s]%d*  %d%%[/color]" % [hex, ti, roundi(pct)])
 		if chance_parts.size() > 0:
 			text += "\n\n[b]Star chances:[/b]\n" + "\n".join(chance_parts)
 
@@ -894,7 +894,7 @@ func spawn_discard_text(crafted_id: StringName) -> void:
 	if stars > 0:
 		num.text = "Trashed: %s " % display
 		var star_lbl := Label3D.new()
-		star_lbl.text = "★".repeat(stars)
+		star_lbl.text = "*".repeat(stars)
 		star_lbl.font_size = 24
 		star_lbl.pixel_size = 0.01
 		star_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -924,7 +924,7 @@ func spawn_craft_text(crafted_id: StringName) -> void:
 	var star_text := ""
 	if stars > 0:
 		full_text = "%s%s " % [prefix, display]
-		star_text = "★".repeat(stars)
+		star_text = "*".repeat(stars)
 	else:
 		full_text = "%s%s" % [prefix, display]
 

@@ -764,7 +764,7 @@ func set_target_creature(creature: Node3D) -> void:
 	if stars > 0:
 		var star_str := " "
 		for i in stars:
-			star_str += "★"
+			star_str += "*"
 		pc._target_hud_stars.text = star_str
 		pc._target_hud_stars.add_theme_color_override("font_color", ItemDatabase.get_rarity_color(stars))
 		pc._target_hud_stars.visible = true

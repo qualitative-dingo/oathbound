@@ -180,12 +180,12 @@ func build_inventory_panel(root: Control) -> void:
 	info_rtl.fit_content = true
 	info_rtl.scroll_active = false
 	info_rtl.add_theme_font_size_override("normal_font_size", 11)
-	info_rtl.text = "[color=#e6c84a]★ Material Quality System[/color]\n\n" \
-		+ "[color=#aaaaaa]Items can drop with [/color][color=#ffffff]star ratings (0-5★)[/color][color=#aaaaaa] from monsters and resources. " \
+	info_rtl.text = "[color=#e6c84a]* Material Quality System[/color]\n\n" \
+		+ "[color=#aaaaaa]Items can drop with [/color][color=#ffffff]star ratings (0-5*)[/color][color=#aaaaaa] from monsters and resources. " \
 		+ "Higher stars = better quality.[/color]\n\n" \
 		+ "[color=#e6c84a]Non-Equipment Crafting[/color]\n" \
 		+ "[color=#aaaaaa]Building pieces, tools, arrows, and other non-equipment recipes " \
-		+ "only consume [/color][color=#ffffff]unstarred (0★)[/color][color=#aaaaaa] materials. " \
+		+ "only consume [/color][color=#ffffff]unstarred (0*)[/color][color=#aaaaaa] materials. " \
 		+ "Your starred materials are kept safe for equipment crafting.[/color]\n\n" \
 		+ "[color=#e6c84a]Equipment Crafting[/color]\n" \
 		+ "[color=#aaaaaa]Weapons and armor use starred materials based on the quality tier " \
@@ -656,7 +656,7 @@ func show_tooltip_for_item(item_id: StringName) -> void:
 		var rc: Color = ItemDatabase.get_rarity_color(tip_stars)
 		var hex := "#%02x%02x%02x" % [int(rc.r * 255), int(rc.g * 255), int(rc.b * 255)]
 		var rarity_name: String = ItemDatabase.RARITY_NAMES[clampi(tip_stars, 0, 5)]
-		text += "[color=%s][b]%s[/b] %s[/color]\n" % [hex, display_name, "★".repeat(tip_stars)]
+		text += "[color=%s][b]%s[/b] %s[/color]\n" % [hex, display_name, "*".repeat(tip_stars)]
 		text += "[color=%s]%s[/color]\n" % [hex, rarity_name]
 	elif data.has("quality_color"):
 		var qc: Color = data["quality_color"] as Color
@@ -697,7 +697,7 @@ func show_tooltip_for_item(item_id: StringName) -> void:
 	var tip_affixes: Array = parsed_tip.get("affixes", [])
 	var tip_rolls: Dictionary = parsed_tip.get("affix_rolls", {})
 	if not tip_affixes.is_empty():
-		text += "\n\n[color=#666666]───────────────[/color]"
+		text += "\n\n[color=#666666]---------------[/color]"
 		for affix_id in tip_affixes:
 			var affix_data: Dictionary = ItemDatabase.get_affix_data(affix_id)
 			if affix_data.is_empty():
@@ -763,7 +763,7 @@ func show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id:
 			if s == 0:
 				text += "  [color=%s]Common: %d[/color]\n" % [hex, amt]
 			else:
-				text += "  [color=%s]%s %s: %d[/color]\n" % [hex, "★".repeat(s), rarity_name, amt]
+				text += "  [color=%s]%s %s: %d[/color]\n" % [hex, "*".repeat(s), rarity_name, amt]
 
 	if data.has("description"):
 		text += "\n%s" % str(data["description"])
@@ -1006,7 +1006,7 @@ func spawn_craft_text(crafted_id: StringName) -> void:
 		num.text = "%s%s " % [prefix, display]
 		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		var star_lbl := Label3D.new()
-		star_lbl.text = "★".repeat(stars)
+		star_lbl.text = "*".repeat(stars)
 		star_lbl.font_size = 28
 		star_lbl.pixel_size = 0.01
 		star_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED

@@ -1460,19 +1460,37 @@ static func _scatter_grass(
 			var ground_y := sn.x
 			if ground_y < _MIN_LAND_Y or ground_y > 40.0:
 				continue
-			if sn.y < 0.95:
+			if sn.y < 0.97:
 				continue
-			# Cliff-edge rejection: probe heights at cardinal + diagonal offsets
-			var _hc := sn.x
+			# Wide-radius slope check: detect cliffs the 2m grid can't resolve
+			var _hc := ground_y
+			const _WIDE_STEP := 6.0
+			var h_l := _snap_height_to_mesh(wx - _WIDE_STEP, wz, height_func)
+			var h_r := _snap_height_to_mesh(wx + _WIDE_STEP, wz, height_func)
+			var h_u := _snap_height_to_mesh(wx, wz - _WIDE_STEP, height_func)
+			var h_d := _snap_height_to_mesh(wx, wz + _WIDE_STEP, height_func)
+			var wide_slope_x := absf(h_r - h_l) / (_WIDE_STEP * 2.0)
+			var wide_slope_z := absf(h_d - h_u) / (_WIDE_STEP * 2.0)
+			if wide_slope_x > 0.35 or wide_slope_z > 0.35:
+				continue
+			# Cliff-edge rejection: skip if any nearby sample differs too much
 			var _cliff_near := false
-			for _pd in [2.5, 4.0]:
+			for _pd in [2.5, 4.0, 8.0]:
 				if _cliff_near:
 					break
-				var _md: float = 1.5 if _pd < 3.0 else 2.5
-				if absf(_hc - float(height_func.call(wx + _pd, wz))) > _md \
-						or absf(_hc - float(height_func.call(wx - _pd, wz))) > _md \
-						or absf(_hc - float(height_func.call(wx, wz + _pd))) > _md \
-						or absf(_hc - float(height_func.call(wx, wz - _pd))) > _md:
+				var _md: float
+				if _pd < 3.0:
+					_md = 1.2
+				elif _pd < 5.0:
+					_md = 2.0
+				else:
+					_md = 3.5
+				if absf(_hc - _snap_height_to_mesh(wx + _pd, wz, height_func)) > _md \
+						or absf(_hc - _snap_height_to_mesh(wx - _pd, wz, height_func)) > _md \
+						or absf(_hc - _snap_height_to_mesh(wx, wz + _pd, height_func)) > _md \
+						or absf(_hc - _snap_height_to_mesh(wx, wz - _pd, height_func)) > _md \
+						or absf(_hc - _snap_height_to_mesh(wx + _pd * 0.7, wz + _pd * 0.7, height_func)) > _md \
+						or absf(_hc - _snap_height_to_mesh(wx - _pd * 0.7, wz + _pd * 0.7, height_func)) > _md:
 					_cliff_near = true
 			if _cliff_near:
 				continue
@@ -1484,7 +1502,7 @@ static func _scatter_grass(
 				continue
 			var cluster_boost := clampf((density - 0.18) * 1.6, 0.0, 1.0)
 			var scale := lerpf(scale_min, scale_max, cluster_boost)
-			var slope_factor := clampf((sn.y - 0.95) / 0.05, 0.0, 1.0)
+			var slope_factor := clampf((sn.y - 0.97) / 0.03, 0.0, 1.0)
 			scale *= lerpf(0.3, 1.0, slope_factor)
 			scale *= rng.randf_range(0.85, 1.15)
 			var rot := rng.randf_range(0.0, TAU)
@@ -2824,7 +2842,7 @@ static func _create_horse(rng: RandomNumberGenerator = null, override_stars: int
 	var label_fs := 48
 	var label_px := 0.009
 	var has_stars := star_level > 0
-	var star_str := (" " + "★".repeat(star_level)) if has_stars else ""
+	var star_str := (" " + "*".repeat(star_level)) if has_stars else ""
 
 	var name_lbl := Label3D.new()
 	name_lbl.name = "HorseNameplate"
@@ -2880,7 +2898,7 @@ static func _create_horse(rng: RandomNumberGenerator = null, override_stars: int
 
 
 ## Roll a star level (0-5) for a creature. 0 = no stars (most common).
-## Weights: ~60% no stars, ~22% 1★, ~10% 2★, ~5% 3★, ~2% 4★, ~1% 5★
+## Weights: ~60% no stars, ~22% 1*, ~10% 2*, ~5% 3*, ~2% 4*, ~1% 5*
 static func _roll_creature_stars(rng: RandomNumberGenerator) -> int:
 	const WEIGHTS: Array[float] = [0.60, 0.22, 0.10, 0.05, 0.02, 0.01]
 	var roll := rng.randf() if rng else randf()

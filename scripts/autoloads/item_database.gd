@@ -8,12 +8,12 @@ const STAR_WEIGHTS: Array[float] = [0.82, 0.109, 0.04, 0.02, 0.008, 0.003]
 
 # WoW-style rarity colors
 const RARITY_COLORS: Array[Color] = [
-	Color(1.0, 1.0, 1.0),        # 0★ Common — white
-	Color(0.118, 1.0, 0.0),      # 1★ Uncommon — #1eff00
-	Color(0.0, 0.44, 0.867),     # 2★ Rare — #0070dd
-	Color(0.639, 0.208, 0.933),  # 3★ Epic — #a335ee
-	Color(1.0, 0.502, 0.0),      # 4★ Legendary — #ff8000
-	Color(0.9, 0.1, 0.1),        # 5★ Mythical — red
+	Color(1.0, 1.0, 1.0),        # 0* Common — white
+	Color(0.118, 1.0, 0.0),      # 1* Uncommon — #1eff00
+	Color(0.0, 0.44, 0.867),     # 2* Rare — #0070dd
+	Color(0.639, 0.208, 0.933),  # 3* Epic — #a335ee
+	Color(1.0, 0.502, 0.0),      # 4* Legendary — #ff8000
+	Color(0.9, 0.1, 0.1),        # 5* Mythical — red
 ]
 
 const RARITY_NAMES: Array[String] = [

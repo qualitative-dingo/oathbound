@@ -253,7 +253,7 @@ func _do_local_pickup() -> void:
 		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		var star_str := ""
 		for i in stars:
-			star_str += "★"
+			star_str += "*"
 		var star_lbl := Label3D.new()
 		star_lbl.text = star_str
 		star_lbl.font_size = 28
@@ -291,7 +291,7 @@ func _build_nameplate() -> void:
 	if star_level > 0:
 		star_text = " "
 		for i in star_level:
-			star_text += "★"
+			star_text += "*"
 	var full_text := name_part + star_text
 
 	var label_fs := 28
