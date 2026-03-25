@@ -4102,20 +4102,20 @@ static func _scatter_water_plants(
 		for _try in 20:
 			cx = rng.randf_range(4.0, ZONE_SIZE - 4.0)
 			cz = rng.randf_range(4.0, ZONE_SIZE - 4.0)
-			var ch := _snap_height_to_mesh(origin_x + cx, origin_z + cz, height_func)
-			if ch >= -1.0 and ch <= _WATER_LEVEL:
+		var ch := _snap_height_to_mesh(origin_x + cx, origin_z + cz, height_func)
+		if ch >= -0.25 and ch <= _WATER_LEVEL:
 				found = true
 				break
 		if not found:
 			continue
 		var reeds_in_clump := rng.randi_range(30, 70)
 		for _r in reeds_in_clump:
-			var ox := rng.randf_range(-5.4, 5.4)
-			var oz := rng.randf_range(-5.4, 5.4)
+			var ox := rng.randf_range(-3.0, 3.0)
+			var oz := rng.randf_range(-3.0, 3.0)
 			var wx := origin_x + cx + ox
 			var wz := origin_z + cz + oz
-			var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
-			if mesh_h < -1.5 or mesh_h > _WATER_LEVEL:
+		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+		if mesh_h < -0.3 or mesh_h > _WATER_LEVEL:
 				continue
 			if _is_near_structure(wx, wz):
 				continue
