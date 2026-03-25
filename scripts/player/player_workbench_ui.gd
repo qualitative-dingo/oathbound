@@ -894,7 +894,7 @@ func spawn_discard_text(crafted_id: StringName) -> void:
 	if stars > 0:
 		num.text = "Trashed: %s " % display
 		var star_lbl := Label3D.new()
-		star_lbl.text = "*".repeat(stars)
+		star_lbl.text = "★".repeat(stars)
 		star_lbl.font_size = 24
 		star_lbl.pixel_size = 0.01
 		star_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -924,7 +924,7 @@ func spawn_craft_text(crafted_id: StringName) -> void:
 	var star_text := ""
 	if stars > 0:
 		full_text = "%s%s " % [prefix, display]
-		star_text = "*".repeat(stars)
+		star_text = "★".repeat(stars)
 	else:
 		full_text = "%s%s" % [prefix, display]
 

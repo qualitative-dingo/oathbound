@@ -2842,7 +2842,7 @@ static func _create_horse(rng: RandomNumberGenerator = null, override_stars: int
 	var label_fs := 48
 	var label_px := 0.009
 	var has_stars := star_level > 0
-	var star_str := (" " + "*".repeat(star_level)) if has_stars else ""
+	var star_str := (" " + "★".repeat(star_level)) if has_stars else ""
 
 	var name_lbl := Label3D.new()
 	name_lbl.name = "HorseNameplate"

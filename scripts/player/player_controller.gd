@@ -3842,7 +3842,7 @@ func _set_target_creature(creature: Node3D) -> void:
 	if stars > 0:
 		var star_str := " "
 		for i in stars:
-			star_str += "*"
+			star_str += "★"
 		_target_hud_stars.text = star_str
 		_target_hud_stars.add_theme_color_override("font_color", ItemDatabase.get_rarity_color(stars))
 		_target_hud_stars.visible = true
@@ -8124,7 +8124,7 @@ func _spawn_craft_text(crafted_id: StringName) -> void:
 		num.text = "%s%s " % [prefix, display]
 		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		var star_lbl := Label3D.new()
-		star_lbl.text = "*".repeat(stars)
+		star_lbl.text = "★".repeat(stars)
 		star_lbl.font_size = 28
 		star_lbl.pixel_size = 0.01
 		star_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED

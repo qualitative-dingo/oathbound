@@ -1504,7 +1504,7 @@ func _create_floating_ui() -> void:
 	if star_level > 0:
 		star_text = " "
 		for i in star_level:
-			star_text += "*"
+			star_text += "★"
 		full_text += star_text
 
 	var label_fs := 32
