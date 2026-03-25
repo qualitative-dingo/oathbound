@@ -39,7 +39,8 @@ static var _mat_bark: StandardMaterial3D
 static var _mat_leaves: Material
 static var _mat_pine_leaves: Material
 static var _mat_palm_leaves: Material
-static var _mat_stone: StandardMaterial3D
+static var _mat_stone: Material
+static var _rock_shader: Shader
 static var _mat_pebble: StandardMaterial3D
 static var _rock_meshes: Array[ArrayMesh] = []
 static var _rock_convex_shapes: Array[ConvexPolygonShape3D] = []
@@ -271,11 +272,30 @@ static func _ensure_textures() -> void:
 	# ── Birch leaves — lighter, yellow-green ──
 	_mat_birch_leaves = _make_wind_leaf_mat(leaves_tex, Color(0.32, 0.58, 0.15), 0.5, Vector3(4.0, 4.0, 4.0))
 
-	# ── Stone material — wraps around SphereMesh rock ──
-	_mat_stone = _make_triplanar_mat(stone_tex, Color(0.5, 0.48, 0.45))
-	_mat_stone.uv1_scale = Vector3(3.0, 3.0, 3.0)
-	_mat_stone.normal_texture = _generate_stone_normal_map()
-	_mat_stone.normal_scale = 0.7
+	# ── Rock shader + stone material ──
+	if ResourceLoader.exists("res://shaders/rock.gdshader"):
+		_rock_shader = load("res://shaders/rock.gdshader") as Shader
+	if _rock_shader:
+		var smat := ShaderMaterial.new()
+		smat.shader = _rock_shader
+		if stone_tex:
+			smat.set_shader_parameter("stone_texture", stone_tex)
+		smat.set_shader_parameter("normal_texture", _generate_stone_normal_map())
+		smat.set_shader_parameter("stone_color", Color(0.5, 0.48, 0.45))
+		smat.set_shader_parameter("moss_color", Color(0.18, 0.38, 0.08))
+		smat.set_shader_parameter("moss_threshold", 0.55)
+		smat.set_shader_parameter("moss_blend_sharpness", 3.0)
+		smat.set_shader_parameter("moss_noise_scale", 2.5)
+		smat.set_shader_parameter("normal_strength", 2.5)
+		smat.set_shader_parameter("ao_strength", 0.6)
+		smat.set_shader_parameter("triplanar_scale", 3.0)
+		_mat_stone = smat
+	else:
+		var fallback := _make_triplanar_mat(stone_tex, Color(0.5, 0.48, 0.45))
+		fallback.uv1_scale = Vector3(3.0, 3.0, 3.0)
+		fallback.normal_texture = _generate_stone_normal_map()
+		fallback.normal_scale = 0.7
+		_mat_stone = fallback
 
 	# ── Pebble material — flat, muted, no normal map ──
 	_mat_pebble = StandardMaterial3D.new()
@@ -1894,11 +1914,17 @@ static func _create_rock(rng: RandomNumberGenerator) -> StaticBody3D:
 
 	var mesh_idx := rng.randi_range(0, _rock_meshes.size() - 1)
 
-	var tinted_mat := _mat_stone.duplicate() as StandardMaterial3D
-	tinted_mat.albedo_color = Color(
+	var tinted_mat := _mat_stone.duplicate()
+	var tint := Color(
 		rng.randf_range(0.88, 1.12),
 		rng.randf_range(0.88, 1.12),
 		rng.randf_range(0.88, 1.12))
+	if tinted_mat is ShaderMaterial:
+		var base_col: Color = (tinted_mat as ShaderMaterial).get_shader_parameter("stone_color")
+		(tinted_mat as ShaderMaterial).set_shader_parameter("stone_color", Color(
+			base_col.r * tint.r, base_col.g * tint.g, base_col.b * tint.b))
+	elif tinted_mat is StandardMaterial3D:
+		(tinted_mat as StandardMaterial3D).albedo_color = tint
 
 	var rock_mi := MeshInstance3D.new()
 	rock_mi.name = "MeshInstance3D"

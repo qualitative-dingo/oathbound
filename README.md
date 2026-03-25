@@ -2,10 +2,20 @@
 
 A 3D survival-crafting RPG built in **Godot 4** with GDScript. Explore a procedurally generated open world, harvest resources, craft gear, fight creatures, and build a base -- solo or with friends via **LAN co-op multiplayer**.
 
+## Art Direction
+
+Oathbound targets a **low-poly, Valheim-inspired** visual style:
+
+- **Textures:** Low-resolution (64–256px), nearest-neighbor filtering for a chunky pixelated look
+- **Geometry:** Procedural meshes with deliberate low vertex counts — rocks, trees, terrain all favor readable silhouettes over smoothness
+- **Colors:** Muted, earthy palettes with natural variation (per-instance tinting) rather than uniform flat colors
+- **Environment:** Dense grass ground cover, slope-aware moss on rocks, subtle wind animation on foliage
+- **Lighting:** Simple directional light with minimal post-processing — no SSAO, no bloom. Depth comes from material work (normal maps, AO baked into shaders) rather than screen-space effects
+
 ## Tech Stack
 
 - **Engine:** Godot 4 (GDScript)
-- **Rendering:** Forward+ with custom shaders (water, foliage wind, grass billboards, leaf billboards)
+- **Rendering:** Forward+ with custom shaders (water, foliage wind, grass billboards, leaf billboards, rock moss)
 - **World Gen:** Procedural zones with biomes, rivers, lakes, and caves
 - **Networking:** ENetMultiplayerPeer (LAN), RPCs, MultiplayerSynchronizer, host-authoritative model
 - **Assets:** 32x32 pixel art icons, GLB/GLTF 3D models
