@@ -3310,7 +3310,7 @@ static func _scatter_water_plants(
 			flower.position = Vector3(0.0, 0.0, 0.0)
 			pad.add_child(flower)
 
-	# ── Cattails — river/lake edges, shallow water ──
+	# ── Cattails — emergent plants right at the waterline ──
 	var cattail_count := rng.randi_range(5, 12)
 	for _i in cattail_count:
 		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
@@ -3318,7 +3318,7 @@ static func _scatter_water_plants(
 		var wx := origin_x + lx
 		var wz := origin_z + lz
 		var h := float(height_func.call(wx, wz))
-		if h < -1.0 or h > 0.6:
+		if h < -0.15 or h > 0.25:
 			continue
 		if _is_near_structure(wx, wz):
 			continue
@@ -3327,11 +3327,11 @@ static func _scatter_water_plants(
 			var ox := rng.randf_range(-0.4, 0.4)
 			var oz := rng.randf_range(-0.4, 0.4)
 			var cattail := _create_cattail(rng)
-			var ground_y := maxf(_snap_height_to_mesh(wx + ox, wz + oz, height_func), _WATER_LEVEL - 0.1)
+			var ground_y := maxf(_snap_height_to_mesh(wx + ox, wz + oz, height_func), _WATER_LEVEL - 0.05)
 			cattail.position = Vector3(lx + ox, ground_y, lz + oz)
 			zone_root.add_child(cattail)
 
-	# ── Purple Loosestrife — at water's edge, must be above water ──
+	# ── Purple Loosestrife — damp bank just above the waterline ──
 	var loosestrife_count := rng.randi_range(8, 20)
 	for _i in loosestrife_count:
 		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
@@ -3339,7 +3339,7 @@ static func _scatter_water_plants(
 		var wx := origin_x + lx
 		var wz := origin_z + lz
 		var h := float(height_func.call(wx, wz))
-		if h < -0.2 or h > 1.2:
+		if h < 0.0 or h > 0.5:
 			continue
 		if _is_near_structure(wx, wz):
 			continue
@@ -3348,11 +3348,11 @@ static func _scatter_water_plants(
 			var ox := rng.randf_range(-0.5, 0.5)
 			var oz := rng.randf_range(-0.5, 0.5)
 			var plant := _create_loosestrife(rng)
-			var ground_y := _snap_height_to_mesh(wx + ox, wz + oz, height_func)
+			var ground_y := maxf(_snap_height_to_mesh(wx + ox, wz + oz, height_func), _WATER_LEVEL + 0.02)
 			plant.position = Vector3(lx + ox, ground_y, lz + oz)
 			zone_root.add_child(plant)
 
-	# ── Reeds — tall grass at water edges, MultiMesh for performance ──
+	# ── Reeds — tall grass at the waterline, MultiMesh for performance ──
 	if not _reed_mat or not _grass_quad_mesh:
 		return
 	var transforms: Array[Transform3D] = []
@@ -3363,7 +3363,7 @@ static func _scatter_water_plants(
 		var wx := origin_x + lx
 		var wz := origin_z + lz
 		var h := float(height_func.call(wx, wz))
-		if h < -0.5 or h > 1.0:
+		if h < -0.1 or h > 0.4:
 			continue
 		if _is_near_structure(wx, wz):
 			continue
