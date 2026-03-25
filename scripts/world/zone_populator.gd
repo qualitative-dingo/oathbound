@@ -3212,11 +3212,11 @@ static func _create_cattail(rng: RandomNumberGenerator) -> Node3D:
 static func _create_loosestrife(rng: RandomNumberGenerator) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Loosestrife"
-	var stem_h := rng.randf_range(0.6, 1.1)
+	var stem_h := rng.randf_range(1.0, 1.8)
 	var stem := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.012
-	cyl.bottom_radius = 0.018
+	cyl.top_radius = 0.02
+	cyl.bottom_radius = 0.03
 	cyl.height = stem_h
 	cyl.radial_segments = 4
 	cyl.rings = 1
@@ -3225,21 +3225,21 @@ static func _create_loosestrife(rng: RandomNumberGenerator) -> Node3D:
 	stem.position.y = stem_h * 0.5
 	stem.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(stem)
-	var flower_cluster_h := rng.randf_range(0.15, 0.28)
-	var num_blobs := rng.randi_range(3, 6)
+	var flower_cluster_h := rng.randf_range(0.25, 0.45)
+	var num_blobs := rng.randi_range(4, 8)
 	for _bi in num_blobs:
 		var blob := MeshInstance3D.new()
 		var sphere := SphereMesh.new()
-		sphere.radius = rng.randf_range(0.03, 0.06)
+		sphere.radius = rng.randf_range(0.06, 0.12)
 		sphere.height = sphere.radius * 2.0
 		sphere.radial_segments = 4
 		sphere.rings = 2
 		blob.mesh = sphere
 		blob.material_override = _loosestrife_flower_mat
 		blob.position = Vector3(
-			rng.randf_range(-0.04, 0.04),
+			rng.randf_range(-0.06, 0.06),
 			stem_h - 0.05 + rng.randf_range(0.0, flower_cluster_h),
-			rng.randf_range(-0.04, 0.04))
+			rng.randf_range(-0.06, 0.06))
 		blob.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(blob)
 	return root
@@ -3274,16 +3274,17 @@ static func _scatter_water_plants(
 		pad.mesh = _lily_pad_mesh
 		pad.material_override = _lily_pad_mat
 		pad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var pad_scale := rng.randf_range(0.3, 0.7)
+		var pad_scale := rng.randf_range(1.5, 3.5)
 		pad.scale = Vector3(pad_scale, 1.0, pad_scale)
 		pad.rotation.y = rng.randf_range(0.0, TAU)
 		pad.position = Vector3(lx, _WATER_LEVEL + 0.02, lz)
 		zone_root.add_child(pad)
-		if rng.randf() < 0.3 and _lily_flower_mesh:
+		if rng.randf() < 0.6 and _lily_flower_mesh:
 			var flower := MeshInstance3D.new()
 			flower.mesh = _lily_flower_mesh
 			flower.material_override = _lily_flower_mat
 			flower.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			flower.scale = Vector3(2.0, 2.0, 2.0)
 			flower.position = Vector3(0.0, 0.0, 0.0)
 			pad.add_child(flower)
 
@@ -3309,7 +3310,7 @@ static func _scatter_water_plants(
 			zone_root.add_child(cattail)
 
 	# ── Purple Loosestrife — at water's edge, must be above water ──
-	var loosestrife_count := rng.randi_range(4, 10)
+	var loosestrife_count := rng.randi_range(8, 20)
 	for _i in loosestrife_count:
 		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
