@@ -92,10 +92,13 @@ void fragment() {
 	water_col.rgb = mix(water_col.rgb, sky_tint.rgb, fresnel * 0.5);
 	water_col.a = mix(water_col.a, 0.95, fresnel * 0.6);
 
+	// ── Shore alpha fade — smoothly hides the mesh/water intersection ──
+	float shore_alpha = smoothstep(0.0, 0.6, depth_diff);
+
 	// ── Foam along shoreline ──
 	float foam_noise = vnoise(world_pos.xz * 1.5 + vec2(TIME * 0.3, TIME * 0.2));
 	float foam_noise2 = vnoise(world_pos.xz * 3.0 - vec2(TIME * 0.2, TIME * 0.4));
-	float foam_edge = 1.0 - smoothstep(0.0, foam_width, depth_diff);
+	float foam_edge = 1.0 - smoothstep(0.05, foam_width, depth_diff);
 	foam_edge *= step(0.0, depth_diff);
 	float foam_detail = foam_edge * (0.5 + foam_noise * 0.3 + foam_noise2 * 0.2);
 	foam_detail = smoothstep(0.15, 0.6, foam_detail);
@@ -108,7 +111,7 @@ void fragment() {
 	vec4 final_col = mix(water_col, foam_color, total_foam);
 
 	ALBEDO = final_col.rgb;
-	ALPHA = final_col.a;
+	ALPHA = max(final_col.a * shore_alpha, total_foam * shore_alpha * 0.8);
 	ROUGHNESS = mix(0.08, 0.35, total_foam);
 	METALLIC = mix(0.08, 0.0, total_foam);
 	SPECULAR = mix(0.5, 0.1, total_foam);
