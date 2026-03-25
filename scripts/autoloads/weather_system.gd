@@ -30,6 +30,11 @@ var _tumble_leaves: Array[MeshInstance3D] = []
 const TUMBLE_COUNT := 12
 const TUMBLE_SPREAD := 60.0
 
+var _horizon_parent: Node3D
+var _horizon_meshes: Array[MeshInstance3D] = []
+const HORIZON_DIST := 280.0
+const HORIZON_COUNT := 8
+
 const WEATHER_DURATIONS := {
 	Weather.SUN:   Vector2(90.0, 200.0),
 	Weather.WIND:  Vector2(60.0, 150.0),
@@ -84,6 +89,7 @@ func _ready() -> void:
 	_pick_next_duration()
 	call_deferred("_spawn_clouds")
 	call_deferred("_spawn_tumble_leaves")
+	call_deferred("_spawn_horizon_silhouettes")
 
 
 func _spawn_clouds() -> void:
@@ -190,6 +196,64 @@ func _spawn_tumble_leaves() -> void:
 		_tumble_leaves.append(mi)
 
 
+func _spawn_horizon_silhouettes() -> void:
+	_horizon_parent = Node3D.new()
+	_horizon_parent.name = "HorizonSilhouettes"
+	get_tree().current_scene.add_child.call_deferred(_horizon_parent)
+	await get_tree().process_frame
+
+	for i in HORIZON_COUNT:
+		var angle := (float(i) / float(HORIZON_COUNT)) * TAU + _rng.randf_range(-0.15, 0.15)
+		var dist := HORIZON_DIST + _rng.randf_range(-20.0, 20.0)
+		var px := cos(angle) * dist
+		var pz := sin(angle) * dist
+
+		var mi := MeshInstance3D.new()
+		mi.name = "HorizonMtn%d" % i
+		mi.mesh = _build_mountain_mesh(_rng)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var mat := StandardMaterial3D.new()
+		var brightness := _rng.randf_range(0.25, 0.38)
+		mat.albedo_color = Color(brightness * 0.8, brightness * 0.85, brightness, 1.0)
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mi.set_surface_override_material(0, mat)
+
+		mi.position = Vector3(px, 0.0, pz)
+		mi.set_meta("angle", angle)
+		mi.set_meta("dist", dist)
+
+		_horizon_parent.add_child(mi)
+		_horizon_meshes.append(mi)
+
+
+func _build_mountain_mesh(rng: RandomNumberGenerator) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var width := rng.randf_range(60.0, 120.0)
+	var peak_count := rng.randi_range(2, 4)
+
+	for _p in peak_count:
+		var peak_x := rng.randf_range(-width * 0.3, width * 0.3)
+		var peak_h := rng.randf_range(15.0, 40.0)
+		var base_w := rng.randf_range(20.0, 50.0)
+
+		verts.append(Vector3(peak_x - base_w * 0.5, -5.0, 0.0))
+		verts.append(Vector3(peak_x + rng.randf_range(-3.0, 3.0), peak_h, rng.randf_range(-2.0, 2.0)))
+		verts.append(Vector3(peak_x + base_w * 0.5, -5.0, 0.0))
+		for _n in 3:
+			normals.append(Vector3(0.0, 0.0, 1.0))
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
 func _process(delta: float) -> void:
 	_timer += delta
 	if _timer >= _next_change:
@@ -233,6 +297,23 @@ func _process(delta: float) -> void:
 			cloud_mat.albedo_color = _cloud_current_color
 
 	_update_tumble_leaves(delta, player)
+	_update_horizon_silhouettes(delta, player)
+
+
+func _update_horizon_silhouettes(delta: float, player: Node3D) -> void:
+	if not player or not is_instance_valid(_horizon_parent):
+		return
+	var pp := player.global_position
+	for mi in _horizon_meshes:
+		if not is_instance_valid(mi):
+			continue
+		var angle: float = mi.get_meta("angle", 0.0)
+		var dist: float = mi.get_meta("dist", HORIZON_DIST)
+		mi.global_position = Vector3(
+			pp.x + cos(angle) * dist,
+			lerpf(mi.global_position.y, pp.y - 5.0, delta * 0.5),
+			pp.z + sin(angle) * dist)
+		mi.look_at(Vector3(pp.x, mi.global_position.y, pp.z), Vector3.UP)
 
 
 func _update_tumble_leaves(delta: float, player: Node3D) -> void:

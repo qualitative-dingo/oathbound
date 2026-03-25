@@ -61,10 +61,20 @@ void vertex() {
 void fragment() {
 	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 
-	// ── Scrolling noise layers for surface detail ──
+	// ── Scrolling noise layers with domain warping to break tiling ──
 	float t = TIME * flow_speed;
-	vec2 uv_a = world_pos.xz * 0.06 + vec2(t, t * 0.7);
-	vec2 uv_b = world_pos.xz * 0.045 + vec2(-t * 0.6, t * 0.4);
+
+	// Domain warp: offset UVs with a slow-moving noise field
+	vec2 warp = vec2(
+		vnoise(world_pos.xz * 0.02 + vec2(t * 0.3, -t * 0.2)),
+		vnoise(world_pos.xz * 0.02 + vec2(-t * 0.15, t * 0.25) + vec2(50.0, 80.0))
+	) * 3.0;
+
+	vec2 uv_a = world_pos.xz * 0.06 + warp * 0.06 + vec2(t, t * 0.7);
+	// Rotate uv_b ~40 degrees to break diagonal alignment
+	vec2 base_b = world_pos.xz * 0.045;
+	vec2 uv_b = vec2(base_b.x * 0.766 - base_b.y * 0.643, base_b.x * 0.643 + base_b.y * 0.766)
+	           + warp * 0.04 + vec2(-t * 0.6, t * 0.4);
 	vec2 uv_c = world_pos.xz * 0.025 + vec2(t * 0.3, -t * 0.8);
 	float noise_a = water_fbm(uv_a);
 	float noise_b = water_fbm(uv_b);
@@ -83,7 +93,7 @@ void fragment() {
 
 	// ── Water color with depth ──
 	vec4 water_col = mix(shallow_color, deep_color, depth_factor);
-	water_col.rgb += combined * 0.04;
+	water_col.rgb += combined * 0.07;
 
 	// ── Fresnel for view-angle reflections ──
 	vec3 view_dir = normalize(CAMERA_POSITION_WORLD - world_pos);

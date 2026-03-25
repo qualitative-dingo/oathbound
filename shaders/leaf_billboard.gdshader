@@ -59,4 +59,5 @@ void fragment() {
 	ROUGHNESS = roughness;
 	ALPHA = tex.a * albedo_color.a;
 	ALPHA_SCISSOR_THRESHOLD = alpha_cutoff;
+	BACKLIGHT = vec3(0.35);
 }

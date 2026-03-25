@@ -57,4 +57,5 @@ void fragment() {
 
 	ALBEDO = triplanar * albedo_color;
 	ROUGHNESS = roughness;
+	BACKLIGHT = vec3(0.35);
 }
