@@ -182,16 +182,18 @@ void fragment() {
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// On steep terrain, replace texture-based color with a solid procedural color.
-	// Textures cause vertical streak artifacts on near-vertical faces; smooth noise doesn't.
-	float steep_override = smoothstep(0.25, 0.50, slope);
+	// Replace triplanar texture with solid procedural color on slopes.
+	// Albedo override starts early (slope 0.15) to catch moderate slopes where
+	// triplanar creates dark blobs. Bump uses a higher threshold to stay subtle.
+	float steep_override = smoothstep(0.15, 0.40, slope);
+	float steep_bump = smoothstep(0.35, 0.55, slope);
 	float rock_n = fbm2(world_pos.xz * 0.06 + vec2(421.0, 637.0));
 	float rock_d = vnoise(world_pos.xz * 0.25 + vec2(159.0, 843.0));
 	float rock_h = vnoise(vec2(world_pos.y * 0.08, (world_pos.x + world_pos.z) * 0.04) + vec2(283.0, 941.0));
 	vec3 unified_steep = vec3(0.36, 0.38, 0.29) * (0.75 + rock_n * 0.25 + rock_d * 0.12 + rock_h * 0.10);
 	albedo = mix(albedo, unified_steep, steep_override);
 
-	// Biome tint applied uniformly — slopes/cliffs get mossy green from the biome
+	// Biome tint — steep terrain gets strong biome color
 	float tint_strength = flat_w * (1.0 - steep_override) + steep_override * 0.80
 	                    + slope_w * 0.90 * (1.0 - steep_override)
 	                    + cliff_w * 0.60 * (1.0 - steep_override);
@@ -217,14 +219,14 @@ void fragment() {
 			dFdy(rock_detail) * 40.0 * rock_strength
 		));
 	}
-	// Subtle smooth bump for steep terrain (no dFdx/dFdy edge artifacts)
-	if (steep_override > 0.01) {
+	// Subtle smooth bump only on truly steep terrain
+	if (steep_bump > 0.01) {
 		float eps = 0.5;
 		vec2 sp = world_pos.xz * 0.6;
 		float bump_c = fbm2(sp + vec2(311.0, 719.0));
 		float bump_x = fbm2(sp + vec2(311.0 + eps, 719.0));
 		float bump_z = fbm2(sp + vec2(311.0, 719.0 + eps));
 		vec3 bump_dir = vec3(bump_x - bump_c, 0.0, bump_z - bump_c) / eps;
-		NORMAL = normalize(NORMAL + bump_dir * 3.0 * steep_override);
+		NORMAL = normalize(NORMAL + bump_dir * 3.0 * steep_bump);
 	}
 }
