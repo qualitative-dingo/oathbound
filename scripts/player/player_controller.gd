@@ -4729,12 +4729,12 @@ func _update_torch_light() -> void:
 	if has_torch and not _torch_light:
 		_torch_light = OmniLight3D.new()
 		_torch_light.name = "PlayerTorchLight"
-		_torch_light.light_color = Color(1.0, 0.6, 0.2)
-		_torch_light.light_energy = 2.5
-		_torch_light.omni_range = 12.0
-		_torch_light.omni_attenuation = 0.8
+		_torch_light.light_color = Color(1.0, 0.65, 0.25)
+		_torch_light.light_energy = 4.0
+		_torch_light.omni_range = 48.0
+		_torch_light.omni_attenuation = 1.2
 		_torch_light.shadow_enabled = true
-		_torch_light.position = Vector3(0.3, 1.5, 0.3)
+		_torch_light.position = Vector3(0.0, 1.8, 0.0)
 		add_child(_torch_light)
 	elif not has_torch and _torch_light:
 		_torch_light.queue_free()

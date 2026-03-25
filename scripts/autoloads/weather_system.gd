@@ -198,12 +198,20 @@ func _pick_next_duration() -> void:
 
 
 func get_weather_emoji() -> String:
+	var is_night := _is_nighttime()
 	match current_weather:
-		Weather.SUN:   return "☀"
+		Weather.SUN:   return "🌙" if is_night else "☀"
 		Weather.WIND:  return "💨"
 		Weather.RAIN:  return "🌧"
 		Weather.STORM: return "⛈"
-		_:             return "☀"
+		_:             return "🌙" if is_night else "☀"
+
+
+func _is_nighttime() -> bool:
+	if _cached_day_night and _cached_day_night.has_method("get_hour"):
+		var hour: int = _cached_day_night.get_hour()
+		return hour >= 21 or hour < 5
+	return false
 
 
 func get_weather_name() -> String:
