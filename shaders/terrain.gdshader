@@ -83,6 +83,10 @@ void fragment() {
 
 	float slope = 1.0 - abs(world_normal.y);
 
+	// Slope-driven overrides computed once, used throughout to suppress detail effects
+	float steep_override = smoothstep(0.15, 0.40, slope);
+	float steep_bump = smoothstep(0.35, 0.55, slope);
+
 	// Soften triplanar blending on steep terrain so adjacent faces don't show seams
 	float blend_power = mix(8.0, 2.0, smoothstep(0.12, 0.35, slope));
 	vec3 blend = abs(world_normal);
@@ -149,12 +153,12 @@ void fragment() {
 	vec3 path_detail_col = vec3(0.14, 0.10, 0.06);
 
 	float mud = fbm2((world_pos.xz + terrain_warp) * 0.02 + vec2(200.0, 300.0));
-	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength;
+	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength * (1.0 - steep_override);
 	albedo = mix(albedo, mud_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), mud_mask * 0.8);
 
 	float dirt_noise = fbm2((world_pos.xz + terrain_warp) * 0.018 + vec2(500.0, 700.0));
 	float dirt_thresh = 0.5 + (0.5 - dirt_patch_amount) * 0.6;
-	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w;
+	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w * (1.0 - steep_override);
 	albedo = mix(albedo, dirt_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), dirt_mask);
 
 	// Clay paths from vertex color R channel — per-pixel noise breaks up vertex-grid edges
@@ -174,19 +178,15 @@ void fragment() {
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
 	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
 
-	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2;
+	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2 * (1.0 - steep_override);
 	albedo *= (1.0 - ao_mask);
 
-	float ground_shadow = flat_w * 0.12 * (1.0 - dirt_mask) * (1.0 - pm);
+	float ground_shadow = flat_w * 0.12 * (1.0 - dirt_mask) * (1.0 - pm) * (1.0 - steep_override);
 	albedo *= (1.0 - ground_shadow);
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// Replace triplanar texture with solid procedural color on slopes.
-	// Albedo override starts early (slope 0.15) to catch moderate slopes where
-	// triplanar creates dark blobs. Bump uses a higher threshold to stay subtle.
-	float steep_override = smoothstep(0.15, 0.40, slope);
-	float steep_bump = smoothstep(0.35, 0.55, slope);
+	// Replace triplanar texture with solid procedural color on slopes
 	float rock_n = fbm2(world_pos.xz * 0.06 + vec2(421.0, 637.0));
 	float rock_d = vnoise(world_pos.xz * 0.25 + vec2(159.0, 843.0));
 	float rock_h = vnoise(vec2(world_pos.y * 0.08, (world_pos.x + world_pos.z) * 0.04) + vec2(283.0, 941.0));
