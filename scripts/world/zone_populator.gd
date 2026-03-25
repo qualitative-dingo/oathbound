@@ -411,8 +411,8 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	root.set_meta("hp", 10.0 * sf)
 	root.set_meta("max_hp", 10.0 * sf)
 	root.set_meta("drop_id", &"blueberry")
-	root.set_meta("drop_min", 2)
-	root.set_meta("drop_max", 5)
+	root.set_meta("drop_min", 1)
+	root.set_meta("drop_max", 1)
 	root.set_meta("harvest_type", &"bush")
 	root.set_meta("tree_name", "Blueberry Bush")
 	root.set_meta("trunk_h", trunk_h)
@@ -482,7 +482,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 		root.add_child(mmi)
 
 	_ensure_berry_bushes()
-	var berry_count := rng.randi_range(8, 14)
+	var berry_count := rng.randi_range(24, 42)
 	for _bi in berry_count:
 		var b_angle := rng.randf_range(0.0, TAU)
 		var b_out := rng.randf_range(0.1, crown_r * 0.8)

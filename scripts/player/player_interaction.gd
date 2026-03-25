@@ -602,8 +602,8 @@ func try_interact() -> void:
 
 func _harvest_berry_bush(bush: Node3D) -> void:
 	var drop_id: StringName = bush.get_meta("drop_id", &"blueberry")
-	var drop_min: int = int(bush.get_meta("drop_min", 2))
-	var drop_max: int = int(bush.get_meta("drop_max", 5))
+	var drop_min: int = int(bush.get_meta("drop_min", 1))
+	var drop_max: int = int(bush.get_meta("drop_max", 1))
 
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
@@ -657,7 +657,7 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 			else:
 				bb_mat = StandardMaterial3D.new()
 				bb_mat.albedo_color = Color(0.12, 0.08, 0.45)
-			for _bi in re_rng.randi_range(8, 14):
+			for _bi in re_rng.randi_range(24, 42):
 				var b_angle := re_rng.randf_range(0.0, TAU)
 				var b_out := re_rng.randf_range(0.1, crown_r * 0.8)
 				var b_y := crown_y + re_rng.randf_range(-crown_h * 0.2, crown_h * 0.5)

@@ -9541,8 +9541,8 @@ func _destroy_bush(node: Node3D) -> void:
 				is_client_destroy = true
 
 	var b_drop_id: StringName = node.get_meta("drop_id", &"blueberry") as StringName
-	var b_drop_min: int = int(node.get_meta("drop_min", 2))
-	var b_drop_max: int = int(node.get_meta("drop_max", 5))
+	var b_drop_min: int = int(node.get_meta("drop_min", 1))
+	var b_drop_max: int = int(node.get_meta("drop_max", 1))
 
 	node.remove_from_group(&"interactables")
 	node.set_meta("harvestable", false)
