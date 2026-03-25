@@ -81,11 +81,13 @@ void fragment() {
 	vec3 world_pos = v_world_pos;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 
-	vec3 blend = abs(world_normal);
-	blend = pow(blend, vec3(8.0));
-	blend /= (blend.x + blend.y + blend.z + 0.0001);
-
 	float slope = 1.0 - abs(world_normal.y);
+
+	// Soften triplanar blending on steep terrain so adjacent faces don't show seams
+	float blend_power = mix(8.0, 2.0, smoothstep(0.12, 0.35, slope));
+	vec3 blend = abs(world_normal);
+	blend = pow(blend, vec3(blend_power));
+	blend /= (blend.x + blend.y + blend.z + 0.0001);
 
 	// Multi-scale noise to break up the slope contour into organic patches
 	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.15
@@ -179,8 +181,8 @@ void fragment() {
 
 	// On steep terrain, override per-triangle classification with a single unified
 	// mossy-rock color to eliminate venetian-blind stripe artifacts
-	float steep_override = smoothstep(0.15, 0.40, slope);
-	vec3 unified_steep = mix(mossy_slope, mossy_cliff, smoothstep(0.20, 0.55, slope));
+	float steep_override = smoothstep(0.10, 0.30, slope);
+	vec3 unified_steep = mix(mossy_slope, mossy_cliff, smoothstep(0.15, 0.50, slope));
 	unified_steep *= brightness;
 	albedo = mix(albedo, unified_steep, steep_override);
 
