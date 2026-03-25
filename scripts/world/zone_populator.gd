@@ -3572,7 +3572,7 @@ static func _ensure_water_plants() -> void:
 	# Lily flower — detailed pink/white bloom with vertex color gradient
 	_lily_flower_mesh = _gen_lily_flower_mesh()
 	_lily_flower_mat = StandardMaterial3D.new()
-	_lily_flower_mat.albedo_color = Color(1.0, 0.85, 0.90)
+	_lily_flower_mat.albedo_color = Color(1.0, 0.88, 0.88)
 	_lily_flower_mat.vertex_color_use_as_albedo = true
 	_lily_flower_mat.roughness = 0.75
 	_lily_flower_mat.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
@@ -3661,9 +3661,9 @@ static func _gen_lily_flower_mesh() -> ArrayMesh:
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 
-	var white := Color(0.98, 0.80, 0.85)
-	var pink_base := Color(0.95, 0.40, 0.55)
-	var pink_deep := Color(0.85, 0.18, 0.38)
+	var white := Color(1.0, 0.92, 0.92)
+	var pink_base := Color(1.0, 0.55, 0.62)
+	var pink_deep := Color(0.95, 0.38, 0.45)
 	var yellow := Color(0.95, 0.75, 0.25)
 
 	# Outer petals — 8 wide, gently cupped petals with 3 segments each
@@ -4037,7 +4037,7 @@ static func _scatter_water_plants(
 			flower.mesh = _lily_flower_mesh
 			flower.material_override = _lily_flower_mat
 			flower.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			flower.scale = Vector3(0.65, 0.65, 0.65)
+			flower.scale = Vector3(1.3, 1.3, 1.3)
 			var off_angle := rng.randf_range(0.0, TAU)
 			var off_dist := rng.randf_range(0.0, 0.12)
 			flower.position = Vector3(cos(off_angle) * off_dist, 0.0, sin(off_angle) * off_dist)
