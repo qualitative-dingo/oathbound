@@ -26,10 +26,28 @@ void vertex() {
 	v_river_bank = COLOR.b;
 }
 
+float hash_fast(vec2 p) {
+	float h = dot(p, vec2(127.1, 311.7));
+	return fract(sin(h) * 43758.5453);
+}
+
+float vnoise_fast(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(
+		mix(hash_fast(i), hash_fast(i + vec2(1.0, 0.0)), f.x),
+		mix(hash_fast(i + vec2(0.0, 1.0)), hash_fast(i + vec2(1.0, 1.0)), f.x),
+		f.y
+	);
+}
+
 void fragment() {
+	vec3 wpos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float slope = 1.0 - abs(world_normal.y);
-	float cliff_w = smoothstep(cliff_start, cliff_start + 0.12, slope);
+	float slope_noise = (vnoise_fast(wpos.xz * 0.12 + vec2(53.0, 97.0)) - 0.5) * 0.18;
+	float cliff_w = smoothstep(cliff_start, cliff_start + 0.25, slope + slope_noise);
 
 	float pm = smoothstep(0.2, 0.7, v_path_mask);
 	float bm = smoothstep(0.1, 0.6, v_river_bank);
