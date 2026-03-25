@@ -816,14 +816,7 @@ func _generate_spawn_area() -> void:
 			var coord := Vector2i(x, z)
 			if coord not in _loaded_zones:
 				var arrays := _build_zone_mesh(coord)
-				var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-				var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-				var faces := PackedVector3Array()
-				faces.resize(indices.size())
-				for i in indices.size():
-					faces[i] = verts[indices[i]]
-				var shape := ConcavePolygonShape3D.new()
-				shape.set_faces(faces)
+				var shape := _build_collision_shape(coord)
 				_terrain_mesh_cache[coord] = arrays
 				_terrain_shape_cache[coord] = shape
 				_finalize_zone(coord, arrays, shape)
@@ -935,11 +928,12 @@ const _PENDING_BUDGET_US := 4000  # max microseconds per frame for pending work
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
 
-	# 0. Enable collision shapes deferred from last frame (spreads physics rebuild)
-	for col_shape in _deferred_collisions:
+	# 0. Enable at most 1 collision shape per frame to avoid physics rebuild spikes
+	while not _deferred_collisions.is_empty():
+		var col_shape: CollisionShape3D = _deferred_collisions.pop_front()
 		if is_instance_valid(col_shape):
 			col_shape.disabled = false
-	_deferred_collisions.clear()
+			break
 
 	# 1. Collect completed background builds — discard stale ones immediately
 	_gen_mutex.lock()
@@ -958,44 +952,45 @@ func _process_pending_zones() -> void:
 
 	_evict_terrain_cache()
 
-	# 2. Populate zone objects — run multiple phases within time budget
-	while not _populate_backlog.is_empty():
-		if Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
+	# 2. Populate zone objects — one phase per iteration within time budget
+	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
+		while not _populate_backlog.is_empty():
+			if Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
+				break
+			var pitem: Dictionary = _populate_backlog[0]
+			var pcoord: Vector2i = pitem["coord"]
+			var zone_root = pitem["zone_root"]  # untyped — may be freed between frames
+			if not is_instance_valid(zone_root) or not _is_in_load_range(pcoord):
+				_populate_backlog.pop_front()
+				continue
+			var phase: int = pitem.get("phase", 0)
+			var biome: StringName = pitem["biome"]
+			var micro: StringName = pitem["micro"]
+			var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
+			if done:
+				_populate_backlog.pop_front()
+				var min_dist := 999.0
+				for p in _players:
+					var pz := world_to_zone(get_world_position(p))
+					var d := float((pcoord - pz).length())
+					if d < min_dist:
+						min_dist = d
+				_update_zone_lod(zone_root, min_dist)
+				zone_loaded.emit(pcoord)
+			else:
+				pitem["phase"] = phase + 1
 			break
-		var pitem: Dictionary = _populate_backlog[0]
-		var pcoord: Vector2i = pitem["coord"]
-		var zone_root = pitem["zone_root"]  # untyped — may be freed between frames
-		if not is_instance_valid(zone_root) or not _is_in_load_range(pcoord):
-			_populate_backlog.pop_front()
-			continue
-		var phase: int = pitem.get("phase", 0)
-		var biome: StringName = pitem["biome"]
-		var micro: StringName = pitem["micro"]
-		var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
-		if done:
-			_populate_backlog.pop_front()
-			var min_dist := 999.0
-			for p in _players:
-				var pz := world_to_zone(get_world_position(p))
-				var d := float((pcoord - pz).length())
-				if d < min_dist:
-					min_dist = d
-			_update_zone_lod(zone_root, min_dist)
-			zone_loaded.emit(pcoord)
-		else:
-			pitem["phase"] = phase + 1
 
 	# 3. Finalize up to 1 zone mesh per frame (within budget)
 	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
-		var finalized := 0
-		while finalized < 1 and not _finalize_backlog.is_empty():
+		while not _finalize_backlog.is_empty():
 			var item: Dictionary = _finalize_backlog.pop_front()
 			var coord: Vector2i = item["coord"]
 			if not _is_in_load_range(coord):
 				continue
 			if coord not in _loaded_zones:
 				_finalize_zone(coord, item["arrays"], item["shape"])
-				finalized += 1
+				break
 
 	# 4. Submit new zone builds — stop if backlog is already large
 	if _finalize_backlog.size() + _gen_in_flight.size() > 30:
@@ -1106,18 +1101,46 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 					sub.set_deferred("disabled", new_lod >= 2)
 
 
+## Build a half-resolution ConcavePolygonShape3D for terrain collision.
+## Uses MESH_RESOLUTION/2 grid (24x24) — 4x fewer triangles than the visual mesh,
+## indistinguishable for gameplay but much cheaper for the physics engine.
+func _build_collision_shape(coord: Vector2i) -> ConcavePolygonShape3D:
+	const COL_RES := MESH_RESOLUTION / 2
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+	var step: float = ZONE_SIZE / COL_RES
+
+	var col_verts := PackedVector3Array()
+	col_verts.resize((COL_RES + 1) * (COL_RES + 1))
+	for cz in range(COL_RES + 1):
+		for cx in range(COL_RES + 1):
+			var wx := origin_x + cx * step
+			var wz := origin_z + cz * step
+			col_verts[cz * (COL_RES + 1) + cx] = Vector3(cx * step, get_height_at(wx, wz), cz * step)
+
+	var face_count := COL_RES * COL_RES * 2 * 3
+	var faces := PackedVector3Array()
+	faces.resize(face_count)
+	var fi := 0
+	for cz in range(COL_RES):
+		for cx in range(COL_RES):
+			var i := cz * (COL_RES + 1) + cx
+			faces[fi] = col_verts[i];             fi += 1
+			faces[fi] = col_verts[i + 1];         fi += 1
+			faces[fi] = col_verts[i + COL_RES + 1]; fi += 1
+			faces[fi] = col_verts[i + 1];         fi += 1
+			faces[fi] = col_verts[i + COL_RES + 2]; fi += 1
+			faces[fi] = col_verts[i + COL_RES + 1]; fi += 1
+
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(faces)
+	return shape
+
+
 ## Runs on a WorkerThreadPool thread — pure computation, no scene access.
 func _bg_build_zone(coord: Vector2i) -> void:
 	var arrays := _build_zone_mesh(coord)
-	# Build ConcavePolygonShape3D from raw arrays (no ArrayMesh needed)
-	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-	var faces := PackedVector3Array()
-	faces.resize(indices.size())
-	for i in indices.size():
-		faces[i] = verts[indices[i]]
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(faces)
+	var shape := _build_collision_shape(coord)
 
 	_gen_mutex.lock()
 	_gen_ready_queue.append({"coord": coord, "arrays": arrays, "shape": shape})

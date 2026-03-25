@@ -434,7 +434,7 @@ func on_equip_bar_hover(slot_name: String) -> void:
 func build_stats_panel(root: Control) -> void:
 	pc._stats_arrow = Button.new()
 	pc._stats_arrow.name = "StatsArrow"
-	pc._stats_arrow.text = "▶"
+	pc._stats_arrow.text = ">"
 	pc._stats_arrow.custom_minimum_size = Vector2(20, 60)
 	pc._stats_arrow.add_theme_font_size_override("font_size", 14)
 	pc._stats_arrow.add_theme_color_override("font_color", Color(0.8, 0.75, 0.55))
@@ -524,7 +524,7 @@ func build_stats_panel(root: Control) -> void:
 		row.add_child(name_lbl)
 
 		var val_lbl := Label.new()
-		val_lbl.text = "—"
+		val_lbl.text = "-"
 		val_lbl.add_theme_font_size_override("font_size", 12)
 		val_lbl.add_theme_color_override("font_color", Color(0.95, 0.9, 0.75))
 		val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -539,7 +539,7 @@ func build_stats_panel(root: Control) -> void:
 func toggle_stats_panel() -> void:
 	pc._stats_open = not pc._stats_open
 	pc._stats_panel.visible = pc._stats_open
-	pc._stats_arrow.text = "◀" if pc._stats_open else "▶"
+	pc._stats_arrow.text = "<" if pc._stats_open else ">"
 	if pc._stats_open:
 		refresh_stats_panel()
 		position_stats_panel()
@@ -735,7 +735,7 @@ func show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id:
 			max_stars = int(sv)
 		total += int(variants[sv])
 
-	var text := "[b]%s[/b]  ×%d\n" % [display_name, total]
+	var text := "[b]%s[/b]  x%d\n" % [display_name, total]
 	text += "Type: %s\n" % item_type.capitalize()
 
 	if data.has("damage"):
@@ -745,7 +745,7 @@ func show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id:
 	if data.has("armor_slot"):
 		text += "Slot: %s\n" % str(data["armor_slot"]).capitalize()
 	if Inventory.is_equipped(display_id):
-		text += "◆ Equipped\n"
+		text += "[Equipped]\n"
 		text += "[color=#999999]Right-click to unequip[/color]\n"
 	elif data.has("armor_slot"):
 		text += "[color=#999999]Right-click to equip[/color]\n"

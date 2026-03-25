@@ -179,11 +179,13 @@ void fragment() {
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// On steep terrain, override per-triangle classification with a single unified
-	// mossy-rock color to eliminate venetian-blind stripe artifacts
+	// On steep terrain, replace texture-based color with a solid procedural color.
+	// Textures cause vertical streak artifacts on near-vertical faces; smooth noise doesn't.
 	float steep_override = smoothstep(0.10, 0.30, slope);
-	vec3 unified_steep = mix(mossy_slope, mossy_cliff, smoothstep(0.15, 0.50, slope));
-	unified_steep *= brightness;
+	float rock_n = fbm2(world_pos.xz * 0.06 + vec2(421.0, 637.0));
+	float rock_d = vnoise(world_pos.xz * 0.25 + vec2(159.0, 843.0));
+	float rock_h = vnoise(vec2(world_pos.y * 0.08, (world_pos.x + world_pos.z) * 0.04) + vec2(283.0, 941.0));
+	vec3 unified_steep = vec3(0.36, 0.38, 0.29) * (0.75 + rock_n * 0.25 + rock_d * 0.12 + rock_h * 0.10);
 	albedo = mix(albedo, unified_steep, steep_override);
 
 	// Biome tint applied uniformly — slopes/cliffs get mossy green from the biome
