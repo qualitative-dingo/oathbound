@@ -824,14 +824,14 @@ static func populate_zone_phase(
 					var lz := rng.randf_range(10.0, ZONE_SIZE - 10.0)
 					var wx := origin_x + lx
 					var wz := origin_z + lz
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
-				if ground_y > _MIN_LAND_Y:
-					if _has_saved_horses:
-						rng.randf()
-					else:
-						var horse := _create_horse(rng)
-						zone_root.add_child(horse)
-						horse.position = Vector3(lx, ground_y, lz)
+					var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+					if ground_y > _MIN_LAND_Y:
+						if _has_saved_horses:
+							rng.randf()
+						else:
+							var horse := _create_horse(rng)
+							zone_root.add_child(horse)
+							horse.position = Vector3(lx, ground_y, lz)
 							horse.set_meta("spawn_zone", coord)
 
 			_restore_saved_horses_in_zone(zone_root, coord, height_func)
