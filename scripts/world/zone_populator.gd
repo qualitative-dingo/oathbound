@@ -282,9 +282,10 @@ static func _ensure_textures() -> void:
 			smat.set_shader_parameter("stone_texture", stone_tex)
 		smat.set_shader_parameter("normal_texture", _generate_stone_normal_map())
 		smat.set_shader_parameter("stone_color", Color(0.5, 0.48, 0.45))
+		smat.set_shader_parameter("stone_color_dark", Color(0.32, 0.30, 0.28))
 		smat.set_shader_parameter("moss_color", Color(0.18, 0.38, 0.08))
 		smat.set_shader_parameter("moss_threshold", 0.55)
-		smat.set_shader_parameter("moss_blend_sharpness", 3.0)
+		smat.set_shader_parameter("moss_blend_sharpness", 2.0)
 		smat.set_shader_parameter("moss_noise_scale", 2.5)
 		smat.set_shader_parameter("normal_strength", 0.8)
 		smat.set_shader_parameter("ao_strength", 0.8)
@@ -1806,8 +1807,8 @@ static func _generate_rock_mesh(seed_idx: int) -> ArrayMesh:
 		rng.randf_range(0.3, 1.4),
 		rng.randf_range(0.6, 1.6))
 
-	var segments := 8
-	var rings := 5
+	var segments := 12
+	var rings := 7
 	var base_radius := 0.5
 
 	var verts := PackedVector3Array()
@@ -1828,12 +1829,16 @@ static func _generate_rock_mesh(seed_idx: int) -> ArrayMesh:
 			var nz := sin(phi) * sin(theta)
 			var normal := Vector3(nx, ny, nz)
 
-			# Multi-frequency noise displacement for craggy look
+			# Multi-frequency noise for craggy, angular displacement
 			var disp := 1.0
 			var n1 := sin(nx * 5.3 + float(seed_idx) * 1.7) * cos(nz * 4.1 + ny * 3.2)
 			var n2 := sin(ny * 7.9 + nx * 2.3 + float(seed_idx) * 0.9) * 0.5
 			var n3 := cos(nx * 12.0 + nz * 8.0 + float(seed_idx) * 3.1) * 0.25
-			disp += (n1 * 0.25 + n2 * 0.15 + n3 * 0.1) * rng.randf_range(0.5, 1.5)
+			disp += (n1 * 0.35 + n2 * 0.25 + n3 * 0.15) * rng.randf_range(0.5, 1.5)
+
+			# Faceting: quantize a random subset of displacements for angular edges
+			if rng.randf() < 0.35:
+				disp = snapped(disp, 0.12)
 
 			# Flatten bottom so rocks sit on ground
 			if ny < -0.3:

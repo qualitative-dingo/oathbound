@@ -4,6 +4,7 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert_wrap;
 uniform sampler2D stone_texture : source_color, filter_nearest;
 uniform sampler2D normal_texture : hint_normal, filter_nearest;
 uniform vec4 stone_color : source_color = vec4(0.5, 0.48, 0.45, 1.0);
+uniform vec4 stone_color_dark : source_color = vec4(0.32, 0.30, 0.28, 1.0);
 uniform vec4 moss_color : source_color = vec4(0.18, 0.38, 0.08, 1.0);
 uniform float moss_blend_sharpness : hint_range(0.5, 8.0) = 3.0;
 uniform float moss_threshold : hint_range(0.0, 1.0) = 0.55;
@@ -72,7 +73,13 @@ void fragment() {
 
 	// Triplanar stone texture
 	vec4 stone_tex = triplanar_sample(stone_texture, wp, wn, triplanar_scale);
-	vec3 base_col = stone_tex.rgb * stone_color.rgb;
+
+	// Height + noise-based blend between light (tops) and dark (crevices/bottoms)
+	float height_blend = smoothstep(-0.4, 0.6, wn.y);
+	float color_noise = value_noise(wp.xz * 1.8 + wp.y * 0.7);
+	float dark_mix = clamp((1.0 - height_blend) + (1.0 - color_noise) * 0.3, 0.0, 1.0);
+	vec3 blended_stone = mix(stone_color.rgb, stone_color_dark.rgb, dark_mix);
+	vec3 base_col = stone_tex.rgb * blended_stone;
 
 	// Normal map with triplanar (strong for that crunchy look)
 	vec3 norm_sample = triplanar_normal_sample(normal_texture, wp, wn, triplanar_scale);
