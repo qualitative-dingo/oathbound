@@ -422,6 +422,7 @@ var _anim: PlayerAnimation
 
 # ── Character Speech ──
 var _speech_label_3d: Label3D
+var _speech_bg: MeshInstance3D
 var _speech_tween: Tween
 var _speech_timer := 0.0
 var _speech_cooldown := 0.0
@@ -3460,21 +3461,39 @@ func _build_hud() -> void:
 
 
 func _build_speech_bubble(_root: Control) -> void:
+	_speech_bg = MeshInstance3D.new()
+	_speech_bg.name = "SpeechBubbleBG"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.0, 0.3)
+	_speech_bg.mesh = quad
+	var bg_mat := StandardMaterial3D.new()
+	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bg_mat.albedo_color = Color(0.06, 0.05, 0.04, 0.75)
+	bg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	bg_mat.no_depth_test = true
+	bg_mat.render_priority = 1
+	_speech_bg.material_override = bg_mat
+	_speech_bg.position = Vector3(0.0, 3.6, 0.0)
+	_speech_bg.visible = false
+	add_child(_speech_bg)
+
 	_speech_label_3d = Label3D.new()
 	_speech_label_3d.name = "SpeechBubble3D"
 	_speech_label_3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_speech_label_3d.no_depth_test = true
 	_speech_label_3d.fixed_size = true
-	_speech_label_3d.pixel_size = 0.0012
-	_speech_label_3d.font_size = 48
-	_speech_label_3d.outline_size = 12
-	_speech_label_3d.modulate = Color(0.95, 0.88, 0.72)
-	_speech_label_3d.outline_modulate = Color(0.05, 0.04, 0.02, 0.9)
+	_speech_label_3d.pixel_size = 0.0008
+	_speech_label_3d.font_size = 28
+	_speech_label_3d.outline_size = 6
+	_speech_label_3d.modulate = Color(0.95, 0.90, 0.78)
+	_speech_label_3d.outline_modulate = Color(0.0, 0.0, 0.0, 0.0)
 	_speech_label_3d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_speech_label_3d.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_speech_label_3d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_speech_label_3d.width = 600.0
-	_speech_label_3d.position = Vector3(0.0, 5.0, 0.0)
+	_speech_label_3d.width = 500.0
+	_speech_label_3d.position = Vector3(0.0, 3.6, 0.01)
+	_speech_label_3d.render_priority = 2
 	_speech_label_3d.visible = false
 	add_child(_speech_label_3d)
 
@@ -3488,19 +3507,48 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 		return
 
 	var idx := randi() % lines.size()
-	_speech_label_3d.text = "\" " + str(lines[idx]) + " \""
+	var msg := str(lines[idx])
+	_speech_label_3d.text = "\" " + msg + " \""
+
+	# Size the background quad to fit the text
+	if _speech_bg:
+		var char_w := 0.0065
+		var line_w := minf(float(msg.length()) * char_w, 500.0 * _speech_label_3d.pixel_size)
+		var est_lines := ceilf(float(msg.length()) * char_w / (500.0 * _speech_label_3d.pixel_size))
+		var quad_w := line_w + 0.06
+		var quad_h := est_lines * 0.032 + 0.04
+		(_speech_bg.mesh as QuadMesh).size = Vector2(quad_w, quad_h)
 
 	if _speech_tween and _speech_tween.is_valid():
 		_speech_tween.kill()
 
-	var base_color := Color(0.95, 0.88, 0.72, 0.0)
+	var base_color := Color(0.95, 0.90, 0.78, 0.0)
 	_speech_label_3d.modulate = base_color
 	_speech_label_3d.visible = true
+
+	if _speech_bg:
+		var bg_mat := _speech_bg.material_override as StandardMaterial3D
+		if bg_mat:
+			bg_mat.albedo_color.a = 0.0
+		_speech_bg.visible = true
+
 	_speech_tween = create_tween()
+	_speech_tween.set_parallel(true)
 	_speech_tween.tween_property(_speech_label_3d, "modulate:a", 1.0, 0.4)
+	if _speech_bg and _speech_bg.material_override:
+		_speech_tween.tween_property(_speech_bg.material_override, "albedo_color:a", 0.75, 0.4)
+	_speech_tween.set_parallel(false)
 	_speech_tween.tween_interval(_SPEECH_DISPLAY_TIME)
+	_speech_tween.set_parallel(true)
 	_speech_tween.tween_property(_speech_label_3d, "modulate:a", 0.0, 0.6)
-	_speech_tween.tween_callback(func(): _speech_label_3d.visible = false)
+	if _speech_bg and _speech_bg.material_override:
+		_speech_tween.tween_property(_speech_bg.material_override, "albedo_color:a", 0.0, 0.6)
+	_speech_tween.set_parallel(false)
+	_speech_tween.tween_callback(func():
+		_speech_label_3d.visible = false
+		if _speech_bg:
+			_speech_bg.visible = false
+	)
 
 	_speech_cooldown = _SPEECH_GLOBAL_COOLDOWN
 	_speech_trigger_cooldowns[trigger_key] = _SPEECH_TRIGGER_COOLDOWN
