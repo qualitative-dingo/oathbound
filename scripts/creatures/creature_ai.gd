@@ -1307,6 +1307,8 @@ func _spawn_loot_and_play_ground_death() -> void:
 
 
 func _explode_and_free() -> void:
+	GameEvents.creature_killed.emit(global_position)
+
 	# Loot and affix application only on host (host spawns loot via WorldStateSync)
 	if multiplayer.is_server() or not multiplayer.has_multiplayer_peer():
 		if not loot_table.is_empty():

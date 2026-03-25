@@ -60,6 +60,9 @@ signal player_stamina_changed(current: float, maximum: float)
 signal player_died()
 signal player_respawned()
 
+# --- Combat ---
+signal creature_killed(creature_position: Vector3)
+
 # --- Building ---
 signal building_piece_placed(piece: Node3D)
 signal building_piece_destroyed(piece: Node3D)

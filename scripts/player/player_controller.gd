@@ -434,6 +434,12 @@ const _SPEECH_CHECK_INTERVAL := 3.0
 var _speech_check_timer := 0.0
 var _speech_low_health_warned := false
 var _speech_low_stamina_warned := false
+var _speech_close_call_eligible := false
+var _speech_last_hour := -1
+var _speech_in_village := false
+var _speech_kill_times: Array[float] = []
+const _SPEECH_KILL_WINDOW := 20.0
+const _SPEECH_KILL_SPREE_COUNT := 5
 
 const _LINES_DARK := [
 	"It's getting dark out there, I could use a light source.",
@@ -443,11 +449,16 @@ const _LINES_DARK := [
 	"Cursed darkness. A man needs a torch in these woods.",
 ]
 const _LINES_INVENTORY_FULL := [
-	"My pack is heavy enough... I need to leave some of this behind.",
-	"No more room. I'm carrying half the forest already.",
-	"My shoulders are aching. I can't take another ounce.",
-	"I've no space for this. Time to head back to the village.",
-	"If I pick up one more stone, my belt will snap.",
+	"My pack is screaming for mercy... no room for this.",
+	"I've got more loot than sense. I need to clear some space.",
+	"Not another pebble. My bags are bursting at the seams.",
+	"If I want this, something else has to stay in the dirt.",
+	"Where would I even put it? My pockets are full of the forest already.",
+	"A fine prize, but I've no place to stow it.",
+	"Too much clutter. Time for a spring cleaning in my pack.",
+	"My pack is a mountain. I can't squeeze a feather in there.",
+	"I'm carrying a village's worth of gear. No more.",
+	"Greed is a heavy burden, and my bags are all out of room.",
 ]
 const _LINES_DROWNING := [
 	"The current is winning... I need to find land.",
@@ -479,6 +490,66 @@ const _LINES_FIVE_STAR := [
 	"Steady now... don't want to drop a treasure as rare as this.",
 	"Look at the way it catches the light. Pure perfection.",
 	"Fate has smiled upon me. I'll put this to good use.",
+]
+const _LINES_SHELTER := [
+	"Safe from the wind at last. I can feel my toes again.",
+	"A sturdy roof... the finest sight in all the Hearthlands.",
+	"Let the storm howl outside; it can't reach me here.",
+	"Dry wood and a solid ceiling. I've found a little slice of peace.",
+	"The damp is staying out there. Good.",
+	"Finally, a place to rest my weary head.",
+	"Nothing beats the sound of rain hitting a roof that isn't mine.",
+	"Safe and sound. Time to check the gear.",
+	"The cold can't follow me through these doors.",
+	"Ah... to breathe air that doesn't bite back.",
+]
+const _LINES_FIRST_LIGHT := [
+	"The sun returns to chase the shadows away. A new day begins.",
+	"Night's grip finally loosens. I've lived to see another dawn.",
+	"Light breaks the horizon. The monsters will be slinking back now.",
+	"Morning at last. Fortune favors those who see the sun rise.",
+	"Clear skies and fresh light. Let's see what this day brings.",
+	"Shadows retreat. It's safer to move now.",
+	"The sun is up, and so must I be. Work to do.",
+	"Another night survived. I'm starting to get the hang of this.",
+	"Golden light... the world looks almost kind for a moment.",
+	"The dawn is here. Time to make some progress.",
+]
+const _LINES_KILLING_SPREE := [
+	"Let them come! I'm just getting started!",
+	"Is that all? I was hoping for a challenge!",
+	"My axe is thirsty today! Who's next?",
+	"They fall like wheat before the scythe!",
+	"I'll paint these woods red if I have to!",
+	"None shall stand against me!",
+	"Their strength is nothing! I am the storm!",
+	"Clear the way, or join the pile!",
+	"Ha! I haven't felt this alive in years!",
+	"Send the rest! I'm ready!",
+]
+const _LINES_ABANDONED_VILLAGE := [
+	"A ghost town. I wonder what drove them out.",
+	"Empty homes and cold hearths. A lonely sight.",
+	"Silence is the only thing living here now.",
+	"Let's see what they left behind in their hurry.",
+	"Dust and echoes. This place used to have a soul.",
+	"No fire in the windows. No laughter in the streets.",
+	"The forest is taking this place back, inch by inch.",
+	"A village without people is just a collection of graves.",
+	"Best be quick. Places like this attract the wrong sort.",
+	"Ruined walls and broken dreams. Hearthlands' common story.",
+]
+const _LINES_CLOSE_CALL := [
+	"That was closer to the grave than I'd like. Still breathing, at least.",
+	"The Valkyries will have to wait another day. I'm not done.",
+	"Stared into the abyss and it blinked first.",
+	"Death came knocking, but I didn't answer the door.",
+	"My blood stays inside for now. A lucky escape.",
+	"Phew... I can still feel my heart hammering in my teeth.",
+	"A few inches closer and that would have been the end.",
+	"I've got more lives than a barn cat, it seems.",
+	"Not my time. Not today.",
+	"The ancestors aren't ready for me yet.",
 ]
 
 
@@ -594,6 +665,7 @@ func _ready() -> void:
 	GameEvents.inventory_changed.connect(_on_inventory_changed)
 	GameEvents.item_picked_up.connect(_on_item_picked_up_speech)
 	GameEvents.inventory_changed.connect(_on_inventory_changed_speech)
+	GameEvents.creature_killed.connect(_on_creature_killed_speech)
 	if NetworkManager.is_connected_to_game():
 		NetworkManager.chest_contents_received.connect(_on_chest_contents_received)
 
@@ -3455,19 +3527,55 @@ func _check_speech_triggers(delta: float) -> void:
 	for key in _speech_trigger_cooldowns.keys():
 		_speech_trigger_cooldowns[key] = maxf(float(_speech_trigger_cooldowns[key]) - delta, 0.0)
 
+	# Prune old kill timestamps
+	var now := Time.get_ticks_msec() / 1000.0
+	while not _speech_kill_times.is_empty() and now - _speech_kill_times[0] > _SPEECH_KILL_WINDOW:
+		_speech_kill_times.remove_at(0)
+
+	# Close call: health was < 10% and has now recovered above 40%
+	if max_health > 0.0:
+		var hp_ratio := current_health / max_health
+		if hp_ratio < 0.10 and current_health > 0.0:
+			_speech_close_call_eligible = true
+		elif _speech_close_call_eligible and hp_ratio > 0.40:
+			_speech_close_call_eligible = false
+			_show_speech(_LINES_CLOSE_CALL, &"close_call")
+
 	_speech_check_timer += delta
 	if _speech_check_timer < _SPEECH_CHECK_INTERVAL:
 		return
 	_speech_check_timer = 0.0
 
-	# 1. Light source warning: dark + no torch
 	var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree() and get_tree().current_scene else null
+
+	# 1. Light source warning: dark + no torch
 	if dnc and dnc.has_method("is_daytime"):
 		if not dnc.is_daytime() and not _torch_light:
 			_show_speech(_LINES_DARK, &"dark")
 			return
 
-	# 2. Stamina drowning: swimming + stamina < 20%
+	# 2. First light greeting: hour transitions to 6
+	if dnc and dnc.has_method("get_hour"):
+		var hour: int = dnc.get_hour()
+		if _speech_last_hour >= 0 and _speech_last_hour < 6 and hour >= 6:
+			_show_speech(_LINES_FIRST_LIGHT, &"first_light")
+		_speech_last_hour = hour
+
+	# 3. Shelter: under a roof during bad weather
+	if get_tree() and WeatherSystem.current_weather >= 2:
+		var space := get_world_3d().direct_space_state
+		if space:
+			var from := global_position + Vector3.UP * 0.5
+			var to := from + Vector3.UP * 12.0
+			var query := PhysicsRayQueryParameters3D.create(from, to)
+			query.collision_mask = 0xFFFFFFFF
+			query.exclude = [get_rid()]
+			var result := space.intersect_ray(query)
+			if not result.is_empty():
+				_show_speech(_LINES_SHELTER, &"shelter")
+				return
+
+	# 4. Stamina drowning: swimming + stamina < 20%
 	if _is_swimming and max_stamina > 0.0 and current_stamina / max_stamina < 0.20:
 		if not _speech_low_stamina_warned:
 			_speech_low_stamina_warned = true
@@ -3476,7 +3584,7 @@ func _check_speech_triggers(delta: float) -> void:
 	else:
 		_speech_low_stamina_warned = false
 
-	# 3. Low health: < 25%
+	# 5. Low health: < 25%
 	if max_health > 0.0 and current_health / max_health < 0.25 and current_health > 0.0:
 		if not _speech_low_health_warned:
 			_speech_low_health_warned = true
@@ -3484,6 +3592,32 @@ func _check_speech_triggers(delta: float) -> void:
 			return
 	else:
 		_speech_low_health_warned = false
+
+	# 6. Abandoned village proximity
+	if get_tree():
+		var structures := get_tree().get_nodes_in_group(&"structures")
+		var near_village := false
+		for s in structures:
+			if not is_instance_valid(s):
+				continue
+			if str(s.name).begins_with("AbandonedVillage"):
+				if global_position.distance_squared_to((s as Node3D).global_position) < 900.0:
+					near_village = true
+					break
+		if near_village and not _speech_in_village:
+			_speech_in_village = true
+			_show_speech(_LINES_ABANDONED_VILLAGE, &"village")
+		elif not near_village:
+			_speech_in_village = false
+
+
+func _on_creature_killed_speech(creature_pos: Vector3) -> void:
+	if global_position.distance_squared_to(creature_pos) > 2500.0:
+		return
+	_speech_kill_times.append(Time.get_ticks_msec() / 1000.0)
+	if _speech_kill_times.size() >= _SPEECH_KILL_SPREE_COUNT:
+		_speech_kill_times.clear()
+		_show_speech(_LINES_KILLING_SPREE, &"killing_spree")
 
 
 func _on_item_picked_up_speech(item_id: StringName, _amount: int) -> void:
