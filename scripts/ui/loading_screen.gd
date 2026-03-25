@@ -8,7 +8,7 @@ const TIPS: Array[String] = [
 	"Higher star gear rolls more powerful affixes",
 	"Build a workbench to unlock better recipes",
 	"Watch your stamina when swimming in deep water",
-	"Explore rivers — you might find useful plants",
+	"Explore rivers - you might find useful plants",
 	"Defeated creatures drop better loot at higher star levels",
 	"Build a bed to set your respawn point",
 	"Stone and flint can both drop from mining rocks",

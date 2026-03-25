@@ -384,7 +384,7 @@ func _grant_pickup(loot_id: int, item_id_str: String, amount: int, star_level: i
 		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		var star_str := ""
 		for i in stars:
-			star_str += "★"
+			star_str += "*"
 		var star_lbl := Label3D.new()
 		star_lbl.text = star_str
 		star_lbl.font_size = 28

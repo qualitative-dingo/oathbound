@@ -293,7 +293,7 @@ func _show_play_mode() -> void:
 		vbox.add_child(_make_spacer(4))
 
 	var lan_sep := Label.new()
-	lan_sep.text = "— LAN —"
+	lan_sep.text = "-- LAN --"
 	lan_sep.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lan_sep.add_theme_font_size_override("font_size", 13)
 	lan_sep.add_theme_color_override("font_color", Color(0.45, 0.45, 0.5))

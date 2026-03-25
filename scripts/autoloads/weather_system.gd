@@ -388,11 +388,11 @@ func _pick_next_duration() -> void:
 func get_weather_emoji() -> String:
 	var is_night := _is_nighttime()
 	match current_weather:
-		Weather.SUN:   return "🌙" if is_night else "☀"
-		Weather.WIND:  return "💨"
-		Weather.RAIN:  return "🌧"
-		Weather.STORM: return "⛈"
-		_:             return "🌙" if is_night else "☀"
+		Weather.SUN:   return "~" if is_night else "*"
+		Weather.WIND:  return "w"
+		Weather.RAIN:  return "R"
+		Weather.STORM: return "S"
+		_:             return "~" if is_night else "*"
 
 
 func _is_nighttime() -> bool:

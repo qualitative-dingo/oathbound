@@ -17,7 +17,7 @@ const TIER_DATA: Array[Dictionary] = [
 		"boss": &"the_stag_king",
 		"boss_drop": &"antler_pick",
 		"unlocks_station": &"",
-		"unlocks_description": "Antler Pick — mine copper and tin",
+		"unlocks_description": "Antler Pick - mine copper and tin",
 		"boss_power": "Movement speed +30% for 5 min",
 	},
 ]

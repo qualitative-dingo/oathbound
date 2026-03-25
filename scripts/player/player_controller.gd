@@ -4188,7 +4188,7 @@ func _set_target_creature(creature: Node3D) -> void:
 	if stars > 0:
 		var star_str := " "
 		for i in stars:
-			star_str += "★"
+			star_str += "*"
 		_target_hud_stars.text = star_str
 		_target_hud_stars.add_theme_color_override("font_color", ItemDatabase.get_rarity_color(stars))
 		_target_hud_stars.visible = true
@@ -4242,7 +4242,7 @@ func _build_minimap(root: Control) -> void:
 	root.add_child(outer)
 	_minimap_outer = outer
 
-	# â”€â”€ Biome name banner (grey translucent box, like WoW's "Mulgore") â”€â”€
+	# -- Biome name banner (grey translucent box, like WoW's "Mulgore") --
 	var banner := PanelContainer.new()
 	banner.name = "BiomeBanner"
 	var bstyle := StyleBoxFlat.new()
@@ -4274,7 +4274,7 @@ func _build_minimap(root: Control) -> void:
 	_minimap_biome_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	banner.add_child(_minimap_biome_label)
 
-	# â”€â”€ Map circle area (the circular texture) â”€â”€
+	# -- Map circle area (the circular texture) --
 	var map_clip := Control.new()
 	map_clip.name = "MapClip"
 	map_clip.position = Vector2(circle_x, circle_y)
@@ -4293,7 +4293,7 @@ func _build_minimap(root: Control) -> void:
 	_minimap_tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_clip.add_child(_minimap_tex_rect)
 
-	# â”€â”€ "N" compass indicator at top of circle â”€â”€
+	# -- "N" compass indicator at top of circle --
 	var north_lbl := Label.new()
 	north_lbl.text = "N"
 	north_lbl.add_theme_font_size_override("font_size", 13)
@@ -4307,7 +4307,7 @@ func _build_minimap(root: Control) -> void:
 	north_lbl.z_index = 6
 	map_clip.add_child(north_lbl)
 
-	# â”€â”€ Icons placed on the circle ring edge â”€â”€
+	# -- Icons placed on the circle ring edge --
 	var half_d := float(circle_d) / 2.0
 	var ring_r := half_d - 1.0
 
@@ -4321,7 +4321,7 @@ func _build_minimap(root: Control) -> void:
 
 	_minimap_weather_label = Label.new()
 	_minimap_weather_label.name = "WeatherIcon"
-	_minimap_weather_label.text = "â˜€"
+	_minimap_weather_label.text = "*"
 	_minimap_weather_label.add_theme_font_size_override("font_size", 16)
 	_minimap_weather_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.75))
 	_minimap_weather_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -4373,7 +4373,7 @@ func _build_minimap(root: Control) -> void:
 	zoom_out_btn.pressed.connect(func() -> void: _minimap_do_zoom(MINIMAP_ZOOM_STEP))
 	zoom_out_frame.add_child(zoom_out_btn)
 
-	# â”€â”€ Time label (bottom center, in a small dark banner) â”€â”€
+	# -- Time label (bottom center, in a small dark banner) --
 	var time_banner := PanelContainer.new()
 	time_banner.name = "TimeBanner"
 	var tstyle := StyleBoxFlat.new()
@@ -4405,7 +4405,7 @@ func _build_minimap(root: Control) -> void:
 	_minimap_time_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	time_banner.add_child(_minimap_time_label)
 
-	# â”€â”€ Pre-compute circular mask (ring = gold, inside = white, outside = transparent) â”€â”€
+	# -- Pre-compute circular mask (ring = gold, inside = white, outside = transparent) --
 	_minimap_image = Image.create(MINIMAP_PX, MINIMAP_PX, false, Image.FORMAT_RGBA8)
 	_minimap_image_tex = ImageTexture.new()
 	_minimap_circle_mask = Image.create(MINIMAP_PX, MINIMAP_PX, false, Image.FORMAT_RGBA8)
@@ -5126,7 +5126,7 @@ func _on_equip_bar_hover(slot_name: String) -> void:
 func _build_stats_panel(root: Control) -> void:
 	_stats_arrow = Button.new()
 	_stats_arrow.name = "StatsArrow"
-	_stats_arrow.text = "â–¶"
+	_stats_arrow.text = ">"
 	_stats_arrow.custom_minimum_size = Vector2(20, 60)
 	_stats_arrow.add_theme_font_size_override("font_size", 14)
 	_stats_arrow.add_theme_color_override("font_color", Color(0.8, 0.75, 0.55))
@@ -5231,7 +5231,7 @@ func _build_stats_panel(root: Control) -> void:
 func _toggle_stats_panel() -> void:
 	_stats_open = not _stats_open
 	_stats_panel.visible = _stats_open
-	_stats_arrow.text = "â-€" if _stats_open else "â–¶"
+	_stats_arrow.text = "<" if _stats_open else ">"
 	if _stats_open:
 		_refresh_stats_panel()
 	_position_stats_panel()
@@ -6260,7 +6260,7 @@ func _get_build_recipe(build_id: StringName) -> Dictionary:
 	return {}
 
 
-# â”€â”€ Building material cache â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Building material cache --------------------------------------------------
 static var _bmat_wood: StandardMaterial3D
 static var _bmat_stone: StandardMaterial3D
 static var _bmat_thatch: StandardMaterial3D
@@ -6319,7 +6319,7 @@ func _make_ghost_material(build_id: StringName, fallback_color: Color) -> Standa
 	return mat
 
 
-# â”€â”€ Roof wedge mesh â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Roof wedge mesh ----------------------------------------------------------
 static func _build_roof_mesh(sz: Vector3, rise: float) -> ArrayMesh:
 	var hw := sz.x * 0.5
 	var hd := sz.z * 0.5
@@ -6568,7 +6568,7 @@ static func _add_stair_collision(structure: StaticBody3D, sz: Vector3, _step_cou
 		structure.add_child(col_shape)
 
 
-# â”€â”€ Snap system â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# -- Snap system --------------------------------------------------------------
 const Z_FIGHT_OFFSET := 0.001
 
 const SNAP_COMPAT: Dictionary = {
@@ -7141,7 +7141,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	if not smoke_tex:
 		smoke_tex = _make_solid_tex(16, 16, Color(0.6, 0.6, 0.65, 0.15))
 
-	# â”€â”€ Static logs beneath the fire (3 crossing logs, flat and centered) â”€â”€
+	# -- Static logs beneath the fire (3 crossing logs, flat and centered) --
 	for i in 3:
 		var log_sp := Sprite3D.new()
 		log_sp.texture = log_tex
@@ -7156,7 +7156,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		log_sp.rotation.x = -PI * 0.5 + randf_range(-0.08, 0.08)
 		structure.add_child(log_sp)
 
-	# â”€â”€ Ember bed (glowing coal sprite flat on the ground) â”€â”€
+	# -- Ember bed (glowing coal sprite flat on the ground) --
 	var ember_sp := Sprite3D.new()
 	ember_sp.texture = ember_tex
 	ember_sp.pixel_size = 0.012
@@ -7172,7 +7172,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	# hiding the log/base artwork baked into the bottom of the generated PNGs.
 	var flame_region := Rect2(0, 0, 48, 30)
 
-	# â”€â”€ Main campfire sprite (core flame - largest, always visible) â”€â”€
+	# -- Main campfire sprite (core flame - largest, always visible) --
 	var main_fire := Sprite3D.new()
 	main_fire.name = "MainFire"
 	main_fire.texture = fire_full_tex
@@ -7187,7 +7187,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	main_fire.modulate = Color(1.0, 0.95, 0.85, 0.95)
 	structure.add_child(main_fire)
 
-	# â”€â”€ Multiple overlapping flame layers for depth and movement â”€â”€
+	# -- Multiple overlapping flame layers for depth and movement --
 	var flame_sprites: Array[Sprite3D] = []
 	flame_sprites.append(main_fire)
 
@@ -7239,7 +7239,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	structure.add_child(flame4)
 	flame_sprites.append(flame4)
 
-	# â”€â”€ Smoke wisps (2 layers rising above the fire) â”€â”€
+	# -- Smoke wisps (2 layers rising above the fire) --
 	var smoke_sprites: Array[Sprite3D] = []
 	for si in 2:
 		var smoke := Sprite3D.new()
@@ -7255,7 +7255,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		structure.add_child(smoke)
 		smoke_sprites.append(smoke)
 
-	# â”€â”€ Main fire light â”€â”€
+	# -- Main fire light --
 	var light := OmniLight3D.new()
 	light.name = "FireLight"
 	light.light_color = Color(1.0, 0.55, 0.15)
@@ -7266,7 +7266,7 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	light.position.y = 0.8
 	structure.add_child(light)
 
-	# â”€â”€ Warm fill light at base â”€â”€
+	# -- Warm fill light at base --
 	var fill := OmniLight3D.new()
 	fill.light_color = Color(1.0, 0.3, 0.05)
 	fill.light_energy = 1.2
@@ -7276,13 +7276,13 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	fill.position.y = 0.15
 	structure.add_child(fill)
 
-	# â”€â”€ Animate everything â”€â”€
+	# -- Animate everything --
 	_start_campfire_animation(structure, light, flame_sprites, smoke_sprites, ember_sp, fire_full_tex, fire_only_tex, flame_anim_frames)
 
-	# â”€â”€ Campfire looping sound (non-positional via AudioManager for reliability) â”€â”€
+	# -- Campfire looping sound (non-positional via AudioManager for reliability) --
 	_start_campfire_sound(structure)
 
-	# â”€â”€ Distance culling - hide fire visuals beyond render distance â”€â”€
+	# -- Distance culling - hide fire visuals beyond render distance --
 	_setup_campfire_distance_cull(structure)
 
 
@@ -7445,7 +7445,7 @@ func _start_campfire_animation(
 	var has_anim := frames_copy.size() >= 3
 	var frame_count := frames_copy.size()
 
-	# â”€â”€ Frame-by-frame fire animation via a persistent Timer node â”€â”€
+	# -- Frame-by-frame fire animation via a persistent Timer node --
 	if has_anim:
 		var frame_idx := [0]
 		# Each flame layer starts at a different offset for varied motion
@@ -7474,7 +7474,7 @@ func _start_campfire_animation(
 			if is_instance_valid(flames[fi]):
 				flames[fi].texture = frames_copy[offsets[fi]] as Texture2D
 
-	# â”€â”€ Flame dance + light flicker (runs every 0.08-0.2s) â”€â”€
+	# -- Flame dance + light flicker (runs every 0.08-0.2s) --
 	var _tick := [0]
 	var _flicker_ref: Array[Callable] = [Callable()]
 	_flicker_ref[0] = func() -> void:
@@ -7518,7 +7518,7 @@ func _start_campfire_animation(
 		tw.tween_callback(_flicker_ref[0])
 	_flicker_ref[0].call()
 
-	# â”€â”€ Smoke drift (continuous rising wisps) â”€â”€
+	# -- Smoke drift (continuous rising wisps) --
 	var _smoke_ref: Array[Callable] = [Callable()]
 	_smoke_ref[0] = func() -> void:
 		if not is_instance_valid(structure):
@@ -7548,7 +7548,7 @@ func _start_campfire_animation(
 		timer.timeout.connect(_smoke_ref[0])
 	_smoke_ref[0].call()
 
-	# â”€â”€ Ember sparks (small bright particles rising and dying) â”€â”€
+	# -- Ember sparks (small bright particles rising and dying) --
 	var spark_pool: Array[Sprite3D] = []
 	var spark_count := 6
 	var spark_img := Image.create(3, 3, false, Image.FORMAT_RGBA8)
@@ -7967,10 +7967,10 @@ func _refresh_map() -> void:
 					if px + sx < MAP_PX and py + sy < MAP_PX:
 						_map_image.set_pixel(px + sx, py + sy, col)
 
-	# â”€â”€ Structure markers â”€â”€
+	# -- Structure markers --
 	_draw_structure_markers(half_px, zones_per_pixel, zone_size)
 
-	# â”€â”€ Player marker - directional arrow â”€â”€
+	# -- Player marker - directional arrow --
 	_draw_player_arrow(half_px)
 
 	_map_image_tex.set_image(_map_image)
@@ -8149,7 +8149,7 @@ func _show_tooltip_for_item(item_id: StringName) -> void:
 	var tip_affixes: Array = parsed_tip.get("affixes", [])
 	var tip_rolls: Dictionary = parsed_tip.get("affix_rolls", {})
 	if not tip_affixes.is_empty():
-		text += "\n\n[color=#666666]â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€[/color]"
+		text += "\n\n[color=#666666]---------------[/color]"
 		for affix_id in tip_affixes:
 			var affix_data: Dictionary = ItemDatabase.get_affix_data(affix_id)
 			if affix_data.is_empty():
@@ -8191,7 +8191,7 @@ func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id
 			max_stars = int(sv)
 		total += int(variants[sv])
 
-	var text := "[b]%s[/b]  Ã-%d\n" % [display_name, total]
+	var text := "[b]%s[/b]  x%d\n" % [display_name, total]
 	text += "Type: %s\n" % item_type.capitalize()
 
 	if data.has("damage"):
@@ -8201,7 +8201,7 @@ func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id
 	if data.has("armor_slot"):
 		text += "Slot: %s\n" % str(data["armor_slot"]).capitalize()
 	if Inventory.is_equipped(display_id):
-		text += "â-† Equipped\n"
+		text += "[Equipped]\n"
 		text += "[color=#999999]Right-click to unequip[/color]\n"
 	elif data.has("armor_slot"):
 		text += "[color=#999999]Right-click to equip[/color]\n"
@@ -8469,7 +8469,7 @@ func _spawn_craft_text(crafted_id: StringName) -> void:
 		num.text = "%s%s " % [prefix, display]
 		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		var star_lbl := Label3D.new()
-		star_lbl.text = "★".repeat(stars)
+		star_lbl.text = "*".repeat(stars)
 		star_lbl.font_size = 28
 		star_lbl.pixel_size = 0.01
 		star_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -11877,7 +11877,7 @@ func _create_stone_axe_2h() -> Node3D:
 	_add_box_part(root, "grip_hi1", Vector3(0.035, 0.020, 0.035), Vector3(0, -0.08, 0), leather_mat)
 	_add_box_part(root, "grip_hi2", Vector3(0.035, 0.020, 0.035), Vector3(0, -0.03, 0), leather_mat)
 
-	# â”€â”€ Axe head - single-edge crescent blade â”€â”€
+	# -- Axe head - single-edge crescent blade --
 	# Core block where head meets handle
 	_add_box_part(root, "head_core", Vector3(0.09, 0.11, 0.034), Vector3(0.04, 0.33, 0), stone_mat)
 	# Main blade body

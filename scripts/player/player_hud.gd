@@ -345,7 +345,7 @@ func _refresh_player_list(pc_ref: PlayerController) -> void:
 			continue
 		var name_str := player.character_display_name if player.character_display_name != "" else "Player %s" % child.name
 		var lbl := Label.new()
-		lbl.text = "• %s" % name_str
+		lbl.text = "- %s" % name_str
 		lbl.add_theme_font_size_override("font_size", 13)
 		lbl.add_theme_color_override("font_color", Color(0.9, 0.88, 0.82))
 		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -764,7 +764,7 @@ func set_target_creature(creature: Node3D) -> void:
 	if stars > 0:
 		var star_str := " "
 		for i in stars:
-			star_str += "★"
+			star_str += "*"
 		pc._target_hud_stars.text = star_str
 		pc._target_hud_stars.add_theme_color_override("font_color", ItemDatabase.get_rarity_color(stars))
 		pc._target_hud_stars.visible = true
@@ -896,7 +896,7 @@ func build_minimap(root: Control) -> void:
 
 	pc._minimap_weather_label = Label.new()
 	pc._minimap_weather_label.name = "WeatherIcon"
-	pc._minimap_weather_label.text = "☀"
+	pc._minimap_weather_label.text = "*"
 	pc._minimap_weather_label.add_theme_font_size_override("font_size", 16)
 	pc._minimap_weather_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.75))
 	pc._minimap_weather_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

@@ -41,7 +41,7 @@ func build_workbench_panel(root: Control) -> void:
 	title_row.add_child(title)
 
 	pc._workbench_discard_btn = Button.new()
-	pc._workbench_discard_btn.text = "🗑 Off"
+	pc._workbench_discard_btn.text = "X Off"
 	pc._workbench_discard_btn.add_theme_font_size_override("font_size", 12)
 	pc._workbench_discard_btn.custom_minimum_size = Vector2(70, 28)
 	pc._workbench_discard_btn.tooltip_text = "Auto-trash: crafted items at or below this rarity are instantly destroyed"
@@ -155,7 +155,7 @@ func build_workbench_panel(root: Control) -> void:
 
 	# Info button
 	var info_btn := Button.new()
-	info_btn.text = "ⓘ  Material Quality"
+	info_btn.text = "(i)  Material Quality"
 	info_btn.add_theme_font_size_override("font_size", 12)
 	info_btn.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	var info_style := StyleBoxFlat.new()
@@ -185,11 +185,11 @@ func build_workbench_panel(root: Control) -> void:
 	info_rtl.add_theme_font_size_override("normal_font_size", 12)
 	info_rtl.add_theme_font_size_override("bold_font_size", 12)
 	info_rtl.text = "[b]Controls which materials are used when crafting weapons and armor.[/b]\n\n" \
-		+ "[color=#ffffff]Low[/color] — Uses 0–1* materials only. Consumes [color=#aaaaaa]lowest[/color] quality first.\n" \
+		+ "[color=#ffffff]Low[/color] - Uses 0-1* materials only. Consumes [color=#aaaaaa]lowest[/color] quality first.\n" \
 		+ "  Ideal for basic crafts without spending starred materials.\n\n" \
-		+ "[color=#55aaff]Medium[/color] — Uses 1–3* materials only (ignores 0*). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
-		+ "  Good balance — uses your mid-tier materials for a reasonable star chance.\n\n" \
-		+ "[color=#ff4444]High[/color] — Uses 3–5* materials only (ignores 0–2*). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
+		+ "[color=#55aaff]Medium[/color] - Uses 1-3* materials only (ignores 0*). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
+		+ "  Good balance - uses your mid-tier materials for a reasonable star chance.\n\n" \
+		+ "[color=#ff4444]High[/color] - Uses 3-5* materials only (ignores 0-2*). Consumes [color=#aaaaaa]highest[/color] quality first.\n" \
 		+ "  Best chance at high-star gear, but requires rare materials.\n\n" \
 		+ "[color=#ccaa66]Higher quality materials increase the chance of crafting starred gear with powerful affixes.\n" \
 		+ "Select an item to see exact material consumption and star chances before crafting.[/color]"
@@ -264,11 +264,11 @@ func update_discard_btn_label() -> void:
 	if not pc._workbench_discard_btn:
 		return
 	if pc._workbench_auto_discard_star < 0:
-		pc._workbench_discard_btn.text = "🗑 Off"
+		pc._workbench_discard_btn.text = "X Off"
 		pc._workbench_discard_btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	else:
 		var rname: String = ItemDatabase.RARITY_NAMES[pc._workbench_auto_discard_star]
-		pc._workbench_discard_btn.text = "🗑 %s" % rname
+		pc._workbench_discard_btn.text = "X %s" % rname
 		pc._workbench_discard_btn.add_theme_color_override("font_color", ItemDatabase.RARITY_COLORS[pc._workbench_auto_discard_star])
 
 
@@ -745,7 +745,7 @@ func _show_selected_detail() -> void:
 		var mat_name: String = str(mat_data.get("name", str(mat_id)))
 		var have: int = Inventory.get_amount_capped_star(mat_id, eff_max, eff_min)
 		var have_color := "aaffaa" if (have >= mat_amt or Inventory.has_free_craft()) else "ff6666"
-		text += "  • [color=#%s]%s  %d/%d[/color]\n" % [have_color, mat_name, have, mat_amt]
+		text += "  - [color=#%s]%s  %d/%d[/color]\n" % [have_color, mat_name, have, mat_amt]
 
 	if is_starrable:
 		var using_parts: PackedStringArray = []
@@ -869,7 +869,7 @@ func _show_building_detail() -> void:
 		var have: int = Inventory.get_amount_any_star(mat_id)
 		var mat_name: String = (ItemDatabase.get_item(mat_id) as Dictionary).get("name", str(mat_id)) as String
 		var have_color := "aaffaa" if (have >= mat_amt or Inventory.has_free_craft()) else "ff6666"
-		text += "  • [color=#%s]%s  %d/%d[/color]\n" % [have_color, mat_name, have, mat_amt]
+		text += "  - [color=#%s]%s  %d/%d[/color]\n" % [have_color, mat_name, have, mat_amt]
 
 	detail_rtl.text = text
 	vb.add_child(detail_rtl)
@@ -894,7 +894,7 @@ func spawn_discard_text(crafted_id: StringName) -> void:
 	if stars > 0:
 		num.text = "Trashed: %s " % display
 		var star_lbl := Label3D.new()
-		star_lbl.text = "★".repeat(stars)
+		star_lbl.text = "*".repeat(stars)
 		star_lbl.font_size = 24
 		star_lbl.pixel_size = 0.01
 		star_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -924,7 +924,7 @@ func spawn_craft_text(crafted_id: StringName) -> void:
 	var star_text := ""
 	if stars > 0:
 		full_text = "%s%s " % [prefix, display]
-		star_text = "★".repeat(stars)
+		star_text = "*".repeat(stars)
 	else:
 		full_text = "%s%s" % [prefix, display]
 

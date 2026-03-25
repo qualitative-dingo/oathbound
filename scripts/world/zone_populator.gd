@@ -1770,9 +1770,9 @@ static func _scatter_blueberry_bushes(
 ) -> void:
 	_ensure_berry_bushes()
 
-	var bush_count: int = rng.randi_range(6, 14)
+	var cluster_count: int = rng.randi_range(6, 14)
 
-	for _i in bush_count:
+	for _i in cluster_count:
 		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
@@ -1792,12 +1792,26 @@ static func _scatter_blueberry_bushes(
 		if _is_near_structure(wx, wz):
 			continue
 
-		var bush := _create_blueberry_bush(rng)
-		if not bush:
-			continue
-		bush.position = Vector3(lx, ground_y, lz)
-		bush.rotation.y = rng.randf_range(0.0, TAU)
-		zone_root.add_child(bush)
+		var bushes_in_cluster := rng.randi_range(1, 4)
+		for _ci in bushes_in_cluster:
+			var cx := lx
+			var cz := lz
+			if _ci > 0:
+				var off_angle := rng.randf_range(0.0, TAU)
+				var off_dist := rng.randf_range(0.8, 2.0)
+				cx = clampf(lx + cos(off_angle) * off_dist, 2.0, ZONE_SIZE - 2.0)
+				cz = clampf(lz + sin(off_angle) * off_dist, 2.0, ZONE_SIZE - 2.0)
+				var csn := _snap_and_normal(origin_x + cx, origin_z + cz, height_func)
+				if csn.x < _MIN_LAND_Y or csn.y < 0.85:
+					continue
+				ground_y = csn.x
+
+			var bush := _create_blueberry_bush(rng)
+			if not bush:
+				continue
+			bush.position = Vector3(cx, ground_y, cz)
+			bush.rotation.y = rng.randf_range(0.0, TAU)
+			zone_root.add_child(bush)
 
 
 static func _get_microbiome_counts(biome: StringName, micro: StringName) -> PackedInt32Array:
@@ -2983,7 +2997,7 @@ static func _create_horse(rng: RandomNumberGenerator = null, override_stars: int
 	var label_fs := 48
 	var label_px := 0.009
 	var has_stars := star_level > 0
-	var star_str := (" " + "★".repeat(star_level)) if has_stars else ""
+	var star_str := (" " + "*".repeat(star_level)) if has_stars else ""
 
 	var name_lbl := Label3D.new()
 	name_lbl.name = "HorseNameplate"

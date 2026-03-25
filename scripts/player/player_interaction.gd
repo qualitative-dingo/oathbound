@@ -311,6 +311,7 @@ var _interact_cached_chests: Array[Node] = []
 var _interact_cached_horses: Array[Node] = []
 var _interact_cached_rafts: Array[Node] = []
 var _interact_cached_cave_entrances: Array[Node] = []
+var _interact_cached_berry_bushes: Array[Node] = []
 const _INTERACT_CACHE_INTERVAL := 1.0
 
 func _refresh_interact_caches() -> void:
@@ -320,6 +321,7 @@ func _refresh_interact_caches() -> void:
 	_interact_cached_horses = pc.get_tree().get_nodes_in_group(&"horses")
 	_interact_cached_rafts = pc.get_tree().get_nodes_in_group(&"rafts")
 	_interact_cached_cave_entrances = pc.get_tree().get_nodes_in_group(&"cave_entrances")
+	_interact_cached_berry_bushes = pc.get_tree().get_nodes_in_group(&"berry_bushes")
 
 func update_interact_prompt() -> void:
 	if not pc._interact_prompt:
@@ -397,6 +399,19 @@ func update_interact_prompt() -> void:
 			if d < 4.0 and d < closest_dist:
 				closest_dist = d
 				closest_name = "Board Raft"
+
+	for bb in _interact_cached_berry_bushes:
+		if not is_instance_valid(bb):
+			continue
+		var bb3d := bb as Node3D
+		if not bb3d or not bb3d.is_inside_tree():
+			continue
+		if not bb3d.get_meta("berry_harvest", false):
+			continue
+		var d := pp.distance_to(bb3d.global_position)
+		if d < 2.5 and d < closest_dist:
+			closest_dist = d
+			closest_name = "Harvest Blueberries"
 
 	var nearest_world_name := ""
 	var cam: Camera3D = pc._spring_arm.get_child(0) if pc._spring_arm.get_child_count() > 0 else null
@@ -553,6 +568,17 @@ func try_interact() -> void:
 				p3d.interact(pc)
 			return
 
+	# Check berry bushes for E-to-harvest
+	for bb in pc.get_tree().get_nodes_in_group(&"berry_bushes"):
+		var bb3d := bb as Node3D
+		if not bb3d:
+			continue
+		if not bb3d.get_meta("berry_harvest", false):
+			continue
+		if pc.global_position.distance_to(bb3d.global_position) < 2.5:
+			_harvest_berry_bush(bb3d)
+			return
+
 	# Check workbenches
 	for wb in pc.get_tree().get_nodes_in_group(&"workbenches"):
 		var wb3d := wb as Node3D
@@ -561,6 +587,50 @@ func try_interact() -> void:
 		if pc.global_position.distance_to(wb3d.global_position) < 3.0:
 			pc._workbench_ui.open_workbench()
 			return
+
+
+# ===================================================================
+# BERRY BUSH HARVESTING
+# ===================================================================
+
+func _harvest_berry_bush(bush: Node3D) -> void:
+	var drop_id: StringName = bush.get_meta("drop_id", &"blueberry")
+	var drop_min: int = int(bush.get_meta("drop_min", 2))
+	var drop_max: int = int(bush.get_meta("drop_max", 5))
+
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var amount := rng.randi_range(drop_min, drop_max)
+	Inventory.add_item(drop_id, amount)
+
+	AudioManager.play_sfx("fist_hit_tree", -8.0)
+	GameEvents.item_picked_up.emit(drop_id, amount)
+
+	bush.set_meta("berry_harvest", false)
+	bush.remove_from_group(&"berry_bushes")
+	bush.remove_from_group(&"interactables")
+	bush.set_meta("harvestable", false)
+
+	# Hide berries, keep the bush foliage visible
+	for child in bush.get_children():
+		if child is MeshInstance3D and child.name != "Trunk" and child.name != "LeafMM":
+			if child.mesh is SphereMesh:
+				child.visible = false
+
+	# Respawn berries after 60 seconds
+	var tree := bush.get_tree()
+	if tree:
+		tree.create_timer(60.0).timeout.connect(func():
+			if is_instance_valid(bush):
+				bush.set_meta("berry_harvest", true)
+				bush.add_to_group(&"berry_bushes")
+				bush.add_to_group(&"interactables")
+				bush.set_meta("harvestable", true)
+				bush.set_meta("hp", bush.get_meta("max_hp", 10.0))
+				for child2 in bush.get_children():
+					if child2 is MeshInstance3D and child2.mesh is SphereMesh:
+						child2.visible = true
+		)
 
 
 # ===================================================================
