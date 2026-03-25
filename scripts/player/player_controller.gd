@@ -9166,12 +9166,68 @@ func _hit_harvestable(node: Node3D, damage: float) -> void:
 		AudioManager.play_sfx(sfx, -4.0)
 	elif drop_id == &"stone":
 		AudioManager.play_sfx("pickaxe_hit", -4.0)
+	elif node.get_meta("harvest_type", &"") == &"bush":
+		AudioManager.play_sfx("fist_hit_tree", -8.0)
 
 	if hp <= 0.0:
 		if drop_id == &"stone":
 			_destroy_rock(node)
+		elif node.get_meta("harvest_type", &"") == &"bush":
+			_destroy_bush(node)
 		else:
 			_fell_tree(node)
+
+
+func _destroy_bush(node: Node3D) -> void:
+	var wss := _get_world_state_sync()
+	var is_client_destroy := false
+	if wss and NetworkManager.is_connected_to_game():
+		var key := WorldStateSync.get_object_key_for_node(node)
+		if not key.is_empty():
+			if NetworkManager.is_server():
+				wss.record_object_destroyed(node)
+			else:
+				wss.request_destroy_object.rpc_id(1, key)
+				is_client_destroy = true
+
+	var b_drop_id: StringName = node.get_meta("drop_id", &"blueberry") as StringName
+	var b_drop_min: int = int(node.get_meta("drop_min", 2))
+	var b_drop_max: int = int(node.get_meta("drop_max", 5))
+
+	node.remove_from_group(&"interactables")
+	node.set_meta("harvestable", false)
+	var col := node.get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col:
+		col.disabled = true
+
+	var bush_pos := node.global_position
+	var shrink := node.create_tween()
+	shrink.tween_property(node, "scale", Vector3.ZERO, 0.3).set_ease(Tween.EASE_IN)
+	shrink.tween_callback(node.queue_free)
+
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var total := rng.randi_range(b_drop_min, b_drop_max)
+	var use_sync := wss and NetworkManager.is_connected_to_game() and NetworkManager.is_server()
+	if not is_client_destroy:
+		for i in total:
+			var angle := rng.randf_range(0.0, TAU)
+			var dist := rng.randf_range(0.5, 2.0)
+			var offset := Vector3(cos(angle) * dist, 0.3, sin(angle) * dist)
+			var stars := ItemDatabase.roll_star_level(rng)
+			var pos := bush_pos + offset
+			if use_sync:
+				wss.spawn_loot_synced(pos, b_drop_id, 1, stars, 0.2)
+			else:
+				var drop := LootDrop.new()
+				drop.item_id = b_drop_id
+				drop.star_level = stars
+				drop.amount = 1
+				drop.spawn_delay = 0.2
+				get_tree().current_scene.add_child(drop)
+				drop.global_position = pos
+
+	AudioManager.play_sfx_at("axe_chop", bush_pos, -6.0)
 
 
 func _destroy_rock(node: Node3D) -> void:

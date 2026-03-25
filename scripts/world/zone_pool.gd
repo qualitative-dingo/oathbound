@@ -192,6 +192,9 @@ static func recycle_zone(zone_root: StaticBody3D) -> void:
 				recycle_tree(sb)
 			elif sb.has_meta("drop_id") and sb.get_meta("drop_id") == &"stone":
 				recycle_rock(sb)
+			elif sb.get_meta("harvest_type", &"") == &"bush":
+				zone_root.remove_child(child)
+				child.queue_free()
 			else:
 				zone_root.remove_child(child)
 				child.queue_free()

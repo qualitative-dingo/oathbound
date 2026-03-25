@@ -606,6 +606,16 @@ func _register_defaults() -> void:
 		"stack_size": 20, "type": "material",
 		"icon": "res://textures/items/meat.png",
 	})
+	register_item(&"blueberry", {
+		"name": "Blueberry", "description": "Sweet wild berries with a deep blue hue.",
+		"stack_size": 50, "type": "material",
+		"icon": "res://textures/items/blueberry.png",
+	})
+	register_item(&"lingonberry", {
+		"name": "Lingonberry", "description": "Tart red berries found in Nordic forests.",
+		"stack_size": 50, "type": "material",
+		"icon": "res://textures/items/lingonberry.png",
+	})
 	register_item(&"trophy_boar", {
 		"name": "Boar Trophy", "description": "A boar's head.",
 		"stack_size": 5, "type": "trophy",

@@ -1,0 +1,42 @@
+# Art Style Guide — Oathbound
+
+Low-poly, Valheim-inspired survival-crafting aesthetic. Every new visual asset must follow these conventions.
+
+## Geometry
+- Procedural meshes preferred over imported models for world objects
+- Triangle budgets: rocks ~168, bushes ~36, tree trunks ~592, grass/flowers 4 tris (billboard cross)
+- SphereMesh for organic shapes: radial_segments 4–8, rings 2–4
+- Favour readable silhouettes over smoothness — deliberate low vertex counts
+- Collision shapes: simple convex hulls or primitive shapes (sphere/box)
+
+## Textures & Materials
+- Resolution: 32×32 for item icons, 64–256px for world textures
+- Filtering: `TEXTURE_FILTER_NEAREST_WITH_MIPMAPS` everywhere (chunky pixel look)
+- World surfaces: triplanar mapping (`uv1_triplanar = true`, `uv1_world_triplanar = true`)
+- Per-instance colour tinting for variation — never uniform flat colours across a type
+- Procedural textures generated at startup (Image → ImageTexture) when possible
+
+## Colour Palette
+- Muted, earthy base tones (terrain, bark, stone) with subtle per-instance brightness shifts
+- Foliage greens: dark mossy `(0.10–0.30, 0.28–0.52, 0.07–0.18)`
+- Harvestable items: deeper saturation than environment so players can spot them (berry bushes, ore veins)
+- Rarity colours follow WoW convention: white → green → blue → purple → orange → red
+
+## Shaders
+- Custom shaders for: terrain, water, foliage wind, grass billboards, leaf billboards, rock moss, HUD bars
+- `wind_foliage.gdshader` for any vegetation that should sway (bushes, leaves)
+- `grass_billboard.gdshader` for ground-cover plants (grass, flowers, reeds)
+- `leaf_billboard.gdshader` for tree canopy billboards
+- `rock.gdshader` for stone objects (triplanar + moss + normal detail)
+
+## World Objects (Harvestables)
+- Built as `StaticBody3D` with metadata: `harvestable`, `hp`, `drop_id`, `drop_min`, `drop_max`
+- Added to `&"interactables"` group
+- Collision layer 4, mask 0
+- Shadows off for small objects (bushes, grass, flowers); on for tree trunks
+- Always use `cast_shadow = SHADOW_CASTING_SETTING_OFF` for sub-metre detail
+
+## Item Icons
+- 32×32 pixel art, saved to `textures/items/`
+- Procedurally generated or hand-painted; must read clearly at inventory scale
+- Background transparent (RGBA8 format)

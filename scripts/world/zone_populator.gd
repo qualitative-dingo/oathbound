@@ -119,6 +119,12 @@ static var _loosestrife_mat: StandardMaterial3D
 static var _loosestrife_flower_mat: StandardMaterial3D
 static var _reed_mat: ShaderMaterial
 
+static var _berry_bushes_ready := false
+static var _blueberry_leaf_mat: Material
+static var _lingonberry_leaf_mat: Material
+static var _blueberry_mat: StandardMaterial3D
+static var _lingonberry_mat: StandardMaterial3D
+
 static var _textures_loaded := false
 
 
@@ -344,6 +350,162 @@ static func _ensure_textures() -> void:
 	_leaf_tex_generic = _gen_leaf_tex_generic()
 
 	_ensure_water_plants()
+	_ensure_berry_bushes()
+
+
+static func _ensure_berry_bushes() -> void:
+	if _berry_bushes_ready:
+		return
+	_berry_bushes_ready = true
+
+	var leaves_tex: Texture2D = null
+	if ResourceLoader.exists("res://textures/leaves.png"):
+		leaves_tex = load("res://textures/leaves.png") as Texture2D
+
+	_blueberry_leaf_mat = _make_wind_leaf_mat(
+		leaves_tex, Color(0.15, 0.38, 0.12), 0.20, Vector3(3.0, 3.0, 3.0))
+	_lingonberry_leaf_mat = _make_wind_leaf_mat(
+		leaves_tex, Color(0.10, 0.30, 0.08), 0.20, Vector3(3.0, 3.0, 3.0))
+
+	_blueberry_mat = StandardMaterial3D.new()
+	_blueberry_mat.albedo_color = Color(0.12, 0.08, 0.45)
+	_blueberry_mat.emission_enabled = true
+	_blueberry_mat.emission = Color(0.06, 0.04, 0.22)
+	_blueberry_mat.emission_energy_multiplier = 0.4
+	_blueberry_mat.roughness = 0.65
+	_blueberry_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+
+	_lingonberry_mat = StandardMaterial3D.new()
+	_lingonberry_mat.albedo_color = Color(0.72, 0.08, 0.10)
+	_lingonberry_mat.emission_enabled = true
+	_lingonberry_mat.emission = Color(0.36, 0.04, 0.05)
+	_lingonberry_mat.emission_energy_multiplier = 0.4
+	_lingonberry_mat.roughness = 0.65
+	_lingonberry_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+
+
+static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
+	var root := StaticBody3D.new()
+	root.name = "BlueberryBush"
+	root.collision_layer = 4
+	root.collision_mask = 0
+
+	var sf := rng.randf_range(0.5, 0.7)
+
+	var bush_mi := MeshInstance3D.new()
+	bush_mi.name = "MeshInstance3D"
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.5 * sf
+	sphere.height = 0.45 * sf
+	sphere.radial_segments = 6
+	sphere.rings = 3
+	bush_mi.mesh = sphere
+	bush_mi.set_surface_override_material(0, _blueberry_leaf_mat)
+	bush_mi.position.y = 0.22 * sf
+	bush_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	bush_mi.scale = Vector3(
+		rng.randf_range(0.9, 1.3), rng.randf_range(0.55, 0.75), rng.randf_range(0.9, 1.3))
+	bush_mi.rotation.y = rng.randf_range(0.0, TAU)
+	root.add_child(bush_mi)
+
+	var berry_count := rng.randi_range(5, 8)
+	for _bi in berry_count:
+		var angle := rng.randf_range(0.0, TAU)
+		var elev := rng.randf_range(-0.15, 0.6)
+		var out := rng.randf_range(0.18, 0.42) * sf
+		var bx := cos(angle) * out
+		var bz := sin(angle) * out
+		var by := bush_mi.position.y + elev * 0.3 * sf
+
+		var berry_mi := MeshInstance3D.new()
+		var bsphere := SphereMesh.new()
+		bsphere.radius = rng.randf_range(0.06, 0.10)
+		bsphere.height = bsphere.radius * 2.0
+		bsphere.radial_segments = 4
+		bsphere.rings = 2
+		berry_mi.mesh = bsphere
+		berry_mi.set_surface_override_material(0, _blueberry_mat)
+		berry_mi.position = Vector3(bx, by, bz)
+		berry_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(berry_mi)
+
+	var col := CollisionShape3D.new()
+	var col_shape := SphereShape3D.new()
+	col_shape.radius = 0.4 * sf
+	col.shape = col_shape
+	col.position.y = 0.22 * sf
+	root.add_child(col)
+
+	root.add_to_group(&"interactables")
+	root.set_meta("harvestable", true)
+	root.set_meta("hp", rng.randf_range(8.0, 12.0))
+	root.set_meta("drop_id", &"blueberry")
+	root.set_meta("drop_min", 2)
+	root.set_meta("drop_max", 5)
+	root.set_meta("harvest_type", &"bush")
+	return root
+
+
+static func _create_lingonberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
+	var root := StaticBody3D.new()
+	root.name = "LingonberryBush"
+	root.collision_layer = 4
+	root.collision_mask = 0
+
+	var sf := rng.randf_range(0.4, 0.55)
+
+	var bush_mi := MeshInstance3D.new()
+	bush_mi.name = "MeshInstance3D"
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.5 * sf
+	sphere.height = 0.35 * sf
+	sphere.radial_segments = 6
+	sphere.rings = 3
+	bush_mi.mesh = sphere
+	bush_mi.set_surface_override_material(0, _lingonberry_leaf_mat)
+	bush_mi.position.y = 0.18 * sf
+	bush_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	bush_mi.scale = Vector3(
+		rng.randf_range(0.9, 1.3), rng.randf_range(0.55, 0.75), rng.randf_range(0.9, 1.3))
+	bush_mi.rotation.y = rng.randf_range(0.0, TAU)
+	root.add_child(bush_mi)
+
+	var berry_count := rng.randi_range(5, 8)
+	for _bi in berry_count:
+		var angle := rng.randf_range(0.0, TAU)
+		var elev := rng.randf_range(0.0, 0.8)
+		var out := rng.randf_range(0.12, 0.35) * sf
+		var bx := cos(angle) * out
+		var bz := sin(angle) * out
+		var by := bush_mi.position.y + elev * 0.25 * sf
+
+		var berry_mi := MeshInstance3D.new()
+		var bsphere := SphereMesh.new()
+		bsphere.radius = rng.randf_range(0.05, 0.08)
+		bsphere.height = bsphere.radius * 2.0
+		bsphere.radial_segments = 4
+		bsphere.rings = 2
+		berry_mi.mesh = bsphere
+		berry_mi.set_surface_override_material(0, _lingonberry_mat)
+		berry_mi.position = Vector3(bx, by, bz)
+		berry_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(berry_mi)
+
+	var col := CollisionShape3D.new()
+	var col_shape := SphereShape3D.new()
+	col_shape.radius = 0.35 * sf
+	col.shape = col_shape
+	col.position.y = 0.18 * sf
+	root.add_child(col)
+
+	root.add_to_group(&"interactables")
+	root.set_meta("harvestable", true)
+	root.set_meta("hp", rng.randf_range(8.0, 12.0))
+	root.set_meta("drop_id", &"lingonberry")
+	root.set_meta("drop_min", 2)
+	root.set_meta("drop_max", 5)
+	root.set_meta("harvest_type", &"bush")
+	return root
 
 
 static func _generate_birch_bark_texture() -> ImageTexture:
@@ -880,10 +1042,11 @@ static func populate_zone_phase(
 			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 2)
 		return false
 
-	# ── Phase 16: saplings + water plants ──
+	# ── Phase 16: saplings + berry bushes + water plants ──
 	if not debug_skip_saplings:
 		_scatter_saplings(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 
+	_scatter_berry_bushes(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 	_scatter_water_plants(zone_root, coord, biome, rng, height_func)
 
 	return true
@@ -3748,6 +3911,87 @@ static func _create_loosestrife(rng: RandomNumberGenerator) -> Node3D:
 		blob.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(blob)
 	return root
+
+
+static func _scatter_berry_bushes(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	rng: RandomNumberGenerator,
+	height_func: Callable,
+	origin_x: float,
+	origin_z: float,
+) -> void:
+	if biome != &"hearthlands":
+		return
+	if not _berry_bushes_ready:
+		return
+
+	var structs := (Engine.get_main_loop() as SceneTree).get_nodes_in_group(&"structures") if Engine.get_main_loop() else []
+
+	# Per-zone hash for density variation
+	var zone_hash := absf(sin(float(coord.x * 51637 + coord.y * 83291) * 0.073))
+
+	# Blueberries — forest floor near trees, clusters of 2-4
+	var bb_clusters := 0
+	if zone_hash > 0.35:
+		bb_clusters = rng.randi_range(1, 3)
+	for _ci in bb_clusters:
+		var cx := rng.randf_range(6.0, ZONE_SIZE - 6.0)
+		var cz := rng.randf_range(6.0, ZONE_SIZE - 6.0)
+		var wx := origin_x + cx
+		var wz := origin_z + cz
+		var sn := _snap_and_normal(wx, wz, height_func)
+		if sn.x < _MIN_LAND_Y or sn.y < 0.85:
+			continue
+		if get_path_factor(wx, wz) > 0.3:
+			continue
+		if _is_near_structure(wx, wz, 5.0, structs):
+			continue
+		var cluster_size := rng.randi_range(2, 4)
+		for _bi in cluster_size:
+			var ox := cx + rng.randf_range(-1.8, 1.8)
+			var oz := cz + rng.randf_range(-1.8, 1.8)
+			var owx := origin_x + ox
+			var owz := origin_z + oz
+			var bsn := _snap_and_normal(owx, owz, height_func)
+			if bsn.x < _MIN_LAND_Y or bsn.y < 0.85:
+				continue
+			var bush := _create_blueberry_bush(rng)
+			zone_root.add_child(bush)
+			bush.position = Vector3(ox, bsn.x, oz)
+			bush.rotation.y = rng.randf_range(0.0, TAU)
+
+	# Lingonberries — open/rocky areas, clusters of 2-5
+	var lb_hash := absf(sin(float(coord.x * 37159 + coord.y * 61843) * 0.091))
+	var lb_clusters := 0
+	if lb_hash > 0.40:
+		lb_clusters = rng.randi_range(1, 3)
+	for _ci in lb_clusters:
+		var cx := rng.randf_range(6.0, ZONE_SIZE - 6.0)
+		var cz := rng.randf_range(6.0, ZONE_SIZE - 6.0)
+		var wx := origin_x + cx
+		var wz := origin_z + cz
+		var sn := _snap_and_normal(wx, wz, height_func)
+		if sn.x < _MIN_LAND_Y or sn.y < 0.82:
+			continue
+		if get_path_factor(wx, wz) > 0.3:
+			continue
+		if _is_near_structure(wx, wz, 5.0, structs):
+			continue
+		var cluster_size := rng.randi_range(2, 5)
+		for _bi in cluster_size:
+			var ox := cx + rng.randf_range(-1.5, 1.5)
+			var oz := cz + rng.randf_range(-1.5, 1.5)
+			var owx := origin_x + ox
+			var owz := origin_z + oz
+			var bsn := _snap_and_normal(owx, owz, height_func)
+			if bsn.x < _MIN_LAND_Y or bsn.y < 0.82:
+				continue
+			var bush := _create_lingonberry_bush(rng)
+			zone_root.add_child(bush)
+			bush.position = Vector3(ox, bsn.x, oz)
+			bush.rotation.y = rng.randf_range(0.0, TAU)
 
 
 static func _scatter_water_plants(
