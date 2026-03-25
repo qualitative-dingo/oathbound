@@ -251,6 +251,8 @@ var _perf_max_unload_ms := 0.0
 var _perf_max_explore_ms := 0.0
 var _perf_max_total_ms := 0.0
 var _perf_pending_size_max := 0
+var _last_player_zones: Array[Vector2i] = []  # throttle _queue_zones_around
+var _unload_timer := 0.0  # throttle _unload_distant_zones
 
 func _physics_process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
@@ -323,12 +325,20 @@ func _physics_process(delta: float) -> void:
 				p.velocity = Vector3.ZERO
 
 	var t1 := Time.get_ticks_usec()
+	var cur_zones: Array[Vector2i] = []
 	for p in _players:
-		_queue_zones_around(world_to_zone(get_world_position(p)))
+		cur_zones.append(world_to_zone(get_world_position(p)))
+	if cur_zones != _last_player_zones:
+		_last_player_zones = cur_zones
+		for pz in cur_zones:
+			_queue_zones_around(pz)
 	var t2 := Time.get_ticks_usec()
 	_process_pending_zones()
 	var t3 := Time.get_ticks_usec()
-	_unload_distant_zones(_players)
+	_unload_timer -= delta
+	if _unload_timer <= 0.0:
+		_unload_timer = 0.5
+		_unload_distant_zones(_players)
 	var t4 := Time.get_ticks_usec()
 	_update_zone_lods(_players, delta)
 	_check_biome_change(world_to_zone(host_wp))
@@ -920,7 +930,7 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 	return false
 
 
-const _PENDING_BUDGET_US := 6000  # max microseconds per frame for pending work
+const _PENDING_BUDGET_US := 4000  # max microseconds per frame for pending work
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
