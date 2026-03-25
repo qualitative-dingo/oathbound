@@ -88,8 +88,8 @@ void fragment() {
 	float slope = 1.0 - abs(world_normal.y);
 
 	// Multi-scale noise to break up the slope contour into organic patches
-	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.08
-	                   + (vnoise(world_pos.xz * 0.6 + vec2(200.0, 140.0)) - 0.5) * 0.04;
+	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.15
+	                   + (vnoise(world_pos.xz * 0.6 + vec2(200.0, 140.0)) - 0.5) * 0.08;
 
 	// Domain-warped large blobs for organic slope transitions
 	vec2 warp = vec2(
@@ -97,12 +97,12 @@ void fragment() {
 		fbm2(world_pos.xz * 0.025 + vec2(810.0, 560.0))
 	) * 25.0;
 	float patch_noise = fbm2((world_pos.xz + warp) * 0.03 + vec2(90.0, 260.0));
-	slope_noise += (patch_noise - 0.5) * 0.10;
+	slope_noise += (patch_noise - 0.5) * 0.18;
 
 	float noisy_slope = slope + slope_noise;
 
-	float flat_w  = smoothstep(slope_start + 0.12, slope_start, noisy_slope);
-	float cliff_w = smoothstep(cliff_start, cliff_start + 0.18, noisy_slope);
+	float flat_w  = smoothstep(slope_start + 0.18, slope_start, noisy_slope);
+	float cliff_w = smoothstep(cliff_start, cliff_start + 0.25, noisy_slope);
 	float slope_w = max(1.0 - flat_w - cliff_w, 0.0);
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
@@ -115,10 +115,10 @@ void fragment() {
 	float adj_flat_w  = flat_w + scatter_mask;
 	float adj_slope_w = max(slope_w - scatter_mask, 0.0);
 
-	// Darken slope/cliff textures so they aren't washed-out white
-	vec3 slope_toned = col_slope * vec3(0.55, 0.50, 0.42);
-	vec3 cliff_toned = col_cliff * vec3(0.50, 0.48, 0.40);
-	vec3 albedo = col_flat * adj_flat_w + slope_toned * adj_slope_w + cliff_toned * cliff_w;
+	// Blend slope/cliff toward grass texture for a mossy rock look, then darken
+	vec3 mossy_slope = mix(col_slope, col_flat, 0.40) * vec3(0.55, 0.52, 0.42);
+	vec3 mossy_cliff = mix(col_cliff, col_flat, 0.30) * vec3(0.48, 0.46, 0.38);
+	vec3 albedo = col_flat * adj_flat_w + mossy_slope * adj_slope_w + mossy_cliff * cliff_w;
 
 	float n_large = fbm2(world_pos.xz * 0.012);
 	float n_med   = fbm2(world_pos.xz * 0.04 + vec2(50.0, 80.0));
@@ -172,8 +172,8 @@ void fragment() {
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// Fade biome tint on steep surfaces — cliffs stay stone-colored, slopes get biome tint
-	float tint_strength = flat_w + slope_w * 0.7 + cliff_w * 0.15;
+	// Biome tint applied uniformly — slopes/cliffs get mossy green from the biome
+	float tint_strength = flat_w + slope_w * 0.90 + cliff_w * 0.60;
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
 	ALBEDO = albedo * final_tint * v_brightness;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
