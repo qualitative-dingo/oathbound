@@ -16,8 +16,8 @@ const HEATSEEK_RADIUS := 12.0
 const HEATSEEK_CONE_DOT := 0.4
 const HEATSEEK_TURN_SPEED := 4.5
 
-const _DamageNumber = preload("res://scripts/ui/damage_number.gd")
-const _LootDrop = preload("res://scripts/items/loot_drop.gd")
+const _DamageNumber := preload("res://scripts/ui/damage_number.gd")
+const _LootDrop := preload("res://scripts/items/loot_drop.gd")
 
 
 # --- Bow ---
