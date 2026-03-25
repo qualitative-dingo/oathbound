@@ -102,20 +102,24 @@ void fragment() {
 	water_col.rgb = mix(water_col.rgb, sky_tint.rgb, fresnel * 0.5);
 	water_col.a = mix(water_col.a, 0.95, fresnel * 0.6);
 
-	// ── Depth-noise perturbation — breaks up low-poly staircase edges ──
-	float edge_noise = vnoise(world_pos.xz * 1.8) * 0.5 + vnoise(world_pos.xz * 4.5) * 0.25;
-	float perturbed_depth = depth_diff + (edge_noise - 0.375) * 0.8;
+	// ── Depth-noise perturbation — multi-octave to break up staircase edges ──
+	float edge_noise = vnoise(world_pos.xz * 1.2) * 0.45
+	                  + vnoise(world_pos.xz * 2.7 + vec2(33.0, 77.0)) * 0.30
+	                  + vnoise(world_pos.xz * 6.1 + vec2(-19.0, 41.0)) * 0.15;
+	float perturbed_depth = depth_diff + (edge_noise - 0.45) * 1.6;
 
 	// ── Shore alpha fade — smoothly hides the mesh/water intersection ──
-	float shore_alpha = smoothstep(0.0, 0.6, perturbed_depth);
+	float shore_alpha = smoothstep(-0.1, 0.8, perturbed_depth);
 
 	// ── Foam along shoreline ──
-	float foam_noise = vnoise(world_pos.xz * 1.5 + vec2(TIME * 0.3, TIME * 0.2));
-	float foam_noise2 = vnoise(world_pos.xz * 3.0 - vec2(TIME * 0.2, TIME * 0.4));
-	float foam_edge = 1.0 - smoothstep(0.05, foam_width, depth_diff);
-	foam_edge *= step(0.0, depth_diff);
-	float foam_detail = foam_edge * (0.5 + foam_noise * 0.3 + foam_noise2 * 0.2);
-	foam_detail = smoothstep(0.15, 0.6, foam_detail);
+	float foam_noise = vnoise(world_pos.xz * 1.2 + vec2(TIME * 0.25, TIME * 0.18));
+	float foam_noise2 = vnoise(world_pos.xz * 2.5 - vec2(TIME * 0.18, TIME * 0.35));
+	float foam_noise3 = vnoise(world_pos.xz * 0.6 + vec2(TIME * 0.08, -TIME * 0.12));
+	float foam_perturbed = depth_diff + (foam_noise3 - 0.5) * 0.9;
+	float foam_edge = 1.0 - smoothstep(0.05, foam_width, foam_perturbed);
+	foam_edge *= step(-0.1, foam_perturbed);
+	float foam_detail = foam_edge * (0.4 + foam_noise * 0.35 + foam_noise2 * 0.25);
+	foam_detail = smoothstep(0.12, 0.55, foam_detail);
 
 	// Gentle foam in deeper areas where waves crest
 	float deep_foam = smoothstep(foam_width, foam_width * 2.0, depth_diff)

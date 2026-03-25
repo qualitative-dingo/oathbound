@@ -725,8 +725,13 @@ func get_height_at(x: float, z: float) -> float:
 		var crag := _detail_noise.get_noise_2d(x * 0.12 + 7000.0, z * 0.12 + 7000.0)
 		h += crag * height_scale * 0.08 * elev_t
 
-	# Keep terrain well above water — prevents thin land strips near shores
-	h = maxf(h, WATER_LEVEL + 1.5)
+	# Pre-sample lake noise so the minimum-height clamp can be softened near lakes
+	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _detail_noise else 0.0
+
+	# Keep terrain above water — soften the clamp near lake basins so that
+	# nearby water bodies merge instead of being separated by thin ridges.
+	var min_land := lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 1.5, smoothstep(-0.35, 0.05, lake_n))
+	h = maxf(h, min_land)
 
 	# Watershed river carving — accumulation drives depth and width
 	var accum := _ws_sample_accum(x, z)
@@ -746,13 +751,12 @@ func get_height_at(x: float, z: float) -> float:
 			var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
 			h = lerpf(h, WATER_LEVEL - depth, carve)
 
-	# Noise-driven lakes — restricted to ~20% of terrain
+	# Noise-driven lakes — wider shore zone so water bodies connect naturally
 	if _detail_noise:
-		var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0)
-		# Gradual shore slope (-0.30 to -0.42 transition = wide smooth shoreline)
-		if lake_n < -0.30 and lake_n >= -0.42:
-			var shore_t := smoothstep(-0.30, -0.42, lake_n)
-			h = lerpf(h, WATER_LEVEL + 0.15, shore_t)
+		# Wide gradual shore (-0.18 to -0.42 transition)
+		if lake_n < -0.18 and lake_n >= -0.42:
+			var shore_t := smoothstep(-0.18, -0.42, lake_n)
+			h = lerpf(h, WATER_LEVEL + 0.05, shore_t)
 		# Full lake basin carve
 		if lake_n < -0.42:
 			var lake_t := smoothstep(-0.42, -0.65, lake_n)
@@ -1081,7 +1085,7 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 		if cname == "TerrainMesh" or cname == "TerrainCol":
 			continue
 		var is_vegetation := cname.begins_with("Grass_") or cname.begins_with("Flower_") \
-			or cname == "Reeds" or cname.begins_with("Sapling") or cname == "BirchSapling"
+			or cname == "Reeds" or cname.begins_with("BlueberryBush")
 		if is_vegetation:
 			child.visible = new_lod <= 1
 		else:

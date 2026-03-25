@@ -1,6 +1,6 @@
 class_name ZonePool
 extends RefCounted
-## Object pool that recycles zone roots, trees, rocks, saplings, and grass MMIs.
+## Object pool that recycles zone roots, trees, rocks, blueberry bushes, and grass MMIs.
 ##
 ## Instead of queue_free() on zone children, nodes are stripped from the tree,
 ## hidden, and stashed here. Next zone that needs the same kind of object grabs
@@ -15,11 +15,11 @@ static var _zone_roots: Array[StaticBody3D] = []
 static var _grass_mmis: Array[MultiMeshInstance3D] = []
 static var _trees: Array[StaticBody3D] = []
 static var _rocks: Array[StaticBody3D] = []
-static var _saplings: Array[StaticBody3D] = []
+static var _blueberry_bushes: Array[StaticBody3D] = []
 
 const MAX_TREES := 30
 const MAX_ROCKS := 10
-const MAX_SAPLINGS := 30
+const MAX_BLUEBERRY := 30
 const MAX_GRASS := 16
 const MAX_ZONE_ROOTS := 5
 
@@ -115,11 +115,11 @@ static func recycle_rock(node: StaticBody3D) -> void:
 		node.queue_free()
 
 
-# ─── Sapling Pool ─────────────────────────────────────────────────────────────
+# ─── Blueberry Bush Pool ──────────────────────────────────────────────────────
 
-static func get_sapling_node() -> StaticBody3D:
-	while not _saplings.is_empty():
-		var s := _saplings.pop_back() as StaticBody3D
+static func get_blueberry_node() -> StaticBody3D:
+	while not _blueberry_bushes.is_empty():
+		var s := _blueberry_bushes.pop_back() as StaticBody3D
 		if is_instance_valid(s):
 			s.visible = true
 			s.collision_layer = 4
@@ -129,7 +129,7 @@ static func get_sapling_node() -> StaticBody3D:
 	return null
 
 
-static func recycle_sapling(node: StaticBody3D) -> void:
+static func recycle_blueberry(node: StaticBody3D) -> void:
 	if not is_instance_valid(node):
 		return
 	if node.get_parent():
@@ -137,8 +137,8 @@ static func recycle_sapling(node: StaticBody3D) -> void:
 	node.visible = false
 	node.collision_layer = 0
 	node.process_mode = Node.PROCESS_MODE_DISABLED
-	if _saplings.size() < MAX_SAPLINGS:
-		_saplings.append(node)
+	if _blueberry_bushes.size() < MAX_BLUEBERRY:
+		_blueberry_bushes.append(node)
 		_stats_recycled += 1
 	else:
 		node.queue_free()
@@ -186,8 +186,8 @@ static func recycle_zone(zone_root: StaticBody3D) -> void:
 			recycle_grass_mmi(child as MultiMeshInstance3D)
 		elif child is StaticBody3D and child.is_in_group(&"interactables"):
 			var sb := child as StaticBody3D
-			if cname.begins_with("Sapling") or cname.begins_with("BirchSapling"):
-				recycle_sapling(sb)
+			if cname.begins_with("BlueberryBush"):
+				recycle_blueberry(sb)
 			elif sb.has_meta("tree_name"):
 				recycle_tree(sb)
 			elif sb.has_meta("drop_id") and sb.get_meta("drop_id") == &"stone":
@@ -228,10 +228,10 @@ static func flush_all() -> void:
 		if is_instance_valid(n):
 			n.queue_free()
 	_rocks.clear()
-	for n in _saplings:
+	for n in _blueberry_bushes:
 		if is_instance_valid(n):
 			n.queue_free()
-	_saplings.clear()
+	_blueberry_bushes.clear()
 	for n in _grass_mmis:
 		if is_instance_valid(n):
 			n.queue_free()
@@ -243,7 +243,7 @@ static func flush_all() -> void:
 # ─── Diagnostics ───────────────────────────────────────────────────────────────
 
 static func get_pool_stats() -> String:
-	return "pool[z=%d t=%d r=%d s=%d g=%d re=%d ru=%d]" % [
+	return "pool[z=%d t=%d r=%d bb=%d g=%d re=%d ru=%d]" % [
 		_zone_roots.size(), _trees.size(), _rocks.size(),
-		_saplings.size(), _grass_mmis.size(),
+		_blueberry_bushes.size(), _grass_mmis.size(),
 		_stats_recycled, _stats_reused]

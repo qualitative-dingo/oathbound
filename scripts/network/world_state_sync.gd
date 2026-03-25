@@ -101,7 +101,7 @@ static func get_object_key_for_node(node: Node) -> String:
 	return ""
 
 
-## Call when a harvestable (tree, rock, sapling) is destroyed. Only on server.
+## Call when a harvestable (tree, rock, bush) is destroyed. Only on server.
 ## Call BEFORE removing the node from the group (key is computed from node).
 func record_object_destroyed(node: Node) -> void:
 	if not NetworkManager.is_server():

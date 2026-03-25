@@ -1507,10 +1507,10 @@ func fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tru
 	else:
 		fall_angle = override_angle + randf_range(-0.15, 0.15)
 
-	var is_sapling := trunk_h < 8.0
+	var is_small_tree := trunk_h < 8.0
 	AudioManager.play_sfx("tree_fall", 4.0, 0.08)
 
-	if not is_sapling:
+	if not is_small_tree:
 		spawn_tree_stump(node, tree_base)
 
 	var fall_tween := node.create_tween()
@@ -1622,18 +1622,18 @@ func spawn_tree_stump(tree_node: Node3D, base_pos: Vector3) -> void:
 	col_shape.shape = cyl_col
 	col_shape.position.y = stump_h * 0.5
 
-	var is_sapling_stump := trunk_h < 8.0
+	var is_small_tree := trunk_h < 8.0
 
 	var stump_root := StaticBody3D.new()
 	stump_root.name = "Stump"
-	stump_root.collision_layer = 0 if is_sapling_stump else 1
+	stump_root.collision_layer = 0 if is_small_tree else 1
 	stump_root.collision_mask = 0
 	stump_root.global_position = base_pos
 	stump_root.set_meta("stump_radius", maxf(bot_r, top_r) + 0.1)
 	stump_root.add_to_group(&"stumps")
 	pc.get_tree().current_scene.add_child(stump_root)
 	stump_root.add_child(stump_mi)
-	if not is_sapling_stump:
+	if not is_small_tree:
 		stump_root.add_child(col_shape)
 
 	pc.get_tree().create_timer(120.0).timeout.connect(stump_root.queue_free)
@@ -1642,7 +1642,7 @@ func spawn_tree_stump(tree_node: Node3D, base_pos: Vector3) -> void:
 func check_tree_domino(base_pos: Vector3, fall_angle: float, trunk_h: float = 15.0) -> void:
 	var fall_dir := Vector3(-sin(fall_angle), 0.0, -cos(fall_angle))
 	var hit_radius := maxf(1.5, trunk_h * 0.08)
-	var faller_is_sapling := trunk_h < 8.0
+	var faller_is_small := trunk_h < 8.0
 	var felled: Array[Node3D] = []
 	for node in pc.get_tree().get_nodes_in_group(&"interactables"):
 		var n3d := node as Node3D
@@ -1653,7 +1653,7 @@ func check_tree_domino(base_pos: Vector3, fall_angle: float, trunk_h: float = 15
 		if n3d.get_meta("drop_id", &"") != &"wood":
 			continue
 		var target_trunk_h: float = float(n3d.get_meta("trunk_h", 15.0))
-		if faller_is_sapling and target_trunk_h >= 8.0:
+		if faller_is_small and target_trunk_h >= 8.0:
 			continue
 		var target_pos := n3d.global_position
 		target_pos.y = base_pos.y
