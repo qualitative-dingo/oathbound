@@ -9223,7 +9223,7 @@ func _destroy_rock(node: Node3D) -> void:
 	if not is_client_destroy:
 		for i in total:
 			var angle := rng.randf_range(0.0, TAU)
-			var dist := rng.randf_range(0.8, 2.5)
+			var dist := rng.randf_range(1.6, 5.0)
 			var offset := Vector3(cos(angle) * dist, 0.5, sin(angle) * dist)
 			var stars := ItemDatabase.roll_star_level(rng)
 			if master_miner:
@@ -9247,7 +9247,7 @@ func _destroy_rock(node: Node3D) -> void:
 
 		if rng.randf() < 0.4:
 			var flint_stars := ItemDatabase.roll_star_level(rng)
-			var flint_pos := rock_pos + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			var flint_pos := rock_pos + Vector3(rng.randf_range(-2.0, 2.0), 0.5, rng.randf_range(-2.0, 2.0))
 			if use_sync:
 				wss.spawn_loot_synced(flint_pos, &"flint", rng.randi_range(1, 2), flint_stars, ROCK_LOOT_DELAY)
 			else:
@@ -9260,7 +9260,7 @@ func _destroy_rock(node: Node3D) -> void:
 				flint_drop.global_position = flint_pos
 
 		if _has_affix(&"vein_finder") and rng.randf() < _affix_val(&"vein_finder"):
-			var ore_pos := rock_pos + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			var ore_pos := rock_pos + Vector3(rng.randf_range(-2.0, 2.0), 0.5, rng.randf_range(-2.0, 2.0))
 			if use_sync:
 				wss.spawn_loot_synced(ore_pos, &"copper_ore", rng.randi_range(1, 2), ItemDatabase.roll_star_level(rng), ROCK_LOOT_DELAY)
 			else:
@@ -9275,7 +9275,7 @@ func _destroy_rock(node: Node3D) -> void:
 		if _has_affix(&"geologist") and rng.randf() < 0.20:
 			var rare_items: Array[StringName] = [&"gemstone", &"ancient_bone", &"ember_stone"]
 			var rare_id: StringName = rare_items[rng.randi_range(0, rare_items.size() - 1)]
-			var rare_pos := rock_pos + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+			var rare_pos := rock_pos + Vector3(rng.randf_range(-2.0, 2.0), 0.5, rng.randf_range(-2.0, 2.0))
 			if use_sync:
 				wss.spawn_loot_synced(rare_pos, rare_id, 1, ItemDatabase.roll_star_level(rng), ROCK_LOOT_DELAY)
 			else:

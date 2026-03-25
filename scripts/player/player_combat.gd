@@ -1372,7 +1372,7 @@ func destroy_rock(node: Node3D) -> void:
 	var master_miner := has_affix(&"heavy_swing")
 	for i in total:
 		var angle := rng.randf_range(0.0, TAU)
-		var dist := rng.randf_range(0.8, 2.5)
+		var dist := rng.randf_range(1.6, 5.0)
 		var offset := Vector3(cos(angle) * dist, 0.5, sin(angle) * dist)
 		var stars := ItemDatabase.roll_star_level(rng)
 		if master_miner:
@@ -1396,7 +1396,7 @@ func destroy_rock(node: Node3D) -> void:
 		flint_drop.star_level = flint_stars
 		flint_drop.amount = rng.randi_range(1, 2)
 		pc.get_tree().current_scene.add_child(flint_drop)
-		flint_drop.global_position = node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+		flint_drop.global_position = node.global_position + Vector3(rng.randf_range(-2.0, 2.0), 0.5, rng.randf_range(-2.0, 2.0))
 
 	if has_affix(&"vein_finder") and rng.randf() < affix_val(&"vein_finder"):
 		var ore_drop := _LootDrop.new()
@@ -1404,7 +1404,7 @@ func destroy_rock(node: Node3D) -> void:
 		ore_drop.star_level = ItemDatabase.roll_star_level(rng)
 		ore_drop.amount = rng.randi_range(1, 2)
 		pc.get_tree().current_scene.add_child(ore_drop)
-		ore_drop.global_position = node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+		ore_drop.global_position = node.global_position + Vector3(rng.randf_range(-2.0, 2.0), 0.5, rng.randf_range(-2.0, 2.0))
 
 	if has_affix(&"geologist") and rng.randf() < 0.20:
 		var rare_items: Array[StringName] = [&"gemstone", &"ancient_bone", &"ember_stone"]
@@ -1414,7 +1414,7 @@ func destroy_rock(node: Node3D) -> void:
 		rare_drop.star_level = ItemDatabase.roll_star_level(rng)
 		rare_drop.amount = 1
 		pc.get_tree().current_scene.add_child(rare_drop)
-		rare_drop.global_position = node.global_position + Vector3(rng.randf_range(-1.0, 1.0), 0.5, rng.randf_range(-1.0, 1.0))
+		rare_drop.global_position = node.global_position + Vector3(rng.randf_range(-2.0, 2.0), 0.5, rng.randf_range(-2.0, 2.0))
 
 	AudioManager.play_sfx_at("rock_fall", node.global_position, 2.0)
 	AudioManager.play_sfx_at("stone_rubble", node.global_position, -2.0)
