@@ -4,7 +4,7 @@ extends RefCounted
 ## In single-player, one instance exists. In multiplayer, each player gets their own.
 
 const TOTAL_SLOTS := 64
-const EQUIPMENT_SLOTS: Array[String] = ["weapon", "sword", "bow", "pickaxe", "shield", "chest", "legs", "feet"]
+const EQUIPMENT_SLOTS: Array[String] = ["weapon", "sword", "bow", "pickaxe", "torch", "shield", "chest", "legs", "feet"]
 
 var _slots: Dictionary = {}
 var _order: Array[StringName] = []

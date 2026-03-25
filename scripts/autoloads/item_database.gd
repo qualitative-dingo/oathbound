@@ -783,9 +783,10 @@ func _register_defaults() -> void:
 	})
 	register_item(&"torch", {
 		"name": "Torch", "type": "tool", "hands": "1h",
+		"armor_slot": "torch",
 		"damage": 5.0, "attack_speed": 0.8, "range": 2.0,
 		"stamina_cost": 3.0, "knockback": 5.0,
-		"description": "A burning torch. Provides light when equipped. Crafts 2.",
+		"description": "A burning torch. Equip in the Torch slot to illuminate the area around you.",
 		"icon": "res://textures/items/torch.png",
 		"recipe": [{"item_id": "wood", "amount": 1}, {"item_id": "resin", "amount": 1}],
 		"crafting_station": "hand", "craft_amount": 2,

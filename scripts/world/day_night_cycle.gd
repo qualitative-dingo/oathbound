@@ -29,164 +29,165 @@ var SUN_AXIS := Vector3(-1.0, 0.0, -0.5).normalized()
 const MOON_OFFSET := PI  # moon is opposite the sun
 
 # ── Gradient keyframes: time → value ────────────────────────────────────
-# Times: 0.0=midnight, 0.25=dawn, 0.5=noon, 0.75=dusk, 1.0=midnight
+# Times: 0.0=midnight(00:00), ~0.21=dawn(05:00), 0.5=noon(12:00),
+#         ~0.71=dusk(17:00), 1.0=midnight(00:00)
 
 const SUN_ENERGY_KEYS := [
 	[0.0,  0.0],   # midnight
-	[0.20, 0.0],   # pre-dawn
-	[0.25, 0.4],   # dawn start
-	[0.30, 1.2],   # dawn
-	[0.35, 1.6],   # morning
+	[0.16, 0.0],   # pre-dawn
+	[0.21, 0.4],   # dawn start (05:00)
+	[0.26, 1.2],   # dawn
+	[0.31, 1.6],   # morning
 	[0.50, 1.9],   # noon
-	[0.65, 1.6],   # afternoon
-	[0.70, 1.2],   # dusk
-	[0.75, 0.4],   # dusk end
-	[0.80, 0.0],   # post-dusk
+	[0.61, 1.6],   # afternoon
+	[0.66, 1.2],   # dusk
+	[0.71, 0.4],   # dusk end (17:00)
+	[0.76, 0.0],   # post-dusk
 	[1.0,  0.0],   # midnight
 ]
 
 const SUN_COLOR_KEYS := [
 	[0.0,  Color(0.15, 0.18, 0.35)],  # midnight blue (moon)
-	[0.22, Color(0.15, 0.18, 0.35)],  # pre-dawn
-	[0.26, Color(1.0, 0.55, 0.25)],   # dawn orange
-	[0.32, Color(1.0, 0.82, 0.55)],   # morning gold
+	[0.18, Color(0.15, 0.18, 0.35)],  # pre-dawn
+	[0.22, Color(1.0, 0.55, 0.25)],   # dawn orange
+	[0.28, Color(1.0, 0.82, 0.55)],   # morning gold
 	[0.50, Color(1.0, 0.95, 0.88)],   # noon white-warm
-	[0.68, Color(1.0, 0.82, 0.55)],   # afternoon gold
-	[0.74, Color(1.0, 0.50, 0.22)],   # dusk orange
-	[0.78, Color(0.15, 0.18, 0.35)],  # post-dusk
+	[0.64, Color(1.0, 0.82, 0.55)],   # afternoon gold
+	[0.70, Color(1.0, 0.50, 0.22)],   # dusk orange
+	[0.74, Color(0.15, 0.18, 0.35)],  # post-dusk
 	[1.0,  Color(0.15, 0.18, 0.35)],  # midnight
 ]
 
 const AMBIENT_ENERGY_KEYS := [
-	[0.0,  0.15],  # midnight
-	[0.22, 0.15],
-	[0.28, 0.45],  # dawn
+	[0.0,  0.30],  # midnight (brighter so not pitch black)
+	[0.18, 0.30],
+	[0.24, 0.45],  # dawn
 	[0.50, 0.70],  # noon
-	[0.72, 0.45],  # dusk
-	[0.78, 0.15],
-	[1.0,  0.15],
+	[0.68, 0.45],  # dusk
+	[0.74, 0.30],
+	[1.0,  0.30],
 ]
 
 const AMBIENT_COLOR_KEYS := [
-	[0.0,  Color(0.10, 0.12, 0.25)],  # midnight deep blue
-	[0.22, Color(0.12, 0.14, 0.28)],
-	[0.28, Color(0.45, 0.38, 0.50)],  # dawn purple-pink
+	[0.0,  Color(0.15, 0.17, 0.32)],  # midnight blue (brighter)
+	[0.18, Color(0.16, 0.18, 0.33)],
+	[0.24, Color(0.45, 0.38, 0.50)],  # dawn purple-pink
 	[0.40, Color(0.40, 0.45, 0.60)],  # morning
 	[0.50, Color(0.38, 0.42, 0.58)],  # noon (matches original)
 	[0.60, Color(0.40, 0.45, 0.60)],
-	[0.72, Color(0.45, 0.35, 0.45)],  # dusk warm
-	[0.78, Color(0.12, 0.14, 0.28)],
-	[1.0,  Color(0.10, 0.12, 0.25)],
+	[0.68, Color(0.45, 0.35, 0.45)],  # dusk warm
+	[0.74, Color(0.16, 0.18, 0.33)],
+	[1.0,  Color(0.15, 0.17, 0.32)],
 ]
 
 const SKY_TOP_KEYS := [
-	[0.0,  Color(0.02, 0.02, 0.06)],  # night sky
-	[0.22, Color(0.02, 0.02, 0.06)],
-	[0.27, Color(0.15, 0.12, 0.30)],  # pre-dawn purple
-	[0.32, Color(0.18, 0.35, 0.70)],  # dawn blue
-	[0.50, Color(0.22, 0.42, 0.78)],  # noon (matches original)
-	[0.68, Color(0.18, 0.35, 0.70)],
-	[0.73, Color(0.25, 0.12, 0.30)],  # dusk purple
-	[0.78, Color(0.02, 0.02, 0.06)],
-	[1.0,  Color(0.02, 0.02, 0.06)],
+	[0.0,  Color(0.04, 0.04, 0.10)],  # night sky (slightly brighter)
+	[0.18, Color(0.04, 0.04, 0.10)],
+	[0.23, Color(0.15, 0.12, 0.30)],  # pre-dawn purple
+	[0.28, Color(0.18, 0.35, 0.70)],  # dawn blue
+	[0.50, Color(0.22, 0.42, 0.78)],  # noon
+	[0.64, Color(0.18, 0.35, 0.70)],
+	[0.69, Color(0.25, 0.12, 0.30)],  # dusk purple
+	[0.74, Color(0.04, 0.04, 0.10)],
+	[1.0,  Color(0.04, 0.04, 0.10)],
 ]
 
 const SKY_HORIZON_KEYS := [
-	[0.0,  Color(0.06, 0.06, 0.12)],
-	[0.22, Color(0.06, 0.06, 0.12)],
-	[0.26, Color(0.85, 0.45, 0.25)],  # dawn orange horizon
-	[0.32, Color(0.60, 0.65, 0.78)],
+	[0.0,  Color(0.08, 0.08, 0.16)],  # night (slightly brighter)
+	[0.18, Color(0.08, 0.08, 0.16)],
+	[0.22, Color(0.85, 0.45, 0.25)],  # dawn orange horizon
+	[0.28, Color(0.60, 0.65, 0.78)],
 	[0.50, Color(0.50, 0.62, 0.78)],  # noon
-	[0.68, Color(0.60, 0.65, 0.78)],
-	[0.74, Color(0.85, 0.40, 0.20)],  # dusk orange
-	[0.78, Color(0.06, 0.06, 0.12)],
-	[1.0,  Color(0.06, 0.06, 0.12)],
+	[0.64, Color(0.60, 0.65, 0.78)],
+	[0.70, Color(0.85, 0.40, 0.20)],  # dusk orange
+	[0.74, Color(0.08, 0.08, 0.16)],
+	[1.0,  Color(0.08, 0.08, 0.16)],
 ]
 
 const FOG_DENSITY_KEYS := [
 	[0.0,  1.8],   # night: foggy
-	[0.25, 1.5],   # dawn: misty
-	[0.35, 1.0],   # morning: clearing
+	[0.21, 1.5],   # dawn: misty
+	[0.31, 1.0],   # morning: clearing
 	[0.50, 1.0],   # noon: base
-	[0.65, 1.0],
-	[0.75, 1.5],   # dusk: mist returns
+	[0.61, 1.0],
+	[0.71, 1.5],   # dusk: mist returns
 	[1.0,  1.8],
 ]
 
 const FOG_COLOR_KEYS := [
-	[0.0,  Color(0.08, 0.10, 0.18)],
-	[0.22, Color(0.08, 0.10, 0.18)],
-	[0.27, Color(0.60, 0.45, 0.35)],  # dawn warm fog
-	[0.35, Color(0.65, 0.72, 0.82)],
+	[0.0,  Color(0.10, 0.12, 0.22)],  # night (slightly brighter)
+	[0.18, Color(0.10, 0.12, 0.22)],
+	[0.23, Color(0.60, 0.45, 0.35)],  # dawn warm fog
+	[0.31, Color(0.65, 0.72, 0.82)],
 	[0.50, Color(0.65, 0.72, 0.82)],  # noon
-	[0.65, Color(0.65, 0.72, 0.82)],
-	[0.73, Color(0.60, 0.42, 0.30)],  # dusk warm
-	[0.78, Color(0.08, 0.10, 0.18)],
-	[1.0,  Color(0.08, 0.10, 0.18)],
+	[0.61, Color(0.65, 0.72, 0.82)],
+	[0.69, Color(0.60, 0.42, 0.30)],  # dusk warm
+	[0.74, Color(0.10, 0.12, 0.22)],
+	[1.0,  Color(0.10, 0.12, 0.22)],
 ]
 
 const SUN_SCATTER_KEYS := [
 	[0.0,  0.0],
-	[0.22, 0.0],
-	[0.26, 0.9],   # dawn: strong scatter
-	[0.35, 0.4],
+	[0.18, 0.0],
+	[0.22, 0.9],   # dawn: strong scatter
+	[0.31, 0.4],
 	[0.50, 0.3],   # noon: mild
-	[0.65, 0.4],
-	[0.74, 0.9],   # dusk: strong scatter
-	[0.78, 0.0],
+	[0.61, 0.4],
+	[0.70, 0.9],   # dusk: strong scatter
+	[0.74, 0.0],
 	[1.0,  0.0],
 ]
 
 const GLOW_INTENSITY_KEYS := [
 	[0.0,  0.3],
-	[0.25, 0.5],   # dawn glow
+	[0.21, 0.5],   # dawn glow
 	[0.50, 0.6],   # noon
-	[0.75, 0.5],   # dusk glow
+	[0.71, 0.5],   # dusk glow
 	[1.0,  0.3],
 ]
 
 const TONEMAP_EXPOSURE_KEYS := [
-	[0.0,  0.7],   # night: darker
-	[0.22, 0.7],
-	[0.30, 1.0],   # dawn
+	[0.0,  0.85],  # night: slightly brighter exposure
+	[0.18, 0.85],
+	[0.26, 1.0],   # dawn
 	[0.50, 1.0],   # noon
-	[0.70, 1.0],   # dusk
-	[0.78, 0.7],
-	[1.0,  0.7],
+	[0.66, 1.0],   # dusk
+	[0.74, 0.85],
+	[1.0,  0.85],
 ]
 
 const SATURATION_KEYS := [
-	[0.0,  0.65],  # night: desaturated
-	[0.22, 0.65],
-	[0.28, 1.05],  # dawn: slightly boosted
+	[0.0,  0.70],  # night: slightly less desaturated
+	[0.18, 0.70],
+	[0.24, 1.05],  # dawn: slightly boosted
 	[0.50, 0.95],  # noon (matches original)
-	[0.72, 1.05],  # dusk: slightly boosted
-	[0.78, 0.65],
-	[1.0,  0.65],
+	[0.68, 1.05],  # dusk: slightly boosted
+	[0.74, 0.70],
+	[1.0,  0.70],
 ]
 
 const SHADOW_OPACITY_KEYS := [
 	[0.0,  0.0],   # night: no shadows
-	[0.22, 0.0],
-	[0.28, 0.55],  # dawn
-	[0.35, 0.70],
+	[0.18, 0.0],
+	[0.24, 0.55],  # dawn
+	[0.31, 0.70],
 	[0.50, 0.75],  # noon: strong shadows
-	[0.65, 0.70],
-	[0.72, 0.55],
-	[0.78, 0.0],
+	[0.61, 0.70],
+	[0.68, 0.55],
+	[0.74, 0.0],
 	[1.0,  0.0],
 ]
 
 # ── Volumetric fog (god rays) ───────────────────────────────────────────
 const VOLUMETRIC_DENSITY_KEYS := [
 	[0.0,  0.0],
-	[0.23, 0.0],
-	[0.26, 0.015],  # dawn god rays
-	[0.32, 0.005],
+	[0.19, 0.0],
+	[0.22, 0.015],  # dawn god rays
+	[0.28, 0.005],
 	[0.50, 0.002],  # noon: subtle
-	[0.68, 0.005],
-	[0.74, 0.015],  # dusk god rays
-	[0.78, 0.0],
+	[0.64, 0.005],
+	[0.70, 0.015],  # dusk god rays
+	[0.74, 0.0],
 	[1.0,  0.0],
 ]
 
@@ -242,7 +243,7 @@ func _process(delta: float) -> void:
 	_update_sun()
 	_update_environment()
 
-	var is_day := game_time > 0.25 and game_time < 0.75
+	var is_day := game_time > 0.21 and game_time < 0.71
 	# Emit once on transitions (simple edge detect via meta)
 	var was_day: bool = get_meta("_was_day", true)
 	if is_day != was_day:
@@ -251,7 +252,7 @@ func _process(delta: float) -> void:
 
 
 func _update_sun() -> void:
-	var sun_angle := (game_time - 0.25) * TAU
+	var sun_angle := (game_time - 0.21) * TAU
 	var rot := Basis(SUN_AXIS, sun_angle)
 	var sun_dir := rot * Vector3.UP
 	_sun.look_at_from_position(Vector3.ZERO, -sun_dir, Vector3.FORWARD)
@@ -355,7 +356,7 @@ func get_time_string() -> String:
 	return "%02d:%02d" % [h, m]
 
 func is_daytime() -> bool:
-	return game_time > 0.25 and game_time < 0.75
+	return game_time > 0.21 and game_time < 0.71
 
 func set_time(new_time: float) -> void:
 	game_time = fmod(new_time, 1.0)

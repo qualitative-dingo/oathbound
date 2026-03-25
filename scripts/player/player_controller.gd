@@ -355,6 +355,7 @@ var _equip_bar: Control
 var _equip_bar_slots: Dictionary = {}
 var _equip_bar_icons: Dictionary = {}
 var _equip_bar_ghost: Dictionary = {}
+var _torch_light: OmniLight3D
 var _stats_panel: PanelContainer
 var _stats_arrow: Button
 var _stats_open: bool = false
@@ -4428,6 +4429,7 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 		"sword": "res://textures/items/stone_sword.png",
 		"bow": "res://textures/items/crude_bow.png",
 		"pickaxe": "res://textures/items/stone_pickaxe.png",
+		"torch": "res://textures/items/torch.png",
 		"shield": "res://textures/items/wood_shield.png",
 		"chest": "res://textures/items/leather_vest.png",
 		"legs": "res://textures/items/leather_pants.png",
@@ -4438,12 +4440,13 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 		"sword": "Melee",
 		"bow": "Ranged",
 		"pickaxe": "Pick",
+		"torch": "Torch",
 		"shield": "Shield",
 		"chest": "Chest",
 		"legs": "Legs",
 		"feet": "Boots",
 	}
-	const TOOL_SLOTS: Array[String] = ["weapon", "pickaxe"]
+	const TOOL_SLOTS: Array[String] = ["weapon", "pickaxe", "torch"]
 	const EQUIP_SLOTS: Array[String] = ["sword", "bow", "shield", "chest", "legs", "feet"]
 
 	var wrapper := PanelContainer.new()
@@ -4550,7 +4553,7 @@ func _build_equip_bar(parent: VBoxContainer) -> void:
 func _refresh_equip_bar() -> void:
 	if not _equip_bar:
 		return
-	const SLOT_ORDER: Array[String] = ["weapon", "sword", "bow", "pickaxe", "shield", "chest", "legs", "feet"]
+	const SLOT_ORDER: Array[String] = ["weapon", "sword", "bow", "pickaxe", "torch", "shield", "chest", "legs", "feet"]
 	for slot_name in SLOT_ORDER:
 		var eq_id: StringName = Inventory.get_equipped(slot_name)
 		var icon: TextureRect = _equip_bar_icons.get(slot_name) as TextureRect
@@ -4589,6 +4592,24 @@ func _refresh_equip_bar() -> void:
 			style.border_color = Color(0.45, 0.38, 0.22)
 			style.set_border_width_all(1)
 			slot_panel.add_theme_stylebox_override("panel", style)
+	_update_torch_light()
+
+
+func _update_torch_light() -> void:
+	var has_torch := Inventory.get_equipped("torch") != &""
+	if has_torch and not _torch_light:
+		_torch_light = OmniLight3D.new()
+		_torch_light.name = "PlayerTorchLight"
+		_torch_light.light_color = Color(1.0, 0.6, 0.2)
+		_torch_light.light_energy = 2.5
+		_torch_light.omni_range = 12.0
+		_torch_light.omni_attenuation = 0.8
+		_torch_light.shadow_enabled = true
+		_torch_light.position = Vector3(0.3, 1.5, 0.3)
+		add_child(_torch_light)
+	elif not has_torch and _torch_light:
+		_torch_light.queue_free()
+		_torch_light = null
 
 
 func _on_equip_bar_slot_input(event: InputEvent, slot_name: String) -> void:
@@ -4610,7 +4631,7 @@ func _try_drop_on_equip_bar() -> bool:
 			var data: Dictionary = ItemDatabase.get_item(_dragging_item)
 			var item_type: String = str(data.get("type", ""))
 			var item_slot: String = str(data.get("armor_slot", ""))
-			if (item_type == "weapon" or item_type == "armor") and item_slot == slot_name:
+			if (item_type == "weapon" or item_type == "armor" or item_type == "tool") and item_slot == slot_name:
 				Inventory.equip_armor(_dragging_item)
 				_refresh_inventory_ui()
 				_refresh_equip_bar()
@@ -4624,7 +4645,7 @@ func _on_equip_bar_hover(slot_name: String) -> void:
 	if eq_id != &"":
 		_show_tooltip_for_item(eq_id)
 	else:
-		const SLOT_LABELS := {"weapon": "Woodaxe", "sword": "Melee", "bow": "Ranged", "pickaxe": "Pickaxe", "shield": "Shield", "chest": "Chest Armor", "legs": "Leg Armor", "feet": "Boots"}
+		const SLOT_LABELS := {"weapon": "Woodaxe", "sword": "Melee", "bow": "Ranged", "pickaxe": "Pickaxe", "torch": "Torch", "shield": "Shield", "chest": "Chest Armor", "legs": "Leg Armor", "feet": "Boots"}
 		var hint: String = SLOT_LABELS.get(slot_name, slot_name)
 		if _tooltip_label and _tooltip_panel:
 			_tooltip_label.text = "[color=#888888]Empty %s slot[/color]" % hint
@@ -8029,7 +8050,7 @@ func _on_inv_slot_gui_input(event: InputEvent, slot_idx: int) -> void:
 		elif mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
 			var data: Dictionary = ItemDatabase.get_item(entry_id)
 			var item_type: String = str(data.get("type", ""))
-			if data.has("armor_slot") and (item_type == "armor" or item_type == "weapon"):
+			if data.has("armor_slot") and (item_type == "armor" or item_type == "weapon" or item_type == "tool"):
 				_start_equip_progress(entry_id, slot_idx)
 			else:
 				_discard_inventory_slot.call_deferred(entry)
