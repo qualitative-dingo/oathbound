@@ -144,9 +144,13 @@ void fragment() {
 	// Tight slope fade for all vertex-color features to prevent zigzag mesh artifacts
 	float slope_path_fade = smoothstep(0.10, 0.03, slope);
 
+	// Solid colors for detail overlays — avoid raw triplanar col_slope which streaks on slopes
+	vec3 mud_color = vec3(0.18, 0.15, 0.10);
+	vec3 path_detail_col = vec3(0.14, 0.10, 0.06);
+
 	float mud = fbm2((world_pos.xz + terrain_warp) * 0.02 + vec2(200.0, 300.0));
 	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength;
-	albedo = mix(albedo, col_slope * 0.75, mud_mask * 0.8);
+	albedo = mix(albedo, mud_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), mud_mask * 0.8);
 
 	float dirt_noise = fbm2((world_pos.xz + terrain_warp) * 0.018 + vec2(500.0, 700.0));
 	float dirt_thresh = 0.5 + (0.5 - dirt_patch_amount) * 0.6;
@@ -157,8 +161,7 @@ void fragment() {
 	float path_perturb = (vnoise(world_pos.xz * 0.4 + vec2(777.0, 333.0)) - 0.5) * 0.35
 	                    + (vnoise(world_pos.xz * 1.2 + vec2(191.0, 573.0)) - 0.5) * 0.15;
 	float pm = smoothstep(0.2, 0.7, v_path_mask + path_perturb) * slope_path_fade;
-	vec3 dirt_detail = col_slope * 0.6 + col_flat * 0.15;
-	vec3 path_base = path_color * dirt_detail * 4.0;
+	vec3 path_base = path_color * path_detail_col * 8.0;
 	path_base *= (0.85 + vnoise(world_pos.xz * 0.12 + vec2(900.0, 400.0)) * 0.2);
 	path_base *= (0.9 + fbm2(world_pos.xz * 0.06 + vec2(150.0, 250.0)) * 0.15);
 	albedo = mix(albedo, path_base, pm);
@@ -167,7 +170,7 @@ void fragment() {
 	float bank_noise = vnoise(world_pos.xz * 0.15 + vec2(444.0, 222.0));
 	float bank_detail = vnoise(world_pos.xz * 0.6 + vec2(111.0, 555.0));
 	float bank_mask = smoothstep(0.1, 0.6, v_river_bank + (bank_noise - 0.5) * 0.3);
-	vec3 bank_detail_col = col_slope * 0.5 + bank_color * 0.5;
+	vec3 bank_detail_col = mud_color * 0.7 + bank_color * 0.3;
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
 	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
 

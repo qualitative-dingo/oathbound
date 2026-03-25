@@ -388,22 +388,23 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	if not _leaf_shader or not _leaf_tex_generic:
 		return null
 
-	var sf := rng.randf_range(0.44, 0.77)
+	var sf := rng.randf_range(0.53, 0.92)
 	var trunk_h := 1.8 * sf
 	var trunk_r := 0.03 * sf
 
 	var root := StaticBody3D.new()
 	root.name = "BlueberryBush"
-	root.collision_layer = 4
+	root.collision_layer = 1 | 4
 	root.collision_mask = 0
 	root.add_to_group(&"interactables")
 	root.add_to_group(&"berry_bushes")
 
 	var col := CollisionShape3D.new()
-	var shape := SphereShape3D.new()
-	shape.radius = 0.8 * sf
+	var shape := CylinderShape3D.new()
+	shape.radius = 0.7 * sf
+	shape.height = trunk_h * 0.8
 	col.shape = shape
-	col.position.y = trunk_h * 0.5
+	col.position.y = trunk_h * 0.4
 	root.add_child(col)
 
 	root.set_meta("harvestable", true)
@@ -432,13 +433,13 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	var leaf_mat := _make_tree_leaf_mat(leaf_tex, leaf_color, rng)
 
 	var crown_y := trunk_h * 0.35
-	var crown_r := 1.1 * sf
-	var crown_h := trunk_h * 0.77
+	var crown_r := 1.32 * sf
+	var crown_h := trunk_h * 0.92
 
 	var leaf_xforms: Array[Transform3D] = []
 
-	for li in rng.randi_range(6, 9):
-		var leaf_size := rng.randf_range(2.2, 3.3) * sf
+	for li in rng.randi_range(7, 10):
+		var leaf_size := rng.randf_range(2.64, 3.96) * sf
 		var pos := Vector3(
 			rng.randf_range(-crown_r * 0.5, crown_r * 0.5),
 			crown_y + rng.randf_range(-crown_h * 0.1, crown_h * 0.6),
@@ -450,8 +451,8 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 		var basis := Basis.from_euler(rot).scaled(Vector3(leaf_size, leaf_size, leaf_size))
 		leaf_xforms.append(Transform3D(basis, pos))
 
-	for li in rng.randi_range(5, 8):
-		var leaf_size := rng.randf_range(1.54, 2.64) * sf
+	for li in rng.randi_range(6, 9):
+		var leaf_size := rng.randf_range(1.85, 3.17) * sf
 		var angle := rng.randf_range(0.0, TAU)
 		var r := rng.randf_range(crown_r * 0.3, crown_r)
 		var pos := Vector3(

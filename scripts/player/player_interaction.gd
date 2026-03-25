@@ -408,8 +408,9 @@ func update_interact_prompt() -> void:
 			continue
 		if not bb3d.get_meta("berry_harvest", false):
 			continue
-		var d := pp.distance_to(bb3d.global_position)
-		if d < 2.5 and d < closest_dist:
+		var bush_center := bb3d.global_position + Vector3.UP * 0.5
+		var d := pp.distance_to(bush_center)
+		if d < 3.0 and d < closest_dist:
 			closest_dist = d
 			closest_name = "Harvest Blueberries"
 
@@ -569,15 +570,21 @@ func try_interact() -> void:
 			return
 
 	# Check berry bushes for E-to-harvest
+	var best_bush: Node3D = null
+	var best_bush_dist := 3.0
 	for bb in pc.get_tree().get_nodes_in_group(&"berry_bushes"):
 		var bb3d := bb as Node3D
 		if not bb3d:
 			continue
 		if not bb3d.get_meta("berry_harvest", false):
 			continue
-		if pc.global_position.distance_to(bb3d.global_position) < 2.5:
-			_harvest_berry_bush(bb3d)
-			return
+		var d := pc.global_position.distance_to(bb3d.global_position + Vector3.UP * 0.5)
+		if d < best_bush_dist:
+			best_bush_dist = d
+			best_bush = bb3d
+	if best_bush:
+		_harvest_berry_bush(best_bush)
+		return
 
 	# Check workbenches
 	for wb in pc.get_tree().get_nodes_in_group(&"workbenches"):
@@ -603,33 +610,68 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 	var amount := rng.randi_range(drop_min, drop_max)
 	Inventory.add_item(drop_id, amount)
 
-	AudioManager.play_sfx("fist_hit_tree", -8.0)
+	# Rustling leaf sound + pickup tone
+	AudioManager.play_sfx("fist_hit_tree", -14.0, 0.2)
+	AudioManager.play_sfx("wood_pickup", -6.0, 0.15)
 	GameEvents.item_picked_up.emit(drop_id, amount)
 
 	bush.set_meta("berry_harvest", false)
 	bush.remove_from_group(&"berry_bushes")
-	bush.remove_from_group(&"interactables")
-	bush.set_meta("harvestable", false)
 
-	# Hide berries, keep the bush foliage visible
+	# Strip all berry meshes (SphereMesh children) — leaves and trunk stay
+	var berry_nodes: Array[MeshInstance3D] = []
 	for child in bush.get_children():
-		if child is MeshInstance3D and child.name != "Trunk" and child.name != "LeafMM":
-			if child.mesh is SphereMesh:
-				child.visible = false
+		if child is MeshInstance3D and child.mesh is SphereMesh:
+			berry_nodes.append(child as MeshInstance3D)
+	for berry in berry_nodes:
+		bush.remove_child(berry)
+		berry.queue_free()
 
-	# Respawn berries after 60 seconds
-	var tree := bush.get_tree()
-	if tree:
-		tree.create_timer(60.0).timeout.connect(func():
-			if is_instance_valid(bush):
-				bush.set_meta("berry_harvest", true)
-				bush.add_to_group(&"berry_bushes")
-				bush.add_to_group(&"interactables")
-				bush.set_meta("harvestable", true)
-				bush.set_meta("hp", bush.get_meta("max_hp", 10.0))
-				for child2 in bush.get_children():
-					if child2 is MeshInstance3D and child2.mesh is SphereMesh:
-						child2.visible = true
+	# Slight shake animation on the foliage
+	var leaf_mm := bush.get_node_or_null("LeafMM") as Node3D
+	if leaf_mm:
+		var tw := bush.create_tween()
+		var base_pos := leaf_mm.position
+		tw.tween_property(leaf_mm, "position", base_pos + Vector3(0.04, 0.02, -0.03), 0.06)
+		tw.tween_property(leaf_mm, "position", base_pos + Vector3(-0.03, -0.01, 0.04), 0.06)
+		tw.tween_property(leaf_mm, "position", base_pos + Vector3(0.02, 0.01, -0.02), 0.05)
+		tw.tween_property(leaf_mm, "position", base_pos, 0.07)
+
+	# Respawn berries after 90 seconds
+	var stree := bush.get_tree()
+	if stree:
+		stree.create_timer(90.0).timeout.connect(func():
+			if not is_instance_valid(bush):
+				return
+			bush.set_meta("berry_harvest", true)
+			bush.add_to_group(&"berry_bushes")
+			# Re-create berry meshes
+			var re_rng := RandomNumberGenerator.new()
+			re_rng.randomize()
+			var crown_y: float = float(bush.get_meta("trunk_h", 1.0)) * 0.35
+			var crown_r: float = 1.32 * float(bush.get_meta("trunk_h", 1.0)) / 1.8
+			var crown_h: float = float(bush.get_meta("trunk_h", 1.0)) * 0.92
+			var bb_mat: StandardMaterial3D = null
+			if ZonePopulator._blueberry_mat:
+				bb_mat = ZonePopulator._blueberry_mat
+			else:
+				bb_mat = StandardMaterial3D.new()
+				bb_mat.albedo_color = Color(0.12, 0.08, 0.45)
+			for _bi in re_rng.randi_range(8, 14):
+				var b_angle := re_rng.randf_range(0.0, TAU)
+				var b_out := re_rng.randf_range(0.1, crown_r * 0.8)
+				var b_y := crown_y + re_rng.randf_range(-crown_h * 0.2, crown_h * 0.5)
+				var bmi := MeshInstance3D.new()
+				var bsp := SphereMesh.new()
+				bsp.radius = re_rng.randf_range(0.048, 0.084)
+				bsp.height = bsp.radius * 2.0
+				bsp.radial_segments = 4
+				bsp.rings = 2
+				bmi.mesh = bsp
+				bmi.set_surface_override_material(0, bb_mat)
+				bmi.position = Vector3(cos(b_angle) * b_out, b_y, sin(b_angle) * b_out)
+				bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				bush.add_child(bmi)
 		)
 
 
