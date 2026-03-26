@@ -2290,11 +2290,6 @@ func _play_footstep(is_running: bool) -> void:
 
 
 func _check_stone_surface() -> bool:
-	var wg := _find_world_generator()
-	if wg:
-		var wp := wg.get_world_position(self)
-		if ZonePopulator.is_on_path(wp.x, wp.z):
-			return true
 	for i in get_slide_collision_count():
 		var col := get_slide_collision(i)
 		if not col:
@@ -2304,7 +2299,19 @@ func _check_stone_surface() -> bool:
 			var bid: StringName = collider.get_meta("build_id")
 			if bid.begins_with("stone") or bid.begins_with("slate"):
 				return true
-	return false
+
+	var wg := _find_world_generator()
+	if not wg:
+		return false
+	var wp := wg.get_world_position(self)
+	var step := 0.25
+	var h_l := wg.get_height_at(wp.x - step, wp.z)
+	var h_r := wg.get_height_at(wp.x + step, wp.z)
+	var h_u := wg.get_height_at(wp.x, wp.z - step)
+	var h_d := wg.get_height_at(wp.x, wp.z + step)
+	var normal := Vector3(h_l - h_r, 2.0 * step, h_u - h_d).normalized()
+	var slope := 1.0 - absf(normal.y)
+	return slope > 0.10
 
 
 func _tick_gallop_sfx(_delta: float) -> void:
