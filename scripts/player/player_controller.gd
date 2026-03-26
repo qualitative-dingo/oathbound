@@ -5736,6 +5736,8 @@ func _open_build_menu() -> void:
 	_build_menu_open = true
 	_refresh_build_menu()
 	_build_menu_panel.visible = true
+	if _build_crosshair:
+		_build_crosshair.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_refresh_control_hints()
 
@@ -5744,6 +5746,8 @@ func _close_build_menu() -> void:
 	_build_menu_open = false
 	if _build_menu_panel:
 		_build_menu_panel.visible = false
+	if _build_crosshair and _build_mode:
+		_build_crosshair.visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_refresh_control_hints()
 
