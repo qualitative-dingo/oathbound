@@ -194,10 +194,10 @@ var _footstep_player: AudioStreamPlayer
 var _gallop_player: AudioStreamPlayer
 var _gallop_fast_stream: AudioStream
 var _gallop_normal_stream: AudioStream
-var _grass_step_stream: AudioStream
-var _stone_walk_stream: AudioStream
-var _stone_run_stream: AudioStream
 var _on_stone_surface: bool = false
+var _footstep_timer: float = 0.0
+const _WALK_STEP_INTERVAL := 0.5
+const _RUN_STEP_INTERVAL := 0.3
 
 # Bow draw
 var _bow_drawing: bool = false
@@ -2212,21 +2212,12 @@ func _setup_movement_audio() -> void:
 	add_child(_gallop_player)
 	_gallop_player.finished.connect(_on_gallop_finished)
 
-	_grass_step_stream = AudioManager.get_stream("grass_step")
-	_stone_walk_stream = AudioManager.get_stream("stone_step_walk")
-	_stone_run_stream = AudioManager.get_stream("stone_step_run")
-	if _grass_step_stream:
-		_footstep_player.stream = _grass_step_stream
 	_gallop_normal_stream = AudioManager.get_stream("horse_gallop")
 	_gallop_fast_stream = AudioManager.get_stream("horse_gallop_fast")
 
 
 func _on_footstep_finished() -> void:
-	if _footstep_player and not _mounted:
-		var spd := Vector2(velocity.x, velocity.z).length()
-		if spd > 0.5 and is_on_floor():
-			_swap_footstep_stream(spd)
-			_footstep_player.play()
+	pass
 
 
 func _on_gallop_finished() -> void:
@@ -2236,33 +2227,44 @@ func _on_gallop_finished() -> void:
 			_gallop_player.play()
 
 
-func _tick_footstep_sfx(_delta: float) -> void:
+func _tick_footstep_sfx(delta: float) -> void:
 	if not _footstep_player:
 		return
 	var flat_speed := Vector2(velocity.x, velocity.z).length()
-	var want_playing := not _mounted and flat_speed > 0.5 and is_on_floor() and not _is_swimming
-	if want_playing:
-		var on_stone := _check_stone_surface()
-		if on_stone != _on_stone_surface:
-			_on_stone_surface = on_stone
-			_swap_footstep_stream(flat_speed)
-		elif on_stone and _stone_walk_stream and _stone_run_stream:
-			var is_running := flat_speed > walk_speed * 1.1
-			var expected := _stone_run_stream if is_running else _stone_walk_stream
-			if _footstep_player.stream != expected:
-				_swap_footstep_stream(flat_speed)
-		if _on_stone_surface:
-			_footstep_player.pitch_scale = 1.0
-			_footstep_player.volume_db = -2.5
-		else:
-			var speed_ratio := clampf(flat_speed / walk_speed, 0.4, 2.2) * 0.65
-			_footstep_player.pitch_scale = speed_ratio
-			_footstep_player.volume_db = -8.5
-	if want_playing and not _footstep_player.playing:
-		_swap_footstep_stream(flat_speed)
-		_footstep_player.play()
-	elif not want_playing and _footstep_player.playing:
-		_footstep_player.stop()
+	var want_stepping := not _mounted and flat_speed > 0.5 and is_on_floor() and not _is_swimming
+	if not want_stepping:
+		_footstep_timer = 0.0
+		return
+
+	_on_stone_surface = _check_stone_surface()
+
+	var is_running := flat_speed > walk_speed * 1.1
+	var interval := _RUN_STEP_INTERVAL if is_running else _WALK_STEP_INTERVAL
+	_footstep_timer -= delta
+	if _footstep_timer <= 0.0:
+		_play_footstep(is_running)
+		_footstep_timer = interval
+
+
+func _play_footstep(is_running: bool) -> void:
+	var group_name: String
+	var vol_db: float
+	var pitch: float
+	if _on_stone_surface:
+		group_name = "stone_step"
+		vol_db = -2.5
+		pitch = randf_range(0.9, 1.1)
+	else:
+		group_name = "grass_step"
+		vol_db = -8.5
+		pitch = randf_range(0.85, 1.15)
+	var stream := AudioManager.get_random_stream(group_name)
+	if not stream:
+		return
+	_footstep_player.stream = stream
+	_footstep_player.volume_db = vol_db
+	_footstep_player.pitch_scale = pitch
+	_footstep_player.play()
 
 
 func _check_stone_surface() -> bool:
@@ -2270,17 +2272,6 @@ func _check_stone_surface() -> bool:
 	if wg:
 		var wp := wg.get_world_position(self)
 		if ZonePopulator.is_on_path(wp.x, wp.z):
-			return true
-		var sample_step := 0.5
-		var h_c := wg.get_height_at(wp.x, wp.z)
-		var h_l := wg.get_height_at(wp.x - sample_step, wp.z)
-		var h_r := wg.get_height_at(wp.x + sample_step, wp.z)
-		var h_u := wg.get_height_at(wp.x, wp.z - sample_step)
-		var h_d := wg.get_height_at(wp.x, wp.z + sample_step)
-		var dx := (h_r - h_l) / (2.0 * sample_step)
-		var dz := (h_d - h_u) / (2.0 * sample_step)
-		var slope := sqrt(dx * dx + dz * dz)
-		if slope > 0.35:
 			return true
 	for i in get_slide_collision_count():
 		var col := get_slide_collision(i)
@@ -2292,17 +2283,6 @@ func _check_stone_surface() -> bool:
 			if bid.begins_with("stone") or bid.begins_with("slate"):
 				return true
 	return false
-
-
-func _swap_footstep_stream(flat_speed: float) -> void:
-	if _on_stone_surface:
-		var is_running := flat_speed > walk_speed * 1.1
-		var s: AudioStream = _stone_run_stream if is_running else _stone_walk_stream
-		if s:
-			_footstep_player.stream = s
-	else:
-		if _grass_step_stream:
-			_footstep_player.stream = _grass_step_stream
 
 
 func _tick_gallop_sfx(_delta: float) -> void:
