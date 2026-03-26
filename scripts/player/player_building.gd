@@ -1827,7 +1827,7 @@ func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
 		stone.mesh = sphere
 		var mat := StandardMaterial3D.new()
 		mat.albedo_texture = stone_tex
-		mat.albedo_color = Color(randf_range(0.35, 0.55), randf_range(0.33, 0.5), randf_range(0.3, 0.45))
+		mat.albedo_color = Color(randf_range(0.15, 0.25), randf_range(0.14, 0.22), randf_range(0.12, 0.2))
 		mat.roughness = 0.95
 		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		stone.set_surface_override_material(0, mat)
