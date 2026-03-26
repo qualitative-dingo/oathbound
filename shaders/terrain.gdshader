@@ -265,9 +265,10 @@ void fragment() {
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
 	base_rough = mix(base_rough, bank_roughness, bank_mask * flat_w);
-	// Rock strata has variable roughness — lighter bands are smoother
-	float strata_rough = 0.75 + vnoise(world_pos.xz * 1.2 + vec2(444.0, 222.0)) * 0.2;
-	base_rough = mix(base_rough, strata_rough, cliff_w);
+	// Rock has variable roughness — lighter patches smoother, crevices rougher
+	float rock_rough_noise = tri_noise(world_pos, blend, 1.2, vec2(444.0, 222.0));
+	float rock_rough = 0.72 + rock_rough_noise * 0.22;
+	base_rough = mix(base_rough, rock_rough, cliff_w);
 	ROUGHNESS = mix(base_rough, path_roughness, pm);
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;

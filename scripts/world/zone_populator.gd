@@ -442,7 +442,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 		var leaf_size := rng.randf_range(2.64, 3.96) * sf
 		var pos := Vector3(
 			rng.randf_range(-crown_r * 0.5, crown_r * 0.5),
-			crown_y + rng.randf_range(-crown_h * 0.1, crown_h * 0.6),
+			maxf(0.1, crown_y + rng.randf_range(-crown_h * 0.1, crown_h * 0.6)),
 			rng.randf_range(-crown_r * 0.5, crown_r * 0.5))
 		var rot := Vector3(
 			rng.randf_range(-0.6, 0.6),
@@ -457,7 +457,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 		var r := rng.randf_range(crown_r * 0.3, crown_r)
 		var pos := Vector3(
 			cos(angle) * r,
-			crown_y + rng.randf_range(-crown_h * 0.3, crown_h * 0.4),
+			maxf(0.1, crown_y + rng.randf_range(-crown_h * 0.3, crown_h * 0.4)),
 			sin(angle) * r)
 		var rot := Vector3(
 			rng.randf_range(-0.8, 0.8),
@@ -486,7 +486,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	for _bi in berry_count:
 		var b_angle := rng.randf_range(0.0, TAU)
 		var b_out := rng.randf_range(0.1, crown_r * 0.8)
-		var b_y := crown_y + rng.randf_range(-crown_h * 0.2, crown_h * 0.5)
+		var b_y := maxf(0.15, crown_y + rng.randf_range(-crown_h * 0.2, crown_h * 0.5))
 		var berry_mi := MeshInstance3D.new()
 		var bsphere := SphereMesh.new()
 		bsphere.radius = rng.randf_range(0.048, 0.084)
