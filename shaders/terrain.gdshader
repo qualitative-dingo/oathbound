@@ -26,9 +26,8 @@ uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 uniform float bank_roughness : hint_range(0.0, 1.0) = 0.95;
 
 group_uniforms rock;
-uniform vec3 rock_dark : source_color = vec3(0.15, 0.14, 0.13);
-uniform vec3 rock_light : source_color = vec3(0.58, 0.56, 0.53);
-uniform vec3 rock_mid : source_color = vec3(0.32, 0.30, 0.27);
+uniform vec3 rock_base : source_color = vec3(0.14, 0.15, 0.18);
+uniform vec3 rock_highlight : source_color = vec3(0.48, 0.47, 0.44);
 
 float hash12(vec2 p) {
 	float h = dot(p, vec2(127.1, 311.7));
@@ -52,74 +51,45 @@ float fbm2(vec2 p) {
 	return v;
 }
 
-// Triplanar noise — samples noise from all 3 planes, blended by normal
-float tri_noise(vec3 wpos, vec3 blend, float scale, vec2 offset) {
-	float nx = vnoise(wpos.zy * scale + offset);
-	float ny = vnoise(wpos.xz * scale + offset);
-	float nz = vnoise(wpos.xy * scale + offset);
+// Triplanar noise — each axis uses DIFFERENT offsets to prevent wrap-around
+float tri_noise(vec3 wpos, vec3 blend, float scale, vec2 off) {
+	float nx = vnoise(wpos.zy * scale + off);
+	float ny = vnoise(wpos.xz * scale + off + vec2(73.0, 149.0));
+	float nz = vnoise(wpos.xy * scale + off + vec2(311.0, 57.0));
 	return nx * blend.x + ny * blend.y + nz * blend.z;
 }
 
-float tri_fbm(vec3 wpos, vec3 blend, float scale, vec2 offset) {
-	float v = tri_noise(wpos, blend, scale, offset) * 0.55;
-	v += tri_noise(wpos, blend, scale * 2.1, offset + vec2(100.0)) * 0.30;
-	v += tri_noise(wpos, blend, scale * 4.3, offset + vec2(250.0)) * 0.15;
-	return v;
-}
-
-// Valheim-style rock: large patchy blobs of light/dark with vertical flow streaks
+// Unified stone with visible light/dark alternating pattern and fine grain
 vec3 rock_color(vec3 wpos, vec3 wnorm, float steepness) {
-	vec3 blend = abs(wnorm);
-	blend = pow(blend, vec3(2.0));
-	blend /= (blend.x + blend.y + blend.z + 0.0001);
+	vec3 bl = abs(wnorm);
+	bl = pow(bl, vec3(4.0));
+	bl /= (bl.x + bl.y + bl.z + 0.0001);
 
-	// === Large-scale patches (light vs dark rock) ===
-	// Domain warp for organic blob shapes
-	float warp_x = tri_fbm(wpos, blend, 0.018, vec2(430.0, 170.0));
-	float warp_z = tri_fbm(wpos, blend, 0.018, vec2(810.0, 560.0));
-	vec3 warped = wpos + vec3(warp_x, 0.0, warp_z) * 35.0;
+	// ── Large-scale pattern — domain-warped for organic shapes ──
+	float w1 = tri_noise(wpos, bl, 0.006, vec2(430.0, 170.0));
+	float w2 = tri_noise(wpos, bl, 0.006, vec2(810.0, 560.0));
+	vec3 warped = wpos + vec3(w1, w2, w1 * 0.7 + w2 * 0.3) * 40.0;
+	float pattern = tri_noise(warped, bl, 0.012, vec2(90.0, 260.0));
 
-	float patch = tri_fbm(warped, blend, 0.03, vec2(90.0, 260.0));
-	float patch_mask = smoothstep(0.35, 0.65, patch);
+	// Moderate smoothstep — visible patches but not razor-sharp
+	float mask = smoothstep(0.38, 0.58, pattern);
 
-	// === Medium detail patches ===
-	float med_patch = tri_fbm(wpos, blend, 0.08, vec2(333.0, 777.0));
-	float med_mask = smoothstep(0.3, 0.7, med_patch);
+	// ── Medium detail to break up patch edges ──
+	float detail = tri_noise(wpos, bl, 0.035, vec2(444.0, 888.0));
+	mask += (detail - 0.5) * 0.25;
+	mask = clamp(mask, 0.0, 1.0);
 
-	// === Vertical flow/weathering streaks ===
-	// Sample from XY and ZY planes (vertical surfaces) — elongated in Y
-	float flow_xy = vnoise(wpos.xy * vec2(0.15, 0.06) + vec2(111.0, 222.0));
-	float flow_zy = vnoise(wpos.zy * vec2(0.15, 0.06) + vec2(444.0, 555.0));
-	float flow = flow_xy * blend.z + flow_zy * blend.x + 0.5 * blend.y;
-	// Finer flow lines
-	float flow_fine_xy = vnoise(wpos.xy * vec2(0.4, 0.12) + vec2(700.0, 300.0));
-	float flow_fine_zy = vnoise(wpos.zy * vec2(0.4, 0.12) + vec2(900.0, 100.0));
-	float flow_fine = flow_fine_xy * blend.z + flow_fine_zy * blend.x + 0.5 * blend.y;
+	vec3 col = mix(rock_base, rock_highlight, mask);
 
-	float flow_streak = smoothstep(0.3, 0.7, flow) * 0.6 + smoothstep(0.35, 0.65, flow_fine) * 0.4;
+	// ── Fine stone grain — subtle texture across the whole surface ──
+	float grain1 = tri_noise(wpos, bl, 0.12, vec2(200.0, 400.0));
+	float grain2 = tri_noise(wpos, bl, 0.35, vec2(600.0, 100.0));
+	float grain = grain1 * 0.6 + grain2 * 0.4;
+	col *= 0.92 + grain * 0.16;
 
-	// === Build the rock color ===
-	// Base: patchy mix of dark and light
-	vec3 col = mix(rock_dark, rock_light, patch_mask);
-	// Medium detail breaks up the large patches
-	col = mix(col, rock_mid, med_mask * 0.45);
-	// Flow streaks darken/lighten vertically
-	col = mix(col, rock_dark * 0.8, (1.0 - flow_streak) * 0.35 * steepness);
-	col = mix(col, rock_light * 1.1, flow_streak * 0.2);
-
-	// === Surface grain — fine texture detail ===
-	float grain = tri_noise(wpos, blend, 1.8, vec2(200.0, 400.0));
-	float grain2 = tri_noise(wpos, blend, 5.0, vec2(600.0, 100.0));
-	col *= 0.88 + grain * 0.15 + grain2 * 0.08;
-
-	// === Crevice darkening — steepest faces get darker ===
-	col *= mix(1.0, 0.75, steepness * steepness * 0.3);
-
-	// === Subtle color temperature shift across the mountain ===
-	float region = tri_noise(wpos, blend, 0.012, vec2(900.0, 700.0));
-	vec3 warm = col * vec3(1.04, 1.0, 0.94);
-	vec3 cool = col * vec3(0.94, 0.96, 1.04);
-	col = mix(warm, cool, region);
+	// ── Crevice darkening where the pattern transitions ──
+	float crevice = smoothstep(0.04, 0.0, abs(pattern - 0.48)) * 0.18;
+	col *= (1.0 - crevice);
 
 	return col;
 }
@@ -186,34 +156,41 @@ void fragment() {
 
 	float noisy_slope = slope + slope_noise;
 
-	float flat_w  = smoothstep(slope_start + 0.12, slope_start, noisy_slope);
-	float cliff_w = smoothstep(cliff_start, cliff_start + 0.18, noisy_slope);
-	float slope_w = max(1.0 - flat_w - cliff_w, 0.0);
+	// Two-zone system: grass → rock. No brown intermediate.
+	// Grass fades out by slope ~0.10, rock fully in by slope ~0.14
+	float grass_w = smoothstep(slope_start + 0.08, slope_start, noisy_slope);
+	float rock_w  = 1.0 - grass_w;
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
+
+	// Valheim-style patchy rock — used for ALL non-grass terrain
+	vec3 col_rock = rock_color(world_pos, world_normal, steep_override);
+
+	// Thin dirt edge where grass meets rock (like Valheim's muddy transition)
 	vec3 col_slope = triplanar(tex_slope, world_pos, blend, texture_scale);
+	float edge_band = smoothstep(0.0, 0.06, noisy_slope) * smoothstep(0.16, 0.08, noisy_slope);
+	vec3 edge_dirt = mix(col_slope * 0.6, col_rock, 0.5);
 
-	// Valheim-style patchy rock for steep slopes
-	vec3 col_cliff = rock_color(world_pos, world_normal, steep_override);
-	// Blend in cliff texture for micro surface detail
-	vec3 tex_cliff_col = triplanar(tex_cliff, world_pos, blend, texture_scale);
-	col_cliff = mix(col_cliff, col_cliff * tex_cliff_col * 2.2, 0.2);
-
-	// Subtle scatter on gentle slopes only — never on steep terrain
+	// Subtle grass scatter at the very edge of flat areas
 	float scatter = vnoise(world_pos.xz * 0.35 + vec2(610.0, 390.0));
-	float scatter_mask = smoothstep(0.62, 0.80, scatter) * slope_w * 0.3 * flat_w;
-	float adj_flat_w  = flat_w + scatter_mask;
-	float adj_slope_w = max(slope_w - scatter_mask, 0.0);
+	float scatter_mask = smoothstep(0.62, 0.80, scatter) * grass_w * 0.15;
 
-	vec3 albedo = col_flat * adj_flat_w + col_slope * adj_slope_w + col_cliff * cliff_w;
+	vec3 albedo = col_flat * (grass_w + scatter_mask) + col_rock * (rock_w - scatter_mask);
+	// Blend in the dirt edge for a natural grass-to-rock transition
+	albedo = mix(albedo, edge_dirt, edge_band * 0.6);
+
+	// Keep cliff_w for post-processing gates (skip brightness/tint on rock)
+	float cliff_w = rock_w;
 
 	float n_large = fbm2(world_pos.xz * 0.012);
 	float n_med   = fbm2(world_pos.xz * 0.04 + vec2(50.0, 80.0));
 	float brightness = 0.38 + n_large * 0.18 + n_med * 0.10;
 	brightness = mix(1.0, brightness, variation_strength);
-	albedo *= brightness;
+	// Only apply brightness variation to non-cliff areas — rock_color handles its own
+	float brightness_applied = mix(brightness, 1.0, cliff_w);
+	albedo *= brightness_applied;
 
-	vec3 warm_shift = vec3(0.03, 0.015, -0.015) * (n_large - 0.5) * variation_strength;
+	vec3 warm_shift = vec3(0.03, 0.015, -0.015) * (n_large - 0.5) * variation_strength * (1.0 - cliff_w);
 	albedo += warm_shift;
 
 	vec2 terrain_warp = vec2(
@@ -222,12 +199,12 @@ void fragment() {
 	) * 28.0;
 
 	float mud = fbm2((world_pos.xz + terrain_warp) * 0.02 + vec2(200.0, 300.0));
-	float mud_mask = smoothstep(0.3, 0.55, mud) * flat_w * variation_strength;
+	float mud_mask = smoothstep(0.3, 0.55, mud) * grass_w * variation_strength;
 	albedo = mix(albedo, col_slope * 0.75, mud_mask * 0.8);
 
 	float dirt_noise = fbm2((world_pos.xz + terrain_warp) * 0.018 + vec2(500.0, 700.0));
 	float dirt_thresh = 0.5 + (0.5 - dirt_patch_amount) * 0.6;
-	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * flat_w;
+	float dirt_mask = smoothstep(dirt_thresh - 0.06, dirt_thresh + 0.06, dirt_noise) * grass_w;
 	albedo = mix(albedo, dirt_color * (0.85 + vnoise(world_pos.xz * 0.3) * 0.15), dirt_mask);
 
 	// Clay paths — use slope_path_fade instead of flat_w to kill zigzags on slopes
@@ -247,43 +224,39 @@ void fragment() {
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
 	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
 
-	float ao_mask = smoothstep(0.3, 0.6, n_med) * flat_w * 0.2;
+	float ao_mask = smoothstep(0.3, 0.6, n_med) * grass_w * 0.2;
 	albedo *= (1.0 - ao_mask);
 
-	float ground_shadow = flat_w * 0.12 * (1.0 - dirt_mask) * (1.0 - pm);
+	float ground_shadow = grass_w * 0.12 * (1.0 - dirt_mask) * (1.0 - pm);
 	albedo *= (1.0 - ground_shadow);
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// Tint slope textures to match biome — less tinting on steep rock so strata colors show
-	albedo *= mix(vec3(1.0), vec3(0.80, 0.82, 0.78), steep_override);
-
-	// Biome tint on flat/slope areas, very subtle on cliffs to preserve strata
-	float tint_strength = flat_w + slope_w * 0.50 + cliff_w * 0.15;
+	// Biome tint on grass only — rock stays untinted
+	float tint_strength = grass_w;
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
 	ALBEDO = albedo * final_tint * v_brightness;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
-	base_rough = mix(base_rough, bank_roughness, bank_mask * flat_w);
-	// Rock has variable roughness — lighter patches smoother, crevices rougher
-	float rock_rough_noise = tri_noise(world_pos, blend, 1.2, vec2(444.0, 222.0));
-	float rock_rough = 0.72 + rock_rough_noise * 0.22;
-	base_rough = mix(base_rough, rock_rough, cliff_w);
+	base_rough = mix(base_rough, bank_roughness, bank_mask * grass_w);
+	// Rock roughness with subtle variation so it doesn't look like plastic
+	float rock_rough_var = vnoise(world_pos.xz * 0.08 + vec2(777.0, 333.0)) * 0.12;
+	base_rough = mix(base_rough, 0.78 + rock_rough_var, cliff_w);
 	ROUGHNESS = mix(base_rough, path_roughness, pm);
+	METALLIC = cliff_w * 0.03;
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
-	// Procedural bump mapping on rocky surfaces — stronger on cliffs for craggy look
-	float rock_strength = slope_w * 0.4 + cliff_w * 0.8;
-	if (rock_strength > 0.01) {
-		float rn1 = vnoise(world_pos.xz * 2.5 + vec2(311.0, 719.0));
-		float rn2 = vnoise(world_pos.xz * 6.0 + vec2(853.0, 127.0));
-		float rn3 = vnoise(world_pos.xz * 14.0 + vec2(491.0, 953.0));
-		float rock_detail = (rn1 - 0.5) * 0.5 + (rn2 - 0.5) * 0.3 + (rn3 - 0.5) * 0.2;
+	// Rock surface bump — broad undulations + medium stone texture
+	if (rock_w > 0.01) {
+		float rn1 = vnoise(world_pos.xz * 0.2 + vec2(311.0, 719.0));
+		float rn2 = vnoise(world_pos.xz * 0.6 + vec2(853.0, 127.0));
+		float rn3 = vnoise(world_pos.xz * 1.8 + vec2(491.0, 953.0));
+		float rock_bump = (rn1 - 0.5) * 0.45 + (rn2 - 0.5) * 0.35 + (rn3 - 0.5) * 0.20;
 		NORMAL = normalize(NORMAL + vec3(
-			dFdx(rock_detail) * 50.0 * rock_strength,
+			dFdx(rock_bump) * 25.0 * rock_w,
 			0.0,
-			dFdy(rock_detail) * 50.0 * rock_strength
+			dFdy(rock_bump) * 25.0 * rock_w
 		));
 	}
 }

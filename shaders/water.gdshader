@@ -13,7 +13,7 @@ uniform vec4 foam_color    : source_color = vec4(0.82, 0.88, 0.90, 0.85);
 
 group_uniforms depth;
 uniform float depth_distance : hint_range(0.1, 20.0)  = 3.0;
-uniform float foam_width : hint_range(0.01, 2.0)      = 1.2;
+uniform float foam_width : hint_range(0.01, 2.0)      = 0.35;
 
 group_uniforms surface;
 uniform float fresnel_power : hint_range(1.0, 8.0)  = 3.5;
@@ -115,15 +115,15 @@ void fragment() {
 	float foam_noise = vnoise(world_pos.xz * 1.2 + vec2(TIME * 0.25, TIME * 0.18));
 	float foam_noise2 = vnoise(world_pos.xz * 2.5 - vec2(TIME * 0.18, TIME * 0.35));
 	float foam_noise3 = vnoise(world_pos.xz * 0.6 + vec2(TIME * 0.08, -TIME * 0.12));
-	float foam_perturbed = depth_diff + (foam_noise3 - 0.5) * 0.9;
+	float foam_perturbed = depth_diff + (foam_noise3 - 0.5) * 0.3;
 	float foam_edge = 1.0 - smoothstep(0.05, foam_width, foam_perturbed);
 	foam_edge *= step(-0.1, foam_perturbed);
 	float foam_detail = foam_edge * (0.4 + foam_noise * 0.35 + foam_noise2 * 0.25);
 	foam_detail = smoothstep(0.12, 0.55, foam_detail);
 
-	// Gentle foam in deeper areas where waves crest
-	float deep_foam = smoothstep(foam_width, foam_width * 2.0, depth_diff)
-	               * smoothstep(0.55, 0.75, combined) * 0.15;
+	// Minimal foam in deeper areas — only where waves peak strongly
+	float deep_foam = smoothstep(foam_width, foam_width * 3.0, depth_diff)
+	               * smoothstep(0.65, 0.80, combined) * 0.04;
 
 	float total_foam = clamp(foam_detail + deep_foam, 0.0, 1.0);
 	vec4 final_col = mix(water_col, foam_color, total_foam);

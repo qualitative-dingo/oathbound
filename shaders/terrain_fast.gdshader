@@ -47,41 +47,41 @@ void fragment() {
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float slope = 1.0 - abs(world_normal.y);
 	float slope_noise = (vnoise_fast(wpos.xz * 0.12 + vec2(53.0, 97.0)) - 0.5) * 0.08;
-	float cliff_w = smoothstep(cliff_start, cliff_start + 0.18, slope + slope_noise);
+	// Two-zone: grass → rock, matching main shader
+	float rock_w = smoothstep(slope_start, slope_start + 0.08, slope + slope_noise);
 
 	float pm = smoothstep(0.2, 0.7, v_path_mask);
 	float bm = smoothstep(0.1, 0.6, v_river_bank);
 
 	vec3 grass_col = vec3(0.10, 0.28, 0.07) * tint_color;
 
-	// Simplified patchy rock for distant terrain — triplanar sampling
-	vec3 blend_r = abs(world_normal);
-	blend_r = blend_r * blend_r;
-	blend_r /= (blend_r.x + blend_r.y + blend_r.z + 0.0001);
+	// Alternating dark/light rock pattern for distant terrain
+	vec3 bl = abs(world_normal);
+	bl = bl * bl * bl * bl;
+	bl /= (bl.x + bl.y + bl.z + 0.0001);
 
-	// Patchy light/dark blobs
-	float n_xz = vnoise_fast(wpos.xz * 0.03 + vec2(90.0, 260.0));
-	float n_xy = vnoise_fast(wpos.xy * 0.03 + vec2(90.0, 260.0));
-	float n_zy = vnoise_fast(wpos.zy * 0.03 + vec2(90.0, 260.0));
-	float patch = n_xz * blend_r.y + n_xy * blend_r.z + n_zy * blend_r.x;
-	float patch_mask = smoothstep(0.35, 0.65, patch);
+	vec3 rock_base_c = vec3(0.16, 0.17, 0.20);
+	vec3 rock_hi_c = vec3(0.50, 0.49, 0.46);
 
-	// Vertical flow streaks on cliffs
-	float flow_xy = vnoise_fast(wpos.xy * vec2(0.15, 0.06) + vec2(111.0, 222.0));
-	float flow_zy = vnoise_fast(wpos.zy * vec2(0.15, 0.06) + vec2(444.0, 555.0));
-	float flow = flow_xy * blend_r.z + flow_zy * blend_r.x + 0.5 * blend_r.y;
+	// Domain-warped pattern
+	float warp_x = vnoise_fast(wpos.zy * 0.006 + vec2(430.0, 170.0));
+	float warp_y = vnoise_fast(wpos.xz * 0.006 + vec2(503.0, 319.0));
+	vec3 warped_r = wpos + vec3(warp_x, warp_y, warp_x * 0.7 + warp_y * 0.3) * 40.0;
 
-	vec3 rock_dark = vec3(0.15, 0.14, 0.13);
-	vec3 rock_light = vec3(0.58, 0.56, 0.53);
-	vec3 rock_col = mix(rock_dark, rock_light, patch_mask);
-	rock_col = mix(rock_col, rock_dark * 0.85, (1.0 - flow) * 0.3 * cliff_w);
+	float pat_x = vnoise_fast(warped_r.zy * 0.012 + vec2(90.0, 260.0));
+	float pat_y = vnoise_fast(warped_r.xz * 0.012 + vec2(163.0, 409.0));
+	float pat_z = vnoise_fast(warped_r.xy * 0.012 + vec2(401.0, 317.0));
+	float pattern = pat_x * bl.x + pat_y * bl.y + pat_z * bl.z;
 
-	float grain = vnoise_fast(wpos.xz * 1.5 + vec2(200.0, 400.0));
-	rock_col *= 0.88 + grain * 0.18;
+	float mask = smoothstep(0.38, 0.58, pattern);
+	vec3 rock_col = mix(rock_base_c, rock_hi_c, mask);
 
-	vec3 ground = mix(grass_col, rock_col, cliff_w) * v_brightness;
-	ground = mix(ground, bank_color, bm);
-	ALBEDO = mix(ground, path_color, pm);
-	float strata_rough = 0.78 + grain * 0.15;
-	ROUGHNESS = mix(mix(mix(0.85, strata_rough, cliff_w), 0.95, bm), 0.7, pm);
+	// Fine grain
+	float grain = vnoise_fast(wpos.xz * 0.15 + vec2(200.0, 400.0));
+	rock_col *= 0.92 + grain * 0.16;
+
+	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * v_brightness;
+	ground = mix(ground, bank_color, bm * (1.0 - rock_w));
+	ALBEDO = mix(ground, path_color, pm * (1.0 - rock_w));
+	ROUGHNESS = mix(mix(0.85, 0.85, rock_w), 0.7, pm * (1.0 - rock_w));
 }
