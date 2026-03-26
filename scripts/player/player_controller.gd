@@ -1449,13 +1449,22 @@ func _apply_gravity(delta: float) -> void:
 	var feet_y := global_position.y
 	var submersion := water_y - feet_y
 
-	if submersion > 0.2 and (not grounded or submersion > 0.6):
+	var terrain_y := feet_y
+	var wg := _find_world_generator()
+	if wg:
+		terrain_y = wg.get_height_at_scene(global_position.x, global_position.z)
+	var water_depth := water_y - terrain_y
+
+	const SWIM_DEPTH := 0.8
+	var deep_enough := water_depth > SWIM_DEPTH
+
+	if deep_enough and submersion > 0.2:
 		_is_swimming = true
 		var buoy := submersion * BUOYANCY_FORCE
 		velocity.y += buoy * delta
 		velocity.y -= velocity.y * WATER_DAMPING * delta
 		velocity.y = clampf(velocity.y, -6.0, 4.0)
-	elif submersion > -0.3 and velocity.y < 0.0 and not grounded:
+	elif deep_enough and submersion > -0.3 and velocity.y < 0.0 and not grounded:
 		_is_swimming = true
 		velocity.y *= 1.0 - 3.0 * delta
 	else:
