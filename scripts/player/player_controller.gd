@@ -1285,6 +1285,7 @@ func _physics_process(delta: float) -> void:
 	_tick_swim_visual(delta)
 	_tick_3d_model(delta)
 	_tick_arrows(delta)
+	_tick_remote_arrows(delta)
 	_tick_footstep_sfx(delta)
 	_tick_gallop_sfx(delta)
 	_update_floating_bars(delta)
@@ -2718,7 +2719,7 @@ func _make_aura_mat(col: Color, alpha: float, energy: float) -> StandardMaterial
 	return m
 
 
-func _spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float, tension_pct: float = 1.0, bow_stars: int = 0, quality_color: Variant = null) -> void:
+func _spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float, tension_pct: float = 1.0, bow_stars: int = 0, quality_color: Variant = null, _remote: bool = false) -> void:
 	var arrow := Node3D.new()
 	arrow.name = "Arrow"
 
@@ -2847,15 +2848,26 @@ func _spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float
 		arrow.add_child(trail)
 
 	arrow.set_meta("velocity", vel)
-	arrow.set_meta("damage", damage)
-	arrow.set_meta("knockback", knockback)
+	if not _remote:
+		arrow.set_meta("damage", damage)
+		arrow.set_meta("knockback", knockback)
 	arrow.set_meta("tension", tension_pct)
 	arrow.set_meta("lifetime", 0.0)
 	arrow.set_meta("hit", false)
-	arrow.add_to_group(&"arrows")
+	arrow.add_to_group(&"remote_arrows" if _remote else &"arrows")
 
 	get_tree().current_scene.add_child(arrow)
 	arrow.global_position = origin
+
+	if not _remote and NetworkManager.is_connected_to_game():
+		_rpc_spawn_remote_arrow.rpc(origin, vel, tension_pct, bow_stars)
+
+
+@rpc("any_peer", "reliable")
+func _rpc_spawn_remote_arrow(origin: Vector3, vel: Vector3, tension_pct: float, bow_stars: int) -> void:
+	if is_multiplayer_authority():
+		return
+	_spawn_arrow(origin, vel, 0.0, 0.0, tension_pct, bow_stars, null, true)
 
 
 const ARROW_GRAVITY := 9.8
@@ -2913,7 +2925,7 @@ func _tick_arrows(delta: float) -> void:
 			var speed := vel.length()
 			if speed > 1.0:
 				var fwd := vel / speed
-				var best_enemy: Node3D = null
+				var best_target: Node3D = null
 				var best_dot := HEATSEEK_CONE_DOT
 				for e: Node in all_enemies:
 					var enemy := e as Node3D
@@ -2928,9 +2940,24 @@ func _tick_arrows(delta: float) -> void:
 					var d := fwd.dot(to_e / dist)
 					if d > best_dot:
 						best_dot = d
-						best_enemy = enemy
-				if best_enemy:
-					var desired := ((best_enemy.global_position + Vector3.UP * 0.8) - arrow.global_position).normalized()
+						best_target = enemy
+				if NetworkManager.pvp_enabled:
+					for p: Node in get_tree().get_nodes_in_group(&"player"):
+						var player := p as Node3D
+						if not player or not is_instance_valid(player) or player == self:
+							continue
+						if player.get("current_health") != null and float(player.current_health) <= 0.0:
+							continue
+						var to_p := (player.global_position + Vector3.UP * 0.9) - arrow.global_position
+						var dist := to_p.length()
+						if dist > HEATSEEK_RADIUS or dist < 0.5:
+							continue
+						var d := fwd.dot(to_p / dist)
+						if d > best_dot:
+							best_dot = d
+							best_target = player
+				if best_target:
+					var desired := ((best_target.global_position + Vector3.UP * 0.8) - arrow.global_position).normalized()
 					vel = (fwd.lerp(desired, HEATSEEK_TURN_SPEED * delta)).normalized() * speed
 
 		arrow.set_meta("velocity", vel)
@@ -3142,6 +3169,38 @@ func _stick_arrow(arrow: Node3D) -> void:
 	var tween := arrow.create_tween()
 	tween.tween_interval(4.0)
 	tween.tween_callback(arrow.queue_free)
+
+
+func _tick_remote_arrows(delta: float) -> void:
+	var arrow_nodes := get_tree().get_nodes_in_group(&"remote_arrows")
+	if arrow_nodes.is_empty():
+		return
+	var arrow_wg := _find_world_generator()
+	for node: Node in arrow_nodes:
+		var arrow := node as Node3D
+		if not arrow or arrow.get_meta("hit", false):
+			continue
+		var vel: Vector3 = arrow.get_meta("velocity") as Vector3
+		var t_pct: float = arrow.get_meta("tension", 1.0) as float
+		var gravity := lerpf(ARROW_GRAVITY * 2.0, ARROW_GRAVITY * 0.4, t_pct)
+		vel.y -= gravity * delta
+		arrow.set_meta("velocity", vel)
+		arrow.global_position += vel * delta
+		if vel.length_squared() > 0.5:
+			arrow.look_at(arrow.global_position + vel.normalized(), Vector3.UP)
+		var lifetime: float = arrow.get_meta("lifetime") as float + delta
+		arrow.set_meta("lifetime", lifetime)
+		var terrain_y := 0.0
+		if arrow_wg:
+			terrain_y = arrow_wg.get_height_at_scene(arrow.global_position.x, arrow.global_position.z)
+		if arrow.global_position.y < terrain_y + 0.1:
+			arrow.global_position.y = terrain_y + 0.05
+			arrow.set_meta("hit", true)
+			_stick_arrow(arrow)
+			continue
+		if lifetime > ARROW_MAX_LIFETIME:
+			arrow.queue_free()
+			continue
 
 
 func _update_bow_draw_sprite() -> void:
@@ -5100,6 +5159,7 @@ func _update_torch_light() -> void:
 		_torch_light.omni_range = 48.0
 		_torch_light.omni_attenuation = 1.2
 		_torch_light.shadow_enabled = true
+		_torch_light.light_volumetric_fog_energy = 3.0
 		_torch_light.position = Vector3(0.0, 1.8, 0.0)
 		add_child(_torch_light)
 	elif not has_torch and _torch_light:
@@ -5415,49 +5475,61 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	# Roofing  - Building tab (wood)
 	{"id": &"thatch_roof_45", "name": "Thatch Roof 45\u00b0", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 6}],
-	 "mesh": "roof_45", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 2.0, 2.0),
-	 "model": "res://models/building/thatch_roof_45.glb"},
+	 "mesh": "roof_45", "color": Color(0.55, 0.45, 0.25), "size": Vector3(3.6, 3.6, 3.6)},
 	{"id": &"thatch_roof_26", "name": "Thatch Roof 26\u00b0", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 4}],
-	 "mesh": "roof_26", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 1.0, 2.0),
-	 "model": "res://models/building/thatch_roof_26.glb"},
+	 "mesh": "roof_26", "color": Color(0.55, 0.45, 0.25), "size": Vector3(3.6, 1.76, 3.6)},
 	{"id": &"thatch_roof_45_ocorner", "name": "Thatch Outer Corner 45\u00b0", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 6}],
-	 "mesh": "roof_45_ocorner", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 2.0, 2.0)},
+	 "mesh": "roof_45_ocorner", "color": Color(0.55, 0.45, 0.25), "size": Vector3(3.6, 3.6, 3.6)},
 	{"id": &"thatch_roof_26_ocorner", "name": "Thatch Outer Corner 26\u00b0", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 4}],
-	 "mesh": "roof_26_ocorner", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 1.0, 2.0)},
+	 "mesh": "roof_26_ocorner", "color": Color(0.55, 0.45, 0.25), "size": Vector3(3.6, 1.76, 3.6)},
 	{"id": &"thatch_roof_45_icorner", "name": "Thatch Inner Corner 45\u00b0", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 6}],
-	 "mesh": "roof_45_icorner", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 2.0, 2.0)},
+	 "mesh": "roof_45_icorner", "color": Color(0.55, 0.45, 0.25), "size": Vector3(3.6, 3.6, 3.6)},
 	{"id": &"thatch_roof_26_icorner", "name": "Thatch Inner Corner 26\u00b0", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 4}],
-	 "mesh": "roof_26_icorner", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 1.0, 2.0)},
+	 "mesh": "roof_26_icorner", "color": Color(0.55, 0.45, 0.25), "size": Vector3(3.6, 1.76, 3.6)},
 	{"id": &"thatch_roof_ridge", "name": "Thatch Ridge Cap", "tab": "Building",
 	 "cost": [{"item": &"wood", "amount": 2}],
-	 "mesh": "roof_ridge", "color": Color(0.55, 0.45, 0.25), "size": Vector3(2.0, 0.15, 0.4)},
+	 "mesh": "roof_ridge", "color": Color(0.55, 0.45, 0.25), "size": Vector3(3.6, 0.25, 0.5)},
+	# Gable walls - Building tab (wood)
+	{"id": &"wood_gable_45", "name": "Wood Gable 45\u00b0", "tab": "Building",
+	 "cost": [{"item": &"wood", "amount": 4}],
+	 "mesh": "gable_45", "color": Color(0.4, 0.28, 0.12), "size": Vector3(3.6, 3.6, 0.20)},
+	{"id": &"wood_gable_26", "name": "Wood Gable 26\u00b0", "tab": "Building",
+	 "cost": [{"item": &"wood", "amount": 3}],
+	 "mesh": "gable_26", "color": Color(0.4, 0.28, 0.12), "size": Vector3(3.6, 1.76, 0.20)},
 	# Roofing  - Heavy Build tab (stone)
 	{"id": &"slate_roof_45", "name": "Slate Roof 45\u00b0", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 6}],
-	 "mesh": "roof_45", "color": Color(0.35, 0.35, 0.4), "size": Vector3(2.0, 2.0, 2.0)},
+	 "mesh": "roof_45", "color": Color(0.35, 0.35, 0.4), "size": Vector3(3.6, 3.6, 3.6)},
 	{"id": &"slate_roof_26", "name": "Slate Roof 26\u00b0", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 4}],
-	 "mesh": "roof_26", "color": Color(0.35, 0.35, 0.4), "size": Vector3(2.0, 1.0, 2.0)},
+	 "mesh": "roof_26", "color": Color(0.35, 0.35, 0.4), "size": Vector3(3.6, 1.76, 3.6)},
 	{"id": &"slate_roof_45_ocorner", "name": "Slate Outer Corner 45\u00b0", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 6}],
-	 "mesh": "roof_45_ocorner", "color": Color(0.35, 0.35, 0.4), "size": Vector3(2.0, 2.0, 2.0)},
+	 "mesh": "roof_45_ocorner", "color": Color(0.35, 0.35, 0.4), "size": Vector3(3.6, 3.6, 3.6)},
 	{"id": &"slate_roof_26_ocorner", "name": "Slate Outer Corner 26\u00b0", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 4}],
-	 "mesh": "roof_26_ocorner", "color": Color(0.35, 0.35, 0.4), "size": Vector3(2.0, 1.0, 2.0)},
+	 "mesh": "roof_26_ocorner", "color": Color(0.35, 0.35, 0.4), "size": Vector3(3.6, 1.76, 3.6)},
 	{"id": &"slate_roof_45_icorner", "name": "Slate Inner Corner 45\u00b0", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 6}],
-	 "mesh": "roof_45_icorner", "color": Color(0.35, 0.35, 0.4), "size": Vector3(2.0, 2.0, 2.0)},
+	 "mesh": "roof_45_icorner", "color": Color(0.35, 0.35, 0.4), "size": Vector3(3.6, 3.6, 3.6)},
 	{"id": &"slate_roof_26_icorner", "name": "Slate Inner Corner 26\u00b0", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 4}],
-	 "mesh": "roof_26_icorner", "color": Color(0.35, 0.35, 0.4), "size": Vector3(2.0, 1.0, 2.0)},
+	 "mesh": "roof_26_icorner", "color": Color(0.35, 0.35, 0.4), "size": Vector3(3.6, 1.76, 3.6)},
 	{"id": &"slate_roof_ridge", "name": "Slate Ridge Cap", "tab": "Heavy Build",
 	 "cost": [{"item": &"stone", "amount": 2}],
-	 "mesh": "roof_ridge", "color": Color(0.35, 0.35, 0.4), "size": Vector3(2.0, 0.15, 0.4)},
+	 "mesh": "roof_ridge", "color": Color(0.35, 0.35, 0.4), "size": Vector3(3.6, 0.25, 0.5)},
+	# Gable walls - Heavy Build tab (stone)
+	{"id": &"stone_gable_45", "name": "Stone Gable 45\u00b0", "tab": "Heavy Build",
+	 "cost": [{"item": &"stone", "amount": 4}],
+	 "mesh": "gable_45", "color": Color(0.4, 0.4, 0.42), "size": Vector3(3.6, 3.6, 0.20)},
+	{"id": &"stone_gable_26", "name": "Stone Gable 26\u00b0", "tab": "Heavy Build",
+	 "cost": [{"item": &"stone", "amount": 3}],
+	 "mesh": "gable_26", "color": Color(0.4, 0.4, 0.42), "size": Vector3(3.6, 1.76, 0.20)},
 	# Furniture
 	{"id": &"chest", "name": "Chest", "tab": "Furniture",
 	 "cost": [{"item": &"wood", "amount": 10}],
@@ -6352,95 +6424,130 @@ func _make_ghost_material(build_id: StringName, fallback_color: Color) -> Standa
 	return mat
 
 
-# -- Roof wedge mesh ----------------------------------------------------------
+# -- Roof mesh helpers --------------------------------------------------------
+
+const ROOF_THICKNESS := 0.12
+const ROOF_OVERHANG := 0.25
+
+static func _add_quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3,
+		uv_a := Vector2(0, 0), uv_b := Vector2(1, 0), uv_c := Vector2(1, 1), uv_d := Vector2(0, 1)) -> void:
+	st.set_uv(uv_a); st.add_vertex(a)
+	st.set_uv(uv_b); st.add_vertex(b)
+	st.set_uv(uv_c); st.add_vertex(c)
+	st.set_uv(uv_a); st.add_vertex(a)
+	st.set_uv(uv_c); st.add_vertex(c)
+	st.set_uv(uv_d); st.add_vertex(d)
+
+static func _add_tri(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3,
+		uv_a := Vector2(0, 0), uv_b := Vector2(1, 0), uv_c := Vector2(0.5, 1)) -> void:
+	st.set_uv(uv_a); st.add_vertex(a)
+	st.set_uv(uv_b); st.add_vertex(b)
+	st.set_uv(uv_c); st.add_vertex(c)
+
+# -- Main roof slope with thickness, overhang, and eave trim -----------------
 static func _build_roof_mesh(sz: Vector3, rise: float) -> ArrayMesh:
 	var hw := sz.x * 0.5
 	var hd := sz.z * 0.5
+	var oh := ROOF_OVERHANG
+	var th := ROOF_THICKNESS
+	var slope_len := sqrt(sz.z * sz.z + rise * rise)
+	var eave_drop := oh * (rise / sz.z)
+
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
-	var v0 := Vector3(-hw, 0.0, -hd)
-	var v1 := Vector3( hw, 0.0, -hd)
-	var v2 := Vector3( hw, 0.0,  hd)
-	var v3 := Vector3(-hw, 0.0,  hd)
-	var v4 := Vector3(-hw, rise,  hd)
-	var v5 := Vector3( hw, rise,  hd)
+	# Outer (top) surface with overhang past the eave
+	var ot0 := Vector3(-hw - oh, -eave_drop, -hd - oh)
+	var ot1 := Vector3( hw + oh, -eave_drop, -hd - oh)
+	var ot2 := Vector3( hw + oh, rise,  hd)
+	var ot3 := Vector3(-hw - oh, rise,  hd)
 
-	# Slope face (visible from above)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(v0)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(v1)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(v5)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(v0)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(v5)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(v4)
+	# Inner (underside) surface
+	var ib0 := Vector3(-hw, 0.0, -hd)
+	var ib1 := Vector3( hw, 0.0, -hd)
+	var ib2 := Vector3( hw, rise - th,  hd)
+	var ib3 := Vector3(-hw, rise - th,  hd)
 
-	# Bottom face
-	st.set_uv(Vector2(0, 0)); st.add_vertex(v3)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(v2)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(v1)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(v3)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(v1)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(v0)
+	var u_w := (hw * 2.0 + oh * 2.0) / sz.x
+	var u_sl := slope_len / sz.z
 
-	# Back face (vertical at +Z)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(v3)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(v4)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(v5)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(v3)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(v5)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(v2)
+	# Top slope face
+	_add_quad(st, ot0, ot1, ot2, ot3,
+		Vector2(0, 0), Vector2(u_w, 0), Vector2(u_w, u_sl), Vector2(0, u_sl))
 
-	# Left triangle
-	st.set_uv(Vector2(0, 1)); st.add_vertex(v0)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(v4)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(v3)
+	# Bottom (underside) face
+	_add_quad(st, ib3, ib2, ib1, ib0)
 
-	# Right triangle
-	st.set_uv(Vector2(1, 1)); st.add_vertex(v1)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(v2)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(v5)
+	# Eave edge strip (front, connecting outer top to inner bottom)
+	_add_quad(st, ot1, ot0, ib0, ib1,
+		Vector2(0, 0), Vector2(1, 0), Vector2(1, 0.1), Vector2(0, 0.1))
+
+	# Ridge edge strip (back)
+	_add_quad(st, ot3, ot2, ib2, ib3,
+		Vector2(0, 0), Vector2(1, 0), Vector2(1, 0.1), Vector2(0, 0.1))
+
+	# Left gable end
+	_add_tri(st, ot0, ot3, ib3, Vector2(0, 1), Vector2(0, 0), Vector2(0.1, 0))
+	_add_tri(st, ot0, ib3, ib0, Vector2(0, 1), Vector2(0.1, 0), Vector2(0.1, 1))
+
+	# Right gable end
+	_add_tri(st, ot2, ot1, ib1, Vector2(0, 0), Vector2(0, 1), Vector2(0.1, 1))
+	_add_tri(st, ot2, ib1, ib2, Vector2(0, 0), Vector2(0.1, 1), Vector2(0.1, 0))
+
+	# Eave trim beam along the bottom edge
+	var tb := 0.08
+	var eb0 := Vector3(-hw - oh, -eave_drop - tb, -hd - oh)
+	var eb1 := Vector3( hw + oh, -eave_drop - tb, -hd - oh)
+	_add_quad(st, ot0, ot1, eb1, eb0,
+		Vector2(0, 0), Vector2(u_w, 0), Vector2(u_w, 0.05), Vector2(0, 0.05))
+	_add_quad(st, eb1, eb0, ib0, ib1,
+		Vector2(0, 0), Vector2(u_w, 0), Vector2(u_w, 0.05), Vector2(0, 0.05))
 
 	st.generate_normals()
 	return st.commit()
 
 
+# -- Outer corner (hip): two slope faces meeting at a peak -------------------
 static func _build_roof_ocorner_mesh(sz: Vector3, rise: float) -> ArrayMesh:
 	var hw := sz.x * 0.5
 	var hd := sz.z * 0.5
+	var th := ROOF_THICKNESS
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
 	var peak := Vector3(hw, rise, hd)
 	var bl := Vector3(-hw, 0.0, -hd)
 	var br := Vector3( hw, 0.0, -hd)
 	var fl := Vector3(-hw, 0.0,  hd)
 	var fr := Vector3( hw, 0.0,  hd)
-	# Front slope (-Z face, from front-left and front-right up to peak)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(bl)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(br)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(peak)
-	# Right slope (+X face, from front-right and back-right up to peak)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(br)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(fr)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(peak)
-	# Back wall (+Z face)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(fr)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(peak)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(fl)
-	# Left wall (-X face)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(fl)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(peak)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(bl)
+
+	# Outer top faces
+	_add_tri(st, bl, br, peak, Vector2(0, 1), Vector2(1, 1), Vector2(1, 0))
+	_add_tri(st, br, fr, peak, Vector2(0, 1), Vector2(1, 1), Vector2(1, 0))
+
+	# Back wall (+Z)
+	_add_tri(st, fr, fl, peak, Vector2(0, 0), Vector2(1, 0), Vector2(0.5, 1))
+
+	# Left wall (-X)
+	_add_tri(st, fl, bl, peak, Vector2(0, 0), Vector2(1, 0), Vector2(0.5, 1))
+
+	# Inner underside (offset inward by thickness)
+	var peak_i := Vector3(hw, rise - th, hd)
+	var bl_i := Vector3(-hw + th, th, -hd + th)
+	var br_i := Vector3( hw - th, th, -hd + th)
+	var fr_i := Vector3( hw - th, th,  hd - th)
+
+	_add_tri(st, peak_i, br_i, bl_i, Vector2(1, 0), Vector2(1, 1), Vector2(0, 1))
+	_add_tri(st, peak_i, fr_i, br_i, Vector2(1, 0), Vector2(1, 1), Vector2(0, 1))
+
 	# Bottom face
-	st.set_uv(Vector2(0, 0)); st.add_vertex(fl)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(fr)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(br)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(fl)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(br)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(bl)
+	_add_quad(st, fl, fr, br, bl)
+
 	st.generate_normals()
 	return st.commit()
 
 
+# -- Inner corner (valley): three ridge edges meeting at a low point ---------
 static func _build_roof_icorner_mesh(sz: Vector3, rise: float) -> ArrayMesh:
 	var hw := sz.x * 0.5
 	var hd := sz.z * 0.5
@@ -6466,54 +6573,81 @@ static func _build_roof_icorner_mesh(sz: Vector3, rise: float) -> ArrayMesh:
 	st.set_uv(Vector2(0, 1)); st.add_vertex(valley)
 	st.set_uv(Vector2(1, 1)); st.add_vertex(br)
 	# Back wall (+Z face, vertical)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(tl)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(tr)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(fl)
+	_add_tri(st, tl, tr, fl, Vector2(0, 0), Vector2(1, 0), Vector2(0, 1))
 	# Right wall (+X face, vertical)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(tr)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(tb)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(br)
+	_add_tri(st, tr, tb, br, Vector2(0, 0), Vector2(1, 0), Vector2(1, 1))
 	# Top flat between ridges
-	st.set_uv(Vector2(0, 0)); st.add_vertex(tl)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(tr)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(tb)
+	_add_tri(st, tl, tr, tb)
 	# Bottom face
-	st.set_uv(Vector2(0, 0)); st.add_vertex(fl)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(br)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(bl)
+	_add_tri(st, fl, br, bl)
 	st.generate_normals()
 	return st.commit()
 
 
+# -- Ridge cap: solid beam along the peak ------------------------------------
 static func _build_roof_ridge_mesh(sz: Vector3) -> ArrayMesh:
 	var hw := sz.x * 0.5
 	var hh := sz.y * 0.5
 	var hd := sz.z * 0.5
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var v0 := Vector3(-hw, -hh, -hd)
-	var v1 := Vector3( hw, -hh, -hd)
-	var v2 := Vector3( hw,  hh, -hd)
-	var v3 := Vector3(-hw,  hh, -hd)
-	var v4 := Vector3(-hw, -hh,  hd)
-	var v5 := Vector3( hw, -hh,  hd)
-	var v6 := Vector3( hw,  hh,  hd)
-	var v7 := Vector3(-hw,  hh,  hd)
-	var faces := [
-		[v3, v2, v1, v0],
-		[v4, v5, v6, v7],
-		[v0, v1, v5, v4],
-		[v2, v3, v7, v6],
-		[v3, v0, v4, v7],
-		[v1, v2, v6, v5],
+	var v := [
+		Vector3(-hw, -hh, -hd), Vector3( hw, -hh, -hd),
+		Vector3( hw,  hh, -hd), Vector3(-hw,  hh, -hd),
+		Vector3(-hw, -hh,  hd), Vector3( hw, -hh,  hd),
+		Vector3( hw,  hh,  hd), Vector3(-hw,  hh,  hd),
 	]
+	var faces := [
+		[v[3], v[2], v[1], v[0]],
+		[v[4], v[5], v[6], v[7]],
+		[v[0], v[1], v[5], v[4]],
+		[v[2], v[3], v[7], v[6]],
+		[v[3], v[0], v[4], v[7]],
+		[v[1], v[2], v[6], v[5]],
+	]
+	var u_len := hw * 2.0 / maxf(sz.z, 0.01)
 	for f in faces:
-		st.set_uv(Vector2(0, 0)); st.add_vertex(f[0])
-		st.set_uv(Vector2(1, 0)); st.add_vertex(f[1])
-		st.set_uv(Vector2(1, 1)); st.add_vertex(f[2])
-		st.set_uv(Vector2(0, 0)); st.add_vertex(f[0])
-		st.set_uv(Vector2(1, 1)); st.add_vertex(f[2])
-		st.set_uv(Vector2(0, 1)); st.add_vertex(f[3])
+		_add_quad(st, f[0], f[1], f[2], f[3],
+			Vector2(0, 0), Vector2(u_len, 0), Vector2(u_len, 1), Vector2(0, 1))
+	st.generate_normals()
+	return st.commit()
+
+
+# -- Gable wall: triangular wall filling gap between wall top and roof -------
+static func _build_gable_mesh(sz: Vector3) -> ArrayMesh:
+	var hw := sz.x * 0.5
+	var hd := sz.z * 0.5
+	var rise := sz.y
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	# Front face
+	_add_tri(st,
+		Vector3(-hw, 0.0, -hd), Vector3(hw, 0.0, -hd), Vector3(0.0, rise, -hd),
+		Vector2(0, 1), Vector2(1, 1), Vector2(0.5, 0))
+
+	# Back face
+	_add_tri(st,
+		Vector3(hw, 0.0, hd), Vector3(-hw, 0.0, hd), Vector3(0.0, rise, hd),
+		Vector2(0, 1), Vector2(1, 1), Vector2(0.5, 0))
+
+	# Left slope
+	_add_quad(st,
+		Vector3(-hw, 0.0, -hd), Vector3(0.0, rise, -hd),
+		Vector3(0.0, rise,  hd), Vector3(-hw, 0.0,  hd),
+		Vector2(0, 1), Vector2(0.5, 0), Vector2(0.5, 0), Vector2(0, 1))
+
+	# Right slope
+	_add_quad(st,
+		Vector3(0.0, rise, -hd), Vector3(hw, 0.0, -hd),
+		Vector3(hw, 0.0,  hd), Vector3(0.0, rise,  hd),
+		Vector2(0.5, 0), Vector2(1, 1), Vector2(1, 1), Vector2(0.5, 0))
+
+	# Bottom face
+	_add_quad(st,
+		Vector3(-hw, 0.0, hd), Vector3(hw, 0.0, hd),
+		Vector3(hw, 0.0, -hd), Vector3(-hw, 0.0, -hd))
+
 	st.generate_normals()
 	return st.commit()
 
@@ -6945,6 +7079,7 @@ func _add_torch_light(structure: Node3D, offset: Vector3) -> void:
 	light.light_energy = 2.0
 	light.omni_range = 7.0
 	light.shadow_enabled = true
+	light.light_volumetric_fog_energy = 2.0
 	light.position = offset
 	structure.add_child(light)
 
