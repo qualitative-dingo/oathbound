@@ -1852,8 +1852,10 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		var kb_change := pc.velocity - pre_vel
 		pc.velocity = pre_vel + kb_change * (1.0 - affix_val(&"stalwart"))
 
-	if affixes.has(&"thorns") and _source and _source.has_method("take_damage") and not _source.is_in_group(&"player"):
+	if affixes.has(&"thorns") and _source and _source.has_method("take_damage") and not pc._is_reflecting_thorns:
+		pc._is_reflecting_thorns = true
 		_source.take_damage(amount * affix_val(&"thorns"), pc)
+		pc._is_reflecting_thorns = false
 
 	if affixes.has(&"second_wind") and pc._second_wind_cooldown <= 0.0:
 		if pc.current_health > 0.0 and pc.current_health / pc.max_health < 0.20:

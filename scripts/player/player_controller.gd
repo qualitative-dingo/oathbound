@@ -51,6 +51,7 @@ var _health_regen_timer: float = 0.0
 var _is_sprinting: bool = false
 var _is_crouching: bool = false
 var _is_blocking: bool = false
+var _is_reflecting_thorns: bool = false
 var _double_jump_used: bool = false
 var _auto_run: bool = false
 var _walk_mode: bool = false
@@ -10251,8 +10252,10 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		var kb_change := velocity - pre_vel
 		velocity = pre_vel + kb_change * (1.0 - _affix_val(&"stalwart"))
 
-	if affixes.has(&"thorns") and _source and _source.has_method("take_damage"):
+	if affixes.has(&"thorns") and _source and _source.has_method("take_damage") and not _is_reflecting_thorns:
+		_is_reflecting_thorns = true
 		_source.take_damage(amount * _affix_val(&"thorns"), self)
+		_is_reflecting_thorns = false
 
 	if affixes.has(&"second_wind") and _second_wind_cooldown <= 0.0:
 		if current_health > 0.0 and current_health / max_health < 0.20:
