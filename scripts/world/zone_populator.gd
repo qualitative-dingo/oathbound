@@ -1608,10 +1608,14 @@ static func _scatter_flowers(
 					or absf(_fhc - _hg_sample(wx, wz - 2.0)) > 1.5:
 				continue
 			if water_only:
+				if ground_y > _WATER_LEVEL + 3.0:
+					continue
 				var near_water := false
-				for probe_r in [6.0, 12.0, 18.0]:
-					for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
-						if _hg_sample(wx + d.x * probe_r, wz + d.y * probe_r) < _WATER_LEVEL + 0.3:
+				for probe_r in [2.0, 4.0, 6.0]:
+					for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
+							Vector2(0.707, 0.707), Vector2(-0.707, 0.707),
+							Vector2(0.707, -0.707), Vector2(-0.707, -0.707)]:
+						if _hg_sample(wx + d.x * probe_r, wz + d.y * probe_r) < _WATER_LEVEL + 0.1:
 							near_water = true
 							break
 					if near_water:

@@ -5963,7 +5963,7 @@ func _place_build() -> void:
 		structure.add_to_group(&"doors")
 		structure.set_meta("door_open", false)
 
-	var _is_roof := mesh_type.begins_with("roof")
+	var _is_roof := mesh_type.begins_with("roof") or mesh_type.begins_with("gable")
 
 	if not _used_glb:
 		if _deferred_campfire:
@@ -5979,6 +5979,8 @@ func _place_build() -> void:
 				mesh = _build_roof_icorner_mesh(sz, sz.y)
 			elif mesh_type == "roof_ridge":
 				mesh = _build_roof_ridge_mesh(sz)
+			elif mesh_type in ["gable_45", "gable_26"]:
+				mesh = _build_gable_mesh(sz)
 			elif mesh_type == "stair":
 				mesh = _build_stair_mesh(sz)
 			elif mesh_type == "cylinder":
@@ -6024,10 +6026,29 @@ func _place_build() -> void:
 			box_col.size = Vector3(0.2, 0.6, 0.2)
 			col = box_col
 		elif _is_roof:
-			var box_col := BoxShape3D.new()
-			box_col.size = Vector3(sz.x, sz.y * 0.5, sz.z)
-			col = box_col
-			col_shape.position.y = sz.y * 0.25
+			var cvx := ConvexPolygonShape3D.new()
+			if mesh_type in ["roof_45", "roof_26"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["gable_45", "gable_26"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(0, sz.y, -hd2), Vector3(0, sz.y, hd2)])
+			else:
+				var box_col := BoxShape3D.new()
+				box_col.size = Vector3(sz.x, sz.y * 0.5, sz.z)
+				col = box_col
+				col_shape.position.y = sz.y * 0.25
+			if cvx.points.size() > 0:
+				col = cvx
+			col_shape.position.y = 0.0
 		else:
 			var box_col := BoxShape3D.new()
 			box_col.size = sz
@@ -6107,7 +6128,7 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 	structure.add_to_group(&"structures")
 	structure.set_meta("build_id", build_id)
 
-	var is_roof := mesh_type.begins_with("roof")
+	var is_roof := mesh_type.begins_with("roof") or mesh_type.begins_with("gable")
 
 	var rb_model_path: String = recipe.get("model", "") as String
 	var rb_used_glb := false
@@ -6136,6 +6157,8 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 				mesh = _build_roof_icorner_mesh(sz, sz.y)
 			elif mesh_type == "roof_ridge":
 				mesh = _build_roof_ridge_mesh(sz)
+			elif mesh_type in ["gable_45", "gable_26"]:
+				mesh = _build_gable_mesh(sz)
 			elif mesh_type == "stair":
 				mesh = _build_stair_mesh(sz)
 			elif mesh_type == "cylinder":
@@ -6189,10 +6212,29 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 			box_col.size = Vector3(0.2, 0.6, 0.2)
 			col = box_col
 		elif is_roof:
-			var box_col := BoxShape3D.new()
-			box_col.size = Vector3(sz.x, sz.y * 0.5, sz.z)
-			col = box_col
-			col_shape.position.y = sz.y * 0.25
+			var cvx := ConvexPolygonShape3D.new()
+			if mesh_type in ["roof_45", "roof_26"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["gable_45", "gable_26"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(0, sz.y, -hd2), Vector3(0, sz.y, hd2)])
+			else:
+				var box_col := BoxShape3D.new()
+				box_col.size = Vector3(sz.x, sz.y * 0.5, sz.z)
+				col = box_col
+				col_shape.position.y = sz.y * 0.25
+			if cvx.points.size() > 0:
+				col = cvx
+			col_shape.position.y = 0.0
 		else:
 			var box_col := BoxShape3D.new()
 			box_col.size = sz
@@ -6919,7 +6961,7 @@ func _find_best_snap(ghost_pos: Vector3, ghost_rot_y: float, build_id: StringNam
 						found = true
 
 	if found:
-		var is_roof_piece := str(build_id).begins_with("thatch_roof") or str(build_id).begins_with("slate_roof")
+		var is_roof_piece := str(build_id).begins_with("thatch_roof") or str(build_id).begins_with("slate_roof") or str(build_id).ends_with("gable_45") or str(build_id).ends_with("gable_26")
 		if is_roof_piece:
 			best_pos.y += Z_FIGHT_OFFSET
 		return {"pos": best_pos, "rot_y": best_rot}
