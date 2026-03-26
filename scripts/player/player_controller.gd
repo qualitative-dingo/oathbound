@@ -1083,7 +1083,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
-		if not _inventory_open and not _workbench_open and not _build_menu_open and not _map_open and not _chest_open:
+		if not _inventory_open and not _workbench_open and not _build_menu_open and not _map_open and not _chest_open and not _pause_open:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		return
 
