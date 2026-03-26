@@ -24,6 +24,68 @@ const _WATER_LEVEL := 0.0
 # ─── Floating origin offset (set by WorldGenerator on each origin shift) ──────
 static var origin_shift := Vector3.ZERO
 
+# ─── Zone height grid (pre-computed to avoid per-blade noise calls) ───────────
+const _HG_RES := 48
+const _HG_PAD := 2        # extra cells on each side for slope/cliff checks near zone edges
+const _HG_FULL := _HG_RES + _HG_PAD * 2
+static var _hg_data := PackedFloat32Array()
+static var _hg_coord := Vector2i(-999999, -999999)
+static var _hg_origin_x := 0.0
+static var _hg_origin_z := 0.0
+static var _hg_step := ZONE_SIZE / float(_HG_RES)
+
+static func _ensure_height_grid(coord: Vector2i, height_func: Callable) -> void:
+	if coord == _hg_coord:
+		return
+	_hg_coord = coord
+	_hg_origin_x = coord.x * ZONE_SIZE - _HG_PAD * _hg_step
+	_hg_origin_z = coord.y * ZONE_SIZE - _HG_PAD * _hg_step
+	var w := _HG_FULL + 1
+	var total := w * w
+	if _hg_data.size() != total:
+		_hg_data.resize(total)
+	for gz in w:
+		for gx in w:
+			var wx := _hg_origin_x + gx * _hg_step
+			var wz := _hg_origin_z + gz * _hg_step
+			_hg_data[gz * w + gx] = float(height_func.call(wx, wz))
+
+static func _hg_sample(wx: float, wz: float) -> float:
+	var gx := (wx - _hg_origin_x) / _hg_step
+	var gz := (wz - _hg_origin_z) / _hg_step
+	var w := _HG_FULL + 1
+	var ix := clampi(int(gx), 0, _HG_FULL - 1)
+	var iz := clampi(int(gz), 0, _HG_FULL - 1)
+	var fx := clampf(gx - float(ix), 0.0, 1.0)
+	var fz := clampf(gz - float(iz), 0.0, 1.0)
+	var h00 := _hg_data[iz * w + ix]
+	var h10 := _hg_data[iz * w + ix + 1]
+	var h01 := _hg_data[(iz + 1) * w + ix]
+	var h11 := _hg_data[(iz + 1) * w + ix + 1]
+	if fx + fz <= 1.0:
+		return h00 + (h10 - h00) * fx + (h01 - h00) * fz
+	return h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
+
+static func _hg_snap_and_normal(wx: float, wz: float) -> Vector2:
+	const STEP := ZONE_SIZE / 32.0
+	var gx := floorf(wx / STEP) * STEP
+	var gz := floorf(wz / STEP) * STEP
+	var fx := (wx - gx) / STEP
+	var fz := (wz - gz) / STEP
+	var h00 := _hg_sample(gx, gz)
+	var h10 := _hg_sample(gx + STEP, gz)
+	var h01 := _hg_sample(gx, gz + STEP)
+	var h11 := _hg_sample(gx + STEP, gz + STEP)
+	var snapped: float
+	if fx + fz <= 1.0:
+		snapped = h00 + (h10 - h00) * fx + (h01 - h00) * fz
+	else:
+		snapped = h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
+	var tx := Vector3(2.0 * STEP, h10 - h00 + h11 - h01, 0.0)
+	var tz := Vector3(0.0, h01 - h00 + h11 - h10, 2.0 * STEP)
+	var ny := tz.cross(tx).normalized().y
+	return Vector2(snapped, ny)
+
 # ─── Debug toggles (set by DebugPanel to skip spawning categories) ────────────
 static var debug_skip_trees := false
 static var debug_skip_rocks := false
@@ -1492,6 +1554,8 @@ static func _scatter_flowers(
 	if biome != &"hearthlands":
 		return
 
+	_ensure_height_grid(coord, height_func)
+
 	var flower_types := _get_flower_types()
 	if type_end < 0:
 		type_end = flower_types.size()
@@ -1531,23 +1595,23 @@ static func _scatter_flowers(
 			if density < 0.22:
 				continue
 
-			var sn := _snap_and_normal(wx, wz, height_func)
+			var sn := _hg_snap_and_normal(wx, wz)
 			var ground_y := sn.x
 			if ground_y < _MIN_LAND_Y or ground_y > 45.0:
 				continue
 			if sn.y < 0.95:
 				continue
 			var _fhc := sn.x
-			if absf(_fhc - float(height_func.call(wx + 2.0, wz))) > 1.5 \
-					or absf(_fhc - float(height_func.call(wx - 2.0, wz))) > 1.5 \
-					or absf(_fhc - float(height_func.call(wx, wz + 2.0))) > 1.5 \
-					or absf(_fhc - float(height_func.call(wx, wz - 2.0))) > 1.5:
+			if absf(_fhc - _hg_sample(wx + 2.0, wz)) > 1.5 \
+					or absf(_fhc - _hg_sample(wx - 2.0, wz)) > 1.5 \
+					or absf(_fhc - _hg_sample(wx, wz + 2.0)) > 1.5 \
+					or absf(_fhc - _hg_sample(wx, wz - 2.0)) > 1.5:
 				continue
 			if water_only:
 				var near_water := false
 				for probe_r in [6.0, 12.0, 18.0]:
 					for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
-						if float(height_func.call(wx + d.x * probe_r, wz + d.y * probe_r)) < _WATER_LEVEL + 0.3:
+						if _hg_sample(wx + d.x * probe_r, wz + d.y * probe_r) < _WATER_LEVEL + 0.3:
 							near_water = true
 							break
 					if near_water:
@@ -1644,14 +1708,14 @@ static func _get_grass_types() -> Array:
 	if _grass_types_table.is_empty():
 		# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
 		_grass_types_table = [
-			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 1000, 0.9, 1.7, 1.8, 1.2],
-			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 960, 0.8, 1.6, 1.7, 1.1],
-			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 960, 0.9, 1.8, 1.9, 1.1],
-			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 900, 0.8, 1.5, 1.6, 1.0],
-			[_grass_textures[10], Color(0.12, 0.36, 0.06), 800, 1.0, 1.9, 1.6, 1.6],
-			[_grass_textures[12], Color(0.14, 0.34, 0.07), 760, 0.9, 1.7, 1.5, 1.5],
-			[_grass_textures[16], Color(0.14, 0.36, 0.08), 760, 0.9, 1.7, 1.7, 1.4],
-			[_grass_textures[18], Color(0.12, 0.39, 0.06), 700, 0.8, 1.6, 1.8, 1.3],
+			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 500, 0.9, 1.7, 1.8, 1.2],
+			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 480, 0.8, 1.6, 1.7, 1.1],
+			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 480, 0.9, 1.8, 1.9, 1.1],
+			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 450, 0.8, 1.5, 1.6, 1.0],
+			[_grass_textures[10], Color(0.12, 0.36, 0.06), 420, 1.0, 1.9, 1.6, 1.6],
+			[_grass_textures[12], Color(0.14, 0.34, 0.07), 400, 0.9, 1.7, 1.5, 1.5],
+			[_grass_textures[16], Color(0.14, 0.36, 0.08), 400, 0.9, 1.7, 1.7, 1.4],
+			[_grass_textures[18], Color(0.12, 0.39, 0.06), 380, 0.8, 1.6, 1.8, 1.3],
 		]
 	return _grass_types_table
 
@@ -1670,6 +1734,8 @@ static func _scatter_grass(
 
 	if biome != &"hearthlands":
 		return
+
+	_ensure_height_grid(coord, height_func)
 
 	var grass_types := _get_grass_types()
 	if type_end < 0:
@@ -1709,23 +1775,21 @@ static func _scatter_grass(
 			if density < 0.18:
 				continue
 
-			var sn := _snap_and_normal(wx, wz, height_func)
+			var sn := _hg_snap_and_normal(wx, wz)
 			var ground_y := sn.x
 			if ground_y < _MIN_LAND_Y or ground_y > 40.0:
 				continue
 			if sn.y < 0.97:
 				continue
-			# Slope check at 8m radius — reuse for cliff detection
 			const _SLOPE_R := 8.0
-			var h_l := _snap_height_to_mesh(wx - _SLOPE_R, wz, height_func)
-			var h_r := _snap_height_to_mesh(wx + _SLOPE_R, wz, height_func)
-			var h_u := _snap_height_to_mesh(wx, wz - _SLOPE_R, height_func)
-			var h_d := _snap_height_to_mesh(wx, wz + _SLOPE_R, height_func)
+			var h_l := _hg_sample(wx - _SLOPE_R, wz)
+			var h_r := _hg_sample(wx + _SLOPE_R, wz)
+			var h_u := _hg_sample(wx, wz - _SLOPE_R)
+			var h_d := _hg_sample(wx, wz + _SLOPE_R)
 			var slope_x := absf(h_r - h_l) / (_SLOPE_R * 2.0)
 			var slope_z := absf(h_d - h_u) / (_SLOPE_R * 2.0)
 			if slope_x > 0.20 or slope_z > 0.20:
 				continue
-			# Cliff-edge rejection: check if nearby samples differ too much from center
 			var _hc := ground_y
 			if absf(_hc - h_l) > 3.0 or absf(_hc - h_r) > 3.0 \
 					or absf(_hc - h_u) > 3.0 or absf(_hc - h_d) > 3.0:
