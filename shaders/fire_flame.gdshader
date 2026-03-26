@@ -78,7 +78,7 @@ float snoise(vec3 v) {
 	return 42.0 * dot(m * m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
 }
 
-// ── Vertex: reshape cylinder into flame silhouette ──────────────────────────
+// ── Vertex: reshape cylinder into flame silhouette with organic tongues ──────
 void vertex() {
 	vec3 v_pos = VERTEX;
 	float relative_height = (v_pos.y + 1.0) / 2.0;
@@ -99,11 +99,24 @@ void vertex() {
 		radius = mix(center_radius, top_radius, t);
 	}
 
+	// Irregular tongue shapes: displace radius per-vertex using noise
+	float angle = atan(v_pos.z, v_pos.x);
+	float tongue_noise = snoise(vec3(angle * 2.0, relative_height * 3.0 - TIME * speed * 1.5, TIME * 0.7));
+	tongue_noise += snoise(vec3(angle * 4.5 + 10.0, relative_height * 5.0 - TIME * speed * 2.0, TIME * 0.4)) * 0.4;
+	float tongue_strength = relative_height * relative_height * 0.35;
+	radius *= 1.0 + tongue_noise * tongue_strength;
+
+	// Gentle wind sway that increases with height
+	float sway = sin(TIME * 1.1 + relative_height * 2.0) * 0.04 * relative_height;
+	float sway_z = sin(TIME * 0.8 + relative_height * 1.5 + 1.5) * 0.025 * relative_height;
+
 	float current_radius = length(vec2(v_pos.x, v_pos.z));
 	if (current_radius > 0.0) {
 		v_pos.x *= radius / current_radius;
 		v_pos.z *= radius / current_radius;
 	}
+	v_pos.x += sway;
+	v_pos.z += sway_z;
 
 	VERTEX = v_pos;
 }

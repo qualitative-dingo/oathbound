@@ -1764,38 +1764,45 @@ func _make_soft_circle_tex(sz: int) -> ImageTexture:
 
 
 func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
-	var stone_count := 8
-	var ring_radius := 0.35
-	for i in stone_count:
-		var stone := MeshInstance3D.new()
-		stone.name = "RingStone%d" % i
-		var box := BoxMesh.new()
-		var w := randf_range(0.08, 0.14)
-		var h := randf_range(0.06, 0.10)
-		var d := randf_range(0.08, 0.12)
-		box.size = Vector3(w, h, d)
-		stone.mesh = box
+	var scene := load("res://models/campfire_stone_ring.glb") as PackedScene
+	if scene:
+		var ring := scene.instantiate() as Node3D
+		ring.name = "StoneRing"
+		ring.scale = Vector3(0.006, 0.005, 0.006)
+		ring.position.y = 0.0
+		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if ring is GeometryInstance3D else 0
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(
-			randf_range(0.35, 0.5),
-			randf_range(0.33, 0.48),
-			randf_range(0.30, 0.42)
-		)
-		mat.roughness = 0.9
-		stone.set_surface_override_material(0, mat)
-		var angle := float(i) * TAU / float(stone_count) + randf_range(-0.15, 0.15)
-		stone.position = Vector3(
-			cos(angle) * ring_radius,
-			h * 0.3,
-			sin(angle) * ring_radius
-		)
-		stone.rotation = Vector3(
-			randf_range(-0.3, 0.3),
-			randf_range(0, TAU),
-			randf_range(-0.2, 0.2)
-		)
-		stone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		structure.add_child(stone)
+		mat.albedo_color = Color(0.32, 0.30, 0.28)
+		mat.roughness = 0.95
+		mat.metallic = 0.0
+		for child in ring.get_children():
+			if child is MeshInstance3D:
+				child.material_override = mat
+				child.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			for grandchild in child.get_children():
+				if grandchild is MeshInstance3D:
+					grandchild.material_override = mat
+					grandchild.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		structure.add_child(ring)
+	else:
+		for i in 8:
+			var stone := MeshInstance3D.new()
+			stone.name = "RingStone%d" % i
+			var sphere := SphereMesh.new()
+			sphere.radius = randf_range(0.08, 0.13)
+			sphere.height = randf_range(0.10, 0.16)
+			sphere.radial_segments = 6
+			sphere.rings = 3
+			stone.mesh = sphere
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = Color(randf_range(0.25, 0.38), randf_range(0.24, 0.36), randf_range(0.22, 0.32))
+			mat.roughness = 0.95
+			stone.set_surface_override_material(0, mat)
+			var angle := float(i) * TAU / 8.0 + randf_range(-0.15, 0.15)
+			stone.position = Vector3(cos(angle) * 0.42, 0.04, sin(angle) * 0.42)
+			stone.rotation = Vector3(randf_range(-0.3, 0.3), randf_range(0, TAU), randf_range(-0.2, 0.2))
+			stone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			structure.add_child(stone)
 
 
 func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
@@ -1806,20 +1813,21 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 
 	_build_campfire_stone_ring(structure)
 
-	# -- Logs with charring glow --
+	# -- Logs with charring glow (visible under flames) --
+	var log_heights := [0.04, 0.08, 0.06]
 	for i in 3:
 		var log_sp := Sprite3D.new()
 		log_sp.texture = log_tex
-		log_sp.pixel_size = 0.009
+		log_sp.pixel_size = 0.014
 		log_sp.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 		log_sp.shaded = true
 		log_sp.transparent = true
 		log_sp.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
-		var la := float(i) * TAU / 3.0
-		log_sp.position = Vector3(0.0, 0.06, 0.0)
+		var la := float(i) * TAU / 3.0 + randf_range(-0.2, 0.2)
+		log_sp.position = Vector3(randf_range(-0.04, 0.04), log_heights[i], randf_range(-0.04, 0.04))
 		log_sp.rotation.y = la
-		log_sp.rotation.x = -PI * 0.5 + randf_range(-0.08, 0.08)
-		log_sp.modulate = Color(1.2, 0.9, 0.7, 1.0)
+		log_sp.rotation.x = -PI * 0.5 + randf_range(-0.12, 0.12)
+		log_sp.modulate = Color(1.1, 0.8, 0.6, 1.0)
 		structure.add_child(log_sp)
 
 	# -- Animated ember bed (shader-driven pulsing coals) --
@@ -1862,28 +1870,28 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	inner_cyl.radial_segments = 12
 	inner_cyl.rings = 8
 	inner_flame.mesh = inner_cyl
-	inner_flame.position.y = 0.1
+	inner_flame.position.y = 0.08
 	inner_flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if fire_shader:
 		var imat := ShaderMaterial.new()
 		imat.shader = fire_shader
 		imat.set_shader_parameter("top_radius", 0.0)
-		imat.set_shader_parameter("bottom_radius", 0.4)
-		imat.set_shader_parameter("center_radius", 1.2)
-		imat.set_shader_parameter("center_position", 0.3)
-		imat.set_shader_parameter("cylinder_height", 0.9)
-		imat.set_shader_parameter("bottom_curve", 0.4)
-		imat.set_shader_parameter("vibrate_amplitude", 0.012)
-		imat.set_shader_parameter("vibrate_frequency", 180.0)
-		imat.set_shader_parameter("speed", 2.5)
-		imat.set_shader_parameter("noise_scale", 2.0)
-		imat.set_shader_parameter("brightness", 1.8)
-		imat.set_shader_parameter("cutoff_base", 0.12)
-		imat.set_shader_parameter("band_steps", 4.0)
-		imat.set_shader_parameter("color_core", Color(1.0, 1.0, 0.95))
-		imat.set_shader_parameter("color_mid", Color(1.0, 0.85, 0.3))
-		imat.set_shader_parameter("color_outer", Color(1.0, 0.45, 0.05))
-		imat.set_shader_parameter("color_edge", Color(0.7, 0.15, 0.0))
+		imat.set_shader_parameter("bottom_radius", 0.25)
+		imat.set_shader_parameter("center_radius", 0.55)
+		imat.set_shader_parameter("center_position", 0.25)
+		imat.set_shader_parameter("cylinder_height", 0.7)
+		imat.set_shader_parameter("bottom_curve", 0.5)
+		imat.set_shader_parameter("vibrate_amplitude", 0.008)
+		imat.set_shader_parameter("vibrate_frequency", 120.0)
+		imat.set_shader_parameter("speed", 2.8)
+		imat.set_shader_parameter("noise_scale", 2.5)
+		imat.set_shader_parameter("brightness", 1.2)
+		imat.set_shader_parameter("cutoff_base", 0.2)
+		imat.set_shader_parameter("band_steps", 5.0)
+		imat.set_shader_parameter("color_core", Color(1.0, 1.0, 0.9))
+		imat.set_shader_parameter("color_mid", Color(1.0, 0.75, 0.2))
+		imat.set_shader_parameter("color_outer", Color(1.0, 0.4, 0.05))
+		imat.set_shader_parameter("color_edge", Color(0.7, 0.12, 0.0))
 		inner_flame.material_override = imat
 	structure.add_child(inner_flame)
 
@@ -1897,66 +1905,66 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	outer_cyl.radial_segments = 10
 	outer_cyl.rings = 6
 	outer_flame.mesh = outer_cyl
-	outer_flame.position.y = 0.08
-	outer_flame.scale = Vector3(1.3, 1.15, 1.3)
+	outer_flame.position.y = 0.06
+	outer_flame.scale = Vector3(1.15, 1.1, 1.15)
 	outer_flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if fire_shader:
 		var omat := ShaderMaterial.new()
 		omat.shader = fire_shader
 		omat.set_shader_parameter("top_radius", 0.0)
-		omat.set_shader_parameter("bottom_radius", 0.5)
-		omat.set_shader_parameter("center_radius", 1.4)
-		omat.set_shader_parameter("center_position", 0.35)
-		omat.set_shader_parameter("cylinder_height", 0.85)
+		omat.set_shader_parameter("bottom_radius", 0.3)
+		omat.set_shader_parameter("center_radius", 0.7)
+		omat.set_shader_parameter("center_position", 0.3)
+		omat.set_shader_parameter("cylinder_height", 0.65)
 		omat.set_shader_parameter("bottom_curve", 0.5)
-		omat.set_shader_parameter("vibrate_amplitude", 0.018)
-		omat.set_shader_parameter("vibrate_frequency", 140.0)
-		omat.set_shader_parameter("speed", 1.6)
-		omat.set_shader_parameter("noise_scale", 1.8)
-		omat.set_shader_parameter("brightness", 1.0)
-		omat.set_shader_parameter("cutoff_base", 0.18)
-		omat.set_shader_parameter("band_steps", 3.0)
-		omat.set_shader_parameter("color_core", Color(1.0, 0.9, 0.4))
-		omat.set_shader_parameter("color_mid", Color(1.0, 0.5, 0.1))
-		omat.set_shader_parameter("color_outer", Color(0.8, 0.2, 0.0))
-		omat.set_shader_parameter("color_edge", Color(0.4, 0.06, 0.0))
+		omat.set_shader_parameter("vibrate_amplitude", 0.012)
+		omat.set_shader_parameter("vibrate_frequency", 100.0)
+		omat.set_shader_parameter("speed", 1.8)
+		omat.set_shader_parameter("noise_scale", 2.2)
+		omat.set_shader_parameter("brightness", 0.7)
+		omat.set_shader_parameter("cutoff_base", 0.25)
+		omat.set_shader_parameter("band_steps", 4.0)
+		omat.set_shader_parameter("color_core", Color(1.0, 0.85, 0.3))
+		omat.set_shader_parameter("color_mid", Color(1.0, 0.45, 0.08))
+		omat.set_shader_parameter("color_outer", Color(0.8, 0.18, 0.0))
+		omat.set_shader_parameter("color_edge", Color(0.35, 0.05, 0.0))
 		outer_flame.material_override = omat
 	structure.add_child(outer_flame)
 
-	# -- Flame tip wisps (small billboard particles to break mesh silhouette) --
+	# -- Flame tip wisps (subtle accents at flame tips) --
 	var wisp_particles := GPUParticles3D.new()
 	wisp_particles.name = "FlameWisps"
-	wisp_particles.amount = 8
-	wisp_particles.lifetime = 0.7
-	wisp_particles.explosiveness = 0.15
-	wisp_particles.randomness = 0.4
+	wisp_particles.amount = 6
+	wisp_particles.lifetime = 0.5
+	wisp_particles.explosiveness = 0.1
+	wisp_particles.randomness = 0.5
 	wisp_particles.one_shot = false
 	wisp_particles.local_coords = true
-	wisp_particles.visibility_aabb = AABB(Vector3(-2, -1, -2), Vector3(4, 5, 4))
-	wisp_particles.position.y = 0.6
+	wisp_particles.visibility_aabb = AABB(Vector3(-2, -1, -2), Vector3(4, 4, 4))
+	wisp_particles.position.y = 0.45
 
 	var wisp_mesh := QuadMesh.new()
-	wisp_mesh.size = Vector2(0.25, 0.4)
+	wisp_mesh.size = Vector2(0.12, 0.25)
 	wisp_particles.draw_pass_1 = wisp_mesh
 
 	var wisp_pmat := ParticleProcessMaterial.new()
 	wisp_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	wisp_pmat.emission_sphere_radius = 0.12
+	wisp_pmat.emission_sphere_radius = 0.1
 	wisp_pmat.direction = Vector3(0, 1, 0)
-	wisp_pmat.spread = 18.0
-	wisp_pmat.initial_velocity_min = 0.8
-	wisp_pmat.initial_velocity_max = 1.6
-	wisp_pmat.gravity = Vector3(0, 0.4, 0)
-	wisp_pmat.damping_min = 0.3
-	wisp_pmat.damping_max = 1.0
-	wisp_pmat.scale_min = 0.6
-	wisp_pmat.scale_max = 1.4
+	wisp_pmat.spread = 22.0
+	wisp_pmat.initial_velocity_min = 0.6
+	wisp_pmat.initial_velocity_max = 1.2
+	wisp_pmat.gravity = Vector3(0, 0.3, 0)
+	wisp_pmat.damping_min = 0.5
+	wisp_pmat.damping_max = 1.2
+	wisp_pmat.scale_min = 0.4
+	wisp_pmat.scale_max = 1.0
 
 	var wisp_scale_crv := CurveTexture.new()
 	var wsc := Curve.new()
-	wsc.add_point(Vector2(0.0, 0.5))
-	wsc.add_point(Vector2(0.3, 1.0))
-	wsc.add_point(Vector2(0.7, 0.6))
+	wsc.add_point(Vector2(0.0, 0.3))
+	wsc.add_point(Vector2(0.2, 1.0))
+	wsc.add_point(Vector2(0.6, 0.5))
 	wsc.add_point(Vector2(1.0, 0.0))
 	wisp_scale_crv.curve = wsc
 	wisp_pmat.scale_curve = wisp_scale_crv
@@ -1964,10 +1972,10 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	var wisp_grad := Gradient.new()
 	wisp_grad.offsets = PackedFloat32Array([0.0, 0.2, 0.6, 1.0])
 	wisp_grad.colors = PackedColorArray([
-		Color(1.0, 0.95, 0.7, 0.8),
-		Color(1.0, 0.7, 0.2, 0.6),
-		Color(0.9, 0.3, 0.05, 0.3),
-		Color(0.5, 0.1, 0.0, 0.0),
+		Color(1.0, 0.9, 0.5, 0.6),
+		Color(1.0, 0.6, 0.15, 0.45),
+		Color(0.85, 0.25, 0.03, 0.2),
+		Color(0.4, 0.08, 0.0, 0.0),
 	])
 	var wisp_ramp := GradientTexture1D.new()
 	wisp_ramp.gradient = wisp_grad
@@ -1978,55 +1986,55 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	wisp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	wisp_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	wisp_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	wisp_mat.albedo_color = Color(1.0, 0.9, 0.6, 1.0)
+	wisp_mat.albedo_color = Color(1.0, 0.85, 0.5, 0.7)
 	wisp_mat.albedo_texture = soft_tex
 	wisp_mat.emission_enabled = true
-	wisp_mat.emission = Color(1.0, 0.6, 0.15)
-	wisp_mat.emission_energy_multiplier = 5.0
+	wisp_mat.emission = Color(1.0, 0.5, 0.1)
+	wisp_mat.emission_energy_multiplier = 2.0
 	wisp_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	wisp_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	wisp_particles.material_override = wisp_mat
 	structure.add_child(wisp_particles)
 
-	# -- Enhanced spark particles (more numerous, varied arcs) --
+	# -- Spark particles (natural arcing embers) --
 	var spark_particles := GPUParticles3D.new()
 	spark_particles.name = "SparkParticles"
-	spark_particles.amount = 30
-	spark_particles.lifetime = 1.5
-	spark_particles.explosiveness = 0.2
-	spark_particles.randomness = 0.6
+	spark_particles.amount = 18
+	spark_particles.lifetime = 1.8
+	spark_particles.explosiveness = 0.15
+	spark_particles.randomness = 0.7
 	spark_particles.one_shot = false
 	spark_particles.local_coords = true
-	spark_particles.visibility_aabb = AABB(Vector3(-4, -1, -4), Vector3(8, 6, 8))
-	spark_particles.position.y = 0.35
+	spark_particles.visibility_aabb = AABB(Vector3(-3, -1, -3), Vector3(6, 5, 6))
+	spark_particles.position.y = 0.3
 
 	var spark_mesh := QuadMesh.new()
-	spark_mesh.size = Vector2(0.035, 0.035)
+	spark_mesh.size = Vector2(0.03, 0.03)
 	spark_particles.draw_pass_1 = spark_mesh
 
 	var spark_pmat := ParticleProcessMaterial.new()
 	spark_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	spark_pmat.emission_sphere_radius = 0.15
+	spark_pmat.emission_sphere_radius = 0.12
 	spark_pmat.direction = Vector3(0, 1, 0)
-	spark_pmat.spread = 45.0
-	spark_pmat.initial_velocity_min = 1.8
-	spark_pmat.initial_velocity_max = 4.5
-	spark_pmat.gravity = Vector3(0.3, -3.5, 0.0)
-	spark_pmat.damping_min = 0.3
-	spark_pmat.damping_max = 1.5
-	spark_pmat.scale_min = 0.4
-	spark_pmat.scale_max = 1.8
-	spark_pmat.angular_velocity_min = -40.0
-	spark_pmat.angular_velocity_max = 40.0
+	spark_pmat.spread = 40.0
+	spark_pmat.initial_velocity_min = 1.2
+	spark_pmat.initial_velocity_max = 3.0
+	spark_pmat.gravity = Vector3(0.2, -2.5, 0.0)
+	spark_pmat.damping_min = 0.5
+	spark_pmat.damping_max = 2.0
+	spark_pmat.scale_min = 0.3
+	spark_pmat.scale_max = 1.2
+	spark_pmat.angular_velocity_min = -30.0
+	spark_pmat.angular_velocity_max = 30.0
 
 	var spark_grad := Gradient.new()
-	spark_grad.offsets = PackedFloat32Array([0.0, 0.2, 0.5, 0.8, 1.0])
+	spark_grad.offsets = PackedFloat32Array([0.0, 0.15, 0.4, 0.7, 1.0])
 	spark_grad.colors = PackedColorArray([
-		Color(1.0, 1.0, 0.8, 1.0),
-		Color(1.0, 0.85, 0.4, 0.95),
-		Color(1.0, 0.5, 0.1, 0.7),
-		Color(0.7, 0.15, 0.0, 0.35),
-		Color(0.3, 0.03, 0.0, 0.0),
+		Color(1.0, 1.0, 0.7, 1.0),
+		Color(1.0, 0.8, 0.3, 0.9),
+		Color(1.0, 0.45, 0.08, 0.6),
+		Color(0.6, 0.12, 0.0, 0.3),
+		Color(0.25, 0.03, 0.0, 0.0),
 	])
 	var spark_ramp := GradientTexture1D.new()
 	spark_ramp.gradient = spark_grad
@@ -2037,11 +2045,11 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	spark_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	spark_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	spark_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	spark_mat.albedo_color = Color(1.0, 0.85, 0.4, 1.0)
+	spark_mat.albedo_color = Color(1.0, 0.8, 0.35, 1.0)
 	spark_mat.albedo_texture = soft_tex
 	spark_mat.emission_enabled = true
-	spark_mat.emission = Color(1.0, 0.65, 0.15)
-	spark_mat.emission_energy_multiplier = 8.0
+	spark_mat.emission = Color(1.0, 0.55, 0.1)
+	spark_mat.emission_energy_multiplier = 3.5
 	spark_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	spark_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	spark_particles.material_override = spark_mat
@@ -2116,49 +2124,49 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	smoke_particles.material_override = smoke_mat
 	structure.add_child(smoke_particles)
 
-	# -- Heat distortion (taller, stronger) --
+	# -- Heat distortion (proportional to contained fire) --
 	var dist_shader := load("res://shaders/heat_distortion.gdshader") as Shader
 	if dist_shader:
 		var distortion_mi := MeshInstance3D.new()
 		distortion_mi.name = "HeatDistortion"
 		var cone := CylinderMesh.new()
-		cone.top_radius = 0.04
-		cone.bottom_radius = 0.45
-		cone.height = 1.8
+		cone.top_radius = 0.03
+		cone.bottom_radius = 0.3
+		cone.height = 1.2
 		cone.radial_segments = 8
 		cone.rings = 1
 		distortion_mi.mesh = cone
-		distortion_mi.position.y = 1.6
+		distortion_mi.position.y = 1.0
 		distortion_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var dist_mat := ShaderMaterial.new()
 		dist_mat.shader = dist_shader
-		dist_mat.set_shader_parameter("distortion_strength", 0.018)
-		dist_mat.set_shader_parameter("scroll_speed", 1.8)
+		dist_mat.set_shader_parameter("distortion_strength", 0.012)
+		dist_mat.set_shader_parameter("scroll_speed", 1.5)
 		dist_mat.set_shader_parameter("noise_scale", 3.5)
 		distortion_mi.material_override = dist_mat
 		structure.add_child(distortion_mi)
 
-	# -- Main fire light (dramatic, with volumetric fog interaction) --
+	# -- Main fire light (warm glow, not blinding) --
 	var light := OmniLight3D.new()
 	light.name = "FireLight"
 	light.light_color = Color(1.0, 0.55, 0.15)
-	light.light_energy = 10.0
-	light.omni_range = 50.0
-	light.omni_attenuation = 1.2
+	light.light_energy = 5.0
+	light.omni_range = 18.0
+	light.omni_attenuation = 1.4
 	light.shadow_enabled = true
-	light.light_volumetric_fog_energy = 3.0
-	light.position.y = 0.8
+	light.light_volumetric_fog_energy = 1.5
+	light.position.y = 0.6
 	structure.add_child(light)
 
 	# -- Warm fill light at base --
 	var fill := OmniLight3D.new()
 	fill.light_color = Color(1.0, 0.3, 0.05)
-	fill.light_energy = 4.0
-	fill.omni_range = 25.0
+	fill.light_energy = 2.0
+	fill.omni_range = 8.0
 	fill.omni_attenuation = 1.8
 	fill.shadow_enabled = false
-	fill.light_volumetric_fog_energy = 2.0
-	fill.position.y = 0.15
+	fill.light_volumetric_fog_energy = 1.0
+	fill.position.y = 0.12
 	structure.add_child(fill)
 
 	start_campfire_animation(structure, light, ember_mi)
