@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_disabled, unshaded;
+render_mode blend_mix, depth_draw_never, cull_disabled, unshaded;
 
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
 uniform float distortion_strength : hint_range(0.0, 0.1) = 0.012;
@@ -32,5 +32,5 @@ void fragment() {
 
 	vec4 screen_col = texture(screen_texture, SCREEN_UV + offset);
 	ALBEDO = screen_col.rgb;
-	ALPHA = fade * 0.6;
+	ALPHA = 1.0;
 }
