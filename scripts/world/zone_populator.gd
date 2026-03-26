@@ -1632,14 +1632,14 @@ static func _get_grass_types() -> Array:
 	if _grass_types_table.is_empty():
 		# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
 		_grass_types_table = [
-			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 500, 0.9, 1.7, 1.8, 1.2],
-			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 480, 0.8, 1.6, 1.7, 1.1],
-			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 480, 0.9, 1.8, 1.9, 1.1],
-			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 450, 0.8, 1.5, 1.6, 1.0],
-			[_grass_textures[10], Color(0.12, 0.36, 0.06), 400, 1.0, 1.9, 1.6, 1.6],
-			[_grass_textures[12], Color(0.14, 0.34, 0.07), 380, 0.9, 1.7, 1.5, 1.5],
-			[_grass_textures[16], Color(0.14, 0.36, 0.08), 380, 0.9, 1.7, 1.7, 1.4],
-			[_grass_textures[18], Color(0.12, 0.39, 0.06), 350, 0.8, 1.6, 1.8, 1.3],
+			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 1000, 0.9, 1.7, 1.8, 1.2],
+			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 960, 0.8, 1.6, 1.7, 1.1],
+			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 960, 0.9, 1.8, 1.9, 1.1],
+			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 900, 0.8, 1.5, 1.6, 1.0],
+			[_grass_textures[10], Color(0.12, 0.36, 0.06), 800, 1.0, 1.9, 1.6, 1.6],
+			[_grass_textures[12], Color(0.14, 0.34, 0.07), 760, 0.9, 1.7, 1.5, 1.5],
+			[_grass_textures[16], Color(0.14, 0.36, 0.08), 760, 0.9, 1.7, 1.7, 1.4],
+			[_grass_textures[18], Color(0.12, 0.39, 0.06), 700, 0.8, 1.6, 1.8, 1.3],
 		]
 	return _grass_types_table
 
