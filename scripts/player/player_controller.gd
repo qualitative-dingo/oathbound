@@ -194,6 +194,10 @@ var _footstep_player: AudioStreamPlayer
 var _gallop_player: AudioStreamPlayer
 var _gallop_fast_stream: AudioStream
 var _gallop_normal_stream: AudioStream
+var _grass_step_stream: AudioStream
+var _stone_walk_stream: AudioStream
+var _stone_run_stream: AudioStream
+var _on_stone_surface: bool = false
 
 # Bow draw
 var _bow_drawing: bool = false
@@ -2208,18 +2212,20 @@ func _setup_movement_audio() -> void:
 	add_child(_gallop_player)
 	_gallop_player.finished.connect(_on_gallop_finished)
 
-	# Grab the already-loaded streams from AudioManager (guaranteed to work)
-	var fs := AudioManager.get_stream("grass_step")
-	if fs:
-		_footstep_player.stream = fs
+	_grass_step_stream = AudioManager.get_stream("grass_step")
+	_stone_walk_stream = AudioManager.get_stream("stone_step_walk")
+	_stone_run_stream = AudioManager.get_stream("stone_step_run")
+	if _grass_step_stream:
+		_footstep_player.stream = _grass_step_stream
 	_gallop_normal_stream = AudioManager.get_stream("horse_gallop")
 	_gallop_fast_stream = AudioManager.get_stream("horse_gallop_fast")
 
 
 func _on_footstep_finished() -> void:
-	if _footstep_player and _footstep_player.stream and not _mounted:
+	if _footstep_player and not _mounted:
 		var spd := Vector2(velocity.x, velocity.z).length()
 		if spd > 0.5 and is_on_floor():
+			_swap_footstep_stream(spd)
 			_footstep_player.play()
 
 
@@ -2231,17 +2237,56 @@ func _on_gallop_finished() -> void:
 
 
 func _tick_footstep_sfx(_delta: float) -> void:
-	if not _footstep_player or not _footstep_player.stream:
+	if not _footstep_player:
 		return
 	var flat_speed := Vector2(velocity.x, velocity.z).length()
 	var want_playing := not _mounted and flat_speed > 0.5 and is_on_floor() and not _is_swimming
 	if want_playing:
+		var on_stone := _check_stone_surface()
+		if on_stone != _on_stone_surface:
+			_on_stone_surface = on_stone
+			_swap_footstep_stream(flat_speed)
+		elif on_stone and _stone_walk_stream and _stone_run_stream:
+			var is_running := flat_speed > walk_speed * 1.1
+			var expected := _stone_run_stream if is_running else _stone_walk_stream
+			if _footstep_player.stream != expected:
+				_swap_footstep_stream(flat_speed)
 		var speed_ratio := clampf(flat_speed / walk_speed, 0.4, 2.2) * 0.65
 		_footstep_player.pitch_scale = speed_ratio
 	if want_playing and not _footstep_player.playing:
+		_swap_footstep_stream(flat_speed)
 		_footstep_player.play()
 	elif not want_playing and _footstep_player.playing:
 		_footstep_player.stop()
+
+
+func _check_stone_surface() -> bool:
+	var wg := _find_world_generator()
+	if wg:
+		var wp := wg.get_world_position(self)
+		if ZonePopulator.is_on_path(wp.x, wp.z):
+			return true
+	for i in get_slide_collision_count():
+		var col := get_slide_collision(i)
+		if not col:
+			continue
+		var collider := col.get_collider()
+		if collider and collider.has_meta("build_id"):
+			var bid: StringName = collider.get_meta("build_id")
+			if bid.begins_with("stone") or bid.begins_with("slate"):
+				return true
+	return false
+
+
+func _swap_footstep_stream(flat_speed: float) -> void:
+	if _on_stone_surface:
+		var is_running := flat_speed > walk_speed * 1.1
+		var s: AudioStream = _stone_run_stream if is_running else _stone_walk_stream
+		if s:
+			_footstep_player.stream = s
+	else:
+		if _grass_step_stream:
+			_footstep_player.stream = _grass_step_stream
 
 
 func _tick_gallop_sfx(_delta: float) -> void:
@@ -8988,7 +9033,7 @@ func _try_hoe_use() -> void:
 	var target_h := wg.get_height_at(player_world.x, player_world.z)
 
 	wg.flatten_terrain_to(world_hit.x, world_hit.z, HOE_RADIUS, target_h)
-	AudioManager.play_sfx("fist_hit_tree", -6.0)
+	AudioManager.play_sfx("till_ground", -6.0)
 
 func _toggle_terraform_mode() -> void:
 	if _terraform_mode:

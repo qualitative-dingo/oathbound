@@ -141,44 +141,63 @@ func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h:
 	for zone_coord: Vector2i in affected_zones:
 		rebuild_zone(zone_coord)
 
+var _rebuild_ready_queue: Array = []
+
 func rebuild_zone(coord: Vector2i) -> void:
 	_terrain_mesh_cache.erase(coord)
 	_terrain_shape_cache.erase(coord)
 	_zone_water_cache.erase(coord)
 
-	if coord in _loaded_zones:
+	if coord not in _loaded_zones:
+		return
+	if coord in _gen_in_flight:
+		return
+	_gen_in_flight[coord] = true
+	WorkerThreadPool.add_task(_bg_rebuild_zone.bind(coord))
+
+
+func _bg_rebuild_zone(coord: Vector2i) -> void:
+	var arrays := _build_zone_mesh(coord)
+	var shape := _build_collision_shape(coord)
+	_gen_mutex.lock()
+	_rebuild_ready_queue.append({"coord": coord, "arrays": arrays, "shape": shape})
+	_gen_mutex.unlock()
+
+
+func _apply_rebuild_results() -> void:
+	_gen_mutex.lock()
+	var batch := _rebuild_ready_queue.duplicate()
+	_rebuild_ready_queue.clear()
+	_gen_mutex.unlock()
+
+	for item in batch:
+		var coord: Vector2i = item["coord"]
+		_gen_in_flight.erase(coord)
+		var arrays: Array = item["arrays"]
+		var shape: ConcavePolygonShape3D = item["shape"]
+		_terrain_mesh_cache[coord] = arrays
+		_terrain_shape_cache[coord] = shape
+
+		if coord not in _loaded_zones:
+			continue
 		var zone_node: Node = _loaded_zones[coord]
-		if zone_node is StaticBody3D:
-			var arrays := _build_zone_mesh(coord)
-			var shape := _build_collision_shape(coord)
-			_terrain_mesh_cache[coord] = arrays
-			_terrain_shape_cache[coord] = shape
+		if not zone_node is StaticBody3D:
+			continue
 
-			var mi := zone_node.get_node_or_null("TerrainMesh") as MeshInstance3D
-			if mi:
-				var arr_mesh: ArrayMesh = mi.mesh as ArrayMesh if mi.mesh is ArrayMesh else ArrayMesh.new()
-				arr_mesh.clear_surfaces()
-				var biome := _determine_biome(coord)
-				var biome_mat: Material = _biome_materials.get(biome, _biome_materials[&"hearthlands"])
-				arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-				arr_mesh.surface_set_material(0, biome_mat)
-				mi.mesh = arr_mesh
+		var mi := zone_node.get_node_or_null("TerrainMesh") as MeshInstance3D
+		if mi:
+			var arr_mesh: ArrayMesh = mi.mesh as ArrayMesh if mi.mesh is ArrayMesh else ArrayMesh.new()
+			arr_mesh.clear_surfaces()
+			var biome := _determine_biome(coord)
+			var biome_mat: Material = _biome_materials.get(biome, _biome_materials[&"hearthlands"])
+			arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			arr_mesh.surface_set_material(0, biome_mat)
+			mi.mesh = arr_mesh
 
-			var col := zone_node.get_node_or_null("TerrainCol") as CollisionShape3D
-			if col and shape:
-				col.shape = shape
-				col.disabled = false
-			return
-
-	if coord in _loaded_zones:
-		var zone_node: Node = _loaded_zones[coord]
-		if zone_node is StaticBody3D:
-			_ZonePool.recycle_zone(zone_node as StaticBody3D)
-		else:
-			zone_node.queue_free()
-		_loaded_zones.erase(coord)
-		_zone_biome_cache.erase(coord)
-		_zone_microbiome_cache.erase(coord)
+		var col := zone_node.get_node_or_null("TerrainCol") as CollisionShape3D
+		if col and shape:
+			col.shape = shape
+			col.disabled = false
 
 func get_terrain_mods() -> Dictionary:
 	return _terrain_mods.duplicate()
@@ -305,6 +324,7 @@ func _ready() -> void:
 	_finalize_backlog.clear()
 	_populate_backlog.clear()
 	_gen_ready_queue.clear()
+	_rebuild_ready_queue.clear()
 	_gen_in_flight.clear()
 	_terrain_mesh_cache.clear()
 	_terrain_shape_cache.clear()
@@ -1078,6 +1098,9 @@ func _process_pending_zones() -> void:
 		var col_shape: CollisionShape3D = _deferred_collisions.pop_front()
 		if is_instance_valid(col_shape):
 			col_shape.disabled = false
+
+	# 0.5. Apply completed terrain rebuilds (from terraform / hoe) immediately
+	_apply_rebuild_results()
 
 	# 1. Collect completed background builds — only 1 per frame to spread out finalize work
 	_gen_mutex.lock()

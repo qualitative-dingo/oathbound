@@ -86,6 +86,9 @@ func _preload_sounds() -> void:
 	_load_group("horse_gallop", ["horse_gallop_1.wav"])
 	_load_group("horse_gallop_fast", ["horse_gallop_fast_1.wav"])
 	_load_group("grass_step", ["grass_step_1.wav"])
+	_load_group("stone_step_walk", ["walking_on_stone.mp3"])
+	_load_group("stone_step_run", ["running_on_stone.mp3"])
+	_load_group("till_ground", ["till_ground_1.mp3", "till_ground_2.mp3"])
 	_load_group("bow_creak", ["bow_creak_1.wav", "bow_creak_2.wav"])
 
 
