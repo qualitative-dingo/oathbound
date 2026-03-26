@@ -5709,6 +5709,7 @@ func _update_build_ghost() -> void:
 	place_pos.y = global_position.y
 
 	var result_hit_node: Node3D = null
+	var _ray_hit_pos := Vector3.ZERO
 	var space := get_world_3d().direct_space_state
 	if space:
 		var ray_end := ray_origin + ray_dir * 50.0
@@ -5720,6 +5721,7 @@ func _update_build_ghost() -> void:
 			var dist_to_player := Vector2(hit_pos.x - global_position.x, hit_pos.z - global_position.z).length()
 			if dist_to_player <= BUILD_MAX_DISTANCE:
 				place_pos = hit_pos
+				_ray_hit_pos = hit_pos
 				var collider: Node = result.get("collider") as Node
 				if collider:
 					var p: Node = collider.get_parent()
@@ -5763,8 +5765,15 @@ func _update_build_ghost() -> void:
 		if not recipe.is_empty():
 			var bid: StringName = recipe.get("id", &"") as StringName
 			var sz: Vector3 = recipe.get("size", Vector3.ONE) as Vector3
+			var use_side_snap := false
 			if result_hit_node and is_instance_valid(result_hit_node):
-				# Side-based snap: offset from focused structure's center by its half-size + ghost half-size
+				var exist_id2: StringName = result_hit_node.get_meta("build_id", &"") as StringName
+				var exist_recipe2 := _get_build_recipe(exist_id2)
+				var exist_sz2: Vector3 = exist_recipe2.get("size", Vector3.ONE) as Vector3 if not exist_recipe2.is_empty() else Vector3.ONE
+				var center_dist := Vector2(_ray_hit_pos.x - result_hit_node.global_position.x, _ray_hit_pos.z - result_hit_node.global_position.z).length()
+				var center_threshold := minf(exist_sz2.x, exist_sz2.z) * 0.3
+				use_side_snap = Input.is_key_pressed(KEY_ALT) or center_dist < center_threshold
+			if use_side_snap and result_hit_node and is_instance_valid(result_hit_node):
 				var exist_id: StringName = result_hit_node.get_meta("build_id", &"") as StringName
 				var exist_recipe := _get_build_recipe(exist_id)
 				var exist_sz: Vector3 = exist_recipe.get("size", Vector3.ONE) as Vector3 if not exist_recipe.is_empty() else Vector3.ONE
@@ -5784,7 +5793,7 @@ func _update_build_ghost() -> void:
 			else:
 				if _build_snap_side_label:
 					_build_snap_side_label.visible = false
-				var snap := _find_best_snap(place_pos, _build_rotation, bid, sz, null)
+				var snap := _find_best_snap(place_pos, _build_rotation, bid, sz, result_hit_node)
 				if not snap.is_empty():
 					place_pos = snap["pos"] as Vector3
 					use_rot = snap["rot_y"] as float
