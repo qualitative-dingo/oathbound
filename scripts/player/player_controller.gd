@@ -2266,6 +2266,17 @@ func _check_stone_surface() -> bool:
 		var wp := wg.get_world_position(self)
 		if ZonePopulator.is_on_path(wp.x, wp.z):
 			return true
+		var sample_step := 0.5
+		var h_c := wg.get_height_at(wp.x, wp.z)
+		var h_l := wg.get_height_at(wp.x - sample_step, wp.z)
+		var h_r := wg.get_height_at(wp.x + sample_step, wp.z)
+		var h_u := wg.get_height_at(wp.x, wp.z - sample_step)
+		var h_d := wg.get_height_at(wp.x, wp.z + sample_step)
+		var dx := (h_r - h_l) / (2.0 * sample_step)
+		var dz := (h_d - h_u) / (2.0 * sample_step)
+		var slope := sqrt(dx * dx + dz * dz)
+		if slope > 0.35:
+			return true
 	for i in get_slide_collision_count():
 		var col := get_slide_collision(i)
 		if not col:
