@@ -60,13 +60,13 @@ void fragment() {
 	bl = bl * bl * bl * bl;
 	bl /= (bl.x + bl.y + bl.z + 0.0001);
 
-	vec3 rock_col = vec3(0.22, 0.23, 0.26);
+	vec3 rock_col = vec3(0.26, 0.27, 0.30);
 
 	// Regional bias — whole mountains lighter or darker
 	float reg_x = vnoise_fast(wpos.zy * 0.002 + vec2(1337.0, 42.0));
 	float reg_y = vnoise_fast(wpos.xz * 0.002 + vec2(1410.0, 191.0));
 	float region = reg_x * bl.x + reg_y * (bl.y + bl.z);
-	rock_col += vec3(region - 0.5) * 0.22;
+	rock_col += vec3(region - 0.5) * 0.16;
 
 	// Broad tonal shift
 	float broad_x = vnoise_fast(wpos.zy * 0.005 + vec2(90.0, 260.0));

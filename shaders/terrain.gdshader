@@ -26,7 +26,7 @@ uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 uniform float bank_roughness : hint_range(0.0, 1.0) = 0.95;
 
 group_uniforms rock;
-uniform vec3 rock_color_base : source_color = vec3(0.22, 0.23, 0.26);
+uniform vec3 rock_color_base : source_color = vec3(0.26, 0.27, 0.30);
 
 float hash12(vec2 p) {
 	float h = dot(p, vec2(127.1, 311.7));
@@ -68,7 +68,7 @@ vec3 rock_color(vec3 wpos, vec3 wnorm, float steepness) {
 
 	// ── Regional bias — shifts whole mountains lighter or darker ──
 	float region = tri_noise(wpos, bl, 0.002, vec2(1337.0, 42.0));
-	col += vec3(region - 0.5) * 0.22;
+	col += vec3(region - 0.5) * 0.16;
 
 	// ── Layer 1: broad tonal shift — whole mountain faces ──
 	float broad = tri_noise(wpos, bl, 0.005, vec2(90.0, 260.0));
