@@ -2175,28 +2175,6 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	smoke_particles.material_override = smoke_mat
 	structure.add_child(smoke_particles)
 
-	# -- Heat distortion (proportional to contained fire) --
-	var dist_shader := load("res://shaders/heat_distortion.gdshader") as Shader
-	if dist_shader:
-		var distortion_mi := MeshInstance3D.new()
-		distortion_mi.name = "HeatDistortion"
-		var cone := CylinderMesh.new()
-		cone.top_radius = 0.03
-		cone.bottom_radius = 0.3
-		cone.height = 1.2
-		cone.radial_segments = 8
-		cone.rings = 1
-		distortion_mi.mesh = cone
-		distortion_mi.position.y = 1.3
-		distortion_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var dist_mat := ShaderMaterial.new()
-		dist_mat.shader = dist_shader
-		dist_mat.set_shader_parameter("distortion_strength", 0.012)
-		dist_mat.set_shader_parameter("scroll_speed", 1.5)
-		dist_mat.set_shader_parameter("noise_scale", 3.5)
-		distortion_mi.material_override = dist_mat
-		structure.add_child(distortion_mi)
-
 	# -- Main fire light (warm glow, not blinding) --
 	var light := OmniLight3D.new()
 	light.name = "FireLight"
