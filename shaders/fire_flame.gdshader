@@ -99,16 +99,22 @@ void vertex() {
 		radius = mix(center_radius, top_radius, t);
 	}
 
-	// Irregular tongue shapes: displace radius per-vertex using noise
+	// Vertical flame tongues: strong per-angle noise creates distinct tips
 	float angle = atan(v_pos.z, v_pos.x);
-	float tongue_noise = snoise(vec3(angle * 2.0, relative_height * 3.0 - TIME * speed * 1.5, TIME * 0.7));
-	tongue_noise += snoise(vec3(angle * 4.5 + 10.0, relative_height * 5.0 - TIME * speed * 2.0, TIME * 0.4)) * 0.4;
-	float tongue_strength = relative_height * relative_height * 0.35;
+	float tongue1 = snoise(vec3(angle * 1.5, relative_height * 2.5 - TIME * speed * 1.8, TIME * 0.5));
+	float tongue2 = snoise(vec3(angle * 3.0 + 7.0, relative_height * 4.0 - TIME * speed * 2.5, TIME * 0.3));
+	float tongue3 = snoise(vec3(angle * 5.0 - 3.0, relative_height * 6.0 - TIME * speed * 1.2, TIME * 0.8));
+	float tongue_noise = tongue1 + tongue2 * 0.5 + tongue3 * 0.25;
+	float tongue_strength = relative_height * relative_height * 0.5;
 	radius *= 1.0 + tongue_noise * tongue_strength;
 
-	// Gentle wind sway that increases with height
-	float sway = sin(TIME * 1.1 + relative_height * 2.0) * 0.04 * relative_height;
-	float sway_z = sin(TIME * 0.8 + relative_height * 1.5 + 1.5) * 0.025 * relative_height;
+	// Vertical stretch: tongues extend upward at peaks
+	float vert_stretch = max(tongue1, 0.0) * relative_height * 0.15;
+	v_pos.y += vert_stretch * cylinder_height;
+
+	// Wind sway that increases with height
+	float sway = sin(TIME * 1.3 + relative_height * 2.5) * 0.05 * relative_height;
+	float sway_z = sin(TIME * 0.9 + relative_height * 1.8 + 1.5) * 0.035 * relative_height;
 
 	float current_radius = length(vec2(v_pos.x, v_pos.z));
 	if (current_radius > 0.0) {

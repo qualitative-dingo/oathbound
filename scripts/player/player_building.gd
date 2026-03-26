@@ -1763,27 +1763,26 @@ func _make_soft_circle_tex(sz: int) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+func _apply_material_recursive(node: Node, mat: StandardMaterial3D) -> void:
+	if node is MeshInstance3D:
+		node.material_override = mat
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for child in node.get_children():
+		_apply_material_recursive(child, mat)
+
+
 func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
 	var scene := load("res://models/campfire_stone_ring.glb") as PackedScene
 	if scene:
 		var ring := scene.instantiate() as Node3D
 		ring.name = "StoneRing"
-		ring.scale = Vector3(0.006, 0.005, 0.006)
-		ring.position.y = 0.0
-		if ring is GeometryInstance3D:
-			ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ring.scale = Vector3(0.009, 0.014, 0.009)
+		ring.position.y = -0.02
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.32, 0.30, 0.28)
-		mat.roughness = 0.95
+		mat.albedo_color = Color(0.42, 0.40, 0.38)
+		mat.roughness = 0.92
 		mat.metallic = 0.0
-		for child in ring.get_children():
-			if child is MeshInstance3D:
-				child.material_override = mat
-				child.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			for grandchild in child.get_children():
-				if grandchild is MeshInstance3D:
-					grandchild.material_override = mat
-					grandchild.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_apply_material_recursive(ring, mat)
 		structure.add_child(ring)
 	else:
 		for i in 8:
@@ -1877,21 +1876,21 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		var imat := ShaderMaterial.new()
 		imat.shader = fire_shader
 		imat.set_shader_parameter("top_radius", 0.0)
-		imat.set_shader_parameter("bottom_radius", 0.25)
-		imat.set_shader_parameter("center_radius", 0.55)
-		imat.set_shader_parameter("center_position", 0.25)
-		imat.set_shader_parameter("cylinder_height", 0.7)
-		imat.set_shader_parameter("bottom_curve", 0.5)
-		imat.set_shader_parameter("vibrate_amplitude", 0.008)
-		imat.set_shader_parameter("vibrate_frequency", 120.0)
-		imat.set_shader_parameter("speed", 2.8)
-		imat.set_shader_parameter("noise_scale", 2.5)
-		imat.set_shader_parameter("brightness", 1.2)
-		imat.set_shader_parameter("cutoff_base", 0.2)
+		imat.set_shader_parameter("bottom_radius", 0.2)
+		imat.set_shader_parameter("center_radius", 0.32)
+		imat.set_shader_parameter("center_position", 0.2)
+		imat.set_shader_parameter("cylinder_height", 1.1)
+		imat.set_shader_parameter("bottom_curve", 0.6)
+		imat.set_shader_parameter("vibrate_amplitude", 0.006)
+		imat.set_shader_parameter("vibrate_frequency", 100.0)
+		imat.set_shader_parameter("speed", 3.0)
+		imat.set_shader_parameter("noise_scale", 2.8)
+		imat.set_shader_parameter("brightness", 1.3)
+		imat.set_shader_parameter("cutoff_base", 0.18)
 		imat.set_shader_parameter("band_steps", 5.0)
 		imat.set_shader_parameter("color_core", Color(1.0, 1.0, 0.9))
-		imat.set_shader_parameter("color_mid", Color(1.0, 0.75, 0.2))
-		imat.set_shader_parameter("color_outer", Color(1.0, 0.4, 0.05))
+		imat.set_shader_parameter("color_mid", Color(1.0, 0.7, 0.15))
+		imat.set_shader_parameter("color_outer", Color(1.0, 0.35, 0.04))
 		imat.set_shader_parameter("color_edge", Color(0.7, 0.12, 0.0))
 		inner_flame.material_override = imat
 	structure.add_child(inner_flame)
@@ -1906,29 +1905,29 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	outer_cyl.radial_segments = 10
 	outer_cyl.rings = 6
 	outer_flame.mesh = outer_cyl
-	outer_flame.position.y = 0.06
-	outer_flame.scale = Vector3(1.15, 1.1, 1.15)
+	outer_flame.position.y = 0.04
+	outer_flame.scale = Vector3(1.1, 1.05, 1.1)
 	outer_flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if fire_shader:
 		var omat := ShaderMaterial.new()
 		omat.shader = fire_shader
 		omat.set_shader_parameter("top_radius", 0.0)
-		omat.set_shader_parameter("bottom_radius", 0.3)
-		omat.set_shader_parameter("center_radius", 0.7)
-		omat.set_shader_parameter("center_position", 0.3)
-		omat.set_shader_parameter("cylinder_height", 0.65)
-		omat.set_shader_parameter("bottom_curve", 0.5)
-		omat.set_shader_parameter("vibrate_amplitude", 0.012)
-		omat.set_shader_parameter("vibrate_frequency", 100.0)
-		omat.set_shader_parameter("speed", 1.8)
-		omat.set_shader_parameter("noise_scale", 2.2)
-		omat.set_shader_parameter("brightness", 0.7)
-		omat.set_shader_parameter("cutoff_base", 0.25)
+		omat.set_shader_parameter("bottom_radius", 0.25)
+		omat.set_shader_parameter("center_radius", 0.42)
+		omat.set_shader_parameter("center_position", 0.25)
+		omat.set_shader_parameter("cylinder_height", 0.9)
+		omat.set_shader_parameter("bottom_curve", 0.6)
+		omat.set_shader_parameter("vibrate_amplitude", 0.01)
+		omat.set_shader_parameter("vibrate_frequency", 80.0)
+		omat.set_shader_parameter("speed", 2.0)
+		omat.set_shader_parameter("noise_scale", 2.5)
+		omat.set_shader_parameter("brightness", 0.75)
+		omat.set_shader_parameter("cutoff_base", 0.22)
 		omat.set_shader_parameter("band_steps", 4.0)
-		omat.set_shader_parameter("color_core", Color(1.0, 0.85, 0.3))
-		omat.set_shader_parameter("color_mid", Color(1.0, 0.45, 0.08))
-		omat.set_shader_parameter("color_outer", Color(0.8, 0.18, 0.0))
-		omat.set_shader_parameter("color_edge", Color(0.35, 0.05, 0.0))
+		omat.set_shader_parameter("color_core", Color(1.0, 0.8, 0.25))
+		omat.set_shader_parameter("color_mid", Color(1.0, 0.4, 0.06))
+		omat.set_shader_parameter("color_outer", Color(0.75, 0.15, 0.0))
+		omat.set_shader_parameter("color_edge", Color(0.3, 0.04, 0.0))
 		outer_flame.material_override = omat
 	structure.add_child(outer_flame)
 
@@ -1941,8 +1940,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	wisp_particles.randomness = 0.5
 	wisp_particles.one_shot = false
 	wisp_particles.local_coords = true
-	wisp_particles.visibility_aabb = AABB(Vector3(-2, -1, -2), Vector3(4, 4, 4))
-	wisp_particles.position.y = 0.45
+	wisp_particles.visibility_aabb = AABB(Vector3(-2, -1, -2), Vector3(4, 5, 4))
+	wisp_particles.position.y = 0.7
 
 	var wisp_mesh := QuadMesh.new()
 	wisp_mesh.size = Vector2(0.12, 0.25)
@@ -2137,7 +2136,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		cone.radial_segments = 8
 		cone.rings = 1
 		distortion_mi.mesh = cone
-		distortion_mi.position.y = 1.0
+		distortion_mi.position.y = 1.3
 		distortion_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var dist_mat := ShaderMaterial.new()
 		dist_mat.shader = dist_shader
