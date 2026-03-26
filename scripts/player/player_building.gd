@@ -2320,7 +2320,7 @@ func start_campfire_animation(
 			return
 
 		_breath_counter[0] += 1
-		var is_breath := (_breath_counter[0] % 8 == 0)
+		var is_breath: bool = (_breath_counter[0] % 8 == 0)
 		var dur := randf_range(0.3, 0.5) if is_breath else randf_range(0.04, 0.1)
 		var tw := structure.create_tween()
 
