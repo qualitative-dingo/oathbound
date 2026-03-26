@@ -9,6 +9,7 @@ var pc: PlayerController
 const CHEST_COLS := 4
 const CHEST_ROWS := 8
 const CHEST_SLOTS := CHEST_COLS * CHEST_ROWS
+const _DamageNumber := preload("res://scripts/ui/damage_number.gd")
 const RAFT_SPEED := 4.0
 const RAFT_TURN_SPEED := 1.8
 const MOUNT_SPEED_MULT := 2.0
@@ -610,10 +611,23 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 	var amount := rng.randi_range(drop_min, drop_max)
 	Inventory.add_item(drop_id, amount)
 
-	# Rustling leaf sound + pickup tone
 	AudioManager.play_sfx("fist_hit_tree", -14.0, 0.2)
 	AudioManager.play_sfx("wood_pickup", -6.0, 0.15)
 	GameEvents.item_picked_up.emit(drop_id, amount)
+
+	var display := ItemDatabase.get_display_name(drop_id)
+	var num := _DamageNumber.new()
+	num.text = "+%d %s" % [amount, display]
+	num.font_size = 28
+	num.pixel_size = 0.01
+	num.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	num.no_depth_test = true
+	num.modulate = Color.WHITE
+	num.outline_modulate = Color.BLACK
+	num.outline_size = 6
+	num._velocity = Vector3(0, 2.0, 0)
+	pc.get_tree().current_scene.add_child(num)
+	num.global_position = bush.global_position + Vector3(0, 1.5, 0)
 
 	bush.set_meta("berry_harvest", false)
 	bush.remove_from_group(&"berry_bushes")
