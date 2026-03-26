@@ -1770,18 +1770,44 @@ static var _campfire_bark_tex: ImageTexture
 static func _get_stone_texture() -> ImageTexture:
 	if _campfire_stone_tex:
 		return _campfire_stone_tex
-	var sz := 32
+	var sz := 64
 	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var seed_a := randf_range(0.0, 100.0)
+	var seed_b := randf_range(0.0, 100.0)
 	for y in sz:
 		for x in sz:
-			var base := randf_range(0.22, 0.38)
-			var speckle := randf_range(-0.06, 0.06)
+			var fx := float(x) / float(sz)
+			var fy := float(y) / float(sz)
+			var base := randf_range(0.18, 0.35)
+			var large_pattern := sin(fx * 4.5 + seed_a) * cos(fy * 3.8 + seed_b) * 0.08
+			var med_grain := sin(fx * 12.0 + fy * 8.0 + randf_range(-0.5, 0.5)) * 0.05
+			var fine_noise := randf_range(-0.04, 0.04)
 			var crack := 0.0
-			if randf() < 0.08:
-				crack = -randf_range(0.05, 0.12)
-			var vein := sin(float(x) * 0.8 + float(y) * 0.4 + randf_range(-1.0, 1.0)) * 0.03
-			var v := clampf(base + speckle + crack + vein, 0.08, 0.5)
-			img.set_pixel(x, y, Color(v * 1.0, v * 0.95, v * 0.85, 1.0))
+			if randf() < 0.12:
+				crack = -randf_range(0.08, 0.18)
+			elif randf() < 0.06:
+				crack = -randf_range(0.04, 0.10)
+				if x > 0:
+					var prev := img.get_pixel(x - 1, y)
+					if prev.r < 0.15:
+						crack -= 0.05
+			var highlight := 0.0
+			if randf() < 0.05:
+				highlight = randf_range(0.06, 0.14)
+			var lichen_r := 0.0
+			var lichen_g := 0.0
+			var lichen_b := 0.0
+			if sin(fx * 6.0 + seed_a * 2.0) * cos(fy * 7.0 + seed_b * 1.5) > 0.3 and randf() < 0.4:
+				lichen_g = randf_range(0.02, 0.06)
+				lichen_r = -randf_range(0.01, 0.03)
+			var v := clampf(base + large_pattern + med_grain + fine_noise + crack + highlight, 0.06, 0.55)
+			var r := clampf(v * 1.0 + lichen_r, 0.05, 0.55)
+			var g := clampf(v * 0.93 + lichen_g, 0.05, 0.5)
+			var b := clampf(v * 0.82, 0.04, 0.45)
+			if randf() < 0.03:
+				r = clampf(r + randf_range(0.04, 0.09), 0.0, 0.55)
+				b = clampf(b - 0.02, 0.0, 0.45)
+			img.set_pixel(x, y, Color(r, g, b, 1.0))
 	_campfire_stone_tex = ImageTexture.create_from_image(img)
 	return _campfire_stone_tex
 
@@ -1827,8 +1853,9 @@ func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
 		stone.mesh = sphere
 		var mat := StandardMaterial3D.new()
 		mat.albedo_texture = stone_tex
-		mat.albedo_color = Color(randf_range(0.15, 0.25), randf_range(0.14, 0.22), randf_range(0.12, 0.2))
-		mat.roughness = 0.95
+		mat.albedo_color = Color(randf_range(0.28, 0.42), randf_range(0.26, 0.38), randf_range(0.22, 0.34))
+		mat.roughness = randf_range(0.8, 0.95)
+		mat.metallic = randf_range(0.0, 0.08)
 		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		stone.set_surface_override_material(0, mat)
 		var angle := float(i) * TAU / float(stone_count) + randf_range(-0.12, 0.12)
