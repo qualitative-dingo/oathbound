@@ -382,8 +382,8 @@ func build_pause_menu() -> void:
 	center.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	center.offset_left = -220
 	center.offset_right = 220
-	center.offset_top = -480
-	center.offset_bottom = -40
+	center.offset_top = -100
+	center.offset_bottom = 340
 	center.add_theme_constant_override("separation", 0)
 	pc._pause_overlay.add_child(center)
 
