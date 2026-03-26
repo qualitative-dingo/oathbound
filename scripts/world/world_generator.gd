@@ -938,7 +938,7 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 	return false
 
 
-const _PENDING_BUDGET_US := 4000  # max microseconds per frame for pending work
+const _PENDING_BUDGET_US := 3000  # max microseconds per frame for pending work
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
@@ -950,10 +950,13 @@ func _process_pending_zones() -> void:
 			col_shape.disabled = false
 			break
 
-	# 1. Collect completed background builds — discard stale ones immediately
+	# 1. Collect completed background builds — limit per frame to avoid stalls
 	_gen_mutex.lock()
-	var ready := _gen_ready_queue.duplicate()
-	_gen_ready_queue.clear()
+	var ready_count := _gen_ready_queue.size()
+	var ready: Array = []
+	var max_collect := mini(ready_count, 3)
+	for _ci in max_collect:
+		ready.append(_gen_ready_queue.pop_front())
 	_gen_mutex.unlock()
 
 	for item in ready:
@@ -1008,7 +1011,7 @@ func _process_pending_zones() -> void:
 				break
 
 	# 4. Submit new zone builds — stop if backlog is already large
-	if _finalize_backlog.size() + _gen_in_flight.size() > 30:
+	if _finalize_backlog.size() + _gen_in_flight.size() > 12:
 		return
 	var submitted := 0
 	while submitted < MAX_ZONES_PER_FRAME and not _pending_zones.is_empty():
@@ -1204,7 +1207,7 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 				col.disabled = true
 				_deferred_collisions.append(col)
 				zone_root.add_child(col)
-		add_child(zone_root)
+		call_deferred(&"add_child", zone_root)
 	else:
 		zone_root = StaticBody3D.new()
 		zone_root.name = "Zone_%d_%d" % [coord.x, coord.y]
@@ -1224,7 +1227,7 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 			_deferred_collisions.append(collision)
 		zone_root.add_child(mesh_instance)
 		zone_root.add_child(collision)
-		add_child(zone_root)
+		call_deferred(&"add_child", zone_root)
 
 	zone_root.global_position = world_to_scene_pos(Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE))
 	_loaded_zones[coord] = zone_root
