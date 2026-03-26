@@ -105,7 +105,7 @@ var _build_rotation: float = 0.0
 # Terraform mode (H key)
 var _terraform_mode: bool = false
 var _hoe_indicator: MeshInstance3D
-const HOE_RADIUS := 4.0
+const HOE_RADIUS := 2.0
 var _build_snap_enabled: bool = true
 var _build_snapped: bool = false
 var _build_snap_side: int = 0  # 0=forward 1=back 2=left 3=right 4=top 5=bottom
@@ -8882,10 +8882,14 @@ func _try_hoe_use() -> void:
 		return
 	var world_hit := wg.get_world_position_vec(hit_pos)
 
+	var player_world := wg.get_world_position(self)
+	var target_h := wg.get_height_at(player_world.x, player_world.z)
+	target_h = maxf(target_h, WorldGenerator.WATER_LEVEL + 0.5)
+
 	_spend_stamina(TERRAFORM_STAMINA_COST)
 	_attack_cooldown = TERRAFORM_COOLDOWN
 
-	wg.flatten_terrain(world_hit.x, world_hit.z, HOE_RADIUS)
+	wg.flatten_terrain_to(world_hit.x, world_hit.z, HOE_RADIUS, target_h)
 	AudioManager.play_sfx("fist_hit_tree", -6.0)
 
 func _toggle_terraform_mode() -> void:

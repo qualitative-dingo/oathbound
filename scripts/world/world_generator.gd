@@ -104,6 +104,9 @@ func get_height_at_scene(sx: float, sz: float) -> float:
 
 func flatten_terrain(world_x: float, world_z: float, radius: float) -> void:
 	var target_h := get_height_at(world_x, world_z)
+	flatten_terrain_to(world_x, world_z, radius, target_h)
+
+func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h: float) -> void:
 	var affected_zones: Dictionary = {}
 	var steps := ceili(radius / TERRAIN_MOD_STEP)
 	var cx := roundi(world_x / TERRAIN_MOD_STEP)
