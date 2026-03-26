@@ -102,14 +102,17 @@ void fragment() {
 	water_col.rgb = mix(water_col.rgb, sky_tint.rgb, fresnel * 0.5);
 	water_col.a = mix(water_col.a, 0.95, fresnel * 0.6);
 
-	// ── Depth-noise perturbation — multi-octave to break up staircase edges ──
+	// ── Depth-noise perturbation — subtle, to soften the shore edge ──
 	float edge_noise = vnoise(world_pos.xz * 1.2) * 0.45
 	                  + vnoise(world_pos.xz * 2.7 + vec2(33.0, 77.0)) * 0.30
 	                  + vnoise(world_pos.xz * 6.1 + vec2(-19.0, 41.0)) * 0.15;
-	float perturbed_depth = depth_diff + (edge_noise - 0.45) * 1.6;
+	float perturbed_depth = depth_diff + (edge_noise - 0.45) * 0.4;
+
+	// Hard cutoff: never render water where terrain is clearly above water
+	float hard_mask = smoothstep(-0.02, 0.15, depth_diff);
 
 	// ── Shore alpha fade — smoothly hides the mesh/water intersection ──
-	float shore_alpha = smoothstep(-0.1, 0.8, perturbed_depth);
+	float shore_alpha = smoothstep(0.0, 0.6, perturbed_depth) * hard_mask;
 
 	// ── Foam along shoreline (tight edge only) ──
 	float foam_noise = vnoise(world_pos.xz * 1.8 + vec2(TIME * 0.25, TIME * 0.18));
