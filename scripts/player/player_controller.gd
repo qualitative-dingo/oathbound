@@ -7115,39 +7115,66 @@ func _load_campfire_tex(path: String) -> Texture2D:
 	return null
 
 
+func _make_soft_circle_tex(sz: int) -> ImageTexture:
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var center := float(sz) * 0.5
+	for y in sz:
+		for x in sz:
+			var dx := float(x) - center + 0.5
+			var dy := float(y) - center + 0.5
+			var dist := sqrt(dx * dx + dy * dy) / center
+			var alpha := clampf(1.0 - dist * dist, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1.0, 1.0, 1.0, alpha))
+	return ImageTexture.create_from_image(img)
+
+
+func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
+	var stone_count := 8
+	var ring_radius := 0.35
+	for i in stone_count:
+		var stone := MeshInstance3D.new()
+		stone.name = "RingStone%d" % i
+		var box := BoxMesh.new()
+		var w := randf_range(0.08, 0.14)
+		var h := randf_range(0.06, 0.10)
+		var d := randf_range(0.08, 0.12)
+		box.size = Vector3(w, h, d)
+		stone.mesh = box
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(
+			randf_range(0.35, 0.5),
+			randf_range(0.33, 0.48),
+			randf_range(0.30, 0.42)
+		)
+		mat.roughness = 0.9
+		stone.set_surface_override_material(0, mat)
+		var angle := float(i) * TAU / float(stone_count) + randf_range(-0.15, 0.15)
+		stone.position = Vector3(
+			cos(angle) * ring_radius,
+			h * 0.3,
+			sin(angle) * ring_radius
+		)
+		stone.rotation = Vector3(
+			randf_range(-0.3, 0.3),
+			randf_range(0, TAU),
+			randf_range(-0.2, 0.2)
+		)
+		stone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		structure.add_child(stone)
+
+
 func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	var log_tex := _load_campfire_tex("res://textures/campfire/burning_log.png")
 	var ember_tex := _load_campfire_tex("res://textures/campfire/ember_bed.png")
-	var smoke_tex := _load_campfire_tex("res://textures/campfire/smoke.png")
-
-	# Load animated flame frames (12-frame loop)
-	var flame_anim_frames: Array[Texture2D] = []
-	for fi in 12:
-		var path := "res://textures/campfire/flame_frame_%d.png" % fi
-		var ftex := _load_campfire_tex(path)
-		if ftex:
-			flame_anim_frames.append(ftex)
-	if _DEBUG_LOG: print("[Campfire] Loaded %d flame animation frames" % flame_anim_frames.size())
-
-	var fire_full_tex: Texture2D
-	var fire_only_tex: Texture2D
-	if flame_anim_frames.size() >= 2:
-		fire_full_tex = flame_anim_frames[0]
-		fire_only_tex = flame_anim_frames[1]
-	else:
-		fire_full_tex = _load_campfire_tex("res://textures/campfire/campfire_full.png")
-		fire_only_tex = _load_campfire_tex("res://textures/campfire/flames_only.png")
 
 	if not log_tex:
 		log_tex = _make_gradient_tex(24, 8, Color(0.15, 0.08, 0.02), Color(0.4, 0.2, 0.05))
 	if not ember_tex:
 		ember_tex = _make_gradient_tex(24, 24, Color(1.0, 0.3, 0.0, 0.9), Color(0.6, 0.1, 0.0, 0.7))
-	if not fire_full_tex:
-		fire_full_tex = _make_gradient_tex(16, 32, Color(1.0, 1.0, 0.3, 0.0), Color(1.0, 0.4, 0.0, 0.95))
-	if not fire_only_tex:
-		fire_only_tex = _make_gradient_tex(16, 32, Color(1.0, 0.9, 0.2, 0.0), Color(1.0, 0.2, 0.0, 0.9))
-	if not smoke_tex:
-		smoke_tex = _make_solid_tex(16, 16, Color(0.6, 0.6, 0.65, 0.15))
+	var soft_tex := _make_soft_circle_tex(32)
+
+	# -- Stone ring base --
+	_build_campfire_stone_ring(structure)
 
 	# -- Static logs beneath the fire (3 crossing logs, flat and centered) --
 	for i in 3:
@@ -7176,92 +7203,216 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	ember_sp.shaded = false
 	structure.add_child(ember_sp)
 
-	# Crop region to show only the flame portion (top 60%) of each frame,
-	# hiding the log/base artwork baked into the bottom of the generated PNGs.
-	var flame_region := Rect2(0, 0, 48, 30)
+	# -- GPU Flame Particles (additive blend, HDR emission, color ramp) --
+	var flame_particles := GPUParticles3D.new()
+	flame_particles.name = "FlameParticles"
+	flame_particles.amount = 40
+	flame_particles.lifetime = 0.8
+	flame_particles.explosiveness = 0.1
+	flame_particles.randomness = 0.3
+	flame_particles.one_shot = false
+	flame_particles.local_coords = true
+	flame_particles.visibility_aabb = AABB(Vector3(-2, -1, -2), Vector3(4, 4, 4))
+	flame_particles.position.y = 0.15
 
-	# -- Main campfire sprite (core flame - largest, always visible) --
-	var main_fire := Sprite3D.new()
-	main_fire.name = "MainFire"
-	main_fire.texture = fire_full_tex
-	main_fire.region_enabled = true
-	main_fire.region_rect = flame_region
-	main_fire.pixel_size = 0.024
-	main_fire.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	main_fire.position.y = 0.45
-	main_fire.transparent = true
-	main_fire.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-	main_fire.shaded = false
-	main_fire.modulate = Color(1.0, 0.95, 0.85, 0.95)
-	structure.add_child(main_fire)
+	var flame_mesh := QuadMesh.new()
+	flame_mesh.size = Vector2(0.35, 0.5)
+	flame_particles.draw_pass_1 = flame_mesh
 
-	# -- Multiple overlapping flame layers for depth and movement --
-	var flame_sprites: Array[Sprite3D] = []
-	flame_sprites.append(main_fire)
+	var flame_pmat := ParticleProcessMaterial.new()
+	flame_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	flame_pmat.emission_sphere_radius = 0.12
+	flame_pmat.direction = Vector3(0, 1, 0)
+	flame_pmat.spread = 15.0
+	flame_pmat.initial_velocity_min = 0.8
+	flame_pmat.initial_velocity_max = 1.5
+	flame_pmat.gravity = Vector3(0, 0.5, 0)
+	flame_pmat.damping_min = 0.5
+	flame_pmat.damping_max = 1.5
+	flame_pmat.scale_min = 0.5
+	flame_pmat.scale_max = 1.2
+	flame_pmat.angular_velocity_min = -30.0
+	flame_pmat.angular_velocity_max = 30.0
 
-	var flame2 := Sprite3D.new()
-	flame2.name = "FlameLayer2"
-	flame2.texture = fire_only_tex
-	flame2.region_enabled = true
-	flame2.region_rect = flame_region
-	flame2.pixel_size = 0.022
-	flame2.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	flame2.position = Vector3(0.08, 0.40, 0.06)
-	flame2.transparent = true
-	flame2.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-	flame2.shaded = false
-	flame2.modulate = Color(1.0, 0.85, 0.6, 0.8)
-	flame2.scale = Vector3(0.9, 1.15, 1.0)
-	structure.add_child(flame2)
-	flame_sprites.append(flame2)
+	var flame_scale_crv := CurveTexture.new()
+	var fsc := Curve.new()
+	fsc.add_point(Vector2(0.0, 0.3))
+	fsc.add_point(Vector2(0.2, 1.0))
+	fsc.add_point(Vector2(0.6, 0.8))
+	fsc.add_point(Vector2(1.0, 0.0))
+	flame_scale_crv.curve = fsc
+	flame_pmat.scale_curve = flame_scale_crv
 
-	var flame3 := Sprite3D.new()
-	flame3.name = "FlameLayer3"
-	flame3.texture = fire_only_tex
-	flame3.region_enabled = true
-	flame3.region_rect = flame_region
-	flame3.pixel_size = 0.020
-	flame3.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	flame3.position = Vector3(-0.06, 0.50, -0.05)
-	flame3.transparent = true
-	flame3.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-	flame3.shaded = false
-	flame3.modulate = Color(1.0, 0.7, 0.4, 0.7)
-	flame3.scale = Vector3(0.8, 1.0, 1.0)
-	structure.add_child(flame3)
-	flame_sprites.append(flame3)
+	var flame_grad := Gradient.new()
+	flame_grad.offsets = PackedFloat32Array([0.0, 0.15, 0.4, 0.7, 1.0])
+	flame_grad.colors = PackedColorArray([
+		Color(1.0, 1.0, 0.9, 0.9),
+		Color(1.0, 0.95, 0.4, 0.85),
+		Color(1.0, 0.6, 0.1, 0.7),
+		Color(0.9, 0.25, 0.05, 0.4),
+		Color(0.5, 0.1, 0.0, 0.0),
+	])
+	var flame_ramp := GradientTexture1D.new()
+	flame_ramp.gradient = flame_grad
+	flame_pmat.color_ramp = flame_ramp
+	flame_particles.process_material = flame_pmat
 
-	var flame4 := Sprite3D.new()
-	flame4.name = "FlameLayer4"
-	flame4.texture = fire_full_tex
-	flame4.region_enabled = true
-	flame4.region_rect = flame_region
-	flame4.pixel_size = 0.017
-	flame4.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	flame4.position = Vector3(0.0, 0.60, 0.0)
-	flame4.transparent = true
-	flame4.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-	flame4.shaded = false
-	flame4.modulate = Color(1.0, 1.0, 0.5, 0.5)
-	flame4.scale = Vector3(0.6, 0.7, 1.0)
-	structure.add_child(flame4)
-	flame_sprites.append(flame4)
+	var flame_mat := StandardMaterial3D.new()
+	flame_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flame_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	flame_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	flame_mat.albedo_color = Color(1.0, 0.9, 0.7, 1.0)
+	flame_mat.albedo_texture = soft_tex
+	flame_mat.emission_enabled = true
+	flame_mat.emission = Color(1.0, 0.7, 0.3)
+	flame_mat.emission_energy_multiplier = 4.0
+	flame_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	flame_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	flame_particles.material_override = flame_mat
+	structure.add_child(flame_particles)
 
-	# -- Smoke wisps (2 layers rising above the fire) --
-	var smoke_sprites: Array[Sprite3D] = []
-	for si in 2:
-		var smoke := Sprite3D.new()
-		smoke.name = "Smoke%d" % si
-		smoke.texture = smoke_tex
-		smoke.pixel_size = 0.014 + float(si) * 0.004
-		smoke.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		smoke.position = Vector3(randf_range(-0.06, 0.06), 1.0 + float(si) * 0.4, randf_range(-0.06, 0.06))
-		smoke.transparent = true
-		smoke.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
-		smoke.shaded = false
-		smoke.modulate = Color(0.7, 0.7, 0.75, 0.2 - float(si) * 0.06)
-		structure.add_child(smoke)
-		smoke_sprites.append(smoke)
+	# -- GPU Ember Spark Particles (parabolic arcs with gravity) --
+	var spark_particles := GPUParticles3D.new()
+	spark_particles.name = "SparkParticles"
+	spark_particles.amount = 20
+	spark_particles.lifetime = 0.6
+	spark_particles.explosiveness = 0.3
+	spark_particles.randomness = 0.5
+	spark_particles.one_shot = false
+	spark_particles.local_coords = true
+	spark_particles.visibility_aabb = AABB(Vector3(-3, -1, -3), Vector3(6, 5, 6))
+	spark_particles.position.y = 0.3
+
+	var spark_mesh := QuadMesh.new()
+	spark_mesh.size = Vector2(0.04, 0.04)
+	spark_particles.draw_pass_1 = spark_mesh
+
+	var spark_pmat := ParticleProcessMaterial.new()
+	spark_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	spark_pmat.emission_sphere_radius = 0.1
+	spark_pmat.direction = Vector3(0, 1, 0)
+	spark_pmat.spread = 35.0
+	spark_pmat.initial_velocity_min = 2.0
+	spark_pmat.initial_velocity_max = 4.5
+	spark_pmat.gravity = Vector3(0, -4.0, 0)
+	spark_pmat.damping_min = 0.5
+	spark_pmat.damping_max = 2.0
+	spark_pmat.scale_min = 0.5
+	spark_pmat.scale_max = 1.5
+
+	var spark_grad := Gradient.new()
+	spark_grad.offsets = PackedFloat32Array([0.0, 0.3, 0.7, 1.0])
+	spark_grad.colors = PackedColorArray([
+		Color(1.0, 0.9, 0.5, 1.0),
+		Color(1.0, 0.6, 0.1, 0.9),
+		Color(0.8, 0.2, 0.0, 0.5),
+		Color(0.4, 0.05, 0.0, 0.0),
+	])
+	var spark_ramp := GradientTexture1D.new()
+	spark_ramp.gradient = spark_grad
+	spark_pmat.color_ramp = spark_ramp
+	spark_particles.process_material = spark_pmat
+
+	var spark_mat := StandardMaterial3D.new()
+	spark_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	spark_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	spark_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	spark_mat.albedo_color = Color(1.0, 0.8, 0.3, 1.0)
+	spark_mat.albedo_texture = soft_tex
+	spark_mat.emission_enabled = true
+	spark_mat.emission = Color(1.0, 0.6, 0.1)
+	spark_mat.emission_energy_multiplier = 6.0
+	spark_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	spark_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	spark_particles.material_override = spark_mat
+	structure.add_child(spark_particles)
+
+	# -- GPU Smoke Particles (alpha blend, larger and slower) --
+	var smoke_particles := GPUParticles3D.new()
+	smoke_particles.name = "SmokeParticles"
+	smoke_particles.amount = 10
+	smoke_particles.lifetime = 3.0
+	smoke_particles.explosiveness = 0.05
+	smoke_particles.randomness = 0.4
+	smoke_particles.one_shot = false
+	smoke_particles.local_coords = true
+	smoke_particles.visibility_aabb = AABB(Vector3(-3, -1, -3), Vector3(6, 8, 6))
+	smoke_particles.position.y = 0.6
+
+	var smoke_mesh := QuadMesh.new()
+	smoke_mesh.size = Vector2(0.6, 0.6)
+	smoke_particles.draw_pass_1 = smoke_mesh
+
+	var smoke_pmat := ParticleProcessMaterial.new()
+	smoke_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	smoke_pmat.emission_sphere_radius = 0.08
+	smoke_pmat.direction = Vector3(0, 1, 0)
+	smoke_pmat.spread = 20.0
+	smoke_pmat.initial_velocity_min = 0.3
+	smoke_pmat.initial_velocity_max = 0.6
+	smoke_pmat.gravity = Vector3(0, 0.15, 0)
+	smoke_pmat.damping_min = 0.3
+	smoke_pmat.damping_max = 0.8
+	smoke_pmat.scale_min = 0.4
+	smoke_pmat.scale_max = 1.0
+	smoke_pmat.angular_velocity_min = -15.0
+	smoke_pmat.angular_velocity_max = 15.0
+
+	var smoke_scale_crv := CurveTexture.new()
+	var ssc := Curve.new()
+	ssc.add_point(Vector2(0.0, 0.3))
+	ssc.add_point(Vector2(0.3, 0.8))
+	ssc.add_point(Vector2(0.7, 1.2))
+	ssc.add_point(Vector2(1.0, 1.5))
+	smoke_scale_crv.curve = ssc
+	smoke_pmat.scale_curve = smoke_scale_crv
+
+	var smoke_grad := Gradient.new()
+	smoke_grad.offsets = PackedFloat32Array([0.0, 0.15, 0.5, 0.85, 1.0])
+	smoke_grad.colors = PackedColorArray([
+		Color(0.7, 0.65, 0.6, 0.0),
+		Color(0.65, 0.6, 0.55, 0.15),
+		Color(0.55, 0.53, 0.5, 0.12),
+		Color(0.5, 0.48, 0.45, 0.06),
+		Color(0.45, 0.43, 0.4, 0.0),
+	])
+	var smoke_ramp := GradientTexture1D.new()
+	smoke_ramp.gradient = smoke_grad
+	smoke_pmat.color_ramp = smoke_ramp
+	smoke_particles.process_material = smoke_pmat
+
+	var smoke_mat := StandardMaterial3D.new()
+	smoke_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smoke_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	smoke_mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX
+	smoke_mat.albedo_color = Color(0.6, 0.55, 0.5, 1.0)
+	smoke_mat.albedo_texture = soft_tex
+	smoke_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	smoke_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	smoke_particles.material_override = smoke_mat
+	structure.add_child(smoke_particles)
+
+	# -- Heat distortion (screen-space UV warp above fire) --
+	var dist_shader := load("res://shaders/heat_distortion.gdshader") as Shader
+	if dist_shader:
+		var distortion_mi := MeshInstance3D.new()
+		distortion_mi.name = "HeatDistortion"
+		var cone := CylinderMesh.new()
+		cone.top_radius = 0.05
+		cone.bottom_radius = 0.4
+		cone.height = 1.2
+		cone.radial_segments = 8
+		cone.rings = 1
+		distortion_mi.mesh = cone
+		distortion_mi.position.y = 1.4
+		distortion_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var dist_mat := ShaderMaterial.new()
+		dist_mat.shader = dist_shader
+		dist_mat.set_shader_parameter("distortion_strength", 0.012)
+		dist_mat.set_shader_parameter("scroll_speed", 1.5)
+		dist_mat.set_shader_parameter("noise_scale", 3.0)
+		distortion_mi.material_override = dist_mat
+		structure.add_child(distortion_mi)
 
 	# -- Main fire light --
 	var light := OmniLight3D.new()
@@ -7284,13 +7435,10 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	fill.position.y = 0.15
 	structure.add_child(fill)
 
-	# -- Animate everything --
-	_start_campfire_animation(structure, light, flame_sprites, smoke_sprites, ember_sp, fire_full_tex, fire_only_tex, flame_anim_frames)
+	# -- Light flicker + ember pulse (GPU particles handle flame/smoke/spark animation) --
+	_start_campfire_animation(structure, light, ember_sp)
 
-	# -- Campfire looping sound (non-positional via AudioManager for reliability) --
 	_start_campfire_sound(structure)
-
-	# -- Distance culling - hide fire visuals beyond render distance --
 	_setup_campfire_distance_cull(structure)
 
 
@@ -7318,10 +7466,11 @@ func _setup_campfire_distance_cull(structure: StaticBody3D) -> void:
 		was_visible[0] = in_range
 		structure.set_meta(&"campfire_culled", not in_range)
 		for child in structure.get_children():
-			if child is Sprite3D or child is OmniLight3D:
+			if child is GPUParticles3D:
+				child.emitting = in_range
 				child.visible = in_range
-			elif child.name == "FlameAnimTimer":
-				child.paused = not in_range
+			elif child is Sprite3D or child is OmniLight3D or child is MeshInstance3D:
+				child.visible = in_range
 	)
 
 
@@ -7433,57 +7582,8 @@ func _start_campfire_sound(structure: StaticBody3D) -> void:
 func _start_campfire_animation(
 	structure: StaticBody3D,
 	light: OmniLight3D,
-	flames: Array[Sprite3D],
-	smokes: Array[Sprite3D],
 	ember: Sprite3D,
-	tex_a: Texture2D,
-	tex_b: Texture2D,
-	anim_frames: Array[Texture2D] = [],
 ) -> void:
-	var flame_base_x: Array[float] = []
-	var flame_base_y: Array[float] = []
-	for f in flames:
-		flame_base_x.append(f.position.x)
-		flame_base_y.append(f.position.y)
-
-	# Copy frames into a plain Array so lambdas can capture it without type issues
-	var frames_copy: Array = []
-	for t in anim_frames:
-		frames_copy.append(t)
-	var has_anim := frames_copy.size() >= 3
-	var frame_count := frames_copy.size()
-
-	# -- Frame-by-frame fire animation via a persistent Timer node --
-	if has_anim:
-		var frame_idx := [0]
-		# Each flame layer starts at a different offset for varied motion
-		var offsets: Array[int] = []
-		for fi in flames.size():
-			offsets.append((fi * 2) % frame_count)
-
-		var anim_timer := Timer.new()
-		anim_timer.name = "FlameAnimTimer"
-		anim_timer.wait_time = 0.12
-		anim_timer.autostart = true
-		anim_timer.one_shot = false
-		structure.add_child(anim_timer)
-		anim_timer.timeout.connect(func() -> void:
-			if not is_instance_valid(structure):
-				return
-			frame_idx[0] = (frame_idx[0] + 1) % frame_count
-			for fi in flames.size():
-				if not is_instance_valid(flames[fi]):
-					continue
-				var idx: int = int((frame_idx[0] + offsets[fi]) % frame_count)
-				flames[fi].texture = frames_copy[idx] as Texture2D
-		)
-		# Set initial textures immediately
-		for fi in flames.size():
-			if is_instance_valid(flames[fi]):
-				flames[fi].texture = frames_copy[offsets[fi]] as Texture2D
-
-	# -- Flame dance + light flicker (runs every 0.08-0.2s) --
-	var _tick := [0]
 	var _flicker_ref: Array[Callable] = [Callable()]
 	_flicker_ref[0] = func() -> void:
 		if not is_instance_valid(structure):
@@ -7493,7 +7593,6 @@ func _start_campfire_animation(
 			retry_tw.tween_interval(0.5)
 			retry_tw.tween_callback(_flicker_ref[0])
 			return
-		_tick[0] += 1
 		var dur := randf_range(0.08, 0.2)
 		var tw := structure.create_tween()
 
@@ -7502,100 +7601,12 @@ func _start_campfire_animation(
 		tw.tween_property(light, "light_energy", energy, dur)
 		tw.parallel().tween_property(light, "light_color", Color(randf_range(0.9, 1.0), col_g, 0.08), dur)
 
-		for fi in flames.size():
-			if not is_instance_valid(flames[fi]):
-				continue
-			var sy := randf_range(0.7, 1.3)
-			var sx := randf_range(0.8, 1.2)
-			var sway := flame_base_x[fi] + randf_range(-0.12, 0.12)
-			var bob := flame_base_y[fi] + randf_range(-0.04, 0.08)
-			tw.parallel().tween_property(flames[fi], "scale", Vector3(sx, sy, 1.0), dur)
-			tw.parallel().tween_property(flames[fi], "position:x", sway, dur)
-			tw.parallel().tween_property(flames[fi], "position:y", bob, dur)
-			var heat := randf_range(0.6, 1.0)
-			var alpha := clampf(flames[fi].modulate.a + randf_range(-0.08, 0.08), 0.5, 1.0)
-			tw.parallel().tween_property(flames[fi], "modulate", Color(1.0, heat, heat * 0.5, alpha), dur)
-
-			if not has_anim and _tick[0] % 4 == fi and tex_a and tex_b:
-				flames[fi].texture = tex_b if flames[fi].texture == tex_a else tex_a
-
 		if is_instance_valid(ember):
 			var ea := randf_range(0.6, 1.0)
 			tw.parallel().tween_property(ember, "modulate", Color(1.0, randf_range(0.3, 0.6), randf_range(0.0, 0.15), ea), dur)
 
 		tw.tween_callback(_flicker_ref[0])
 	_flicker_ref[0].call()
-
-	# -- Smoke drift (continuous rising wisps) --
-	var _smoke_ref: Array[Callable] = [Callable()]
-	_smoke_ref[0] = func() -> void:
-		if not is_instance_valid(structure):
-			return
-		if structure.get_meta(&"campfire_culled", false):
-			var retry_tw := structure.create_tween()
-			retry_tw.tween_interval(0.5)
-			retry_tw.tween_callback(_smoke_ref[0])
-			return
-		for si in smokes.size():
-			if not is_instance_valid(smokes[si]):
-				continue
-			var stw := smokes[si].create_tween()
-			var life := randf_range(2.0, 3.5)
-			var start_y := 0.8 + float(si) * 0.3
-			smokes[si].position = Vector3(randf_range(-0.06, 0.06), start_y, randf_range(-0.06, 0.06))
-			smokes[si].modulate.a = 0.0
-			smokes[si].scale = Vector3(0.7, 0.7, 1.0)
-			stw.set_parallel(true)
-			stw.tween_property(smokes[si], "position:y", start_y + randf_range(1.5, 2.5), life)
-			stw.tween_property(smokes[si], "position:x", smokes[si].position.x + randf_range(-0.2, 0.2), life)
-			stw.tween_property(smokes[si], "scale", Vector3(1.5, 1.8, 1.0), life)
-			stw.set_parallel(false)
-			stw.tween_property(smokes[si], "modulate:a", randf_range(0.12, 0.25), life * 0.2)
-			stw.tween_property(smokes[si], "modulate:a", 0.0, life * 0.8)
-		var timer := structure.get_tree().create_timer(randf_range(1.8, 3.0))
-		timer.timeout.connect(_smoke_ref[0])
-	_smoke_ref[0].call()
-
-	# -- Ember sparks (small bright particles rising and dying) --
-	var spark_pool: Array[Sprite3D] = []
-	var spark_count := 6
-	var spark_img := Image.create(3, 3, false, Image.FORMAT_RGBA8)
-	spark_img.fill(Color(1.0, 0.7, 0.1))
-	var spark_tex := ImageTexture.create_from_image(spark_img)
-
-	for si in spark_count:
-		var sp := Sprite3D.new()
-		sp.texture = spark_tex
-		sp.pixel_size = 0.005
-		sp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		sp.transparent = true
-		sp.shaded = false
-		sp.modulate = Color(1.0, randf_range(0.4, 0.8), 0.0, 0.9)
-		sp.visible = false
-		structure.add_child(sp)
-		spark_pool.append(sp)
-
-	var _spark_idx := [0]
-	var _spark_ref: Array[Callable] = [Callable()]
-	_spark_ref[0] = func() -> void:
-		if not is_instance_valid(structure):
-			return
-		var sp: Sprite3D = spark_pool[_spark_idx[0] % spark_count]
-		_spark_idx[0] += 1
-		sp.position = Vector3(randf_range(-0.1, 0.1), randf_range(0.3, 0.6), randf_range(-0.1, 0.1))
-		sp.modulate.a = 0.9
-		sp.visible = true
-		var life := randf_range(0.3, 0.7)
-		var tw := sp.create_tween()
-		tw.set_parallel(true)
-		tw.tween_property(sp, "position:y", sp.position.y + randf_range(0.5, 1.5), life)
-		tw.tween_property(sp, "position:x", sp.position.x + randf_range(-0.2, 0.2), life)
-		tw.tween_property(sp, "modulate:a", 0.0, life)
-		tw.set_parallel(false)
-		tw.tween_callback(func() -> void: sp.visible = false)
-		var timer := structure.get_tree().create_timer(randf_range(0.2, 0.6))
-		timer.timeout.connect(_spark_ref[0])
-	_spark_ref[0].call()
 
 
 func _build_door_visual(structure: StaticBody3D, sz: Vector3, build_id: StringName) -> void:
