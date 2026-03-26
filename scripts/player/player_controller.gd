@@ -5900,12 +5900,7 @@ func _update_build_ghost() -> void:
 				place_pos = result_hit_node.global_position + side_dir * (exist_half + new_half)
 				use_rot = result_hit_node.rotation.y + _build_rotation
 				_build_snapped = true
-				if _build_snap_side_label:
-					_build_snap_side_label.visible = true
-					_update_snap_side_label()
 			else:
-				if _build_snap_side_label:
-					_build_snap_side_label.visible = false
 				var snap := _find_best_snap(place_pos, _build_rotation, bid, sz, result_hit_node)
 				if not snap.is_empty():
 					place_pos = snap["pos"] as Vector3
@@ -8985,7 +8980,10 @@ func _update_hoe_indicator() -> void:
 	if not _terraform_mode:
 		if _hoe_indicator and is_instance_valid(_hoe_indicator):
 			_hoe_indicator.visible = false
+		if _hoe_height_line and is_instance_valid(_hoe_height_line):
+			_hoe_height_line.visible = false
 		return
+
 	if not _hoe_indicator or not is_instance_valid(_hoe_indicator):
 		_hoe_indicator = MeshInstance3D.new()
 		_hoe_indicator.name = "HoeIndicator"
@@ -8996,16 +8994,29 @@ func _update_hoe_indicator() -> void:
 		torus.ring_segments = 16
 		_hoe_indicator.mesh = torus
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.4, 0.9, 0.3, 0.45)
+		mat.albedo_color = Color(1.0, 0.9, 0.4, 0.35)
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.no_depth_test = true
 		_hoe_indicator.set_surface_override_material(0, mat)
 		get_tree().current_scene.add_child(_hoe_indicator)
 
+	if not _hoe_height_line or not is_instance_valid(_hoe_height_line):
+		_hoe_height_line = MeshInstance3D.new()
+		_hoe_height_line.name = "HoeHeightLine"
+		_hoe_height_line.mesh = CylinderMesh.new()
+		var line_mat := StandardMaterial3D.new()
+		line_mat.albedo_color = Color(1.0, 0.85, 0.3, 0.6)
+		line_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		line_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		line_mat.no_depth_test = true
+		_hoe_height_line.set_surface_override_material(0, line_mat)
+		get_tree().current_scene.add_child(_hoe_height_line)
+
 	var cam := get_viewport().get_camera_3d()
 	if not cam:
 		_hoe_indicator.visible = false
+		_hoe_height_line.visible = false
 		return
 	var screen_center := get_viewport().get_visible_rect().size * 0.5
 	var ray_origin := cam.project_ray_origin(screen_center)
@@ -9014,16 +9025,51 @@ func _update_hoe_indicator() -> void:
 	var space := get_world_3d().direct_space_state
 	if not space:
 		_hoe_indicator.visible = false
+		_hoe_height_line.visible = false
 		return
 	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 1)
 	query.exclude = [get_rid()]
 	var result := space.intersect_ray(query)
 	if result.is_empty():
 		_hoe_indicator.visible = false
+		_hoe_height_line.visible = false
 		return
+
 	_hoe_indicator.visible = true
 	var hit_pos: Vector3 = result["position"]
-	_hoe_indicator.global_position = Vector3(hit_pos.x, hit_pos.y + 0.1, hit_pos.z)
+	_hoe_indicator.global_position = Vector3(hit_pos.x, hit_pos.y + 0.05, hit_pos.z)
+
+	var wg := _find_world_generator()
+	if not wg:
+		_hoe_height_line.visible = false
+		return
+	var player_world := wg.get_world_position(self)
+	var player_h := wg.get_height_at(player_world.x, player_world.z)
+	player_h = maxf(player_h, WorldGenerator.WATER_LEVEL + 0.5)
+	var terrain_h := hit_pos.y
+	var delta_h := player_h - terrain_h
+	var abs_delta := absf(delta_h)
+
+	if abs_delta < 0.05:
+		_hoe_height_line.visible = false
+		return
+
+	_hoe_height_line.visible = true
+	var cyl: CylinderMesh = _hoe_height_line.mesh as CylinderMesh
+	cyl.top_radius = 0.04
+	cyl.bottom_radius = 0.04
+	cyl.height = abs_delta
+
+	var mid_y := (player_h + terrain_h) * 0.5
+	var scene_mid := wg.world_to_scene_pos(Vector3(player_world.x, mid_y, player_world.z))
+	_hoe_height_line.global_position = Vector3(hit_pos.x, scene_mid.y, hit_pos.z)
+
+	var line_mat: StandardMaterial3D = _hoe_height_line.get_surface_override_material(0) as StandardMaterial3D
+	if line_mat:
+		if delta_h > 0.0:
+			line_mat.albedo_color = Color(1.0, 0.5, 0.2, 0.7)
+		else:
+			line_mat.albedo_color = Color(0.3, 0.7, 1.0, 0.7)
 
 func _get_build_icon(recipe_id: StringName) -> Texture2D:
 	if _building:
