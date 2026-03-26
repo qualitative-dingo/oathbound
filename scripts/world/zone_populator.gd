@@ -4082,7 +4082,7 @@ static func _scatter_water_plants(
 		var wx := origin_x + lx
 		var wz := origin_z + lz
 		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
-		if mesh_h > -0.3 or mesh_h < -4.0:
+		if mesh_h > -1.5 or mesh_h < -4.0:
 			continue
 		var pad := MeshInstance3D.new()
 		pad.mesh = _lily_pad_mesh
