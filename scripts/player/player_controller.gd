@@ -1248,7 +1248,7 @@ func _physics_process(delta: float) -> void:
 	var _has_bow_equipped := _bow_slot_item != &""
 	if _has_bow_equipped:
 		_is_blocking = false
-		_tick_bow_draw(delta, wants_block)
+		_tick_bow_draw(delta, wants_block and not _build_mode and not _terraform_mode)
 	else:
 		_is_blocking = wants_block and not _build_mode and not _build_menu_open and not _terraform_mode
 		_tick_bow_draw(delta, false)
