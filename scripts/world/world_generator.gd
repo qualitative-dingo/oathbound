@@ -1250,7 +1250,7 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 		zone_root.add_child(collision)
 		call_deferred(&"add_child", zone_root)
 
-	zone_root.global_position = world_to_scene_pos(Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE))
+	zone_root.position = world_to_scene_pos(Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE))
 	_loaded_zones[coord] = zone_root
 	_explored_zones[coord] = true
 
