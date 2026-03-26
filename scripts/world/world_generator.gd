@@ -318,7 +318,7 @@ func _physics_process(delta: float) -> void:
 		host.velocity = Vector3.ZERO
 	else:
 		for p in _players:
-			if "_in_cave" in p and p._in_cave:
+			if p.get("_in_cave"):
 				continue
 			var wp := get_world_position(p)
 			var ground := get_height_at(wp.x, wp.z)
@@ -1352,9 +1352,19 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			var cn := _color_noise.get_noise_2d(wx, wz)
 			var brightness := 0.92 + cn * 0.12
 			var path_f := _ZonePopulator.get_path_factor(wx, wz)
-			# Blue channel = river bank proximity (0..1) for muddy shoreline blending
-			var accum_here := _ws_sample_accum(wx, wz)
+
+			# Blue channel = shore/bank proximity (0..1) for muddy shoreline blending
+			# Perturb sample coords with noise to break up the coarse 48m watershed grid
+			var bank_warp := _detail_noise.get_noise_2d(wx * 0.08 + 4000.0, wz * 0.08 + 4000.0) * 12.0 if _detail_noise else 0.0
+			var accum_here := _ws_sample_accum(wx + bank_warp, wz + bank_warp)
 			var river_bank := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, accum_here)
+
+			# Lake shores also get bank signal so muddy edges appear around lakes
+			if _detail_noise:
+				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
+				var lake_shore := smoothstep(-0.15, -0.38, lake_n)
+				river_bank = maxf(river_bank, lake_shore)
+
 			river_bank = clampf(river_bank, 0.0, 1.0)
 			colors.append(Color(path_f, brightness, river_bank))
 

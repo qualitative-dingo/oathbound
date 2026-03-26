@@ -130,23 +130,31 @@ func refresh_chest_ui() -> void:
 			if slot_stars > 0:
 				slot_style.border_color = ItemDatabase.get_rarity_color(slot_stars)
 				slot_style.set_border_width_all(2)
+
+			var stack := Control.new()
+			stack.custom_minimum_size = Vector2(52, 52)
+			stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 			var data: Dictionary = ItemDatabase.get_item(item_id)
 			var icon_path: String = str(data.get("icon", ""))
+			var icon_tex: Texture2D = null
 			if icon_path != "" and ResourceLoader.exists(icon_path):
+				icon_tex = load(icon_path) as Texture2D
+			if icon_tex:
 				var tex_rect := TextureRect.new()
-				tex_rect.texture = load(icon_path) as Texture2D
-				tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				tex_rect.texture = icon_tex
+				tex_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
 				tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-				tex_rect.custom_minimum_size = Vector2(48, 48)
+				tex_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 				tex_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 				tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				slot.add_child(tex_rect)
+				stack.add_child(tex_rect)
 			else:
 				var color_rect := ColorRect.new()
 				color_rect.color = pc._get_item_fallback_color(item_id)
-				color_rect.custom_minimum_size = Vector2(48, 48)
+				color_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 				color_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				slot.add_child(color_rect)
+				stack.add_child(color_rect)
 
 			if count > 1:
 				var qty := Label.new()
@@ -160,7 +168,9 @@ func refresh_chest_ui() -> void:
 				qty.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 				qty.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 				qty.mouse_filter = Control.MOUSE_FILTER_IGNORE
-				slot.add_child(qty)
+				stack.add_child(qty)
+
+			slot.add_child(stack)
 
 		var slot_idx := i
 		slot.gui_input.connect(func(ev: InputEvent):
@@ -700,29 +710,35 @@ func enter_cave(entrance: Node3D) -> void:
 	print("[CAVE] Entering cave from entrance at %s" % entrance.global_position)
 	pc._cave_return_pos = pc.global_position
 	pc._cave_entrance_node = entrance
-
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(entrance.global_position)
 	pc._in_cave = true
-	pc._cave_instance = CaveGenerator.create_cave_instance(rng)
-	pc.get_tree().root.add_child(pc._cave_instance)
-
-	var spawn_local: Vector3 = pc._cave_instance.get_meta("player_spawn", Vector3.ZERO)
-	var target := pc._cave_instance.global_position + spawn_local
-	print("[CAVE] Cave instance at %s, spawn_local=%s, target=%s" % [pc._cave_instance.global_position, spawn_local, target])
-	pc.global_position = target
-	pc.velocity = Vector3.ZERO
 	pc._swim_fatigue = 0.0
 	pc._drown_tick_timer = 0.0
 	pc._is_swimming = false
 
 	if pc._minimap_outer:
 		pc._minimap_outer.visible = false
-
 	if pc._footstep_player and pc._footstep_player.playing:
 		pc._footstep_player.stop()
 	if pc._gallop_player and pc._gallop_player.playing:
 		pc._gallop_player.stop()
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(entrance.global_position)
+	pc._cave_instance = CaveGenerator.create_cave_instance(rng)
+	pc.get_tree().root.add_child(pc._cave_instance)
+
+	var spawn_local: Vector3 = pc._cave_instance.get_meta("player_spawn", Vector3.ZERO)
+	var target := pc._cave_instance.global_position + spawn_local
+	print("[CAVE] Cave instance at %s, spawn_local=%s, target=%s" % [pc._cave_instance.global_position, spawn_local, target])
+
+	# Wait for physics server to register the cave collision shapes
+	await pc.get_tree().physics_frame
+	await pc.get_tree().physics_frame
+
+	if not is_instance_valid(pc) or not pc._in_cave:
+		return
+	pc.global_position = target
+	pc.velocity = Vector3.ZERO
 
 
 func exit_cave() -> void:

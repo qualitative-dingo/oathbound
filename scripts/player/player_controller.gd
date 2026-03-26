@@ -1530,11 +1530,12 @@ func _handle_flight(delta: float) -> void:
 		speed *= 2.0
 	velocity = Vector3.ZERO
 	global_position += move_dir * speed * delta
-	var wg_nodes := get_tree().get_nodes_in_group(&"world_generator")
-	if not wg_nodes.is_empty() and wg_nodes[0].has_method(&"get_height_at_scene"):
-		var ground_y: float = wg_nodes[0].get_height_at_scene(global_position.x, global_position.z)
-		if global_position.y < ground_y + 0.5:
-			global_position.y = ground_y + 0.5
+	if not _in_cave:
+		var wg_nodes := get_tree().get_nodes_in_group(&"world_generator")
+		if not wg_nodes.is_empty() and wg_nodes[0].has_method(&"get_height_at_scene"):
+			var ground_y: float = wg_nodes[0].get_height_at_scene(global_position.x, global_position.z)
+			if global_position.y < ground_y + 0.5:
+				global_position.y = ground_y + 0.5
 
 
 func _handle_movement(delta: float) -> void:
@@ -10239,38 +10240,11 @@ func _try_interact() -> void:
 # ===================================================================
 
 func _enter_cave(entrance: Node3D) -> void:
-	if _in_cave:
-		return
-	_cave_return_pos = global_position
-	_cave_entrance_node = entrance
-
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(entrance.global_position)
-	_cave_instance = CaveGenerator.create_cave_instance(rng)
-	get_tree().root.add_child(_cave_instance)
-
-	var spawn_local: Vector3 = _cave_instance.get_meta("player_spawn", Vector3.ZERO)
-	global_position = _cave_instance.global_position + spawn_local
-	velocity = Vector3.ZERO
-	_in_cave = true
-
-	if _footstep_player and _footstep_player.playing:
-		_footstep_player.stop()
-	if _gallop_player and _gallop_player.playing:
-		_gallop_player.stop()
+	_interaction.enter_cave(entrance)
 
 
 func _exit_cave() -> void:
-	if not _in_cave:
-		return
-	_in_cave = false
-	global_position = _cave_return_pos + Vector3(0.0, 1.0, 0.0)
-	velocity = Vector3.ZERO
-
-	if is_instance_valid(_cave_instance):
-		_cave_instance.queue_free()
-	_cave_instance = null
-	_cave_entrance_node = null
+	_interaction.exit_cave()
 
 
 # ===================================================================
@@ -10526,7 +10500,13 @@ func _on_death() -> void:
 
 func _respawn() -> void:
 	if _in_cave:
-		_interaction.exit_cave()
+		_in_cave = false
+		if is_instance_valid(_cave_instance):
+			_cave_instance.queue_free()
+		_cave_instance = null
+		_cave_entrance_node = null
+		if _minimap_outer:
+			_minimap_outer.visible = true
 	if _mounted:
 		_interaction.force_dismount()
 	if _bow_drawing:

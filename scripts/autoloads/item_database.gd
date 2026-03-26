@@ -637,6 +637,11 @@ func _register_defaults() -> void:
 		"stack_size": 30, "type": "material",
 		"icon": "res://textures/items/copper_ore.png",
 	})
+	register_item(&"iron_ore", {
+		"name": "Iron Ore", "description": "Dense iron ore. Smelted into iron bars for strong equipment.",
+		"stack_size": 30, "type": "material",
+		"icon": "res://textures/items/copper_ore.png",
+	})
 	register_item(&"feather", {
 		"name": "Feather", "description": "A light feather.",
 		"stack_size": 50, "type": "material",
