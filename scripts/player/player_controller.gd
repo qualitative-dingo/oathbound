@@ -2251,8 +2251,13 @@ func _tick_footstep_sfx(_delta: float) -> void:
 			var expected := _stone_run_stream if is_running else _stone_walk_stream
 			if _footstep_player.stream != expected:
 				_swap_footstep_stream(flat_speed)
-		var speed_ratio := clampf(flat_speed / walk_speed, 0.4, 2.2) * 0.65
-		_footstep_player.pitch_scale = speed_ratio
+		if _on_stone_surface:
+			_footstep_player.pitch_scale = 1.0
+			_footstep_player.volume_db = -2.5
+		else:
+			var speed_ratio := clampf(flat_speed / walk_speed, 0.4, 2.2) * 0.65
+			_footstep_player.pitch_scale = speed_ratio
+			_footstep_player.volume_db = -8.5
 	if want_playing and not _footstep_player.playing:
 		_swap_footstep_stream(flat_speed)
 		_footstep_player.play()
