@@ -560,9 +560,11 @@ func _process_chase(delta: float) -> void:
 		_wander_timer = 99.0
 		return
 
-	var in_range := hdist <= attack_range
+	var v_dist := absf(to_target.y)
+	var v_reach := attack_range + 2.0
+	var in_range := hdist <= attack_range and v_dist <= v_reach
 	var resume_chase_dist := attack_range * 2.5
-	if _holding_at_target and hdist <= resume_chase_dist:
+	if _holding_at_target and hdist <= resume_chase_dist and v_dist <= v_reach:
 		in_range = true
 
 	if in_range:
@@ -873,6 +875,8 @@ func _do_attack() -> void:
 	var offset := _target.global_position - global_position
 	var h_dist := Vector2(offset.x, offset.z).length()
 	if h_dist > attack_range * 1.5:
+		return
+	if absf(offset.y) > attack_range + 2.0:
 		return
 	_combat_timer = 8.0
 	if _target.has_method("take_damage"):

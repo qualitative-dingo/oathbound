@@ -6733,18 +6733,22 @@ static func _add_stair_collision(structure: StaticBody3D, sz: Vector3, _step_cou
 const Z_FIGHT_OFFSET := 0.001
 
 const SNAP_COMPAT: Dictionary = {
-	&"wall_base":      [&"wall_top", &"floor_edge"],
-	&"wall_top":       [&"wall_base", &"floor_edge", &"roof_base_45", &"roof_base_26"],
+	&"wall_base":      [&"wall_top", &"floor_edge", &"gable_base_45", &"gable_base_26"],
+	&"wall_top":       [&"wall_base", &"floor_edge", &"roof_base_45", &"roof_base_26", &"gable_base_45", &"gable_base_26"],
 	&"wall_side":      [&"wall_side"],
 	&"floor_edge":     [&"wall_base", &"wall_top", &"floor_edge"],
 	&"floor_corner":   [&"floor_corner"],
-	&"roof_base_45":   [&"wall_top", &"roof_ridge_45"],
-	&"roof_base_26":   [&"wall_top", &"roof_ridge_26"],
+	&"roof_base_45":   [&"wall_top", &"roof_ridge_45", &"gable_slope_45"],
+	&"roof_base_26":   [&"wall_top", &"roof_ridge_26", &"gable_slope_26"],
 	&"roof_ridge_45":  [&"roof_ridge_45", &"roof_base_45"],
 	&"roof_ridge_26":  [&"roof_ridge_26", &"roof_base_26"],
-	&"roof_side_45":   [&"roof_side_45"],
-	&"roof_side_26":   [&"roof_side_26"],
+	&"roof_side_45":   [&"roof_side_45", &"gable_slope_45"],
+	&"roof_side_26":   [&"roof_side_26", &"gable_slope_26"],
 	&"ridge_cap_end":  [&"ridge_cap_end", &"roof_ridge_45", &"roof_ridge_26"],
+	&"gable_base_45":  [&"wall_top", &"wall_base"],
+	&"gable_base_26":  [&"wall_top", &"wall_base"],
+	&"gable_slope_45": [&"roof_side_45", &"roof_base_45"],
+	&"gable_slope_26": [&"roof_side_26", &"roof_base_26"],
 }
 
 static func _get_roof_angle_group(build_id: StringName) -> int:
@@ -6823,6 +6827,20 @@ func _get_snap_points_for(build_id: StringName, sz: Vector3) -> Array[Dictionary
 			pts.append({"pos": Vector3( hw, 0.0, 0.0), "type": &"ridge_cap_end"})
 			pts.append({"pos": Vector3( 0.0, 0.0, -hd), "type": &"ridge_cap_end"})
 			pts.append({"pos": Vector3( 0.0, 0.0,  hd), "type": &"ridge_cap_end"})
+
+	elif build_id.begins_with("wood_gable") or build_id.begins_with("stone_gable"):
+		var ag := _get_roof_angle_group(build_id)
+		var gable_base: StringName = &"gable_base_45" if ag == 45 else &"gable_base_26"
+		var gable_slope: StringName = &"gable_slope_45" if ag == 45 else &"gable_slope_26"
+		# Base edge (sits on top of wall_top)
+		pts.append({"pos": Vector3(-hw, 0.0, 0.0), "type": gable_base})
+		pts.append({"pos": Vector3( 0.0, 0.0, 0.0), "type": gable_base})
+		pts.append({"pos": Vector3( hw, 0.0, 0.0), "type": gable_base})
+		# Peak
+		pts.append({"pos": Vector3(0.0, h, 0.0), "type": &"ridge_cap_end"})
+		# Slope edges (connect to roof sides)
+		pts.append({"pos": Vector3(-hw * 0.5, h * 0.5, 0.0), "type": gable_slope})
+		pts.append({"pos": Vector3( hw * 0.5, h * 0.5, 0.0), "type": gable_slope})
 
 	return pts
 
