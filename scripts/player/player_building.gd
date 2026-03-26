@@ -1772,63 +1772,70 @@ func _apply_material_recursive(node: Node, mat: StandardMaterial3D) -> void:
 
 
 func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
-	var scene := load("res://models/campfire_stone_ring.glb") as PackedScene
-	if scene:
-		var ring := scene.instantiate() as Node3D
-		ring.name = "StoneRing"
-		ring.scale = Vector3(0.009, 0.014, 0.009)
-		ring.position.y = -0.02
+	var stone_count := 10
+	var ring_radius := 0.48
+	for i in stone_count:
+		var stone := MeshInstance3D.new()
+		stone.name = "RingStone%d" % i
+		var sphere := SphereMesh.new()
+		var base_r := randf_range(0.09, 0.15)
+		sphere.radius = base_r
+		sphere.height = base_r * randf_range(1.2, 1.8)
+		sphere.radial_segments = 5
+		sphere.rings = 3
+		stone.mesh = sphere
+		var grey := randf_range(0.28, 0.42)
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.42, 0.40, 0.38)
-		mat.roughness = 0.92
-		mat.metallic = 0.0
-		_apply_material_recursive(ring, mat)
-		structure.add_child(ring)
-	else:
-		for i in 8:
-			var stone := MeshInstance3D.new()
-			stone.name = "RingStone%d" % i
-			var sphere := SphereMesh.new()
-			sphere.radius = randf_range(0.08, 0.13)
-			sphere.height = randf_range(0.10, 0.16)
-			sphere.radial_segments = 6
-			sphere.rings = 3
-			stone.mesh = sphere
-			var mat := StandardMaterial3D.new()
-			mat.albedo_color = Color(randf_range(0.25, 0.38), randf_range(0.24, 0.36), randf_range(0.22, 0.32))
-			mat.roughness = 0.95
-			stone.set_surface_override_material(0, mat)
-			var angle := float(i) * TAU / 8.0 + randf_range(-0.15, 0.15)
-			stone.position = Vector3(cos(angle) * 0.42, 0.04, sin(angle) * 0.42)
-			stone.rotation = Vector3(randf_range(-0.3, 0.3), randf_range(0, TAU), randf_range(-0.2, 0.2))
-			stone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			structure.add_child(stone)
+		mat.albedo_color = Color(grey, grey * 0.95, grey * 0.88)
+		mat.roughness = 0.95
+		stone.set_surface_override_material(0, mat)
+		var angle := float(i) * TAU / float(stone_count) + randf_range(-0.12, 0.12)
+		var radial_offset := randf_range(-0.04, 0.04)
+		stone.position = Vector3(
+			cos(angle) * (ring_radius + radial_offset),
+			sphere.height * 0.35,
+			sin(angle) * (ring_radius + radial_offset)
+		)
+		stone.rotation = Vector3(randf_range(-0.25, 0.25), randf_range(0, TAU), randf_range(-0.25, 0.25))
+		stone.scale = Vector3(randf_range(0.9, 1.3), randf_range(0.7, 1.1), randf_range(0.9, 1.3))
+		stone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		structure.add_child(stone)
 
 
 func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
-	var log_tex := load_campfire_tex("res://textures/campfire/burning_log.png")
-	if not log_tex:
-		log_tex = make_gradient_tex(24, 8, Color(0.15, 0.08, 0.02), Color(0.4, 0.2, 0.05))
 	var soft_tex := _make_soft_circle_tex(32)
 
 	_build_campfire_stone_ring(structure)
 
-	# -- Logs with charring glow (visible under flames) --
-	var log_heights := [0.04, 0.08, 0.06]
-	for i in 3:
-		var log_sp := Sprite3D.new()
-		log_sp.texture = log_tex
-		log_sp.pixel_size = 0.014
-		log_sp.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-		log_sp.shaded = true
-		log_sp.transparent = true
-		log_sp.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
-		var la := float(i) * TAU / 3.0 + randf_range(-0.2, 0.2)
-		log_sp.position = Vector3(randf_range(-0.04, 0.04), log_heights[i], randf_range(-0.04, 0.04))
-		log_sp.rotation.y = la
-		log_sp.rotation.x = -PI * 0.5 + randf_range(-0.12, 0.12)
-		log_sp.modulate = Color(1.1, 0.8, 0.6, 1.0)
-		structure.add_child(log_sp)
+	# -- 3D logs arranged in a teepee/pile --
+	var log_angles := [0.0, TAU / 3.0, TAU * 2.0 / 3.0, TAU / 6.0]
+	var log_tilts := [0.45, 0.5, 0.4, 0.55]
+	var log_lengths := [0.55, 0.5, 0.45, 0.4]
+	for i in 4:
+		var log_mi := MeshInstance3D.new()
+		log_mi.name = "Log%d" % i
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = randf_range(0.025, 0.04)
+		cyl.bottom_radius = randf_range(0.035, 0.055)
+		cyl.height = log_lengths[i]
+		cyl.radial_segments = 5
+		cyl.rings = 1
+		log_mi.mesh = cyl
+		var log_mat := StandardMaterial3D.new()
+		var dark := randf_range(0.08, 0.18)
+		log_mat.albedo_color = Color(dark * 1.5, dark * 0.9, dark * 0.5)
+		log_mat.roughness = 1.0
+		log_mat.emission_enabled = true
+		log_mat.emission = Color(0.6, 0.15, 0.0)
+		log_mat.emission_energy_multiplier = 0.8
+		log_mi.set_surface_override_material(0, log_mat)
+		var angle := log_angles[i] + randf_range(-0.15, 0.15)
+		var tilt := log_tilts[i] + randf_range(-0.08, 0.08)
+		var outward := 0.12
+		log_mi.position = Vector3(cos(angle) * outward, 0.15, sin(angle) * outward)
+		log_mi.rotation = Vector3(tilt, angle + PI, randf_range(-0.1, 0.1))
+		log_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		structure.add_child(log_mi)
 
 	# -- Animated ember bed (shader-driven pulsing coals) --
 	var ember_mi := MeshInstance3D.new()
