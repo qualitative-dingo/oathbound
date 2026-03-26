@@ -1086,6 +1086,10 @@ func tick_raft(delta: float) -> void:
 	var water_y := WaterSystem.get_surface_y(pc._raft_node.global_position.x, pc._raft_node.global_position.z)
 	pc._raft_node.global_position.y = water_y
 
+	if pc._chat_focused:
+		tick_paddle_animation(delta, false)
+		return
+
 	var input_dir := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_backward")
 	var raft_forward := Vector3(-sin(pc._raft_node.rotation.y), 0.0, -cos(pc._raft_node.rotation.y))
 	var moving := input_dir.length() > 0.1

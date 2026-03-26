@@ -974,6 +974,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 
+	if _chat_focused:
+		return
+
 	if event.is_action_pressed(&"player_list") and _player_list_panel and NetworkManager.is_connected_to_game():
 		_player_list_visible = not _player_list_visible
 		_player_list_panel.visible = _player_list_visible
@@ -1516,6 +1519,8 @@ func _step_up_move_and_slide() -> void:
 
 
 func _handle_flight(delta: float) -> void:
+	if _chat_focused:
+		return
 	var input_dir := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
 	var cam: Camera3D = _spring_arm.get_child(0) if _spring_arm and _spring_arm.get_child_count() > 0 else null
 	var cam_basis: Basis = cam.global_transform.basis if cam else _camera_pivot.global_transform.basis
@@ -1544,8 +1549,9 @@ func _handle_flight(delta: float) -> void:
 func _handle_movement(delta: float) -> void:
 	if _chat_focused:
 		_is_sprinting = false
-		velocity.x = move_toward(velocity.x, 0.0, deceleration * delta)
-		velocity.z = move_toward(velocity.z, 0.0, deceleration * delta)
+		_auto_run = false
+		velocity.x = 0.0
+		velocity.z = 0.0
 		return
 	var input_dir := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
 	if _auto_run:
