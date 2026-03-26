@@ -1441,10 +1441,10 @@ func _clamp_to_terrain() -> void:
 	# Don't snap upward when airborne - let gravity work
 	if not is_on_floor():
 		return
-	var snap_threshold := 0.05 if _mounted else 0.15
+	var snap_threshold := 0.1 if _mounted else 0.3
 	var max_snap := 1.5 if _mounted else 2.0
 	if below_surface > snap_threshold and below_surface < max_snap:
-		global_position.y = surface_y + 0.15
+		global_position.y = move_toward(global_position.y, surface_y + 0.15, below_surface * 0.4)
 		velocity.y = maxf(velocity.y, 0.0)
 
 
