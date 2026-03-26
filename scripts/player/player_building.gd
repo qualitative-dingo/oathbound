@@ -1744,8 +1744,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	# -- GPU Flame Particles (additive blend, HDR emission, color ramp) --
 	var flame_particles := GPUParticles3D.new()
 	flame_particles.name = "FlameParticles"
-	flame_particles.amount = 40
-	flame_particles.lifetime = 0.8
+	flame_particles.amount = 18
+	flame_particles.lifetime = 1.4
 	flame_particles.explosiveness = 0.1
 	flame_particles.randomness = 0.3
 	flame_particles.one_shot = false
@@ -1754,21 +1754,21 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	flame_particles.position.y = 0.15
 
 	var flame_mesh := QuadMesh.new()
-	flame_mesh.size = Vector2(0.35, 0.5)
+	flame_mesh.size = Vector2(0.7, 1.1)
 	flame_particles.draw_pass_1 = flame_mesh
 
 	var flame_pmat := ParticleProcessMaterial.new()
 	flame_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	flame_pmat.emission_sphere_radius = 0.12
+	flame_pmat.emission_sphere_radius = 0.22
 	flame_pmat.direction = Vector3(0, 1, 0)
-	flame_pmat.spread = 15.0
-	flame_pmat.initial_velocity_min = 0.8
-	flame_pmat.initial_velocity_max = 1.5
-	flame_pmat.gravity = Vector3(0, 0.5, 0)
+	flame_pmat.spread = 30.0
+	flame_pmat.initial_velocity_min = 0.4
+	flame_pmat.initial_velocity_max = 0.9
+	flame_pmat.gravity = Vector3(0, 0.2, 0)
 	flame_pmat.damping_min = 0.5
 	flame_pmat.damping_max = 1.5
-	flame_pmat.scale_min = 0.5
-	flame_pmat.scale_max = 1.2
+	flame_pmat.scale_min = 0.8
+	flame_pmat.scale_max = 1.8
 	flame_pmat.angular_velocity_min = -30.0
 	flame_pmat.angular_velocity_max = 30.0
 
@@ -1812,8 +1812,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	# -- GPU Ember Spark Particles (parabolic arcs with gravity) --
 	var spark_particles := GPUParticles3D.new()
 	spark_particles.name = "SparkParticles"
-	spark_particles.amount = 20
-	spark_particles.lifetime = 0.6
+	spark_particles.amount = 10
+	spark_particles.lifetime = 1.2
 	spark_particles.explosiveness = 0.3
 	spark_particles.randomness = 0.5
 	spark_particles.one_shot = false
@@ -1830,8 +1830,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	spark_pmat.emission_sphere_radius = 0.1
 	spark_pmat.direction = Vector3(0, 1, 0)
 	spark_pmat.spread = 35.0
-	spark_pmat.initial_velocity_min = 2.0
-	spark_pmat.initial_velocity_max = 4.5
+	spark_pmat.initial_velocity_min = 1.5
+	spark_pmat.initial_velocity_max = 3.5
 	spark_pmat.gravity = Vector3(0, -4.0, 0)
 	spark_pmat.damping_min = 0.5
 	spark_pmat.damping_max = 2.0
@@ -1868,8 +1868,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	# -- GPU Smoke Particles (alpha blend, larger and slower) --
 	var smoke_particles := GPUParticles3D.new()
 	smoke_particles.name = "SmokeParticles"
-	smoke_particles.amount = 10
-	smoke_particles.lifetime = 3.0
+	smoke_particles.amount = 14
+	smoke_particles.lifetime = 4.5
 	smoke_particles.explosiveness = 0.05
 	smoke_particles.randomness = 0.4
 	smoke_particles.one_shot = false
@@ -1878,7 +1878,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	smoke_particles.position.y = 0.6
 
 	var smoke_mesh := QuadMesh.new()
-	smoke_mesh.size = Vector2(0.6, 0.6)
+	smoke_mesh.size = Vector2(1.4, 1.4)
 	smoke_particles.draw_pass_1 = smoke_mesh
 
 	var smoke_pmat := ParticleProcessMaterial.new()
@@ -1886,13 +1886,13 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	smoke_pmat.emission_sphere_radius = 0.08
 	smoke_pmat.direction = Vector3(0, 1, 0)
 	smoke_pmat.spread = 20.0
-	smoke_pmat.initial_velocity_min = 0.3
-	smoke_pmat.initial_velocity_max = 0.6
+	smoke_pmat.initial_velocity_min = 0.5
+	smoke_pmat.initial_velocity_max = 1.0
 	smoke_pmat.gravity = Vector3(0, 0.15, 0)
 	smoke_pmat.damping_min = 0.3
 	smoke_pmat.damping_max = 0.8
-	smoke_pmat.scale_min = 0.4
-	smoke_pmat.scale_max = 1.0
+	smoke_pmat.scale_min = 0.6
+	smoke_pmat.scale_max = 1.6
 	smoke_pmat.angular_velocity_min = -15.0
 	smoke_pmat.angular_velocity_max = 15.0
 
