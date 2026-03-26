@@ -132,6 +132,7 @@ func _build_anim_map(anim_list: PackedStringArray) -> void:
 		"walk": ["walk", "Walk", "Walking", "walking"],
 		"run": ["run", "Run", "Running", "running", "sprint", "Sprint"],
 		"attack": ["attack", "Attack", "Attacking", "attacking", "hit", "Hit", "slash", "Slash"],
+		"death": ["death", "Death", "die", "Die", "dying", "Dying", "dead", "Dead"],
 		"fly": ["fly", "Fly", "Flying", "flying", "glide", "Glide"],
 	}
 
@@ -1287,6 +1288,8 @@ func _spawn_loot_and_play_ground_death() -> void:
 		if death_len > 0.1:
 			tween.tween_interval(DESIRED_DEATH_TIME)
 		else:
+			if _model_anim_player:
+				_model_anim_player.stop()
 			tween.tween_property(_model_node, "rotation:z", deg_to_rad(90.0), 0.4).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_BACK)
 			tween.parallel().tween_property(_model_node, "position:y", 0.1, 0.4).set_ease(Tween.EASE_IN)
 			tween.tween_interval(0.4)

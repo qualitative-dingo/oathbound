@@ -47,38 +47,42 @@ void fragment() {
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float slope = 1.0 - abs(world_normal.y);
 	float slope_noise = (vnoise_fast(wpos.xz * 0.12 + vec2(53.0, 97.0)) - 0.5) * 0.08;
-	// Two-zone: grass → rock, matching main shader
-	float rock_w = smoothstep(slope_start, slope_start + 0.08, slope + slope_noise);
+	// Two-zone: grass → rock — tight transition
+	float rock_w = smoothstep(slope_start, slope_start + 0.04, slope + slope_noise);
 
 	float pm = smoothstep(0.2, 0.7, v_path_mask);
 	float bm = smoothstep(0.1, 0.6, v_river_bank);
 
 	vec3 grass_col = vec3(0.10, 0.28, 0.07) * tint_color;
 
-	// Alternating dark/light rock pattern for distant terrain
+	// Cohesive rock — patches in albedo, no high-freq grain
 	vec3 bl = abs(world_normal);
 	bl = bl * bl * bl * bl;
 	bl /= (bl.x + bl.y + bl.z + 0.0001);
 
-	vec3 rock_base_c = vec3(0.16, 0.17, 0.20);
-	vec3 rock_hi_c = vec3(0.50, 0.49, 0.46);
+	vec3 rock_col = vec3(0.22, 0.23, 0.26);
 
-	// Domain-warped pattern
-	float warp_x = vnoise_fast(wpos.zy * 0.006 + vec2(430.0, 170.0));
-	float warp_y = vnoise_fast(wpos.xz * 0.006 + vec2(503.0, 319.0));
-	vec3 warped_r = wpos + vec3(warp_x, warp_y, warp_x * 0.7 + warp_y * 0.3) * 40.0;
+	// Regional bias — whole mountains lighter or darker
+	float reg_x = vnoise_fast(wpos.zy * 0.002 + vec2(1337.0, 42.0));
+	float reg_y = vnoise_fast(wpos.xz * 0.002 + vec2(1410.0, 191.0));
+	float region = reg_x * bl.x + reg_y * (bl.y + bl.z);
+	rock_col += vec3(region - 0.5) * 0.22;
 
-	float pat_x = vnoise_fast(warped_r.zy * 0.012 + vec2(90.0, 260.0));
-	float pat_y = vnoise_fast(warped_r.xz * 0.012 + vec2(163.0, 409.0));
-	float pat_z = vnoise_fast(warped_r.xy * 0.012 + vec2(401.0, 317.0));
-	float pattern = pat_x * bl.x + pat_y * bl.y + pat_z * bl.z;
+	// Broad tonal shift
+	float broad_x = vnoise_fast(wpos.zy * 0.005 + vec2(90.0, 260.0));
+	float broad_y = vnoise_fast(wpos.xz * 0.005 + vec2(163.0, 409.0));
+	float broad = broad_x * bl.x + broad_y * (bl.y + bl.z);
+	rock_col += vec3(broad - 0.5) * 0.14;
 
-	float mask = smoothstep(0.38, 0.58, pattern);
-	vec3 rock_col = mix(rock_base_c, rock_hi_c, mask);
+	// Medium patches — main pattern
+	float med_x = vnoise_fast(wpos.zy * 0.02 + vec2(444.0, 888.0));
+	float med_y = vnoise_fast(wpos.xz * 0.02 + vec2(517.0, 1037.0));
+	float med = med_x * bl.x + med_y * (bl.y + bl.z);
+	rock_col += vec3(med - 0.5) * 0.20;
 
-	// Fine grain
-	float grain = vnoise_fast(wpos.xz * 0.15 + vec2(200.0, 400.0));
-	rock_col *= 0.92 + grain * 0.16;
+	// Low-frequency grain only
+	float grain_lo = vnoise_fast(wpos.xz * 0.15 + vec2(200.0, 400.0));
+	rock_col *= 0.88 + grain_lo * 0.24;
 
 	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * v_brightness;
 	ground = mix(ground, bank_color, bm * (1.0 - rock_w));

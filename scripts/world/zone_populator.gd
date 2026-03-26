@@ -489,7 +489,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 		var b_y := maxf(0.15, crown_y + rng.randf_range(-crown_h * 0.2, crown_h * 0.5))
 		var berry_mi := MeshInstance3D.new()
 		var bsphere := SphereMesh.new()
-		bsphere.radius = rng.randf_range(0.048, 0.084)
+		bsphere.radius = rng.randf_range(0.067, 0.118)
 		bsphere.height = bsphere.radius * 2.0
 		bsphere.radial_segments = 4
 		bsphere.rings = 2

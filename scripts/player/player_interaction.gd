@@ -654,7 +654,8 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 	# Respawn berries after 90 seconds
 	var stree := bush.get_tree()
 	if stree:
-		stree.create_timer(90.0).timeout.connect(func():
+		var respawn_secs := randf_range(28800.0, 86400.0)
+		stree.create_timer(respawn_secs).timeout.connect(func():
 			if not is_instance_valid(bush):
 				return
 			bush.set_meta("berry_harvest", true)
@@ -677,7 +678,7 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 				var b_y := crown_y + re_rng.randf_range(-crown_h * 0.2, crown_h * 0.5)
 				var bmi := MeshInstance3D.new()
 				var bsp := SphereMesh.new()
-				bsp.radius = re_rng.randf_range(0.048, 0.084)
+				bsp.radius = re_rng.randf_range(0.067, 0.118)
 				bsp.height = bsp.radius * 2.0
 				bsp.radial_segments = 4
 				bsp.rings = 2

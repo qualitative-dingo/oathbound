@@ -26,8 +26,7 @@ uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 uniform float bank_roughness : hint_range(0.0, 1.0) = 0.95;
 
 group_uniforms rock;
-uniform vec3 rock_base : source_color = vec3(0.14, 0.15, 0.18);
-uniform vec3 rock_highlight : source_color = vec3(0.48, 0.47, 0.44);
+uniform vec3 rock_color_base : source_color = vec3(0.22, 0.23, 0.26);
 
 float hash12(vec2 p) {
 	float h = dot(p, vec2(127.1, 311.7));
@@ -59,37 +58,42 @@ float tri_noise(vec3 wpos, vec3 blend, float scale, vec2 off) {
 	return nx * blend.x + ny * blend.y + nz * blend.z;
 }
 
-// Unified stone with visible light/dark alternating pattern and fine grain
+// Cohesive rock — visible patches in albedo, grit in bump map only
 vec3 rock_color(vec3 wpos, vec3 wnorm, float steepness) {
 	vec3 bl = abs(wnorm);
 	bl = pow(bl, vec3(4.0));
 	bl /= (bl.x + bl.y + bl.z + 0.0001);
 
-	// ── Large-scale pattern — domain-warped for organic shapes ──
-	float w1 = tri_noise(wpos, bl, 0.006, vec2(430.0, 170.0));
-	float w2 = tri_noise(wpos, bl, 0.006, vec2(810.0, 560.0));
-	vec3 warped = wpos + vec3(w1, w2, w1 * 0.7 + w2 * 0.3) * 40.0;
-	float pattern = tri_noise(warped, bl, 0.012, vec2(90.0, 260.0));
+	vec3 col = rock_color_base;
 
-	// Moderate smoothstep — visible patches but not razor-sharp
-	float mask = smoothstep(0.38, 0.58, pattern);
+	// ── Regional bias — shifts whole mountains lighter or darker ──
+	float region = tri_noise(wpos, bl, 0.002, vec2(1337.0, 42.0));
+	col += vec3(region - 0.5) * 0.22;
 
-	// ── Medium detail to break up patch edges ──
-	float detail = tri_noise(wpos, bl, 0.035, vec2(444.0, 888.0));
-	mask += (detail - 0.5) * 0.25;
-	mask = clamp(mask, 0.0, 1.0);
+	// ── Layer 1: broad tonal shift — whole mountain faces ──
+	float broad = tri_noise(wpos, bl, 0.005, vec2(90.0, 260.0));
+	col += vec3(broad - 0.5) * 0.14;
 
-	vec3 col = mix(rock_base, rock_highlight, mask);
+	// ── Layer 2: medium patches (domain-warped) — the main visible pattern ──
+	float warp = tri_noise(wpos, bl, 0.008, vec2(430.0, 170.0));
+	vec3 warped = wpos + vec3(warp - 0.5) * 22.0;
+	float med = tri_noise(warped, bl, 0.02, vec2(444.0, 888.0));
+	col += vec3(med - 0.5) * 0.20;
 
-	// ── Fine stone grain — subtle texture across the whole surface ──
-	float grain1 = tri_noise(wpos, bl, 0.12, vec2(200.0, 400.0));
-	float grain2 = tri_noise(wpos, bl, 0.35, vec2(600.0, 100.0));
-	float grain = grain1 * 0.6 + grain2 * 0.4;
-	col *= 0.92 + grain * 0.16;
+	// ── Layer 3: detail patches ──
+	float small_d = tri_noise(wpos, bl, 0.05, vec2(777.0, 333.0));
+	col += vec3(small_d - 0.5) * 0.10;
 
-	// ── Crevice darkening where the pattern transitions ──
-	float crevice = smoothstep(0.04, 0.0, abs(pattern - 0.48)) * 0.18;
-	col *= (1.0 - crevice);
+	// ── Low-frequency color grain only (no high-freq aliasing) ──
+	float grain_lo = tri_noise(wpos, bl, 0.15, vec2(200.0, 400.0));
+	col *= 0.88 + grain_lo * 0.24;
+
+	// ── Crack veins — thin bright fracture lines ──
+	float crack_n = tri_noise(wpos, bl, 0.07, vec2(919.0, 137.0));
+	float vein = 1.0 - pow(abs(crack_n * 2.0 - 1.0), 0.35);
+	float luma = (col.r + col.g + col.b) * 0.333;
+	float dark_fac = 1.0 - clamp(luma / 0.3, 0.0, 1.0);
+	col += vec3(0.07, 0.07, 0.06) * vein * dark_fac;
 
 	return col;
 }
@@ -156,9 +160,8 @@ void fragment() {
 
 	float noisy_slope = slope + slope_noise;
 
-	// Two-zone system: grass → rock. No brown intermediate.
-	// Grass fades out by slope ~0.10, rock fully in by slope ~0.14
-	float grass_w = smoothstep(slope_start + 0.08, slope_start, noisy_slope);
+	// Two-zone system: grass → rock — tight transition so grass clings to stone
+	float grass_w = smoothstep(slope_start + 0.04, slope_start, noisy_slope);
 	float rock_w  = 1.0 - grass_w;
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
@@ -235,7 +238,9 @@ void fragment() {
 	// Biome tint on grass only — rock stays untinted
 	float tint_strength = grass_w;
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
-	ALBEDO = albedo * final_tint * v_brightness;
+	// Reduce v_brightness effect on rock so it doesn't crush the pattern contrast
+	float vb = mix(v_brightness, max(v_brightness, 0.92), cliff_w);
+	ALBEDO = albedo * final_tint * vb;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
 	base_rough = mix(base_rough, bank_roughness, bank_mask * grass_w);
@@ -247,16 +252,29 @@ void fragment() {
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
-	// Rock surface bump — broad undulations + medium stone texture
+	// Rock bump — coarse shapes + fine grit (grit lives HERE, not in albedo)
+	// dFdx/dFdy naturally fade high frequencies at distance = no aliasing
 	if (rock_w > 0.01) {
-		float rn1 = vnoise(world_pos.xz * 0.2 + vec2(311.0, 719.0));
-		float rn2 = vnoise(world_pos.xz * 0.6 + vec2(853.0, 127.0));
-		float rn3 = vnoise(world_pos.xz * 1.8 + vec2(491.0, 953.0));
-		float rock_bump = (rn1 - 0.5) * 0.45 + (rn2 - 0.5) * 0.35 + (rn3 - 0.5) * 0.20;
+		float rn1 = vnoise(world_pos.xz * 0.12 + vec2(311.0, 719.0));
+		float rn2 = vnoise(world_pos.xz * 0.4 + vec2(853.0, 127.0));
+		float rn3 = vnoise(world_pos.xz * 1.2 + vec2(491.0, 953.0));
+		float rn4 = vnoise(world_pos.xz * 3.5 + vec2(137.0, 641.0));
+		float rn5 = vnoise(world_pos.xz * 9.0 + vec2(557.0, 283.0));
+		float rn6 = vnoise(world_pos.xz * 22.0 + vec2(731.0, 419.0));
+		// Crack vein ridges
+		float crack_b = vnoise(world_pos.xz * 0.07 + vec2(919.0, 137.0));
+		float vein_b = 1.0 - pow(abs(crack_b * 2.0 - 1.0), 0.35);
+		float rock_bump = (rn1 - 0.5) * 0.22
+		                + (rn2 - 0.5) * 0.20
+		                + (rn3 - 0.5) * 0.18
+		                + (rn4 - 0.5) * 0.15
+		                + (rn5 - 0.5) * 0.13
+		                + (rn6 - 0.5) * 0.08
+		                + vein_b * 0.04;
 		NORMAL = normalize(NORMAL + vec3(
-			dFdx(rock_bump) * 25.0 * rock_w,
+			dFdx(rock_bump) * 45.0 * rock_w,
 			0.0,
-			dFdy(rock_bump) * 25.0 * rock_w
+			dFdy(rock_bump) * 45.0 * rock_w
 		));
 	}
 }
