@@ -1431,7 +1431,7 @@ func apply_tripo_player_texture() -> void:
 		return
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = tex
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	for mi in pc._gltf_all_meshes:
 		mi.material_override = mat
 		mi.visible = true

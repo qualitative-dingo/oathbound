@@ -9052,6 +9052,11 @@ func _try_hoe_use() -> void:
 	_attack_cooldown = TERRAFORM_COOLDOWN
 
 	wg.flatten_terrain_to(world_hit.x, world_hit.z, HOE_RADIUS, target_h)
+
+	var new_h := wg.get_height_at(player_world.x, player_world.z)
+	var scene_terrain_y := new_h - wg.origin_shift.y
+	if global_position.y < scene_terrain_y + 0.1:
+		global_position.y = scene_terrain_y + 0.1
 	AudioManager.play_sfx("till_ground", -6.0)
 
 func _toggle_terraform_mode() -> void:

@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert_wrap, specular_schlick_ggx;
 
-uniform sampler2D albedo_texture : source_color, filter_nearest, repeat_enable;
+uniform sampler2D albedo_texture : source_color, filter_linear_mipmap, repeat_enable;
 uniform float rim_power : hint_range(0.5, 8.0) = 3.0;
 uniform float rim_intensity : hint_range(0.0, 1.0) = 0.35;
 uniform vec4 rim_color : source_color = vec4(0.8, 0.75, 0.6, 1.0);
