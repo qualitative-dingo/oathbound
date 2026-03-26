@@ -111,42 +111,44 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	# ── Exit marker at entrance ──
 	_build_exit_marker(cave_root)
 
-	# ── Entrance floor + walls (covers the spawn area) ──
-	var entrance_len := 5.0
+	# ── Entrance chamber (wide + tall, matching boss chamber proportions) ──
+	var entrance_len := 12.0
+	var entrance_w := TUNNEL_WIDTH * 2.5
+	var entrance_h := TUNNEL_HEIGHT * 1.8
 	var entrance_floor := _make_box_static(
-		Vector3(TUNNEL_WIDTH + WALL_THICKNESS, FLOOR_THICKNESS, entrance_len),
+		Vector3(entrance_w + WALL_THICKNESS, FLOOR_THICKNESS, entrance_len),
 		_mat_cave_floor
 	)
 	entrance_floor.position = Vector3(0.0, -FLOOR_THICKNESS * 0.5, -entrance_len * 0.5)
 	cave_root.add_child(entrance_floor)
 
 	var entrance_ceil := _make_box_static(
-		Vector3(TUNNEL_WIDTH + WALL_THICKNESS * 2.0, WALL_THICKNESS, entrance_len),
+		Vector3(entrance_w + WALL_THICKNESS * 2.0, WALL_THICKNESS, entrance_len),
 		_mat_cave_rock
 	)
-	entrance_ceil.position = Vector3(0.0, TUNNEL_HEIGHT, -entrance_len * 0.5)
+	entrance_ceil.position = Vector3(0.0, entrance_h, -entrance_len * 0.5)
 	cave_root.add_child(entrance_ceil)
 
 	var entrance_lw := _make_box_static(
-		Vector3(WALL_THICKNESS, TUNNEL_HEIGHT + WALL_THICKNESS, entrance_len),
+		Vector3(WALL_THICKNESS, entrance_h + WALL_THICKNESS, entrance_len),
 		_mat_cave_rock
 	)
-	entrance_lw.position = Vector3(-(TUNNEL_WIDTH * 0.5 + WALL_THICKNESS * 0.5), TUNNEL_HEIGHT * 0.5, -entrance_len * 0.5)
+	entrance_lw.position = Vector3(-(entrance_w * 0.5 + WALL_THICKNESS * 0.5), entrance_h * 0.5, -entrance_len * 0.5)
 	cave_root.add_child(entrance_lw)
 
 	var entrance_rw := _make_box_static(
-		Vector3(WALL_THICKNESS, TUNNEL_HEIGHT + WALL_THICKNESS, entrance_len),
+		Vector3(WALL_THICKNESS, entrance_h + WALL_THICKNESS, entrance_len),
 		_mat_cave_rock
 	)
-	entrance_rw.position = Vector3(TUNNEL_WIDTH * 0.5 + WALL_THICKNESS * 0.5, TUNNEL_HEIGHT * 0.5, -entrance_len * 0.5)
+	entrance_rw.position = Vector3(entrance_w * 0.5 + WALL_THICKNESS * 0.5, entrance_h * 0.5, -entrance_len * 0.5)
 	cave_root.add_child(entrance_rw)
 
 	# ── Back wall behind spawn ──
 	var ew := _make_box_static(
-		Vector3(TUNNEL_WIDTH + WALL_THICKNESS * 2.0, TUNNEL_HEIGHT + WALL_THICKNESS, WALL_THICKNESS),
+		Vector3(entrance_w + WALL_THICKNESS * 2.0, entrance_h + WALL_THICKNESS, WALL_THICKNESS),
 		_mat_cave_rock
 	)
-	ew.position = Vector3(0.0, TUNNEL_HEIGHT * 0.5, 1.0)
+	ew.position = Vector3(0.0, entrance_h * 0.5, 1.0)
 	cave_root.add_child(ew)
 
 	cave_root.set_meta("player_spawn", Vector3(0.0, 1.5, -1.0))
@@ -273,9 +275,9 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	# ════════════════════════════════════════════════════
 	#  SECTION 5: Boss chamber
 	# ════════════════════════════════════════════════════
-	var boss_w := TUNNEL_WIDTH * 2.5
-	var boss_h := TUNNEL_HEIGHT * 1.8
-	var boss_len := 16.0
+	var boss_w := TUNNEL_WIDTH * 2.8
+	var boss_h := TUNNEL_HEIGHT * 2.0
+	var boss_len := 18.0
 	var boss_start := cursor
 	var boss_end := cursor + fwd * boss_len
 	boss_end.y -= descent * 0.3
