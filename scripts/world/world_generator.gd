@@ -144,6 +144,32 @@ func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h:
 func rebuild_zone(coord: Vector2i) -> void:
 	_terrain_mesh_cache.erase(coord)
 	_terrain_shape_cache.erase(coord)
+	_zone_water_cache.erase(coord)
+
+	if coord in _loaded_zones:
+		var zone_node: Node = _loaded_zones[coord]
+		if zone_node is StaticBody3D:
+			var arrays := _build_zone_mesh(coord)
+			var shape := _build_collision_shape(coord)
+			_terrain_mesh_cache[coord] = arrays
+			_terrain_shape_cache[coord] = shape
+
+			var mi := zone_node.get_node_or_null("TerrainMesh") as MeshInstance3D
+			if mi:
+				var arr_mesh: ArrayMesh = mi.mesh as ArrayMesh if mi.mesh is ArrayMesh else ArrayMesh.new()
+				arr_mesh.clear_surfaces()
+				var biome := _determine_biome(coord)
+				var biome_mat: Material = _biome_materials.get(biome, _biome_materials[&"hearthlands"])
+				arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+				arr_mesh.surface_set_material(0, biome_mat)
+				mi.mesh = arr_mesh
+
+			var col := zone_node.get_node_or_null("TerrainCol") as CollisionShape3D
+			if col and shape:
+				col.shape = shape
+				col.disabled = false
+			return
+
 	if coord in _loaded_zones:
 		var zone_node: Node = _loaded_zones[coord]
 		if zone_node is StaticBody3D:
@@ -153,7 +179,6 @@ func rebuild_zone(coord: Vector2i) -> void:
 		_loaded_zones.erase(coord)
 		_zone_biome_cache.erase(coord)
 		_zone_microbiome_cache.erase(coord)
-		_zone_water_cache.erase(coord)
 
 func get_terrain_mods() -> Dictionary:
 	return _terrain_mods.duplicate()
