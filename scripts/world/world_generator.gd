@@ -106,7 +106,11 @@ func flatten_terrain(world_x: float, world_z: float, radius: float) -> void:
 	var target_h := get_height_at(world_x, world_z)
 	flatten_terrain_to(world_x, world_z, radius, target_h)
 
+const TERRAFORM_MAX_DELTA := 1.5
+const TERRAFORM_MIN_HEIGHT := WATER_LEVEL + 0.3
+
 func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h: float) -> void:
+	target_h = maxf(target_h, TERRAFORM_MIN_HEIGHT)
 	var affected_zones: Dictionary = {}
 	var steps := ceili(radius / TERRAIN_MOD_STEP)
 	var cx := roundi(world_x / TERRAIN_MOD_STEP)
@@ -126,7 +130,11 @@ func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h:
 			blend = smoothstep(0.0, 1.0, blend)
 			var key := Vector2i(gx, gz)
 			var existing_h := get_height_at(wx, wz) if not _terrain_mods.has(key) else float(_terrain_mods[key])
-			_terrain_mods[key] = lerpf(existing_h, target_h, blend)
+			var ideal_h := lerpf(existing_h, target_h, blend)
+			var delta := ideal_h - existing_h
+			delta = clampf(delta, -TERRAFORM_MAX_DELTA, TERRAFORM_MAX_DELTA)
+			var new_h := maxf(existing_h + delta, TERRAFORM_MIN_HEIGHT)
+			_terrain_mods[key] = new_h
 			var zone := Vector2i(floori(wx / ZONE_SIZE), floori(wz / ZONE_SIZE))
 			affected_zones[zone] = true
 

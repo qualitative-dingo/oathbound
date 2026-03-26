@@ -8991,7 +8991,6 @@ func _try_hoe_use() -> void:
 
 	var player_world := wg.get_world_position(self)
 	var target_h := wg.get_height_at(player_world.x, player_world.z)
-	target_h = maxf(target_h, WorldGenerator.WATER_LEVEL + 0.5)
 
 	_spend_stamina(TERRAFORM_STAMINA_COST)
 	_attack_cooldown = TERRAFORM_COOLDOWN
