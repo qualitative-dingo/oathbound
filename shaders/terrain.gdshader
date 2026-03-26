@@ -25,12 +25,10 @@ group_uniforms riverbank;
 uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 uniform float bank_roughness : hint_range(0.0, 1.0) = 0.95;
 
-group_uniforms rock_strata;
-uniform vec3 rock_dark : source_color = vec3(0.18, 0.17, 0.16);
-uniform vec3 rock_light : source_color = vec3(0.52, 0.50, 0.48);
-uniform vec3 rock_accent : source_color = vec3(0.35, 0.32, 0.28);
-uniform float strata_scale : hint_range(0.1, 8.0) = 2.5;
-uniform float strata_sharpness : hint_range(1.0, 20.0) = 6.0;
+group_uniforms rock;
+uniform vec3 rock_dark : source_color = vec3(0.15, 0.14, 0.13);
+uniform vec3 rock_light : source_color = vec3(0.58, 0.56, 0.53);
+uniform vec3 rock_mid : source_color = vec3(0.32, 0.30, 0.27);
 
 float hash12(vec2 p) {
 	float h = dot(p, vec2(127.1, 311.7));
@@ -54,43 +52,76 @@ float fbm2(vec2 p) {
 	return v;
 }
 
-// Procedural rock strata — alternating dark/light bands with noise-warped layers
-vec3 rock_strata_color(vec3 wpos, float cliff_amount) {
-	// Warp the Y coordinate with noise for organic, non-uniform layers
-	float warp1 = vnoise(wpos.xz * 0.04 + vec2(123.0, 456.0)) * 6.0;
-	float warp2 = vnoise(wpos.xz * 0.12 + vec2(789.0, 321.0)) * 2.0;
-	float warped_y = wpos.y * strata_scale + warp1 + warp2;
+// Triplanar noise — samples noise from all 3 planes, blended by normal
+float tri_noise(vec3 wpos, vec3 blend, float scale, vec2 offset) {
+	float nx = vnoise(wpos.zy * scale + offset);
+	float ny = vnoise(wpos.xz * scale + offset);
+	float nz = vnoise(wpos.xy * scale + offset);
+	return nx * blend.x + ny * blend.y + nz * blend.z;
+}
 
-	// Primary strata bands — sharp-ish sine pattern
-	float band1 = sin(warped_y * 1.0) * 0.5 + 0.5;
-	band1 = pow(band1, 1.0 / strata_sharpness);
+float tri_fbm(vec3 wpos, vec3 blend, float scale, vec2 offset) {
+	float v = tri_noise(wpos, blend, scale, offset) * 0.55;
+	v += tri_noise(wpos, blend, scale * 2.1, offset + vec2(100.0)) * 0.30;
+	v += tri_noise(wpos, blend, scale * 4.3, offset + vec2(250.0)) * 0.15;
+	return v;
+}
 
-	// Secondary finer bands offset
-	float fine_warp = vnoise(wpos.xz * 0.08 + vec2(555.0, 888.0)) * 3.0;
-	float band2 = sin((warped_y + fine_warp) * 2.7 + 1.3) * 0.5 + 0.5;
-	band2 = pow(band2, 1.0 / (strata_sharpness * 0.7));
+// Valheim-style rock: large patchy blobs of light/dark with vertical flow streaks
+vec3 rock_color(vec3 wpos, vec3 wnorm, float steepness) {
+	vec3 blend = abs(wnorm);
+	blend = pow(blend, vec3(2.0));
+	blend /= (blend.x + blend.y + blend.z + 0.0001);
 
-	// Tertiary very fine detail cracks/veins
-	float vein = vnoise(vec2(warped_y * 4.0, wpos.x * 0.3 + wpos.z * 0.3));
-	float vein_mask = smoothstep(0.45, 0.55, vein) * 0.3;
+	// === Large-scale patches (light vs dark rock) ===
+	// Domain warp for organic blob shapes
+	float warp_x = tri_fbm(wpos, blend, 0.018, vec2(430.0, 170.0));
+	float warp_z = tri_fbm(wpos, blend, 0.018, vec2(810.0, 560.0));
+	vec3 warped = wpos + vec3(warp_x, 0.0, warp_z) * 35.0;
 
-	// Mix dark, light, and accent colors based on the band patterns
-	vec3 base_rock = mix(rock_dark, rock_light, band1);
-	base_rock = mix(base_rock, rock_accent, band2 * 0.5);
+	float patch = tri_fbm(warped, blend, 0.03, vec2(90.0, 260.0));
+	float patch_mask = smoothstep(0.35, 0.65, patch);
 
-	// Surface detail — small-scale noise for texture grain
-	float grain = vnoise(wpos.xz * 1.5 + vec2(200.0, 400.0));
-	float grain2 = vnoise(wpos.xz * 4.0 + vec2(600.0, 100.0));
-	base_rock *= 0.85 + grain * 0.2 + grain2 * 0.1;
+	// === Medium detail patches ===
+	float med_patch = tri_fbm(wpos, blend, 0.08, vec2(333.0, 777.0));
+	float med_mask = smoothstep(0.3, 0.7, med_patch);
 
-	// Dark vein lines in crevices
-	base_rock = mix(base_rock, rock_dark * 0.6, vein_mask);
+	// === Vertical flow/weathering streaks ===
+	// Sample from XY and ZY planes (vertical surfaces) — elongated in Y
+	float flow_xy = vnoise(wpos.xy * vec2(0.15, 0.06) + vec2(111.0, 222.0));
+	float flow_zy = vnoise(wpos.zy * vec2(0.15, 0.06) + vec2(444.0, 555.0));
+	float flow = flow_xy * blend.z + flow_zy * blend.x + 0.5 * blend.y;
+	// Finer flow lines
+	float flow_fine_xy = vnoise(wpos.xy * vec2(0.4, 0.12) + vec2(700.0, 300.0));
+	float flow_fine_zy = vnoise(wpos.zy * vec2(0.4, 0.12) + vec2(900.0, 100.0));
+	float flow_fine = flow_fine_xy * blend.z + flow_fine_zy * blend.x + 0.5 * blend.y;
 
-	// Large-scale color variation to break repetition
-	float region = vnoise(wpos.xz * 0.015 + vec2(900.0, 700.0));
-	base_rock = mix(base_rock, base_rock * vec3(0.9, 0.88, 0.95), (region - 0.5) * 0.4);
+	float flow_streak = smoothstep(0.3, 0.7, flow) * 0.6 + smoothstep(0.35, 0.65, flow_fine) * 0.4;
 
-	return base_rock;
+	// === Build the rock color ===
+	// Base: patchy mix of dark and light
+	vec3 col = mix(rock_dark, rock_light, patch_mask);
+	// Medium detail breaks up the large patches
+	col = mix(col, rock_mid, med_mask * 0.45);
+	// Flow streaks darken/lighten vertically
+	col = mix(col, rock_dark * 0.8, (1.0 - flow_streak) * 0.35 * steepness);
+	col = mix(col, rock_light * 1.1, flow_streak * 0.2);
+
+	// === Surface grain — fine texture detail ===
+	float grain = tri_noise(wpos, blend, 1.8, vec2(200.0, 400.0));
+	float grain2 = tri_noise(wpos, blend, 5.0, vec2(600.0, 100.0));
+	col *= 0.88 + grain * 0.15 + grain2 * 0.08;
+
+	// === Crevice darkening — steepest faces get darker ===
+	col *= mix(1.0, 0.75, steepness * steepness * 0.3);
+
+	// === Subtle color temperature shift across the mountain ===
+	float region = tri_noise(wpos, blend, 0.012, vec2(900.0, 700.0));
+	vec3 warm = col * vec3(1.04, 1.0, 0.94);
+	vec3 cool = col * vec3(0.94, 0.96, 1.04);
+	col = mix(warm, cool, region);
+
+	return col;
 }
 
 vec3 triplanar(sampler2D tex, vec3 wpos, vec3 blend, float scale) {
@@ -162,11 +193,11 @@ void fragment() {
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
 	vec3 col_slope = triplanar(tex_slope, world_pos, blend, texture_scale);
 
-	// Rock strata pattern for steep slopes instead of plain cliff texture
-	vec3 col_cliff = rock_strata_color(world_pos, cliff_w);
-	// Blend in a bit of the cliff texture for micro detail
+	// Valheim-style patchy rock for steep slopes
+	vec3 col_cliff = rock_color(world_pos, world_normal, steep_override);
+	// Blend in cliff texture for micro surface detail
 	vec3 tex_cliff_col = triplanar(tex_cliff, world_pos, blend, texture_scale);
-	col_cliff = mix(col_cliff, col_cliff * tex_cliff_col * 2.5, 0.25);
+	col_cliff = mix(col_cliff, col_cliff * tex_cliff_col * 2.2, 0.2);
 
 	// Subtle scatter on gentle slopes only — never on steep terrain
 	float scatter = vnoise(world_pos.xz * 0.35 + vec2(610.0, 390.0));

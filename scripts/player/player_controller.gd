@@ -5,7 +5,7 @@ const _DEBUG_LOG := false
 
 # --- Movement tuning ---
 @export_group("Movement")
-@export var walk_speed: float = 6.24
+@export var walk_speed: float = 4.99
 @export var sprint_speed: float = 9.24
 @export var crouch_speed: float = 2.0
 @export var acceleration: float = 55.0

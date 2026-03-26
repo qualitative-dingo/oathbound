@@ -54,14 +54,28 @@ void fragment() {
 
 	vec3 grass_col = vec3(0.10, 0.28, 0.07) * tint_color;
 
-	// Simplified rock strata for distant terrain
-	float warp_y = vnoise_fast(wpos.xz * 0.04 + vec2(123.0, 456.0)) * 6.0;
-	float warped_y = wpos.y * 2.5 + warp_y;
-	float band = sin(warped_y) * 0.5 + 0.5;
-	band = pow(band, 0.17);
-	vec3 rock_dark = vec3(0.18, 0.17, 0.16);
-	vec3 rock_light = vec3(0.52, 0.50, 0.48);
-	vec3 rock_col = mix(rock_dark, rock_light, band);
+	// Simplified patchy rock for distant terrain — triplanar sampling
+	vec3 blend_r = abs(world_normal);
+	blend_r = blend_r * blend_r;
+	blend_r /= (blend_r.x + blend_r.y + blend_r.z + 0.0001);
+
+	// Patchy light/dark blobs
+	float n_xz = vnoise_fast(wpos.xz * 0.03 + vec2(90.0, 260.0));
+	float n_xy = vnoise_fast(wpos.xy * 0.03 + vec2(90.0, 260.0));
+	float n_zy = vnoise_fast(wpos.zy * 0.03 + vec2(90.0, 260.0));
+	float patch = n_xz * blend_r.y + n_xy * blend_r.z + n_zy * blend_r.x;
+	float patch_mask = smoothstep(0.35, 0.65, patch);
+
+	// Vertical flow streaks on cliffs
+	float flow_xy = vnoise_fast(wpos.xy * vec2(0.15, 0.06) + vec2(111.0, 222.0));
+	float flow_zy = vnoise_fast(wpos.zy * vec2(0.15, 0.06) + vec2(444.0, 555.0));
+	float flow = flow_xy * blend_r.z + flow_zy * blend_r.x + 0.5 * blend_r.y;
+
+	vec3 rock_dark = vec3(0.15, 0.14, 0.13);
+	vec3 rock_light = vec3(0.58, 0.56, 0.53);
+	vec3 rock_col = mix(rock_dark, rock_light, patch_mask);
+	rock_col = mix(rock_col, rock_dark * 0.85, (1.0 - flow) * 0.3 * cliff_w);
+
 	float grain = vnoise_fast(wpos.xz * 1.5 + vec2(200.0, 400.0));
 	rock_col *= 0.88 + grain * 0.18;
 
