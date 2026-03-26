@@ -107,7 +107,7 @@ func flatten_terrain(world_x: float, world_z: float, radius: float) -> void:
 	flatten_terrain_to(world_x, world_z, radius, target_h)
 
 const TERRAFORM_MAX_DELTA := 1.5
-const TERRAFORM_MIN_HEIGHT := WATER_LEVEL + 0.3
+const TERRAFORM_MIN_HEIGHT := WATER_LEVEL + 2.0
 
 func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h: float) -> void:
 	target_h = maxf(target_h, TERRAFORM_MIN_HEIGHT)
@@ -159,7 +159,12 @@ func get_terrain_mods() -> Dictionary:
 	return _terrain_mods.duplicate()
 
 func set_terrain_mods(mods: Dictionary) -> void:
-	_terrain_mods = mods.duplicate()
+	_terrain_mods = {}
+	for key: Vector2i in mods:
+		var h := float(mods[key])
+		if h < TERRAFORM_MIN_HEIGHT:
+			continue
+		_terrain_mods[key] = h
 
 
 func _check_origin_shift() -> void:
