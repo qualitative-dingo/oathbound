@@ -6,6 +6,7 @@ const _ZonePool := preload("res://scripts/world/zone_pool.gd")
 var _panel_root: Control
 var _fps_label: Label
 var _stats_label: Label
+var _version_label: Label
 var _player_ref: Node  # PlayerController
 
 # Tracks which toggles are ON (true = enabled / spawning normally)
@@ -85,6 +86,13 @@ func _build_ui() -> void:
 	_stats_label.add_theme_font_size_override("font_size", 13)
 	_stats_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
 	outer.add_child(_stats_label)
+
+	_version_label = Label.new()
+	_version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_version_label.add_theme_font_size_override("font_size", 14)
+	_version_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	_version_label.text = "Build: %s" % _compute_build_hash()
+	outer.add_child(_version_label)
 
 	var sep := HSeparator.new()
 	outer.add_child(sep)
@@ -201,6 +209,24 @@ func _build_ui() -> void:
 	outer.add_child(close_btn)
 
 	_panel_root = bg
+
+
+func _compute_build_hash() -> String:
+	var files := [
+		"res://scripts/player/player_controller.gd",
+		"res://scripts/world/world_generator.gd",
+		"res://scripts/world/zone_populator.gd",
+		"res://scripts/player/player_combat.gd",
+		"res://scripts/autoloads/item_database.gd",
+	]
+	var hash_val := 0
+	for path in files:
+		if FileAccess.file_exists(path):
+			var f := FileAccess.open(path, FileAccess.READ)
+			if f:
+				hash_val = (hash_val * 31 + f.get_length()) & 0xFFFFFF
+				f.close()
+	return "%06X" % hash_val
 
 
 func _process(_delta: float) -> void:
