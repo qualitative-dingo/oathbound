@@ -372,6 +372,7 @@ func give_starting_gear() -> void:
 	_equipped["sword"] = &"starting_sword"
 	_equipped["bow"] = &"starting_bow"
 	_equipped["pickaxe"] = &"starting_pickaxe"
+	_equipped["hoe"] = &"starting_hoe"
 	_equipped["chest"] = &"starting_chest"
 	_equipped["legs"] = &"starting_legs"
 	_equipped["feet"] = &"starting_feet"

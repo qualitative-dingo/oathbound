@@ -899,12 +899,14 @@ func _on_inventory_changed() -> void:
 	_update_hotbar_selection()
 	if _player_sprite:
 		_update_armor_visuals()
-	# Don't override equipped_weapon if a tool is active from the hotbar
+	# Don't override equipped_weapon if a tool or hoe is active
 	var hotbar := _get_hotbar_items()
 	var active_item: StringName = hotbar[_selected_slot] if _selected_slot < hotbar.size() else &""
 	var active_data: Dictionary = ItemDatabase.get_item(active_item) if active_item != &"" else {}
 	if str(active_data.get("type", "")) == "tool":
 		equipped_weapon = active_item
+	elif ItemDatabase.get_weapon_class(equipped_weapon) == "hoe":
+		pass
 	else:
 		var new_weapon: StringName = Inventory.get_equipped("sword")
 		if new_weapon == &"":

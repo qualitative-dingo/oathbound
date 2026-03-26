@@ -745,6 +745,15 @@ func _register_defaults() -> void:
 		"icon": "res://textures/items/stone_pickaxe.png",
 		"quality_color": Color(0.5, 0.5, 0.5), "quality_name": "Terrible",
 	})
+	register_item(&"starting_hoe", {
+		"name": "Bent Garden Fork", "type": "weapon", "hands": "1h", "armor_slot": "hoe",
+		"weapon_class": "hoe",
+		"damage": 1.0, "attack_speed": 1.2, "range": 4.0,
+		"stamina_cost": 10.0, "knockback": 0.0,
+		"description": "A mangled fork with two prongs missing. Barely scratches the dirt. You'd flatten terrain faster by stomping on it.",
+		"icon": "res://textures/items/hammer.png",
+		"quality_color": Color(0.5, 0.5, 0.5), "quality_name": "Terrible",
+	})
 	register_item(&"starting_chest", {
 		"name": "Moth-Eaten Rag", "type": "armor", "armor_slot": "chest",
 		"armor": 1.0,
@@ -807,7 +816,7 @@ func _register_defaults() -> void:
 		"crafting_station": "hand", "craft_amount": 2,
 	})
 	register_item(&"hoe", {
-		"name": "Hoe", "type": "tool", "hands": "1h",
+		"name": "Stone Hoe", "type": "weapon", "hands": "1h", "armor_slot": "hoe",
 		"weapon_class": "hoe",
 		"damage": 2.0, "attack_speed": 1.0, "range": 5.0,
 		"stamina_cost": 8.0, "knockback": 0.0,
