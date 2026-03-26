@@ -6561,17 +6561,11 @@ static func _build_roof_icorner_mesh(sz: Vector3, rise: float) -> ArrayMesh:
 	var br := Vector3( hw, 0.0, -hd)
 	var fl := Vector3(-hw, 0.0,  hd)
 	# Left slope: tl â†’ fl â†’ valley (triangle covering -X side)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(tl)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(fl)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(valley)
+	_add_tri(st, tl, fl, valley, Vector2(0, 0), Vector2(0, 1), Vector2(1, 1))
 	# Front slope: tl â†’ valley â†’ tb (the inner valley surface)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(tl)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(valley)
-	st.set_uv(Vector2(1, 0)); st.add_vertex(tb)
+	_add_tri(st, tl, valley, tb, Vector2(0, 0), Vector2(1, 1), Vector2(1, 0))
 	# Right slope: tb â†’ valley â†’ br (triangle covering -Z side)
-	st.set_uv(Vector2(0, 0)); st.add_vertex(tb)
-	st.set_uv(Vector2(0, 1)); st.add_vertex(valley)
-	st.set_uv(Vector2(1, 1)); st.add_vertex(br)
+	_add_tri(st, tb, valley, br, Vector2(0, 0), Vector2(0, 1), Vector2(1, 1))
 	# Back wall (+Z face, vertical)
 	_add_tri(st, tl, tr, fl, Vector2(0, 0), Vector2(1, 0), Vector2(0, 1))
 	# Right wall (+X face, vertical)
@@ -10580,7 +10574,7 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		var kb_change := velocity - pre_vel
 		velocity = pre_vel + kb_change * (1.0 - _affix_val(&"stalwart"))
 
-	if affixes.has(&"thorns") and _source and _source.has_method("take_damage") and not _source.is_in_group(&"player"):
+	if affixes.has(&"thorns") and _source and _source.has_method("take_damage"):
 		_source.take_damage(amount * _affix_val(&"thorns"), self)
 
 	if affixes.has(&"second_wind") and _second_wind_cooldown <= 0.0:
