@@ -2205,7 +2205,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	light.omni_range = 18.0
 	light.omni_attenuation = 1.4
 	light.shadow_enabled = true
-	light.light_volumetric_fog_energy = 1.5
+	light.light_volumetric_fog_energy = 0.8
 	light.position.y = 0.6
 	structure.add_child(light)
 
@@ -2216,7 +2216,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	fill.omni_range = 8.0
 	fill.omni_attenuation = 1.8
 	fill.shadow_enabled = false
-	fill.light_volumetric_fog_energy = 1.0
+	fill.light_volumetric_fog_energy = 0.5
 	fill.position.y = 0.12
 	structure.add_child(fill)
 

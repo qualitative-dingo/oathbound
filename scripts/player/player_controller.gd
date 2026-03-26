@@ -5209,7 +5209,7 @@ func _update_torch_light() -> void:
 		_torch_light.omni_range = 48.0
 		_torch_light.omni_attenuation = 1.2
 		_torch_light.shadow_enabled = true
-		_torch_light.light_volumetric_fog_energy = 3.0
+		_torch_light.light_volumetric_fog_energy = 1.0
 		_torch_light.position = Vector3(0.0, 1.8, 0.0)
 		add_child(_torch_light)
 	elif not has_torch and _torch_light:
@@ -7305,7 +7305,7 @@ func _add_torch_light(structure: Node3D, offset: Vector3) -> void:
 	light.light_energy = 2.0
 	light.omni_range = 7.0
 	light.shadow_enabled = true
-	light.light_volumetric_fog_energy = 2.0
+	light.light_volumetric_fog_energy = 1.0
 	light.position = offset
 	structure.add_child(light)
 
