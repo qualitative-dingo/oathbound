@@ -224,7 +224,6 @@ func build_equip_bar(parent: VBoxContainer) -> void:
 		"sword": "res://textures/items/stone_sword.png",
 		"bow": "res://textures/items/crude_bow.png",
 		"pickaxe": "res://textures/items/stone_pickaxe.png",
-		"hoe": "res://textures/items/hammer.png",
 		"shield": "res://textures/items/wood_shield.png",
 		"chest": "res://textures/items/leather_vest.png",
 		"legs": "res://textures/items/leather_pants.png",
@@ -235,13 +234,12 @@ func build_equip_bar(parent: VBoxContainer) -> void:
 		"sword": "Melee",
 		"bow": "Ranged",
 		"pickaxe": "Pick",
-		"hoe": "Hoe",
 		"shield": "Shield",
 		"chest": "Chest",
 		"legs": "Legs",
 		"feet": "Boots",
 	}
-	const TOOL_SLOTS: Array[String] = ["weapon", "pickaxe", "hoe"]
+	const TOOL_SLOTS: Array[String] = ["weapon", "pickaxe"]
 	const EQUIP_SLOTS: Array[String] = ["sword", "bow", "shield", "chest", "legs", "feet"]
 
 	var wrapper := PanelContainer.new()
@@ -352,7 +350,7 @@ func build_equip_bar(parent: VBoxContainer) -> void:
 func refresh_equip_bar() -> void:
 	if not pc._equip_bar:
 		return
-	const SLOT_ORDER: Array[String] = ["weapon", "sword", "bow", "pickaxe", "hoe", "shield", "chest", "legs", "feet"]
+	const SLOT_ORDER: Array[String] = ["weapon", "sword", "bow", "pickaxe", "shield", "chest", "legs", "feet"]
 	for slot_name in SLOT_ORDER:
 		var eq_id: StringName = Inventory.get_equipped(slot_name)
 		var icon: TextureRect = pc._equip_bar_icons.get(slot_name) as TextureRect
@@ -396,11 +394,6 @@ func refresh_equip_bar() -> void:
 func on_equip_bar_slot_input(event: InputEvent, slot_name: String) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and slot_name == "hoe":
-			var eq_id: StringName = Inventory.get_equipped("hoe")
-			if eq_id != &"":
-				pc.equipped_weapon = eq_id
-				pc._update_equipped_weapon_model()
 		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
 			var eq_id: StringName = Inventory.get_equipped(slot_name)
 			if eq_id != &"":

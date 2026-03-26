@@ -95,13 +95,15 @@ var _aegis_timer: float = 0.0
 var _rally_cry_active: bool = false
 var _fortress_active: bool = false
 
-# Build mode
+# Build mode (B key)
 var _build_mode: bool = false
 var _build_from_workbench: bool = false
 var _build_menu_open: bool = false
 var _build_ghost: Node3D
 var _build_selected: StringName = &""
 var _build_rotation: float = 0.0
+# Terraform mode (H key)
+var _terraform_mode: bool = false
 var _hoe_indicator: MeshInstance3D
 const HOE_RADIUS := 4.0
 var _build_snap_enabled: bool = true
@@ -899,14 +901,12 @@ func _on_inventory_changed() -> void:
 	_update_hotbar_selection()
 	if _player_sprite:
 		_update_armor_visuals()
-	# Don't override equipped_weapon if a tool or hoe is active
+	# Don't override equipped_weapon if a tool is active from the hotbar
 	var hotbar := _get_hotbar_items()
 	var active_item: StringName = hotbar[_selected_slot] if _selected_slot < hotbar.size() else &""
 	var active_data: Dictionary = ItemDatabase.get_item(active_item) if active_item != &"" else {}
 	if str(active_data.get("type", "")) == "tool":
 		equipped_weapon = active_item
-	elif ItemDatabase.get_weapon_class(equipped_weapon) == "hoe":
-		pass
 	else:
 		var new_weapon: StringName = Inventory.get_equipped("sword")
 		if new_weapon == &"":
@@ -1004,6 +1004,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_interaction.close_chest()
 		elif _workbench_open:
 			_workbench_ui.close_workbench()
+		elif _terraform_mode:
+			_exit_terraform_mode()
 		elif _build_mode:
 			_cancel_build_mode()
 		elif _build_menu_open:
@@ -1019,6 +1021,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(&"inventory"):
 		if _chest_open:
 			_interaction.close_chest()
+			return
+		if _terraform_mode:
+			_exit_terraform_mode()
 			return
 		if _build_menu_open:
 			_close_build_menu()
@@ -1116,37 +1121,59 @@ func _unhandled_input(event: InputEvent) -> void:
 				_close_build_menu()
 			if _build_mode:
 				_cancel_build_mode()
+			if _terraform_mode:
+				_exit_terraform_mode()
 			_update_hotbar_selection()
 
-	# Hammer right-click -> toggle build menu (must be checked before the mouse-mode gate)
-	if event.is_action_pressed(&"block") and equipped_weapon == &"hammer" and not _inventory_open:
+	# B key -> toggle build state (opens build menu or exits build/place mode)
+	if event.is_action_pressed(&"build_mode") and not _inventory_open and not _workbench_open and not _chest_open:
+		if _terraform_mode:
+			_exit_terraform_mode()
 		_toggle_build_menu()
 		return
 
-	# Hammer middle-click -> salvage structure
+	# H key -> toggle terraform state
+	if event.is_action_pressed(&"terraform_mode") and not _inventory_open and not _workbench_open and not _chest_open:
+		if _build_mode:
+			_cancel_build_mode()
+		if _build_menu_open:
+			_close_build_menu()
+		_toggle_terraform_mode()
+		return
+
+	# Middle-click -> salvage structure (available in build or terraform state)
 	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_MIDDLE and (event as InputEventMouseButton).pressed:
-		if equipped_weapon == &"hammer" and not _inventory_open and not _build_mode and not _build_menu_open:
+		if (_build_mode or _build_menu_open or _terraform_mode) and not _inventory_open:
 			_try_salvage_structure()
 			return
 
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or _inventory_open:
 		return
 
-	# Build mode: left-click places, right-click/ESC cancels
+	# Build placement mode: left-click places, right-click opens menu, ESC cancels
 	if _build_mode:
 		if event.is_action_pressed(&"attack"):
 			_place_build()
 			return
-		if event.is_action_pressed(&"block") or event.is_action_pressed(&"ui_cancel"):
+		if event.is_action_pressed(&"block"):
+			_toggle_build_menu()
+			return
+		if event.is_action_pressed(&"ui_cancel"):
 			_cancel_build_mode()
+			return
+
+	# Terraform mode: left-click flattens terrain
+	if _terraform_mode:
+		if event.is_action_pressed(&"attack"):
+			_try_hoe_use()
+			return
+		if event.is_action_pressed(&"ui_cancel"):
+			_exit_terraform_mode()
 			return
 
 	if event.is_action_pressed(&"attack"):
 		if _bow_drawing:
 			_fire_bow()
-			return
-		if ItemDatabase.get_weapon_class(equipped_weapon) == "hoe":
-			_try_hoe_use()
 			return
 		_try_attack()
 		return
@@ -1205,7 +1232,7 @@ func _physics_process(delta: float) -> void:
 		_is_blocking = false
 		_tick_bow_draw(delta, wants_block)
 	else:
-		_is_blocking = wants_block and equipped_weapon != &"hammer"
+		_is_blocking = wants_block and not _build_mode and not _build_menu_open and not _terraform_mode
 		_tick_bow_draw(delta, false)
 	_is_crouching = Input.is_action_pressed(&"crouch")
 
@@ -8824,11 +8851,13 @@ func _try_attack() -> void:
 	)
 
 
+const TERRAFORM_STAMINA_COST := 8.0
+const TERRAFORM_COOLDOWN := 0.6
+
 func _try_hoe_use() -> void:
-	if _is_blocking or _is_dodging or _mounted:
+	if _is_dodging or _mounted:
 		return
-	var stamina_cost: float = _get_weapon_stat("stamina_cost", 8.0)
-	if _attack_cooldown > 0.0 or not _can_spend_stamina(stamina_cost):
+	if _attack_cooldown > 0.0 or not _can_spend_stamina(TERRAFORM_STAMINA_COST):
 		return
 
 	var cam := get_viewport().get_camera_3d()
@@ -8853,16 +8882,25 @@ func _try_hoe_use() -> void:
 		return
 	var world_hit := wg.get_world_position_vec(hit_pos)
 
-	_spend_stamina(stamina_cost)
-	_attack_cooldown = _get_weapon_stat("attack_speed", 1.0)
-	_start_attack_animation()
+	_spend_stamina(TERRAFORM_STAMINA_COST)
+	_attack_cooldown = TERRAFORM_COOLDOWN
 
 	wg.flatten_terrain(world_hit.x, world_hit.z, HOE_RADIUS)
 	AudioManager.play_sfx("fist_hit_tree", -6.0)
 
+func _toggle_terraform_mode() -> void:
+	if _terraform_mode:
+		_exit_terraform_mode()
+	else:
+		_terraform_mode = true
+
+func _exit_terraform_mode() -> void:
+	_terraform_mode = false
+	if _hoe_indicator and is_instance_valid(_hoe_indicator):
+		_hoe_indicator.visible = false
+
 func _update_hoe_indicator() -> void:
-	var is_hoe := ItemDatabase.get_weapon_class(equipped_weapon) == "hoe"
-	if not is_hoe:
+	if not _terraform_mode:
 		if _hoe_indicator and is_instance_valid(_hoe_indicator):
 			_hoe_indicator.visible = false
 		return
@@ -9896,7 +9934,7 @@ func _check_tree_crush_player(base_pos: Vector3, fall_angle: float, trunk_h: flo
 func _update_interact_prompt() -> void:
 	if not _interact_prompt:
 		return
-	if _inventory_open or _workbench_open or _build_menu_open or _build_mode or _chest_open or _map_open:
+	if _inventory_open or _workbench_open or _build_menu_open or _build_mode or _terraform_mode or _chest_open or _map_open:
 		_interact_prompt.visible = false
 		if _world_name_label:
 			_world_name_label.visible = false

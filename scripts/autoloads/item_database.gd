@@ -745,15 +745,6 @@ func _register_defaults() -> void:
 		"icon": "res://textures/items/stone_pickaxe.png",
 		"quality_color": Color(0.5, 0.5, 0.5), "quality_name": "Terrible",
 	})
-	register_item(&"starting_hoe", {
-		"name": "Bent Garden Fork", "type": "weapon", "hands": "1h", "armor_slot": "hoe",
-		"weapon_class": "hoe",
-		"damage": 1.0, "attack_speed": 1.2, "range": 4.0,
-		"stamina_cost": 10.0, "knockback": 0.0,
-		"description": "A mangled fork with two prongs missing. Barely scratches the dirt. You'd flatten terrain faster by stomping on it.",
-		"icon": "res://textures/items/hammer.png",
-		"quality_color": Color(0.5, 0.5, 0.5), "quality_name": "Terrible",
-	})
 	register_item(&"starting_chest", {
 		"name": "Moth-Eaten Rag", "type": "armor", "armor_slot": "chest",
 		"armor": 1.0,
@@ -796,15 +787,6 @@ func _register_defaults() -> void:
 		"recipe": [{"item_id": "wood", "amount": 5}, {"item_id": "stone", "amount": 4}],
 		"crafting_station": "hand",
 	})
-	register_item(&"hammer", {
-		"name": "Hammer", "type": "tool", "hands": "1h",
-		"damage": 3.0, "attack_speed": 1.2, "range": 2.5,
-		"stamina_cost": 3.0, "knockback": 5.0,
-		"description": "Building tool. Right-click to open build menu.",
-		"icon": "res://textures/items/hammer.png",
-		"recipe": [{"item_id": "wood", "amount": 3}, {"item_id": "stone", "amount": 2}],
-		"crafting_station": "hand",
-	})
 	register_item(&"torch", {
 		"name": "Torch", "type": "tool", "hands": "1h",
 		"armor_slot": "torch",
@@ -814,16 +796,6 @@ func _register_defaults() -> void:
 		"icon": "res://textures/items/torch.png",
 		"recipe": [{"item_id": "wood", "amount": 1}, {"item_id": "resin", "amount": 1}],
 		"crafting_station": "hand", "craft_amount": 2,
-	})
-	register_item(&"hoe", {
-		"name": "Stone Hoe", "type": "weapon", "hands": "1h", "armor_slot": "hoe",
-		"weapon_class": "hoe",
-		"damage": 2.0, "attack_speed": 1.0, "range": 5.0,
-		"stamina_cost": 8.0, "knockback": 0.0,
-		"description": "Flattens and smooths terrain. Left-click to level the ground around you.",
-		"icon": "res://textures/items/hammer.png",
-		"recipe": [{"item_id": "wood", "amount": 4}, {"item_id": "stone", "amount": 2}],
-		"crafting_station": "hand",
 	})
 	# --- Workbench recipes ---
 	register_item(&"wood_arrow", {
