@@ -1763,15 +1763,56 @@ func _make_soft_circle_tex(sz: int) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-func _apply_material_recursive(node: Node, mat: StandardMaterial3D) -> void:
-	if node is MeshInstance3D:
-		node.material_override = mat
-		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	for child in node.get_children():
-		_apply_material_recursive(child, mat)
+static var _campfire_stone_tex: ImageTexture
+static var _campfire_bark_tex: ImageTexture
+
+
+static func _get_stone_texture() -> ImageTexture:
+	if _campfire_stone_tex:
+		return _campfire_stone_tex
+	var sz := 32
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	for y in sz:
+		for x in sz:
+			var base := randf_range(0.22, 0.38)
+			var speckle := randf_range(-0.06, 0.06)
+			var crack := 0.0
+			if randf() < 0.08:
+				crack = -randf_range(0.05, 0.12)
+			var vein := sin(float(x) * 0.8 + float(y) * 0.4 + randf_range(-1.0, 1.0)) * 0.03
+			var v := clampf(base + speckle + crack + vein, 0.08, 0.5)
+			img.set_pixel(x, y, Color(v * 1.0, v * 0.95, v * 0.85, 1.0))
+	_campfire_stone_tex = ImageTexture.create_from_image(img)
+	return _campfire_stone_tex
+
+
+static func _get_bark_texture() -> ImageTexture:
+	if _campfire_bark_tex:
+		return _campfire_bark_tex
+	var w := 16
+	var h := 32
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		var char_t := clampf(float(h - y) / float(h), 0.0, 1.0)
+		for x in w:
+			var bark_base := randf_range(0.18, 0.32)
+			var grain := sin(float(y) * 1.5 + float(x) * 0.3 + randf_range(-0.5, 0.5)) * 0.05
+			var ridge := 0.0
+			if (x + int(randf_range(-1, 1))) % 4 == 0:
+				ridge = -randf_range(0.03, 0.08)
+			var charring := char_t * char_t * randf_range(0.1, 0.25)
+			var v := clampf(bark_base + grain + ridge - charring, 0.04, 0.4)
+			var r := v * 1.4
+			var g := v * 0.85
+			var b := v * 0.45
+			r += char_t * char_t * randf_range(0.0, 0.15)
+			img.set_pixel(x, y, Color(clampf(r, 0.02, 0.5), clampf(g, 0.02, 0.35), clampf(b, 0.01, 0.2), 1.0))
+	_campfire_bark_tex = ImageTexture.create_from_image(img)
+	return _campfire_bark_tex
 
 
 func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
+	var stone_tex := _get_stone_texture()
 	var stone_count := 10
 	var ring_radius := 0.48
 	for i in stone_count:
@@ -1784,10 +1825,11 @@ func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
 		sphere.radial_segments = 5
 		sphere.rings = 3
 		stone.mesh = sphere
-		var grey := randf_range(0.28, 0.42)
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(grey, grey * 0.95, grey * 0.88)
+		mat.albedo_texture = stone_tex
+		mat.albedo_color = Color(randf_range(0.7, 1.0), randf_range(0.68, 0.95), randf_range(0.65, 0.9))
 		mat.roughness = 0.95
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		stone.set_surface_override_material(0, mat)
 		var angle := float(i) * TAU / float(stone_count) + randf_range(-0.12, 0.12)
 		var radial_offset := randf_range(-0.04, 0.04)
@@ -1807,33 +1849,35 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 
 	_build_campfire_stone_ring(structure)
 
-	# -- 3D logs arranged in a teepee/pile --
-	var log_angles := [0.0, TAU / 3.0, TAU * 2.0 / 3.0, TAU / 6.0]
-	var log_tilts := [0.45, 0.5, 0.4, 0.55]
-	var log_lengths := [0.55, 0.5, 0.45, 0.4]
-	for i in 4:
+	# -- 3D logs arranged in a teepee/pile (6 logs) --
+	var bark_tex := _get_bark_texture()
+	var log_angles := [0.0, TAU / 6.0, TAU * 2.0 / 6.0, TAU * 3.0 / 6.0, TAU * 4.0 / 6.0, TAU * 5.0 / 6.0]
+	var log_tilts := [0.45, 0.55, 0.4, 0.5, 0.48, 0.42]
+	var log_lengths := [0.55, 0.48, 0.52, 0.45, 0.5, 0.44]
+	for i in 6:
 		var log_mi := MeshInstance3D.new()
 		log_mi.name = "Log%d" % i
 		var cyl := CylinderMesh.new()
 		cyl.top_radius = randf_range(0.025, 0.04)
-		cyl.bottom_radius = randf_range(0.035, 0.055)
+		cyl.bottom_radius = randf_range(0.04, 0.06)
 		cyl.height = log_lengths[i]
 		cyl.radial_segments = 5
-		cyl.rings = 1
+		cyl.rings = 2
 		log_mi.mesh = cyl
 		var log_mat := StandardMaterial3D.new()
-		var dark := randf_range(0.08, 0.18)
-		log_mat.albedo_color = Color(dark * 1.5, dark * 0.9, dark * 0.5)
+		log_mat.albedo_texture = bark_tex
+		log_mat.albedo_color = Color(randf_range(0.7, 1.0), randf_range(0.65, 0.9), randf_range(0.6, 0.85))
 		log_mat.roughness = 1.0
+		log_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		log_mat.emission_enabled = true
-		log_mat.emission = Color(0.6, 0.15, 0.0)
-		log_mat.emission_energy_multiplier = 0.8
+		log_mat.emission = Color(0.5, 0.1, 0.0)
+		log_mat.emission_energy_multiplier = 0.6
 		log_mi.set_surface_override_material(0, log_mat)
-		var angle: float = log_angles[i] + randf_range(-0.15, 0.15)
-		var tilt: float = log_tilts[i] + randf_range(-0.08, 0.08)
-		var outward := 0.12
+		var angle: float = log_angles[i] + randf_range(-0.2, 0.2)
+		var tilt: float = log_tilts[i] + randf_range(-0.1, 0.1)
+		var outward := randf_range(0.08, 0.15)
 		log_mi.position = Vector3(cos(angle) * outward, 0.15, sin(angle) * outward)
-		log_mi.rotation = Vector3(tilt, angle + PI, randf_range(-0.1, 0.1))
+		log_mi.rotation = Vector3(tilt, angle + PI, randf_range(-0.15, 0.15))
 		log_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		structure.add_child(log_mi)
 
