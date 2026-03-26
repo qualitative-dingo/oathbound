@@ -91,7 +91,7 @@ static func create_entrance_marker(facing_dir: Vector3) -> StaticBody3D:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  CAVE INSTANCE — a full room spawned far below the world
+#  CAVE INSTANCE — a full dungeon spawned far below the world
 # ═══════════════════════════════════════════════════════════════════════════════
 
 static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
@@ -102,17 +102,210 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	cave_root.name = "CaveInstance_%d" % _instance_index
 	cave_root.add_to_group(&"cave_instances")
 
-	var base_pos := Vector3(_instance_index * 100.0, -500.0, 0.0)
+	var base_pos := Vector3(_instance_index * 200.0, -500.0, 0.0)
 	cave_root.position = base_pos
 
-	var forward := Vector3.FORWARD
-	var right := Vector3.RIGHT
+	var fwd := Vector3.FORWARD
+	var rt := Vector3.RIGHT
 
-	# ── Player spawn point (just inside entrance) ──
-	var player_spawn := Vector3(0.0, 0.5, 0.0)
-	cave_root.set_meta("player_spawn", player_spawn)
+	cave_root.set_meta("player_spawn", Vector3(0.0, 0.5, 0.0))
 
-	# ── Entrance area with exit marker ──
+	# ── Exit marker at entrance ──
+	_build_exit_marker(cave_root)
+
+	# ── Entrance wall ──
+	var ew := _make_box_static(
+		Vector3(TUNNEL_WIDTH + WALL_THICKNESS * 2.0, TUNNEL_HEIGHT + WALL_THICKNESS, WALL_THICKNESS),
+		_mat_cave_rock
+	)
+	ew.position = Vector3(0.0, TUNNEL_HEIGHT * 0.5, -0.5)
+	cave_root.add_child(ew)
+
+	var cursor := fwd * 2.0
+	var descent := 0.5
+	var enemy_idx := 0
+
+	# ════════════════════════════════════════════════════
+	#  SECTION 1: Entry corridor (3 segments with turns)
+	# ════════════════════════════════════════════════════
+	for i in 3:
+		var seg_end := cursor + fwd * SEGMENT_LENGTH
+		seg_end.y -= descent
+		_build_tunnel_segment(cave_root, cursor, seg_end, fwd, rt, TUNNEL_WIDTH, TUNNEL_HEIGHT)
+		cursor = seg_end
+		if i < 2:
+			var angle := rng.randf_range(-0.3, 0.3)
+			fwd = fwd.rotated(Vector3.UP, angle).normalized()
+			rt = fwd.cross(Vector3.UP).normalized()
+
+	_add_wall_torch(cave_root, cursor + rt * (TUNNEL_WIDTH * 0.42), 1.8)
+	_add_cave_enemy(cave_root, cursor - fwd * 3.0 + Vector3(0, 0.2, 0), "goblin", enemy_idx)
+	enemy_idx += 1
+
+	# ════════════════════════════════════════════════════
+	#  SECTION 2: First chamber — small rest area
+	# ════════════════════════════════════════════════════
+	var ch1_w := TUNNEL_WIDTH * 1.6
+	var ch1_h := TUNNEL_HEIGHT * 1.2
+	var ch1_len := 8.0
+	var ch1_end := cursor + fwd * ch1_len
+	ch1_end.y -= descent * 0.3
+	_build_tunnel_segment(cave_root, cursor, ch1_end, fwd, rt, ch1_w, ch1_h)
+	_add_wall_torch(cave_root, (cursor + ch1_end) * 0.5 + rt * (ch1_w * 0.42), 1.8)
+	_add_wall_torch(cave_root, (cursor + ch1_end) * 0.5 - rt * (ch1_w * 0.42), 1.8)
+
+	for _v in rng.randi_range(2, 3):
+		var vp := lerpf(0.2, 0.8, rng.randf())
+		var vpos := cursor.lerp(ch1_end, vp)
+		vpos.y += rng.randf_range(0.4, ch1_h * 0.5)
+		vpos += rt * (ch1_w * 0.42) * (1.0 if rng.randf() < 0.5 else -1.0)
+		_add_copper_vein_wall(cave_root, vpos, rng)
+
+	cursor = ch1_end
+
+	# ════════════════════════════════════════════════════
+	#  SECTION 3: Branching corridor — left branch = loot, right = main path
+	# ════════════════════════════════════════════════════
+
+	# Branch split: wall with two openings (left + right tunnels)
+	var branch_fwd_l := fwd.rotated(Vector3.UP, -0.6).normalized()
+	var branch_rt_l := branch_fwd_l.cross(Vector3.UP).normalized()
+	var branch_fwd_r := fwd.rotated(Vector3.UP, 0.5).normalized()
+	var branch_rt_r := branch_fwd_r.cross(Vector3.UP).normalized()
+
+	# Left branch — short dead-end with loot
+	var l_cursor := cursor
+	for i in 2:
+		var le := l_cursor + branch_fwd_l * SEGMENT_LENGTH
+		le.y -= descent * 0.4
+		_build_tunnel_segment(cave_root, l_cursor, le, branch_fwd_l, branch_rt_l, TUNNEL_WIDTH * 0.9, TUNNEL_HEIGHT * 0.9)
+		l_cursor = le
+
+	# Dead-end wall
+	var lw := _make_box_static(
+		Vector3(TUNNEL_WIDTH + WALL_THICKNESS * 2.0, TUNNEL_HEIGHT + WALL_THICKNESS, WALL_THICKNESS),
+		_mat_cave_rock
+	)
+	lw.position = l_cursor + Vector3(0.0, TUNNEL_HEIGHT * 0.5, 0.0)
+	_orient_along(lw, branch_fwd_l)
+	cave_root.add_child(lw)
+
+	_add_wall_torch(cave_root, l_cursor - branch_fwd_l * 2.0 + branch_rt_l * (TUNNEL_WIDTH * 0.35), 1.6)
+	_add_cave_chest(cave_root, l_cursor - branch_fwd_l * 1.2, branch_fwd_l, rng)
+	_add_cave_enemy(cave_root, l_cursor - branch_fwd_l * 5.0 + Vector3(0, 0.2, 0), "grizzly", enemy_idx)
+	enemy_idx += 1
+
+	for _v in rng.randi_range(2, 4):
+		var vpos := cursor.lerp(l_cursor, rng.randf_range(0.3, 0.9))
+		vpos.y += rng.randf_range(0.3, TUNNEL_HEIGHT * 0.5)
+		vpos += branch_rt_l * (TUNNEL_WIDTH * 0.38) * (1.0 if rng.randf() < 0.5 else -1.0)
+		_add_copper_vein_wall(cave_root, vpos, rng)
+
+	# Right branch — continues to main path
+	var r_cursor := cursor
+	for i in 3:
+		var re := r_cursor + branch_fwd_r * SEGMENT_LENGTH
+		re.y -= descent * 0.6
+		_build_tunnel_segment(cave_root, r_cursor, re, branch_fwd_r, branch_rt_r, TUNNEL_WIDTH, TUNNEL_HEIGHT)
+		r_cursor = re
+		if i == 1:
+			_add_wall_torch(cave_root, r_cursor + branch_rt_r * (TUNNEL_WIDTH * 0.42), 1.8)
+			_add_cave_enemy(cave_root, r_cursor + Vector3(0, 0.2, 0), "goblin", enemy_idx)
+			enemy_idx += 1
+
+	fwd = branch_fwd_r
+	rt = branch_rt_r
+	cursor = r_cursor
+
+	# ════════════════════════════════════════════════════
+	#  SECTION 4: Deep corridor with enemies
+	# ════════════════════════════════════════════════════
+	for i in 4:
+		var angle := rng.randf_range(-0.25, 0.25)
+		fwd = fwd.rotated(Vector3.UP, angle).normalized()
+		rt = fwd.cross(Vector3.UP).normalized()
+		var seg_end := cursor + fwd * SEGMENT_LENGTH
+		seg_end.y -= descent * 0.7
+		_build_tunnel_segment(cave_root, cursor, seg_end, fwd, rt, TUNNEL_WIDTH, TUNNEL_HEIGHT)
+		cursor = seg_end
+
+		if i == 1:
+			_add_wall_torch(cave_root, cursor - fwd * 3.0 - rt * (TUNNEL_WIDTH * 0.42), 1.8)
+			_add_cave_enemy(cave_root, cursor - fwd * 2.0 + Vector3(0, 0.2, 0), "lion", enemy_idx)
+			enemy_idx += 1
+		elif i == 3:
+			_add_cave_enemy(cave_root, cursor - fwd * 4.0 + Vector3(0, 0.2, 0), "grizzly", enemy_idx)
+			enemy_idx += 1
+
+	for _v in rng.randi_range(3, 5):
+		_add_copper_rock_ground(cave_root, cursor - fwd * rng.randf_range(4.0, 20.0) + rt * rng.randf_range(-1.2, 1.2) + Vector3(0, 0.15, 0), rng)
+
+	# ════════════════════════════════════════════════════
+	#  SECTION 5: Boss chamber
+	# ════════════════════════════════════════════════════
+	var boss_w := TUNNEL_WIDTH * 2.5
+	var boss_h := TUNNEL_HEIGHT * 1.8
+	var boss_len := 16.0
+	var boss_start := cursor
+	var boss_end := cursor + fwd * boss_len
+	boss_end.y -= descent * 0.3
+	_build_tunnel_segment(cave_root, boss_start, boss_end, fwd, rt, boss_w, boss_h)
+
+	# Back wall
+	var bw := _make_box_static(
+		Vector3(boss_w + WALL_THICKNESS * 2.0, boss_h + WALL_THICKNESS, WALL_THICKNESS),
+		_mat_cave_rock
+	)
+	bw.position = boss_end + Vector3(0.0, boss_h * 0.5, 0.0)
+	_orient_along(bw, fwd)
+	cave_root.add_child(bw)
+
+	# Boss chamber torches
+	for t_frac in [0.2, 0.5, 0.8]:
+		var tp := boss_start.lerp(boss_end, t_frac)
+		_add_wall_torch(cave_root, tp + rt * (boss_w * 0.42), 2.2)
+		_add_wall_torch(cave_root, tp - rt * (boss_w * 0.42), 2.2)
+
+	# Boss enemy — tougher grizzly
+	var boss_pos := boss_start.lerp(boss_end, 0.5) + Vector3(0, 0.2, 0)
+	_add_cave_enemy(cave_root, boss_pos, "grizzly", enemy_idx)
+	enemy_idx += 1
+	# Second boss enemy flanking
+	_add_cave_enemy(cave_root, boss_pos + rt * 3.0, "lion", enemy_idx)
+	enemy_idx += 1
+	_add_cave_enemy(cave_root, boss_pos - rt * 3.0, "lion", enemy_idx)
+	enemy_idx += 1
+
+	# Boss chamber copper veins
+	for _v in rng.randi_range(4, 6):
+		var vp := rng.randf_range(0.1, 0.9)
+		var vpos := boss_start.lerp(boss_end, vp)
+		vpos.y += rng.randf_range(0.5, boss_h * 0.6)
+		vpos += rt * (boss_w * 0.42) * (1.0 if rng.randf() < 0.5 else -1.0)
+		_add_copper_vein_wall(cave_root, vpos, rng)
+
+	# Boss chest at the very back
+	var boss_chest_pos := boss_end - fwd * 2.0
+	boss_chest_pos.y = boss_end.y
+	_add_boss_chest(cave_root, boss_chest_pos, fwd, rng)
+
+	# ── Ambient lighting (dim, spread across dungeon) ──
+	var total_mid := (Vector3.ZERO + boss_end) * 0.5
+	for li in 3:
+		var lp := Vector3.ZERO.lerp(boss_end, (li + 1.0) / 4.0)
+		lp.y += 2.5
+		var dim := OmniLight3D.new()
+		dim.light_color = Color(0.25, 0.25, 0.35)
+		dim.light_energy = 0.1
+		dim.omni_range = 25.0
+		dim.shadow_enabled = false
+		dim.position = lp
+		cave_root.add_child(dim)
+
+	return cave_root
+
+
+static func _build_exit_marker(cave_root: Node3D) -> void:
 	var exit_marker := StaticBody3D.new()
 	exit_marker.name = "CaveExit"
 	exit_marker.collision_layer = 4
@@ -139,103 +332,93 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 
 	var exit_light := OmniLight3D.new()
 	exit_light.light_color = Color(0.8, 0.7, 0.5)
-	exit_light.light_energy = 0.8
-	exit_light.omni_range = 5.0
+	exit_light.light_energy = 1.2
+	exit_light.omni_range = 6.0
 	exit_marker.position = Vector3(0.0, 0.0, 1.5)
 	exit_marker.add_child(exit_light)
 	cave_root.add_child(exit_marker)
 
-	# ── Build tunnel + chamber ──
-	var cursor := forward * 2.0
-	var descent_per_seg := 0.6
 
-	# Segment 1 — straight tunnel
-	var seg1_start := cursor
-	var seg1_end := cursor + forward * SEGMENT_LENGTH
-	seg1_end.y -= descent_per_seg
-	_build_tunnel_segment(cave_root, seg1_start, seg1_end, forward, right, TUNNEL_WIDTH, TUNNEL_HEIGHT)
-	cursor = seg1_end
+static func _add_wall_torch(parent: Node3D, pos: Vector3, height: float) -> void:
+	var torch := Node3D.new()
+	torch.name = "CaveTorch"
 
-	# Segment 2 — slight turn
-	var turn_angle := rng.randf_range(-0.35, 0.35)
-	forward = forward.rotated(Vector3.UP, turn_angle).normalized()
-	right = forward.cross(Vector3.UP).normalized()
-	var seg2_end := cursor + forward * SEGMENT_LENGTH
-	seg2_end.y -= descent_per_seg
-	_build_tunnel_segment(cave_root, cursor, seg2_end, forward, right, TUNNEL_WIDTH, TUNNEL_HEIGHT)
-	_build_tunnel_segment(cave_root, seg1_end, cursor + forward * 0.5, forward, right, TUNNEL_WIDTH, TUNNEL_HEIGHT)
-	cursor = seg2_end
+	var stick := _make_box_mesh(Vector3(0.08, 0.5, 0.08), _mat_cave_rock)
+	stick.position.y = height - 0.25
+	torch.add_child(stick)
 
-	# Segment 3 — end chamber (wider)
-	var chamber_width := TUNNEL_WIDTH * 1.8
-	var chamber_height := TUNNEL_HEIGHT * 1.3
-	var chamber_length := 10.0
-	var chamber_end := cursor + forward * chamber_length
-	chamber_end.y -= descent_per_seg * 0.5
-	_build_tunnel_segment(cave_root, cursor, chamber_end, forward, right, chamber_width, chamber_height)
+	var flame := OmniLight3D.new()
+	flame.light_color = Color(1.0, 0.75, 0.4)
+	flame.light_energy = 2.0
+	flame.omni_range = 10.0
+	flame.shadow_enabled = true
+	flame.position.y = height + 0.1
+	torch.add_child(flame)
 
-	# ── Entrance wall behind player (with opening only at exit marker) ──
-	var entrance_wall := _make_box_static(
-		Vector3(TUNNEL_WIDTH + WALL_THICKNESS * 2.0, TUNNEL_HEIGHT + WALL_THICKNESS, WALL_THICKNESS),
-		_mat_cave_rock
-	)
-	entrance_wall.position = Vector3(0.0, TUNNEL_HEIGHT * 0.5, -0.5)
-	cave_root.add_child(entrance_wall)
+	var glow := MeshInstance3D.new()
+	var gs := SphereMesh.new()
+	gs.radius = 0.06
+	gs.height = 0.12
+	glow.mesh = gs
+	var gm := StandardMaterial3D.new()
+	gm.emission_enabled = true
+	gm.emission = Color(1.0, 0.7, 0.3)
+	gm.emission_energy_multiplier = 5.0
+	gm.albedo_color = Color(1.0, 0.8, 0.3)
+	glow.set_surface_override_material(0, gm)
+	glow.position.y = height + 0.05
+	torch.add_child(glow)
 
-	# ── Back wall of chamber ──
-	var back_wall := _make_box_static(
-		Vector3(chamber_width + WALL_THICKNESS * 2.0, chamber_height + WALL_THICKNESS, WALL_THICKNESS),
-		_mat_cave_rock
-	)
-	back_wall.position = chamber_end + Vector3(0.0, chamber_height * 0.5, 0.0)
-	_orient_along(back_wall, forward)
-	cave_root.add_child(back_wall)
+	torch.position = pos
+	parent.add_child(torch)
 
-	# ── Copper ore veins on walls ──
-	for i in rng.randi_range(2, 4):
-		var t := rng.randf_range(0.2, 0.8)
-		var seg_pos := cursor - forward * SEGMENT_LENGTH * (1.0 - t)
-		seg_pos.y += rng.randf_range(0.5, TUNNEL_HEIGHT * 0.6)
-		var side := right * (TUNNEL_WIDTH * 0.45) * (1.0 if rng.randf() < 0.5 else -1.0)
-		_add_copper_vein_wall(cave_root, seg_pos + side, rng)
 
-	for i in rng.randi_range(2, 3):
-		var t := rng.randf_range(0.2, 0.9)
-		var ch_pos := cursor + forward * chamber_length * t
-		ch_pos.y = chamber_end.y + rng.randf_range(0.5, chamber_height * 0.5)
-		var side := right * (chamber_width * 0.45) * (1.0 if rng.randf() < 0.5 else -1.0)
-		_add_copper_vein_wall(cave_root, ch_pos + side, rng)
+static func _add_boss_chest(parent: Node3D, pos: Vector3, fwd: Vector3, rng: RandomNumberGenerator) -> void:
+	var chest := StaticBody3D.new()
+	chest.collision_layer = 4
+	chest.collision_mask = 0
+	chest.add_to_group(&"interactables")
+	chest.add_to_group(&"chests")
+	chest.set_meta("build_id", &"chest")
 
-	for i in rng.randi_range(1, 3):
-		var t := rng.randf_range(0.3, 0.8)
-		var rock_pos := cursor + forward * chamber_length * t
-		rock_pos += right * rng.randf_range(-chamber_width * 0.3, chamber_width * 0.3)
-		rock_pos.y = chamber_end.y + lerpf(0.0, cursor.y - chamber_end.y, 1.0 - t) + 0.15
-		_add_copper_rock_ground(cave_root, rock_pos, rng)
+	var sz := Vector3(2.4, 1.8, 1.5)
+	PlayerBuilding.build_chest_visual(chest, sz)
 
-	# ── Loot chest at the back ──
-	var chest_pos := chamber_end - forward * 1.5
-	chest_pos.y = chamber_end.y
-	_add_cave_chest(cave_root, chest_pos, forward, rng)
+	var col := CollisionShape3D.new()
+	var box_col := BoxShape3D.new()
+	box_col.size = sz
+	col.shape = box_col
+	col.position.y = sz.y * 0.5
+	chest.add_child(col)
 
-	var bear_pos := seg1_end + forward * 2.0
-	bear_pos.y = seg1_end.y + 0.2
-	_add_cave_enemy(cave_root, bear_pos, "grizzly", 0)
+	var label := Label3D.new()
+	label.text = "[E] Boss Chest"
+	label.font_size = 28
+	label.modulate = Color(1.0, 0.7, 0.2)
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.position.y = sz.y + 0.5
+	label.visible = false
+	chest.add_child(label)
 
-	var lion_pos := cursor + forward * chamber_length * 0.4
-	lion_pos.y = lerpf(cursor.y, chamber_end.y, 0.4) + 0.2
-	_add_cave_enemy(cave_root, lion_pos, "lion", 1)
+	var slots: Array = []
+	slots.resize(32)
+	for i in 32:
+		slots[i] = {}
+	slots[0] = {"item_id": &"copper_ore", "count": rng.randi_range(8, 15)}
+	slots[1] = {"item_id": &"iron_ore", "count": rng.randi_range(3, 6)}
+	slots[2] = {"item_id": &"leather", "count": rng.randi_range(4, 8)}
+	slots[3] = {"item_id": &"resin", "count": rng.randi_range(6, 12)}
+	slots[4] = {"item_id": &"bone", "count": rng.randi_range(5, 10)}
+	if rng.randf() < 0.5:
+		slots[5] = {"item_id": &"amber", "count": rng.randi_range(1, 3)}
 
-	# ── Ambient dim light so it's not pitch black but very dark ──
-	var dim_light := OmniLight3D.new()
-	dim_light.light_color = Color(0.3, 0.3, 0.4)
-	dim_light.light_energy = 0.15
-	dim_light.omni_range = 30.0
-	dim_light.shadow_enabled = false
-	dim_light.position = (cursor + chamber_end) * 0.5 + Vector3(0.0, chamber_height * 0.5, 0.0)
-	cave_root.add_child(dim_light)
+	chest.set_meta("chest_contents", slots)
+	VillageGenerator._add_chest_rarity_sheen(chest, slots, sz)
 
-	return cave_root
+	chest.position = pos
+	if fwd.length_squared() > 0.01:
+		chest.look_at_from_position(pos, pos - fwd, Vector3.UP)
+	parent.add_child(chest)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

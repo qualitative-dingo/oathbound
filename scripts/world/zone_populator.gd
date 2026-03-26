@@ -1519,6 +1519,7 @@ static func _scatter_flowers(
 
 		var mat := _make_flower_mat(tex, Color(color, 1.0))
 
+		var water_only := fi == 3 or fi == 5
 		var transforms: Array[Transform3D] = []
 		for _i in count:
 			var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
@@ -1542,6 +1543,17 @@ static func _scatter_flowers(
 					or absf(_fhc - float(height_func.call(wx, wz + 2.0))) > 1.5 \
 					or absf(_fhc - float(height_func.call(wx, wz - 2.0))) > 1.5:
 				continue
+			if water_only:
+				var near_water := false
+				for probe_r in [6.0, 12.0, 18.0]:
+					for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+						if float(height_func.call(wx + d.x * probe_r, wz + d.y * probe_r)) < _WATER_LEVEL + 0.3:
+							near_water = true
+							break
+					if near_water:
+						break
+				if not near_water:
+					continue
 			if is_on_path(wx, wz):
 				continue
 			if _is_near_structure(wx, wz, 4.0, structs):

@@ -296,7 +296,7 @@ func _process(delta: float) -> void:
 		var cloud_mat := cloud.get_surface_override_material(0) as StandardMaterial3D
 		if cloud_mat:
 			cloud_mat.albedo_color = _cloud_current_color
-
+	
 	_update_tumble_leaves(delta, player)
 	_update_horizon_silhouettes(delta, player)
 
