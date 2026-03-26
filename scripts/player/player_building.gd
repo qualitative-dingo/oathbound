@@ -1849,7 +1849,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 
 	_build_campfire_stone_ring(structure)
 
-	# -- 3D logs arranged in a teepee/pile (6 logs) --
+	# -- 3D logs arranged in a teepee (6 logs leaning inward) --
 	var bark_tex := _get_bark_texture()
 	var log_angles := [0.0, TAU / 6.0, TAU * 2.0 / 6.0, TAU * 3.0 / 6.0, TAU * 4.0 / 6.0, TAU * 5.0 / 6.0]
 	var log_tilts := [0.45, 0.55, 0.4, 0.5, 0.48, 0.42]
@@ -1876,8 +1876,14 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		var angle: float = log_angles[i] + randf_range(-0.2, 0.2)
 		var tilt: float = log_tilts[i] + randf_range(-0.1, 0.1)
 		var outward := randf_range(0.18, 0.25)
-		log_mi.position = Vector3(cos(angle) * outward, 0.05, sin(angle) * outward)
-		log_mi.rotation = Vector3(-tilt, angle, randf_range(-0.15, 0.15))
+		var inward_dir := Vector3(-cos(angle), 0.0, -sin(angle))
+		var lean_y := (Vector3.UP * cos(tilt) + inward_dir * sin(tilt)).normalized()
+		var ref := Vector3.FORWARD if absf(lean_y.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT
+		var lean_x := lean_y.cross(ref).normalized()
+		var lean_z := lean_x.cross(lean_y).normalized()
+		log_mi.basis = Basis(lean_x, lean_y, lean_z)
+		log_mi.rotate_object_local(Vector3.UP, randf_range(0.0, TAU))
+		log_mi.position = Vector3(cos(angle) * outward, cyl.height * 0.4, sin(angle) * outward)
 		log_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		structure.add_child(log_mi)
 
