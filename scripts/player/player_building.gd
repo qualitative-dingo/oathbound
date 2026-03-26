@@ -1770,7 +1770,8 @@ func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
 		ring.name = "StoneRing"
 		ring.scale = Vector3(0.006, 0.005, 0.006)
 		ring.position.y = 0.0
-		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if ring is GeometryInstance3D else 0
+		if ring is GeometryInstance3D:
+			ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = Color(0.32, 0.30, 0.28)
 		mat.roughness = 0.95

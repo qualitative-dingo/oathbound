@@ -105,7 +105,10 @@ var _build_rotation: float = 0.0
 # Terraform mode (H key)
 var _terraform_mode: bool = false
 var _hoe_indicator: MeshInstance3D
+var _hoe_height_line: MeshInstance3D
 const HOE_RADIUS := 2.0
+# Bottom-right control hints panel (Valheim-style)
+var _control_hints_box: VBoxContainer
 var _build_snap_enabled: bool = true
 var _build_snapped: bool = false
 var _build_snap_side: int = 0  # 0=forward 1=back 2=left 3=right 4=top 5=bottom
@@ -1048,10 +1051,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var ke := event as InputEventKey
 		if ke.physical_keycode == KEY_SHIFT:
 			_build_snap_enabled = not _build_snap_enabled
-			if _snap_label:
-				_snap_label.text = "Snap: ON" if _build_snap_enabled else "Snap: OFF"
-				_snap_label.add_theme_color_override("font_color",
-					Color(0.6, 1.0, 0.6) if _build_snap_enabled else Color(1.0, 0.5, 0.5))
+			_refresh_control_hints()
 			return
 		if ke.physical_keycode == KEY_ALT:
 			_build_snap_side = (_build_snap_side + 1) % 6
@@ -3560,6 +3560,7 @@ func _build_hud() -> void:
 	_build_world_name_label(_hud_root)
 	_build_snap_label(_hud_root)
 	_build_build_crosshair(_hud_root)
+	_build_control_hints(_hud_root)
 	_build_minimap(_hud_root)
 	_build_fps_counter(_hud_root)
 	_build_target_hud(_hud_root)
@@ -5722,6 +5723,7 @@ func _toggle_build_menu() -> void:
 	else:
 		_build_menu_panel.visible = false
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_refresh_control_hints()
 
 
 func _close_build_menu() -> void:
@@ -5729,6 +5731,7 @@ func _close_build_menu() -> void:
 	if _build_menu_panel:
 		_build_menu_panel.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_refresh_control_hints()
 
 
 func _on_build_item_selected(build_id: StringName) -> void:
@@ -5796,13 +5799,9 @@ func _enter_build_mode() -> void:
 		_build_ghost.add_child(mi)
 	get_tree().current_scene.add_child(_build_ghost)
 
-	if _snap_label:
-		_snap_label.visible = true
-		_snap_label.text = "Snap: ON" if _build_snap_enabled else "Snap: OFF"
-		_snap_label.add_theme_color_override("font_color",
-			Color(0.6, 1.0, 0.6) if _build_snap_enabled else Color(1.0, 0.5, 0.5))
 	if _build_crosshair:
 		_build_crosshair.visible = true
+	_refresh_control_hints()
 
 
 func _update_build_ghost() -> void:
@@ -6403,6 +6402,7 @@ func _cancel_build_mode() -> void:
 		_build_snap_side_label.visible = false
 	if _build_crosshair:
 		_build_crosshair.visible = false
+	_refresh_control_hints()
 
 
 func _try_salvage_structure() -> void:
@@ -7125,6 +7125,80 @@ func _build_build_crosshair(root: Control) -> void:
 		_build_crosshair.draw_circle(c, 1.5, col)
 	)
 	root.add_child(_build_crosshair)
+
+
+func _build_control_hints(root: Control) -> void:
+	_control_hints_box = VBoxContainer.new()
+	_control_hints_box.name = "ControlHints"
+	_control_hints_box.visible = false
+	_control_hints_box.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_control_hints_box.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_control_hints_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_control_hints_box.offset_right = -20
+	_control_hints_box.offset_bottom = -20
+	_control_hints_box.offset_left = -260
+	_control_hints_box.offset_top = -200
+	_control_hints_box.add_theme_constant_override("separation", 2)
+	_control_hints_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_control_hints_box.z_index = 70
+	root.add_child(_control_hints_box)
+
+
+func _refresh_control_hints() -> void:
+	if not _control_hints_box:
+		return
+	for c in _control_hints_box.get_children():
+		c.queue_free()
+
+	var hints: Array[Array] = []
+
+	if _build_mode:
+		hints.append(["[LMB]", "Place structure"])
+		hints.append(["[RMB]", "Build menu"])
+		hints.append(["[Scroll]", "Rotate"])
+		hints.append(["[Shift]", "Toggle snap"])
+		if _build_snap_enabled:
+			hints.append(["[Q / E]", "Snap side"])
+		hints.append(["[Ctrl+Scroll]", "Adjust height"])
+		hints.append(["[MMB]", "Salvage"])
+		hints.append(["[B / Esc]", "Exit build mode"])
+	elif _build_menu_open:
+		hints.append(["[LMB]", "Select piece"])
+		hints.append(["[RMB]", "Close menu"])
+		hints.append(["[B / Esc]", "Exit build mode"])
+	elif _terraform_mode:
+		hints.append(["[LMB]", "Flatten ground"])
+		hints.append(["[MMB]", "Salvage"])
+		hints.append(["[H / Esc]", "Exit terraform mode"])
+	else:
+		_control_hints_box.visible = false
+		return
+
+	_control_hints_box.visible = true
+	for hint in hints:
+		var row := HBoxContainer.new()
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_theme_constant_override("separation", 6)
+		var key_label := Label.new()
+		key_label.text = hint[0]
+		key_label.add_theme_font_size_override("font_size", 13)
+		key_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+		key_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
+		key_label.add_theme_constant_override("shadow_offset_x", 1)
+		key_label.add_theme_constant_override("shadow_offset_y", 1)
+		key_label.custom_minimum_size.x = 110
+		key_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(key_label)
+		var desc_label := Label.new()
+		desc_label.text = hint[1]
+		desc_label.add_theme_font_size_override("font_size", 13)
+		desc_label.add_theme_color_override("font_color", Color(0.85, 0.82, 0.75))
+		desc_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.9))
+		desc_label.add_theme_constant_override("shadow_offset_x", 1)
+		desc_label.add_theme_constant_override("shadow_offset_y", 1)
+		desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(desc_label)
+		_control_hints_box.add_child(row)
 
 
 func _add_building_glb(parent: Node3D, model_path: String, sz: Vector3, ghost_mat: Material = null, tint: Color = Color(-1, -1, -1)) -> bool:
@@ -8897,11 +8971,15 @@ func _toggle_terraform_mode() -> void:
 		_exit_terraform_mode()
 	else:
 		_terraform_mode = true
+		_refresh_control_hints()
 
 func _exit_terraform_mode() -> void:
 	_terraform_mode = false
 	if _hoe_indicator and is_instance_valid(_hoe_indicator):
 		_hoe_indicator.visible = false
+	if _hoe_height_line and is_instance_valid(_hoe_height_line):
+		_hoe_height_line.visible = false
+	_refresh_control_hints()
 
 func _update_hoe_indicator() -> void:
 	if not _terraform_mode:
