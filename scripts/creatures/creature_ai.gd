@@ -393,6 +393,7 @@ func _physics_process(delta: float) -> void:
 		if velocity.y > 8.0:
 			velocity.y = 0.0
 		_clamp_to_terrain()
+		_avoid_water()
 		var y_rise := global_position.y - y_before
 		if y_rise > 0.4:
 			global_position.y = y_before + 0.4
@@ -447,6 +448,33 @@ func _clamp_to_terrain() -> void:
 		global_position.y = move_toward(global_position.y, target_y, 0.4)
 		if velocity.y < 0.0:
 			velocity.y = 0.0
+
+
+var _water_avoid_cd: float = 0.0
+
+func _avoid_water() -> void:
+	_water_avoid_cd -= get_physics_process_delta_time()
+	if _water_avoid_cd > 0.0:
+		return
+	_water_avoid_cd = 0.15
+
+	if not is_instance_valid(_cached_world_gen) or not _cached_world_gen.has_method(&"get_height_at_scene"):
+		return
+	var vel_flat := Vector2(velocity.x, velocity.z)
+	if vel_flat.length_squared() < 0.1:
+		return
+	var look := vel_flat.normalized()
+	var ahead_x := global_position.x + look.x * 2.0
+	var ahead_z := global_position.z + look.y * 2.0
+	var ahead_y: float = _cached_world_gen.get_height_at_scene(ahead_x, ahead_z)
+	if ahead_y < 0.3:
+		velocity.x = -velocity.x
+		velocity.z = -velocity.z
+		if _state == State.WANDER:
+			_wander_direction = -_wander_direction
+		elif _state == State.CHASE:
+			velocity.x *= 0.3
+			velocity.z *= 0.3
 
 
 func _process_idle(delta: float) -> void:

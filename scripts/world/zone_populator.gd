@@ -1044,6 +1044,10 @@ static func populate_zone_phase(
 				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
 				if ground_y < _MIN_LAND_Y:
 					continue
+				if ground_y > 8.0:
+					var skip_chance := smoothstep(8.0, 20.0, ground_y)
+					if rng.randf() < skip_chance:
+						continue
 				var enemy := _create_enemy(biome, rng)
 				if not enemy:
 					continue
