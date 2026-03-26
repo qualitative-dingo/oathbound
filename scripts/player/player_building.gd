@@ -586,10 +586,44 @@ func place_build() -> void:
 			box_col.size = Vector3(0.2, 0.6, 0.2)
 			col = box_col
 		elif _is_roof:
-			var box_col := BoxShape3D.new()
-			box_col.size = Vector3(sz.x, sz.y * 0.5, sz.z)
-			col = box_col
-			col_shape.position.y = sz.y * 0.25
+			var cvx := ConvexPolygonShape3D.new()
+			if mesh_type in ["roof_45", "roof_26"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["roof_45_ocorner", "roof_26_ocorner"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["roof_45_icorner", "roof_26_icorner"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2),
+					Vector3(hw2, sz.y, -hd2)])
+			elif mesh_type in ["gable_45", "gable_26"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(0, sz.y, -hd2), Vector3(0, sz.y, hd2)])
+			else:
+				var box_col := BoxShape3D.new()
+				box_col.size = Vector3(sz.x, sz.y * 0.5, sz.z)
+				col = box_col
+				col_shape.position.y = sz.y * 0.25
+			if cvx.points.size() > 0:
+				col = cvx
+			col_shape.position.y = 0.0
 		else:
 			var box_col := BoxShape3D.new()
 			box_col.size = sz
@@ -730,10 +764,44 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 			box_col.size = Vector3(0.2, 0.6, 0.2)
 			col = box_col
 		elif is_roof:
-			var box_col := BoxShape3D.new()
-			box_col.size = Vector3(sz.x, sz.y * 0.5, sz.z)
-			col = box_col
-			col_shape.position.y = sz.y * 0.25
+			var cvx := ConvexPolygonShape3D.new()
+			if mesh_type in ["roof_45", "roof_26"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["roof_45_ocorner", "roof_26_ocorner"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["roof_45_icorner", "roof_26_icorner"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2),
+					Vector3(hw2, sz.y, -hd2)])
+			elif mesh_type in ["gable_45", "gable_26"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(0, sz.y, -hd2), Vector3(0, sz.y, hd2)])
+			else:
+				var box_col := BoxShape3D.new()
+				box_col.size = Vector3(sz.x, sz.y * 0.5, sz.z)
+				col = box_col
+				col_shape.position.y = sz.y * 0.25
+			if cvx.points.size() > 0:
+				col = cvx
+			col_shape.position.y = 0.0
 		else:
 			var box_col := BoxShape3D.new()
 			box_col.size = sz

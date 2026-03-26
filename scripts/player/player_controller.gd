@@ -6040,6 +6040,21 @@ func _place_build() -> void:
 					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
 					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
 					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["roof_45_ocorner", "roof_26_ocorner"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["roof_45_icorner", "roof_26_icorner"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2),
+					Vector3(hw2, sz.y, -hd2)])
 			elif mesh_type in ["gable_45", "gable_26"]:
 				var hw2 := sz.x * 0.5
 				var hd2 := sz.z * 0.5
@@ -6226,6 +6241,21 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
 					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
 					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["roof_45_ocorner", "roof_26_ocorner"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(hw2, sz.y, hd2)])
+			elif mesh_type in ["roof_45_icorner", "roof_26_icorner"]:
+				var hw2 := sz.x * 0.5
+				var hd2 := sz.z * 0.5
+				cvx.points = PackedVector3Array([
+					Vector3(-hw2, 0, -hd2), Vector3(hw2, 0, -hd2),
+					Vector3(-hw2, 0, hd2), Vector3(hw2, 0, hd2),
+					Vector3(-hw2, sz.y, hd2), Vector3(hw2, sz.y, hd2),
+					Vector3(hw2, sz.y, -hd2)])
 			elif mesh_type in ["gable_45", "gable_26"]:
 				var hw2 := sz.x * 0.5
 				var hd2 := sz.z * 0.5
