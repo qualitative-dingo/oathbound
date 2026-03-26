@@ -9461,6 +9461,8 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 
 
 func _hit_harvestable(node: Node3D, damage: float) -> void:
+	if node.get_meta("harvest_type", &"") == &"bush":
+		return
 	var drop_id: StringName = node.get_meta("drop_id", &"wood") as StringName
 
 	var requires_tool: StringName = node.get_meta("requires_tool", &"") as StringName
