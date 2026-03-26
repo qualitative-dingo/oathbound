@@ -3711,16 +3711,23 @@ func _build_pause_menu() -> void:
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	input_catcher.add_child(bg)
 
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.offset_top = 30
+	scroll.offset_bottom = -30
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	_pause_overlay.add_child(scroll)
+
 	var center := VBoxContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	center.offset_left = -220
-	center.offset_right = 220
-	center.offset_top = -300
-	center.offset_bottom = 300
-	center.add_theme_constant_override("separation", 0)
-	_pause_overlay.add_child(center)
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	center.alignment = BoxContainer.ALIGNMENT_CENTER
+	scroll.add_child(center)
 
 	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	panel.custom_minimum_size.x = 440
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.08, 0.09, 0.12, 0.95)
 	panel_style.border_color = Color(0.3, 0.28, 0.22)
