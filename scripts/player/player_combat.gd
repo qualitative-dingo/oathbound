@@ -1852,7 +1852,7 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 		var kb_change := pc.velocity - pre_vel
 		pc.velocity = pre_vel + kb_change * (1.0 - affix_val(&"stalwart"))
 
-	if affixes.has(&"thorns") and _source and _source.has_method("take_damage"):
+	if affixes.has(&"thorns") and _source and _source.has_method("take_damage") and not _source.is_in_group(&"player"):
 		_source.take_damage(amount * affix_val(&"thorns"), pc)
 
 	if affixes.has(&"second_wind") and pc._second_wind_cooldown <= 0.0:
