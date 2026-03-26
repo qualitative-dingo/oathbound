@@ -1858,9 +1858,9 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		var log_mi := MeshInstance3D.new()
 		log_mi.name = "Log%d" % i
 		var cyl := CylinderMesh.new()
-		cyl.top_radius = randf_range(0.03, 0.05)
-		cyl.bottom_radius = randf_range(0.05, 0.07)
-		cyl.height = log_lengths[i] * 1.2
+		cyl.top_radius = randf_range(0.0375, 0.0625)
+		cyl.bottom_radius = randf_range(0.0625, 0.0875)
+		cyl.height = log_lengths[i] * 1.5
 		cyl.radial_segments = 5
 		cyl.rings = 2
 		log_mi.mesh = cyl
