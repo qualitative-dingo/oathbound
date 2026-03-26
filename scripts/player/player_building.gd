@@ -1829,8 +1829,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		log_mat.emission = Color(0.6, 0.15, 0.0)
 		log_mat.emission_energy_multiplier = 0.8
 		log_mi.set_surface_override_material(0, log_mat)
-		var angle := log_angles[i] + randf_range(-0.15, 0.15)
-		var tilt := log_tilts[i] + randf_range(-0.08, 0.08)
+		var angle: float = log_angles[i] + randf_range(-0.15, 0.15)
+		var tilt: float = log_tilts[i] + randf_range(-0.08, 0.08)
 		var outward := 0.12
 		log_mi.position = Vector3(cos(angle) * outward, 0.15, sin(angle) * outward)
 		log_mi.rotation = Vector3(tilt, angle + PI, randf_range(-0.1, 0.1))
