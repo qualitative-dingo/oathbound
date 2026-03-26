@@ -8541,8 +8541,6 @@ func _on_inv_slot_gui_input(event: InputEvent, slot_idx: int) -> void:
 			var item_type: String = str(data.get("type", ""))
 			if data.has("armor_slot") and (item_type == "armor" or item_type == "weapon" or item_type == "tool"):
 				_start_equip_progress(entry_id, slot_idx)
-			else:
-				_discard_inventory_slot.call_deferred(entry)
 
 
 func _equip_item_deferred(entry_id: StringName) -> void:
