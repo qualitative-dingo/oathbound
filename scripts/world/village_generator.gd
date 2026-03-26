@@ -370,9 +370,9 @@ static func _place_hut(parent: Node3D, pos: Vector3, yaw: float, var_idx: int, r
 
 
 static func _mat_for_id(build_id: StringName) -> StandardMaterial3D:
-	if build_id in [&"wood_wall", &"wood_floor", &"wood_stair", &"wood_door"]:
+	if build_id in [&"wood_wall", &"wood_floor", &"wood_stair", &"wood_door", &"wood_gable_45", &"wood_gable_26"]:
 		return PlayerBuilding._bmat_wood
-	elif build_id in [&"stone_wall", &"stone_floor", &"stone_door"]:
+	elif build_id in [&"stone_wall", &"stone_floor", &"stone_door", &"stone_gable_45", &"stone_gable_26"]:
 		return PlayerBuilding._bmat_stone
 	elif String(build_id).begins_with("thatch_roof"):
 		return PlayerBuilding._bmat_thatch

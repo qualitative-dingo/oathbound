@@ -6441,9 +6441,9 @@ static func _load_building_mat(path: String, tint: Color, rough: float, uv_scale
 
 func _get_building_material(build_id: StringName) -> StandardMaterial3D:
 	_ensure_building_materials()
-	if build_id in [&"wood_wall", &"wood_floor", &"wood_stair", &"wood_door"]:
+	if build_id in [&"wood_wall", &"wood_floor", &"wood_stair", &"wood_door", &"wood_gable_45", &"wood_gable_26"]:
 		return _bmat_wood
-	elif build_id in [&"stone_wall", &"stone_floor", &"stone_door"]:
+	elif build_id in [&"stone_wall", &"stone_floor", &"stone_door", &"stone_gable_45", &"stone_gable_26"]:
 		return _bmat_stone
 	elif build_id.begins_with(&"thatch_roof"):
 		return _bmat_thatch
