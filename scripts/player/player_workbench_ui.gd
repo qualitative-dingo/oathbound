@@ -759,7 +759,7 @@ func _show_selected_detail() -> void:
 			for sl: int in consumed.keys():
 				var qty: int = int(consumed[sl])
 				if qty > 0:
-					var stars_str := "*".repeat(sl) if sl > 0 else "0*"
+					var stars_str := "★".repeat(sl) if sl > 0 else "0★"
 					var col: Color = ItemDatabase.RARITY_COLORS[sl]
 					var hex := "%02x%02x%02x" % [int(col.r * 255), int(col.g * 255), int(col.b * 255)]
 					using_parts.append("[color=#%s]%dx %s[/color] %s" % [hex, qty, stars_str, mat_name])
@@ -894,7 +894,7 @@ func spawn_discard_text(crafted_id: StringName) -> void:
 	if stars > 0:
 		num.text = "Trashed: %s " % display
 		var star_lbl := Label3D.new()
-		star_lbl.text = "*".repeat(stars)
+		star_lbl.text = "★".repeat(stars)
 		star_lbl.font_size = 24
 		star_lbl.pixel_size = 0.01
 		star_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -924,7 +924,7 @@ func spawn_craft_text(crafted_id: StringName) -> void:
 	var star_text := ""
 	if stars > 0:
 		full_text = "%s%s " % [prefix, display]
-		star_text = "*".repeat(stars)
+		star_text = "★".repeat(stars)
 	else:
 		full_text = "%s%s" % [prefix, display]
 

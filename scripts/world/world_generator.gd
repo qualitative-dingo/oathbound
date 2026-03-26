@@ -837,6 +837,7 @@ func _generate_spawn_area() -> void:
 			zone_loaded.emit(pcoord)
 
 	_spawn_debug_portals()
+	_spawn_village_cave_entrance()
 	_spawn_starter_goblins()
 	_dismiss_loading_screen.call_deferred()
 
@@ -864,6 +865,17 @@ func _spawn_debug_portals() -> void:
 	var pos_b := Vector3(_PORTAL_FAR_X, far_y + 0.5, _PORTAL_FAR_Z)
 
 	_DebugPortal.create_portal_pair(self, pos_a, self, pos_b)
+
+
+func _spawn_village_cave_entrance() -> void:
+	var cx := 30.0
+	var cz := 28.0
+	var cy := get_height_at(cx, cz)
+	if cy < 0.5:
+		cy = 1.0
+	var entrance := CaveGenerator.create_entrance_marker(Vector3.FORWARD)
+	add_child(entrance)
+	entrance.global_position = world_to_scene_pos(Vector3(cx, cy, cz))
 
 
 func _spawn_starter_goblins() -> void:
