@@ -934,8 +934,11 @@ func _input(event: InputEvent) -> void:
 		_workbench_ui.close_workbench()
 		get_viewport().set_input_as_handled()
 		return
-	if (_build_menu_open or _build_mode) and event.is_action_pressed(&"block"):
-		_toggle_build_menu()
+	if _build_mode and event.is_action_pressed(&"block"):
+		if _build_menu_open:
+			_close_build_menu()
+		else:
+			_open_build_menu()
 		get_viewport().set_input_as_handled()
 		return
 
@@ -1009,10 +1012,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_workbench_ui.close_workbench()
 		elif _terraform_mode:
 			_exit_terraform_mode()
-		elif _build_mode:
-			_cancel_build_mode()
 		elif _build_menu_open:
 			_close_build_menu()
+		elif _build_mode and _build_ghost:
+			_clear_build_ghost()
+		elif _build_mode:
+			_cancel_build_mode()
 		elif _map_open:
 			_close_map()
 		elif _inventory_open:
@@ -1125,11 +1130,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				_exit_terraform_mode()
 			_update_hotbar_selection()
 
-	# B key -> toggle build state (opens build menu or exits build/place mode)
+	# B key -> toggle build state (like H for terraform — no immediate menu)
 	if event.is_action_pressed(&"build_mode") and not _inventory_open and not _workbench_open and not _chest_open:
 		if _terraform_mode:
 			_exit_terraform_mode()
-		_toggle_build_menu()
+		if _build_menu_open:
+			_close_build_menu()
+			_cancel_build_mode()
+		elif _build_mode:
+			_cancel_build_mode()
+		else:
+			_enter_build_mode()
 		return
 
 	# H key -> toggle terraform state
@@ -1150,16 +1161,19 @@ func _unhandled_input(event: InputEvent) -> void:
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or _inventory_open:
 		return
 
-	# Build placement mode: left-click places, right-click opens menu, ESC cancels
+	# Build mode: left-click places (if piece selected), right-click opens menu, ESC exits
 	if _build_mode:
 		if event.is_action_pressed(&"attack"):
 			_place_build()
 			return
 		if event.is_action_pressed(&"block"):
-			_toggle_build_menu()
+			_open_build_menu()
 			return
 		if event.is_action_pressed(&"ui_cancel"):
-			_cancel_build_mode()
+			if _build_ghost:
+				_clear_build_ghost()
+			else:
+				_cancel_build_mode()
 			return
 
 	# Terraform mode: left-click flattens terrain
@@ -5712,17 +5726,17 @@ func _refresh_build_menu() -> void:
 
 
 func _toggle_build_menu() -> void:
-	if _build_mode:
-		_cancel_build_mode()
-		return
-	_build_menu_open = not _build_menu_open
 	if _build_menu_open:
-		_refresh_build_menu()
-		_build_menu_panel.visible = true
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		_close_build_menu()
 	else:
-		_build_menu_panel.visible = false
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_open_build_menu()
+
+
+func _open_build_menu() -> void:
+	_build_menu_open = true
+	_refresh_build_menu()
+	_build_menu_panel.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_refresh_control_hints()
 
 
@@ -5737,13 +5751,17 @@ func _close_build_menu() -> void:
 func _on_build_item_selected(build_id: StringName) -> void:
 	_build_selected = build_id
 	_close_build_menu()
-	_enter_build_mode()
+	if not _build_mode:
+		_enter_build_mode()
+	_setup_build_ghost()
 
 
 func _enter_raft_placement() -> void:
 	_build_selected = &"raft"
 	_build_from_workbench = true
-	_enter_build_mode()
+	if not _build_mode:
+		_enter_build_mode()
+	_setup_build_ghost()
 
 
 func _enter_build_mode() -> void:
@@ -5752,9 +5770,17 @@ func _enter_build_mode() -> void:
 	_build_snapped = false
 	_build_snap_side = 0
 	_build_height_offset = 0.0
+	if _build_crosshair:
+		_build_crosshair.visible = true
+	_refresh_control_hints()
+
+
+func _setup_build_ghost() -> void:
+	if _build_ghost:
+		_build_ghost.queue_free()
+		_build_ghost = null
 	var recipe := _get_build_recipe(_build_selected)
 	if recipe.is_empty():
-		_build_mode = false
 		return
 	var mesh_type: String = recipe.get("mesh", "box") as String
 	var color: Color = recipe.get("color", Color(0.5, 0.4, 0.2)) as Color
@@ -5798,9 +5824,6 @@ func _enter_build_mode() -> void:
 			mi.position.y = 0.0 if mesh_type == "stair" else sz.y * 0.5
 		_build_ghost.add_child(mi)
 	get_tree().current_scene.add_child(_build_ghost)
-
-	if _build_crosshair:
-		_build_crosshair.visible = true
 	_refresh_control_hints()
 
 
@@ -5913,9 +5936,10 @@ func _update_build_ghost() -> void:
 
 
 func _place_build() -> void:
+	if not _build_ghost or _build_selected == &"":
+		return
 	var recipe := _get_build_recipe(_build_selected)
 	if recipe.is_empty():
-		_cancel_build_mode()
 		return
 
 	var is_water_only := recipe.get("water_only", false) as bool
@@ -6373,7 +6397,7 @@ func _clear_grass_multimesh_at(pos: Vector3, r2: float) -> void:
 					mm.set_instance_transform(idx, kept[idx])
 
 
-func _cancel_build_mode() -> void:
+func _clear_build_ghost() -> void:
 	if _build_from_workbench and _build_selected != &"":
 		var item_data := ItemDatabase.get_item(_build_selected)
 		var recipe_var = item_data.get("recipe", [])
@@ -6385,12 +6409,17 @@ func _cancel_build_mode() -> void:
 			var req_amount: int = int(ingredient.get("amount", 0))
 			Inventory.add_item(req_id, req_amount)
 	_build_from_workbench = false
-	_build_mode = false
 	_build_selected = &""
 	_build_snapped = false
 	if _build_ghost:
 		_build_ghost.queue_free()
 		_build_ghost = null
+	_refresh_control_hints()
+
+
+func _cancel_build_mode() -> void:
+	_clear_build_ghost()
+	_build_mode = false
 	if _snap_label:
 		_snap_label.visible = false
 	if _build_snap_side_label:
@@ -7147,19 +7176,24 @@ func _refresh_control_hints() -> void:
 
 	var hints: Array[Array] = []
 
-	if _build_mode:
+	if _build_mode and _build_menu_open:
+		hints.append(["[LMB]", "Select piece"])
+		hints.append(["[RMB]", "Close menu"])
+		hints.append(["[B / Esc]", "Exit build mode"])
+	elif _build_mode and _build_ghost:
 		hints.append(["[LMB]", "Place structure"])
 		hints.append(["[RMB]", "Build menu"])
 		hints.append(["[Scroll]", "Rotate"])
 		hints.append(["[Shift]", "Toggle snap"])
 		if _build_snap_enabled:
-			hints.append(["[Q / E]", "Snap side"])
+			hints.append(["[Alt]", "Snap side"])
 		hints.append(["[Ctrl+Scroll]", "Adjust height"])
 		hints.append(["[MMB]", "Salvage"])
-		hints.append(["[B / Esc]", "Exit build mode"])
-	elif _build_menu_open:
-		hints.append(["[LMB]", "Select piece"])
-		hints.append(["[RMB]", "Close menu"])
+		hints.append(["[Esc]", "Deselect piece"])
+		hints.append(["[B]", "Exit build mode"])
+	elif _build_mode:
+		hints.append(["[RMB]", "Open build menu"])
+		hints.append(["[MMB]", "Salvage"])
 		hints.append(["[B / Esc]", "Exit build mode"])
 	elif _terraform_mode:
 		hints.append(["[LMB]", "Flatten ground"])
