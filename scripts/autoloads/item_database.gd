@@ -806,6 +806,16 @@ func _register_defaults() -> void:
 		"recipe": [{"item_id": "wood", "amount": 1}, {"item_id": "resin", "amount": 1}],
 		"crafting_station": "hand", "craft_amount": 2,
 	})
+	register_item(&"hoe", {
+		"name": "Hoe", "type": "tool", "hands": "1h",
+		"weapon_class": "hoe",
+		"damage": 2.0, "attack_speed": 1.0, "range": 5.0,
+		"stamina_cost": 8.0, "knockback": 0.0,
+		"description": "Flattens and smooths terrain. Left-click to level the ground around you.",
+		"icon": "res://textures/items/hammer.png",
+		"recipe": [{"item_id": "wood", "amount": 4}, {"item_id": "stone", "amount": 2}],
+		"crafting_station": "hand",
+	})
 	# --- Workbench recipes ---
 	register_item(&"wood_arrow", {
 		"name": "Wood Arrow", "type": "ammo",

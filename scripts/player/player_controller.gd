@@ -101,6 +101,8 @@ var _build_menu_open: bool = false
 var _build_ghost: Node3D
 var _build_selected: StringName = &""
 var _build_rotation: float = 0.0
+var _hoe_indicator: MeshInstance3D
+const HOE_RADIUS := 4.0
 var _build_snap_enabled: bool = true
 var _build_snapped: bool = false
 var _build_snap_side: int = 0  # 0=forward 1=back 2=left 3=right 4=top 5=bottom
@@ -1139,6 +1141,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed(&"attack"):
 		if _bow_drawing:
 			_fire_bow()
+			return
+		if ItemDatabase.get_weapon_class(equipped_weapon) == "hoe":
+			_try_hoe_use()
 			return
 		_try_attack()
 		return
@@ -8504,6 +8509,8 @@ func _process(delta: float) -> void:
 	if _hud_module:
 		_hud_module.update_chat_fade(self, delta)
 	_check_speech_triggers(delta)
+	if is_multiplayer_authority():
+		_update_hoe_indicator()
 
 	# Phase 5: Clients report player data to host for save on disconnect
 	if is_multiplayer_authority() and NetworkManager.is_connected_to_game() and not NetworkManager.is_server():
@@ -8783,6 +8790,87 @@ func _try_attack() -> void:
 		_resolve_attack.bind(wpn_damage, wpn_range, wpn_knockback, is_unarmed, "auto")
 	)
 
+
+func _try_hoe_use() -> void:
+	if _is_blocking or _is_dodging or _mounted:
+		return
+	var stamina_cost: float = _get_weapon_stat("stamina_cost", 8.0)
+	if _attack_cooldown > 0.0 or not _can_spend_stamina(stamina_cost):
+		return
+
+	var cam := get_viewport().get_camera_3d()
+	if not cam:
+		return
+	var screen_center := get_viewport().get_visible_rect().size * 0.5
+	var ray_origin := cam.project_ray_origin(screen_center)
+	var ray_dir := cam.project_ray_normal(screen_center)
+	var ray_end := ray_origin + ray_dir * 50.0
+	var space := get_world_3d().direct_space_state
+	if not space:
+		return
+	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 1)
+	query.exclude = [get_rid()]
+	var result := space.intersect_ray(query)
+	if result.is_empty():
+		return
+
+	var hit_pos: Vector3 = result["position"]
+	var wg := _find_world_generator()
+	if not wg:
+		return
+	var world_hit := wg.get_world_position_vec(hit_pos)
+
+	_spend_stamina(stamina_cost)
+	_attack_cooldown = _get_weapon_stat("attack_speed", 1.0)
+	_start_attack_animation()
+
+	wg.flatten_terrain(world_hit.x, world_hit.z, HOE_RADIUS)
+	AudioManager.play_sfx("fist_hit_tree", -6.0)
+
+func _update_hoe_indicator() -> void:
+	var is_hoe := ItemDatabase.get_weapon_class(equipped_weapon) == "hoe"
+	if not is_hoe:
+		if _hoe_indicator and is_instance_valid(_hoe_indicator):
+			_hoe_indicator.visible = false
+		return
+	if not _hoe_indicator or not is_instance_valid(_hoe_indicator):
+		_hoe_indicator = MeshInstance3D.new()
+		_hoe_indicator.name = "HoeIndicator"
+		var torus := TorusMesh.new()
+		torus.inner_radius = HOE_RADIUS - 0.08
+		torus.outer_radius = HOE_RADIUS
+		torus.rings = 32
+		torus.ring_segments = 16
+		_hoe_indicator.mesh = torus
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.4, 0.9, 0.3, 0.45)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.no_depth_test = true
+		_hoe_indicator.set_surface_override_material(0, mat)
+		get_tree().current_scene.add_child(_hoe_indicator)
+
+	var cam := get_viewport().get_camera_3d()
+	if not cam:
+		_hoe_indicator.visible = false
+		return
+	var screen_center := get_viewport().get_visible_rect().size * 0.5
+	var ray_origin := cam.project_ray_origin(screen_center)
+	var ray_dir := cam.project_ray_normal(screen_center)
+	var ray_end := ray_origin + ray_dir * 50.0
+	var space := get_world_3d().direct_space_state
+	if not space:
+		_hoe_indicator.visible = false
+		return
+	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 1)
+	query.exclude = [get_rid()]
+	var result := space.intersect_ray(query)
+	if result.is_empty():
+		_hoe_indicator.visible = false
+		return
+	_hoe_indicator.visible = true
+	var hit_pos: Vector3 = result["position"]
+	_hoe_indicator.global_position = Vector3(hit_pos.x, hit_pos.y + 0.1, hit_pos.z)
 
 func _get_build_icon(recipe_id: StringName) -> Texture2D:
 	if _building:

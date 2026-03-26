@@ -455,12 +455,19 @@ func _spawn_building(entry: Dictionary) -> void:
 				last_chest.set_meta("chest_contents", restored)
 
 
-## Return world state for save (destroyed objects, placed buildings, horse positions).
+## Return world state for save (destroyed objects, placed buildings, horse positions, terrain mods).
 func get_world_state_for_save() -> Dictionary:
+	var wg := _find_world_generator()
+	var terrain_mods_serialized: Dictionary = {}
+	if wg:
+		var raw_mods: Dictionary = wg.get_terrain_mods()
+		for key: Vector2i in raw_mods:
+			terrain_mods_serialized["%d,%d" % [key.x, key.y]] = raw_mods[key]
 	return {
 		"destroyed": _destroyed_objects.duplicate(),
 		"buildings": _placed_buildings.duplicate(),
 		"horses": _collect_horse_positions(),
+		"terrain_mods": terrain_mods_serialized,
 	}
 
 
@@ -475,6 +482,16 @@ func apply_world_state_from_save(data: Dictionary) -> void:
 			_placed_buildings.append(entry as Dictionary)
 	if data.has("horses"):
 		_saved_horses = (data["horses"] as Array).duplicate()
+	if data.has("terrain_mods"):
+		var wg := _find_world_generator()
+		if wg:
+			var raw: Dictionary = data["terrain_mods"]
+			var restored: Dictionary = {}
+			for key_str: String in raw:
+				var parts := key_str.split(",")
+				if parts.size() == 2:
+					restored[Vector2i(int(parts[0]), int(parts[1]))] = float(raw[key_str])
+			wg.set_terrain_mods(restored)
 	_apply_mutations()
 
 

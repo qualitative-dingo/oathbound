@@ -72,6 +72,12 @@ var _ws_dim: int = 0
 var _ws_accum: PackedFloat32Array
 var _ws_heights: PackedFloat32Array
 
+# ─── Terrain Modifications (hoe / leveling) ──────────────────────────────────
+# Keyed by Vector2i grid coords (world pos quantized to TERRAIN_MOD_STEP).
+# Values are the target height (float).
+const TERRAIN_MOD_STEP := ZONE_SIZE / MESH_RESOLUTION  # ~1.33m per grid cell
+var _terrain_mods: Dictionary = {}
+
 # ─── Floating Origin ──────────────────────────────────────────────────────────
 # Periodically re-centers the scene around the player so the GPU always works
 # with small coordinate values.  Prevents precision/performance degradation at
@@ -92,6 +98,58 @@ func world_to_scene_pos(world_pos: Vector3) -> Vector3:
 
 func get_height_at_scene(sx: float, sz: float) -> float:
 	return get_height_at(sx + origin_shift.x, sz + origin_shift.z)
+
+
+# ─── Terrain Modification API ─────────────────────────────────────────────────
+
+func flatten_terrain(world_x: float, world_z: float, radius: float) -> void:
+	var target_h := get_height_at(world_x, world_z)
+	var affected_zones: Dictionary = {}
+	var steps := ceili(radius / TERRAIN_MOD_STEP)
+	var cx := roundi(world_x / TERRAIN_MOD_STEP)
+	var cz := roundi(world_z / TERRAIN_MOD_STEP)
+	var r_sq := radius * radius
+
+	for dz in range(-steps, steps + 1):
+		for dx in range(-steps, steps + 1):
+			var gx := cx + dx
+			var gz := cz + dz
+			var wx := gx * TERRAIN_MOD_STEP
+			var wz := gz * TERRAIN_MOD_STEP
+			var dist_sq := (wx - world_x) * (wx - world_x) + (wz - world_z) * (wz - world_z)
+			if dist_sq > r_sq:
+				continue
+			var blend := 1.0 - sqrt(dist_sq) / radius
+			blend = smoothstep(0.0, 1.0, blend)
+			var key := Vector2i(gx, gz)
+			var existing_h := get_height_at(wx, wz) if not _terrain_mods.has(key) else float(_terrain_mods[key])
+			_terrain_mods[key] = lerpf(existing_h, target_h, blend)
+			var zone := Vector2i(floori(wx / ZONE_SIZE), floori(wz / ZONE_SIZE))
+			affected_zones[zone] = true
+
+	for zone_coord: Vector2i in affected_zones:
+		rebuild_zone(zone_coord)
+
+func rebuild_zone(coord: Vector2i) -> void:
+	_terrain_mesh_cache.erase(coord)
+	_terrain_shape_cache.erase(coord)
+	if coord in _loaded_zones:
+		var zone_node: Node = _loaded_zones[coord]
+		if zone_node is StaticBody3D:
+			_ZonePool.recycle_zone(zone_node as StaticBody3D)
+		else:
+			zone_node.queue_free()
+		_loaded_zones.erase(coord)
+		_zone_biome_cache.erase(coord)
+		_zone_microbiome_cache.erase(coord)
+		_zone_water_cache.erase(coord)
+
+func get_terrain_mods() -> Dictionary:
+	return _terrain_mods.duplicate()
+
+func set_terrain_mods(mods: Dictionary) -> void:
+	_terrain_mods = mods.duplicate()
+
 
 func _check_origin_shift() -> void:
 	if _players.is_empty():
@@ -722,7 +780,14 @@ func _determine_microbiome(zone: Vector2i) -> StringName:
 	return micro
 
 
+func _terrain_mod_key(x: float, z: float) -> Vector2i:
+	return Vector2i(roundi(x / TERRAIN_MOD_STEP), roundi(z / TERRAIN_MOD_STEP))
+
 func get_height_at(x: float, z: float) -> float:
+	var mod_key := _terrain_mod_key(x, z)
+	if _terrain_mods.has(mod_key):
+		return _terrain_mods[mod_key] as float
+
 	var dist := Vector2(x, z).length()
 	if dist > world_radius * 0.9:
 		var edge_factor := (dist - world_radius * 0.9) / (world_radius * 0.1)
