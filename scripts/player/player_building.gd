@@ -2125,25 +2125,25 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	smoke_particles.position.y = 0.8
 
 	var smoke_mesh := QuadMesh.new()
-	smoke_mesh.size = Vector2(0.9, 0.9)
+	smoke_mesh.size = Vector2(0.765, 0.765)
 	smoke_particles.draw_pass_1 = smoke_mesh
 
 	var smoke_pmat := ParticleProcessMaterial.new()
 	smoke_pmat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
 	smoke_pmat.emission_sphere_radius = 0.1
 	smoke_pmat.direction = Vector3(0, 1, 0)
-	smoke_pmat.spread = 15.0
-	smoke_pmat.initial_velocity_min = 0.4
-	smoke_pmat.initial_velocity_max = 0.8
-	smoke_pmat.gravity = Vector3(0.08, 0.2, 0.0)
+	smoke_pmat.spread = 12.75
+	smoke_pmat.initial_velocity_min = 0.56
+	smoke_pmat.initial_velocity_max = 1.12
+	smoke_pmat.gravity = Vector3(0.08, 0.28, 0.0)
 	smoke_pmat.damping_min = 0.2
 	smoke_pmat.damping_max = 0.6
-	smoke_pmat.scale_min = 0.5
-	smoke_pmat.scale_max = 1.4
+	smoke_pmat.scale_min = 0.425
+	smoke_pmat.scale_max = 1.19
 	smoke_pmat.angular_velocity_min = -20.0
 	smoke_pmat.angular_velocity_max = 20.0
-	smoke_pmat.tangential_accel_min = -0.15
-	smoke_pmat.tangential_accel_max = 0.15
+	smoke_pmat.tangential_accel_min = -0.1275
+	smoke_pmat.tangential_accel_max = 0.1275
 
 	var smoke_scale_crv := CurveTexture.new()
 	var ssc := Curve.new()
