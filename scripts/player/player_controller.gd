@@ -9947,7 +9947,7 @@ func _fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tr
 	var tree_base := node.global_position
 	var trunk_h: float = float(node.get_meta("trunk_h", 15.0))
 
-	# Fall direction: 60% player push + 40% terrain slope (downhill bias)
+	# Fall direction: 85% player push + 15% terrain slope (subtle downhill nudge)
 	var fall_angle: float
 	if is_nan(override_angle):
 		var to_tree := node.global_position - global_position
@@ -9957,12 +9957,12 @@ func _fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tr
 		var slope_dir := _get_terrain_slope_dir(tree_base)
 		var blended_dir: Vector3
 		if slope_dir.length_squared() > 0.01:
-			blended_dir = (player_dir * 0.6 + slope_dir * 0.4).normalized()
+			blended_dir = (player_dir * 0.85 + slope_dir * 0.15).normalized()
 		else:
 			blended_dir = player_dir
 
 		fall_angle = atan2(blended_dir.x, blended_dir.z)
-		fall_angle += randf_range(-0.3, 0.3)
+		fall_angle += randf_range(-0.1, 0.1)
 	else:
 		fall_angle = override_angle + randf_range(-0.15, 0.15)
 
