@@ -596,12 +596,10 @@ func _csync_broadcast_positions() -> void:
 		var rotations := PackedFloat32Array()
 		var velocities := PackedFloat32Array()
 		var count := 0
-		var _wgs := get_tree().get_nodes_in_group(&"world_generator")
-		var _wg: Node = _wgs[0] if not _wgs.is_empty() else null
 		for child in zone_root.get_children():
 			if child is CreatureAI:
 				var creature: CreatureAI = child as CreatureAI
-				var cwp: Vector3 = _wg.get_world_position(creature) if _wg else creature.global_position
+				var cwp: Vector3 = wg.get_world_position(creature)
 				positions.append(cwp.x)
 				positions.append(cwp.y)
 				positions.append(cwp.z)

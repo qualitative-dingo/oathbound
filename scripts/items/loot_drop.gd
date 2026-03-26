@@ -140,10 +140,13 @@ func _update_stack_offset() -> void:
 	var my_pos := global_position
 	var my_id := get_instance_id()
 	var slot := 0
-	for other in get_tree().get_nodes_in_group(&"loot"):
-		if other == self or not is_instance_valid(other):
+	var parent := get_parent()
+	if not parent:
+		return
+	for child in parent.get_children():
+		if child == self or not is_instance_valid(child):
 			continue
-		var od := other as LootDrop
+		var od := child as LootDrop
 		if not od or not od._nameplate_label or not od._nameplate_label.visible:
 			continue
 		var dx: float = od.global_position.x - my_pos.x

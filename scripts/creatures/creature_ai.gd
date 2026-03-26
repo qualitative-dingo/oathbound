@@ -606,9 +606,13 @@ func _process_attack(delta: float) -> void:
 func _find_nearby_tree(radius: float) -> Node3D:
 	var best: Node3D = null
 	var best_dist := radius * radius
-	for node: Node3D in get_tree().get_nodes_in_group(&"interactables"):
-		if not node.has_meta("tree_name"):
+	var parent := get_parent()
+	if not parent:
+		return null
+	for child in parent.get_children():
+		if not (child is Node3D) or not child.has_meta("tree_name"):
 			continue
+		var node: Node3D = child as Node3D
 		var d2 := Vector2(node.global_position.x - global_position.x, node.global_position.z - global_position.z).length_squared()
 		if d2 < best_dist:
 			best_dist = d2

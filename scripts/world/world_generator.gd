@@ -245,6 +245,10 @@ func _on_day_night_changed(is_day: bool) -> void:
 
 
 var _diag_timer := 0.0
+var _diag_pending := false
+var _diag_n_enemies := 0
+var _diag_n_interactables := 0
+var _diag_n_loot := 0
 var _perf_max_queue_ms := 0.0
 var _perf_max_pending_ms := 0.0
 var _perf_max_unload_ms := 0.0
@@ -254,44 +258,49 @@ var _perf_pending_size_max := 0
 var _last_player_zones: Array[Vector2i] = []  # throttle _queue_zones_around
 var _unload_timer := 0.0  # throttle _unload_distant_zones
 
+
+func _process(_delta: float) -> void:
+	if not _diag_pending:
+		return
+	_diag_pending = false
+	var tree := get_tree()
+	_diag_n_enemies = tree.get_nodes_in_group(&"enemies").size()
+	_diag_n_interactables = tree.get_nodes_in_group(&"interactables").size()
+	_diag_n_loot = tree.get_nodes_in_group(&"loot").size()
+	var total_nodes := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
+	var objects := Performance.get_monitor(Performance.OBJECT_COUNT)
+	var draw_calls := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	var vram_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_VIDEO_MEM_USED) / (1024.0 * 1024.0)
+	var buf_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_BUFFER_MEM_USED) / (1024.0 * 1024.0)
+	var tex_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TEXTURE_MEM_USED) / (1024.0 * 1024.0)
+	var process_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	var physics_ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+	print("[PERF DIAG] FPS=%d nodes=%d objects=%d draws=%d vram=%.1fMB buf=%.1fMB tex=%.1fMB proc=%.1fms phys=%.1fms zones=%d enemies=%d interact=%d loot=%d explored=%d sub=%d tcache=%d bg=%d mesh_q=%d pop_q=%d %s" % [
+		Engine.get_frames_per_second(), int(total_nodes), int(objects),
+		int(draw_calls), vram_mb, buf_mb, tex_mb, process_ms, physics_ms,
+		_loaded_zones.size(), _diag_n_enemies, _diag_n_interactables, _diag_n_loot,
+		_explored_zones.size(), _explored_sub_chunks.size(),
+		_terrain_mesh_cache.size(), _gen_in_flight.size(),
+		_finalize_backlog.size(), _populate_backlog.size(),
+		_ZonePool.get_pool_stats()])
+	print("[PERF DETAIL] wg_total=%.2fms queue=%.2fms pending=%.2fms unload=%.2fms explore=%.2fms pending_q=%d origin_shift=(%.0f,%.0f)" % [
+		_perf_max_total_ms, _perf_max_queue_ms, _perf_max_pending_ms,
+		_perf_max_unload_ms, _perf_max_explore_ms, _perf_pending_size_max,
+		origin_shift.x, origin_shift.z])
+	_perf_max_queue_ms = 0.0
+	_perf_max_pending_ms = 0.0
+	_perf_max_unload_ms = 0.0
+	_perf_max_explore_ms = 0.0
+	_perf_max_total_ms = 0.0
+	_perf_pending_size_max = 0
+
 func _physics_process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
 
 	_diag_timer -= delta
 	if _diag_timer <= 0.0:
 		_diag_timer = 5.0
-		var tree := get_tree()
-		var total_nodes := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
-		var orphans := Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
-		var objects := Performance.get_monitor(Performance.OBJECT_COUNT)
-		var draw_calls := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
-		var vram_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_VIDEO_MEM_USED) / (1024.0 * 1024.0)
-		var buf_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_BUFFER_MEM_USED) / (1024.0 * 1024.0)
-		var tex_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TEXTURE_MEM_USED) / (1024.0 * 1024.0)
-		var process_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
-		var physics_ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
-		var n_enemies := tree.get_nodes_in_group(&"enemies").size()
-		var n_interactables := tree.get_nodes_in_group(&"interactables").size()
-		var n_loot := tree.get_nodes_in_group(&"loot").size()
-		var n_structures := tree.get_nodes_in_group(&"structures").size()
-		print("[PERF DIAG] FPS=%d nodes=%d objects=%d draws=%d vram=%.1fMB buf=%.1fMB tex=%.1fMB proc=%.1fms phys=%.1fms zones=%d enemies=%d interact=%d loot=%d explored=%d sub=%d tcache=%d bg=%d mesh_q=%d pop_q=%d %s" % [
-			Engine.get_frames_per_second(), int(total_nodes), int(objects),
-			int(draw_calls), vram_mb, buf_mb, tex_mb, process_ms, physics_ms,
-			_loaded_zones.size(), n_enemies, n_interactables, n_loot,
-			_explored_zones.size(), _explored_sub_chunks.size(),
-			_terrain_mesh_cache.size(), _gen_in_flight.size(),
-			_finalize_backlog.size(), _populate_backlog.size(),
-			_ZonePool.get_pool_stats()])
-		print("[PERF DETAIL] wg_total=%.2fms queue=%.2fms pending=%.2fms unload=%.2fms explore=%.2fms pending_q=%d origin_shift=(%.0f,%.0f)" % [
-			_perf_max_total_ms, _perf_max_queue_ms, _perf_max_pending_ms,
-			_perf_max_unload_ms, _perf_max_explore_ms, _perf_pending_size_max,
-			origin_shift.x, origin_shift.z])
-		_perf_max_queue_ms = 0.0
-		_perf_max_pending_ms = 0.0
-		_perf_max_unload_ms = 0.0
-		_perf_max_explore_ms = 0.0
-		_perf_max_total_ms = 0.0
-		_perf_pending_size_max = 0
+		_diag_pending = true
 
 	_player_cache_timer -= delta
 	var _need_refresh := _player_cache_timer <= 0.0 or _players.is_empty()
@@ -828,15 +837,29 @@ func _generate_spawn_area() -> void:
 			col_shape.disabled = false
 	_deferred_collisions.clear()
 
-	# Spawn area must be fully populated before the player lands
+	# Only fully populate the center spawn zone synchronously (the one the player stands on).
+	# Surrounding zones stay in _populate_backlog and load incrementally via _process_pending_zones.
+	var sync_populated: Array[Dictionary] = []
+	var deferred: Array[Dictionary] = []
 	while not _populate_backlog.is_empty():
 		var pitem: Dictionary = _populate_backlog.pop_front()
+		var pcoord: Vector2i = pitem["coord"]
+		if pcoord == spawn_zone:
+			sync_populated.append(pitem)
+		else:
+			deferred.append(pitem)
+
+	for pitem in sync_populated:
 		var pcoord: Vector2i = pitem["coord"]
 		var zone_root = pitem["zone_root"]
 		if is_instance_valid(zone_root):
 			_ZonePopulator.populate_zone(zone_root, pcoord, pitem["biome"], _seed_hash, get_height_at, pitem["micro"])
-			_update_zone_lod(zone_root, float((pcoord - spawn_zone).length()))
+			_update_zone_lod(zone_root, 0.0)
 			zone_loaded.emit(pcoord)
+
+	# Put surrounding zones back in backlog for incremental loading
+	for pitem in deferred:
+		_populate_backlog.append(pitem)
 
 	_spawn_debug_portals()
 	_spawn_village_cave_entrance()
@@ -938,24 +961,22 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 	return false
 
 
-const _PENDING_BUDGET_US := 3000  # max microseconds per frame for pending work
+const _PENDING_BUDGET_US := 2500  # max microseconds per frame for pending work
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
 
-	# 0. Enable at most 1 collision shape per frame to avoid physics rebuild spikes
-	while not _deferred_collisions.is_empty():
+	# 0. Enable at most 1 collision shape per frame to avoid physics rebuild spikes.
+	#    Skip if we're already over budget from previous frame carry-over.
+	if not _deferred_collisions.is_empty():
 		var col_shape: CollisionShape3D = _deferred_collisions.pop_front()
 		if is_instance_valid(col_shape):
 			col_shape.disabled = false
-			break
 
-	# 1. Collect completed background builds — limit per frame to avoid stalls
+	# 1. Collect completed background builds — only 1 per frame to spread out finalize work
 	_gen_mutex.lock()
-	var ready_count := _gen_ready_queue.size()
 	var ready: Array = []
-	var max_collect := mini(ready_count, 3)
-	for _ci in max_collect:
+	if not _gen_ready_queue.is_empty():
 		ready.append(_gen_ready_queue.pop_front())
 	_gen_mutex.unlock()
 
@@ -999,7 +1020,7 @@ func _process_pending_zones() -> void:
 				pitem["phase"] = phase + 1
 			break
 
-	# 3. Finalize up to 1 zone mesh per frame (within budget)
+	# 3. Finalize up to 1 zone mesh per frame — only if within budget
 	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
 		while not _finalize_backlog.is_empty():
 			var item: Dictionary = _finalize_backlog.pop_front()
@@ -1011,7 +1032,7 @@ func _process_pending_zones() -> void:
 				break
 
 	# 4. Submit new zone builds — stop if backlog is already large
-	if _finalize_backlog.size() + _gen_in_flight.size() > 12:
+	if _finalize_backlog.size() + _gen_in_flight.size() > 8:
 		return
 	var submitted := 0
 	while submitted < MAX_ZONES_PER_FRAME and not _pending_zones.is_empty():
