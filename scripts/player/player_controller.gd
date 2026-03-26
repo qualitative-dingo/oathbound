@@ -37,7 +37,7 @@ const _DEBUG_LOG := false
 @export var min_pitch: float = -80.0
 @export var max_pitch: float = 60.0
 @export var zoom_speed: float = 0.5
-@export var min_zoom: float = 2.0
+@export var min_zoom: float = 0.0
 @export var max_zoom: float = 12.0
 
 var current_health: float
@@ -693,6 +693,18 @@ func _activate_camera() -> void:
 		push_error("[PLAYER] CAMERA NOT FOUND for peer %s! CameraPivot=%s SpringArm=%s" % [name, str(_camera_pivot), str(_spring_arm)])
 
 
+const _FIRST_PERSON_THRESHOLD := 1.0
+
+func _update_first_person_visibility() -> void:
+	if not _spring_arm:
+		return
+	var first_person := _spring_arm.spring_length <= _FIRST_PERSON_THRESHOLD
+	if _player_sprite:
+		_player_sprite.visible = not first_person
+	if _model and _model != _player_sprite:
+		_model.visible = not first_person
+
+
 func _snap_to_terrain() -> void:
 	if not is_multiplayer_authority():
 		return
@@ -1207,6 +1219,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_spring_arm.spring_length = maxf(_spring_arm.spring_length - zoom_speed, min_zoom)
 	elif event.is_action_pressed(&"zoom_out"):
 		_spring_arm.spring_length = minf(_spring_arm.spring_length + zoom_speed, max_zoom)
+	_update_first_person_visibility()
 
 	if event.is_action_pressed(&"interact"):
 		_interaction.try_interact()
