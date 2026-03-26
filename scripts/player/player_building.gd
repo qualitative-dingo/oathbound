@@ -1814,12 +1814,12 @@ static func _get_bark_texture() -> ImageTexture:
 func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
 	var stone_tex := _get_stone_texture()
 	var stone_count := 10
-	var ring_radius := 0.48
+	var ring_radius := 0.55
 	for i in stone_count:
 		var stone := MeshInstance3D.new()
 		stone.name = "RingStone%d" % i
 		var sphere := SphereMesh.new()
-		var base_r := randf_range(0.09, 0.15)
+		var base_r := randf_range(0.13, 0.21)
 		sphere.radius = base_r
 		sphere.height = base_r * randf_range(1.2, 1.8)
 		sphere.radial_segments = 5
@@ -1827,7 +1827,7 @@ func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
 		stone.mesh = sphere
 		var mat := StandardMaterial3D.new()
 		mat.albedo_texture = stone_tex
-		mat.albedo_color = Color(randf_range(0.7, 1.0), randf_range(0.68, 0.95), randf_range(0.65, 0.9))
+		mat.albedo_color = Color(randf_range(0.35, 0.55), randf_range(0.33, 0.5), randf_range(0.3, 0.45))
 		mat.roughness = 0.95
 		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		stone.set_surface_override_material(0, mat)
@@ -1858,9 +1858,9 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		var log_mi := MeshInstance3D.new()
 		log_mi.name = "Log%d" % i
 		var cyl := CylinderMesh.new()
-		cyl.top_radius = randf_range(0.025, 0.04)
-		cyl.bottom_radius = randf_range(0.04, 0.06)
-		cyl.height = log_lengths[i]
+		cyl.top_radius = randf_range(0.03, 0.05)
+		cyl.bottom_radius = randf_range(0.05, 0.07)
+		cyl.height = log_lengths[i] * 1.2
 		cyl.radial_segments = 5
 		cyl.rings = 2
 		log_mi.mesh = cyl
@@ -1875,9 +1875,9 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		log_mi.set_surface_override_material(0, log_mat)
 		var angle: float = log_angles[i] + randf_range(-0.2, 0.2)
 		var tilt: float = log_tilts[i] + randf_range(-0.1, 0.1)
-		var outward := randf_range(0.08, 0.15)
-		log_mi.position = Vector3(cos(angle) * outward, 0.15, sin(angle) * outward)
-		log_mi.rotation = Vector3(tilt, angle + PI, randf_range(-0.15, 0.15))
+		var outward := randf_range(0.18, 0.25)
+		log_mi.position = Vector3(cos(angle) * outward, 0.05, sin(angle) * outward)
+		log_mi.rotation = Vector3(-tilt, angle, randf_range(-0.15, 0.15))
 		log_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		structure.add_child(log_mi)
 
