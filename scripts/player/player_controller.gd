@@ -1366,22 +1366,26 @@ func _physics_process(delta: float) -> void:
 # ===================================================================
 
 func _apply_gravity(delta: float) -> void:
+	var grounded := is_on_floor()
+
+	if _in_cave:
+		_is_swimming = false
+		if not grounded:
+			var grav_mult := fall_gravity_multiplier if velocity.y < 0.0 else gravity_multiplier
+			velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity", 9.8) * grav_mult * delta
+		return
+
 	var water_y := WaterSystem.get_surface_y(global_position.x, global_position.z)
 	var feet_y := global_position.y
 	var submersion := water_y - feet_y
-	var grounded := is_on_floor()
 
 	if submersion > 0.2 and (not grounded or submersion > 0.6):
-		# Under water - apply buoyancy and damping instead of gravity
-		# When grounded (walking on riverbed), require deeper submersion to swim
 		_is_swimming = true
 		var buoy := submersion * BUOYANCY_FORCE
 		velocity.y += buoy * delta
 		velocity.y -= velocity.y * WATER_DAMPING * delta
 		velocity.y = clampf(velocity.y, -6.0, 4.0)
 	elif submersion > -0.3 and velocity.y < 0.0 and not grounded:
-		# Near surface falling - gentle decel (bobbing zone)
-		# Only when airborne; grounded players follow terrain normally
 		_is_swimming = true
 		velocity.y *= 1.0 - 3.0 * delta
 	else:
@@ -4532,6 +4536,8 @@ func _ensure_minimap_lut() -> void:
 
 
 func _refresh_minimap() -> void:
+	if _in_cave:
+		return
 	if not _minimap_image or not _minimap_tex_rect:
 		return
 	var wg := _find_world_generator()

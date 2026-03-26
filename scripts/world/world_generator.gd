@@ -318,6 +318,8 @@ func _physics_process(delta: float) -> void:
 		host.velocity = Vector3.ZERO
 	else:
 		for p in _players:
+			if "_in_cave" in p and p._in_cave:
+				continue
 			var wp := get_world_position(p)
 			var ground := get_height_at(wp.x, wp.z)
 			if p.global_position.y < ground - 0.5:
@@ -868,14 +870,15 @@ func _spawn_debug_portals() -> void:
 
 
 func _spawn_village_cave_entrance() -> void:
-	var cx := 30.0
-	var cz := 28.0
+	var cx := 12.0
+	var cz := 12.0
 	var cy := get_height_at(cx, cz)
 	if cy < 0.5:
 		cy = 1.0
 	var entrance := CaveGenerator.create_entrance_marker(Vector3.FORWARD)
 	add_child(entrance)
 	entrance.global_position = world_to_scene_pos(Vector3(cx, cy, cz))
+	print("[CAVE] Village cave entrance placed at world (%s, %s, %s) scene %s" % [cx, cy, cz, entrance.global_position])
 
 
 func _spawn_starter_goblins() -> void:

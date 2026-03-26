@@ -17,6 +17,7 @@ var render_distance: int = 2
 var _autosave_timer := 0.0
 var _game_active := false
 var _settings_loaded := false
+var _session_start_time := 0.0
 
 
 func _ready() -> void:
@@ -86,6 +87,7 @@ func _process(delta: float) -> void:
 	_autosave_timer += delta
 	if _autosave_timer >= AUTOSAVE_INTERVAL:
 		_autosave_timer = 0.0
+		_accumulate_play_time()
 		if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
 			_save_client_inventory()
 		else:
@@ -202,6 +204,7 @@ func start_game(character: Dictionary, world: Dictionary) -> void:
 	current_world = world
 	_game_active = true
 	_autosave_timer = 0.0
+	_session_start_time = Time.get_unix_time_from_system()
 	_update_character_last_played()
 
 
@@ -286,6 +289,7 @@ func apply_save_data(save_data: Dictionary) -> void:
 
 func stop_game() -> void:
 	if _game_active:
+		_accumulate_play_time()
 		if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
 			_save_client_inventory()
 		else:
@@ -304,6 +308,24 @@ func _update_character_last_played() -> void:
 	for i in characters.size():
 		if str(characters[i].get("id", "")) == char_id:
 			characters[i]["last_played"] = Time.get_unix_time_from_system()
+			break
+	save_characters(characters)
+
+
+func _accumulate_play_time() -> void:
+	if current_character.is_empty() or _session_start_time <= 0.0:
+		return
+	var now := Time.get_unix_time_from_system()
+	var elapsed := now - _session_start_time
+	_session_start_time = now
+	if elapsed <= 0.0:
+		return
+	var char_id: String = str(current_character.get("id", ""))
+	var characters := get_all_characters()
+	for i in characters.size():
+		if str(characters[i].get("id", "")) == char_id:
+			var prev: float = float(characters[i].get("time_played_seconds", 0.0))
+			characters[i]["time_played_seconds"] = prev + elapsed
 			break
 	save_characters(characters)
 

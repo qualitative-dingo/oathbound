@@ -598,20 +598,38 @@ func _make_button(text: String, color: Color) -> Button:
 
 
 func _format_last_played(char_data: Dictionary) -> String:
+	var parts: Array[String] = []
+
+	var total_secs: float = float(char_data.get("time_played_seconds", 0.0))
+	if total_secs >= 3600.0:
+		var h := int(total_secs / 3600.0)
+		var m := int(fmod(total_secs, 3600.0) / 60.0)
+		parts.append("%dh %dm played" % [h, m])
+	elif total_secs >= 60.0:
+		parts.append("%dm played" % int(total_secs / 60.0))
+	elif total_secs > 0.0:
+		parts.append("<1m played")
+
 	if not char_data.has("last_played"):
-		return "Never played"
-	var last: float = float(char_data["last_played"])
-	var now: float = Time.get_unix_time_from_system()
-	var hours := int((now - last) / 3600.0)
-	if hours < 1:
-		return "Last played: <1h ago"
-	elif hours == 1:
-		return "Last played: 1h ago"
-	elif hours < 24:
-		return "Last played: %dh ago" % hours
+		if parts.is_empty():
+			return "Never played"
 	else:
-		var days := hours / 24
-		return "Last played: %dd ago" % days
+		var last: float = float(char_data["last_played"])
+		var now: float = Time.get_unix_time_from_system()
+		var hours := int((now - last) / 3600.0)
+		if hours < 1:
+			parts.append("Last on: <1h ago")
+		elif hours == 1:
+			parts.append("Last on: 1h ago")
+		elif hours < 24:
+			parts.append("Last on: %dh ago" % hours)
+		else:
+			var days := hours / 24
+			parts.append("Last on: %dd ago" % days)
+
+	if parts.is_empty():
+		return "Never played"
+	return "  |  ".join(parts)
 
 
 func _make_spacer(height: float) -> Control:

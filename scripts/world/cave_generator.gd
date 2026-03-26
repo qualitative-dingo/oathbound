@@ -5,11 +5,11 @@ extends RefCounted
 
 const _CreatureAI := preload("res://scripts/creatures/creature_ai.gd")
 
-const TUNNEL_WIDTH := 3.8
-const TUNNEL_HEIGHT := 3.2
-const WALL_THICKNESS := 0.6
-const FLOOR_THICKNESS := 0.4
-const SEGMENT_LENGTH := 8.0
+const TUNNEL_WIDTH := 7.0
+const TUNNEL_HEIGHT := 5.5
+const WALL_THICKNESS := 0.8
+const FLOOR_THICKNESS := 0.5
+const SEGMENT_LENGTH := 10.0
 
 static var _mat_cave_rock: StandardMaterial3D
 static var _mat_cave_floor: StandardMaterial3D
@@ -82,7 +82,7 @@ static func create_entrance_marker(facing_dir: Vector3) -> StaticBody3D:
 
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(TUNNEL_WIDTH, TUNNEL_HEIGHT, 1.0)
+	box.size = Vector3(TUNNEL_WIDTH, TUNNEL_HEIGHT, 2.0)
 	col.shape = box
 	col.position.y = TUNNEL_HEIGHT * 0.5
 	marker.add_child(col)
@@ -108,7 +108,7 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	var fwd := Vector3.FORWARD
 	var rt := Vector3.RIGHT
 
-	cave_root.set_meta("player_spawn", Vector3(0.0, 0.5, 0.0))
+	cave_root.set_meta("player_spawn", Vector3(0.0, 1.0, 0.0))
 
 	# ── Exit marker at entrance ──
 	_build_exit_marker(cave_root)
@@ -118,10 +118,10 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 		Vector3(TUNNEL_WIDTH + WALL_THICKNESS * 2.0, TUNNEL_HEIGHT + WALL_THICKNESS, WALL_THICKNESS),
 		_mat_cave_rock
 	)
-	ew.position = Vector3(0.0, TUNNEL_HEIGHT * 0.5, -0.5)
+	ew.position = Vector3(0.0, TUNNEL_HEIGHT * 0.5, -1.0)
 	cave_root.add_child(ew)
 
-	var cursor := fwd * 2.0
+	var cursor := fwd * 3.0
 	var descent := 0.5
 	var enemy_idx := 0
 
@@ -290,14 +290,13 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	_add_boss_chest(cave_root, boss_chest_pos, fwd, rng)
 
 	# ── Ambient lighting (dim, spread across dungeon) ──
-	var total_mid := (Vector3.ZERO + boss_end) * 0.5
-	for li in 3:
-		var lp := Vector3.ZERO.lerp(boss_end, (li + 1.0) / 4.0)
-		lp.y += 2.5
+	for li in 5:
+		var lp := Vector3.ZERO.lerp(boss_end, (li + 1.0) / 6.0)
+		lp.y += 3.5
 		var dim := OmniLight3D.new()
 		dim.light_color = Color(0.25, 0.25, 0.35)
-		dim.light_energy = 0.1
-		dim.omni_range = 25.0
+		dim.light_energy = 0.15
+		dim.omni_range = 35.0
 		dim.shadow_enabled = false
 		dim.position = lp
 		cave_root.add_child(dim)
@@ -325,16 +324,16 @@ static func _build_exit_marker(cave_root: Node3D) -> void:
 
 	var exit_col := CollisionShape3D.new()
 	var exit_box := BoxShape3D.new()
-	exit_box.size = Vector3(2.0, 3.0, 1.0)
+	exit_box.size = Vector3(3.0, 4.0, 2.0)
 	exit_col.shape = exit_box
-	exit_col.position.y = 1.5
+	exit_col.position.y = 2.0
 	exit_marker.add_child(exit_col)
 
 	var exit_light := OmniLight3D.new()
 	exit_light.light_color = Color(0.8, 0.7, 0.5)
-	exit_light.light_energy = 1.2
-	exit_light.omni_range = 6.0
-	exit_marker.position = Vector3(0.0, 0.0, 1.5)
+	exit_light.light_energy = 1.5
+	exit_light.omni_range = 10.0
+	exit_marker.position = Vector3(0.0, 0.0, 2.0)
 	exit_marker.add_child(exit_light)
 	cave_root.add_child(exit_marker)
 
@@ -349,8 +348,8 @@ static func _add_wall_torch(parent: Node3D, pos: Vector3, height: float) -> void
 
 	var flame := OmniLight3D.new()
 	flame.light_color = Color(1.0, 0.75, 0.4)
-	flame.light_energy = 2.0
-	flame.omni_range = 10.0
+	flame.light_energy = 3.0
+	flame.omni_range = 16.0
 	flame.shadow_enabled = true
 	flame.position.y = height + 0.1
 	torch.add_child(flame)

@@ -697,18 +697,27 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 func enter_cave(entrance: Node3D) -> void:
 	if pc._in_cave:
 		return
+	print("[CAVE] Entering cave from entrance at %s" % entrance.global_position)
 	pc._cave_return_pos = pc.global_position
 	pc._cave_entrance_node = entrance
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(entrance.global_position)
+	pc._in_cave = true
 	pc._cave_instance = CaveGenerator.create_cave_instance(rng)
 	pc.get_tree().root.add_child(pc._cave_instance)
 
 	var spawn_local: Vector3 = pc._cave_instance.get_meta("player_spawn", Vector3.ZERO)
-	pc.global_position = pc._cave_instance.global_position + spawn_local
+	var target := pc._cave_instance.global_position + spawn_local
+	print("[CAVE] Cave instance at %s, spawn_local=%s, target=%s" % [pc._cave_instance.global_position, spawn_local, target])
+	pc.global_position = target
 	pc.velocity = Vector3.ZERO
-	pc._in_cave = true
+	pc._swim_fatigue = 0.0
+	pc._drown_tick_timer = 0.0
+	pc._is_swimming = false
+
+	if pc._minimap_outer:
+		pc._minimap_outer.visible = false
 
 	if pc._footstep_player and pc._footstep_player.playing:
 		pc._footstep_player.stop()
@@ -722,6 +731,9 @@ func exit_cave() -> void:
 	pc._in_cave = false
 	pc.global_position = pc._cave_return_pos + Vector3(0.0, 1.0, 0.0)
 	pc.velocity = Vector3.ZERO
+
+	if pc._minimap_outer:
+		pc._minimap_outer.visible = true
 
 	if is_instance_valid(pc._cave_instance):
 		pc._cave_instance.queue_free()
