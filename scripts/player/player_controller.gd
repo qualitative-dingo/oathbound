@@ -1079,7 +1079,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_update_snap_side_label()
 			return
 
-	if _build_mode and event is InputEventMouseButton and event.pressed:
+	if _build_mode and _build_ghost and event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		if mb.ctrl_pressed:
 			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
