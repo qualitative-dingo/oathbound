@@ -31,10 +31,10 @@ const MOON_OFFSET := PI  # moon is opposite the sun
 # ── Gradient keyframes: time → value ────────────────────────────────────
 # Times: 0.0=midnight(00:00), 0.125=03:00 (dawn begins),
 #         0.167=04:00 (golden hour), 0.229=05:30 (full day),
-#         0.5=noon(12:00), 0.875=21:00 (sunset begins),
-#         0.917=22:00 (golden hour), 0.958=23:00 (last sun),
-#         1.0=midnight(00:00)
-# Pitch dark: 00:00–03:00.  Sunset begins 21:00, dark by midnight.
+#         0.5=noon(12:00), 0.854=20:30 (sunset warmth begins),
+#         0.875=21:00 (full golden hour), 0.917=22:00 (fading),
+#         0.958=23:00 (near dark), 1.0=midnight(00:00)
+# Pitch dark: 00:00–03:00.  Golden hour peaks at 21:00, dark by ~23:00.
 
 const NIGHT_END   := 0.125   # 03:00 — end of full darkness / dawn trigger
 const NIGHT_START := 0.0     # 00:00 — midnight, full darkness begins
@@ -48,10 +48,10 @@ const SUN_ENERGY_KEYS := [
 	[0.35,   1.7],    # 08:24 — mid-morning
 	[0.50,   1.9],    # 12:00 — noon peak
 	[0.70,   1.7],    # 16:48 — afternoon
-	[0.83,   1.5],    # 19:55 — bright evening
-	[0.875,  1.2],    # 21:00 — sunset begins
-	[0.917,  0.6],    # 22:00 — golden hour
-	[0.958,  0.15],   # 23:00 — last efforts of sun
+	[0.854,  1.5],    # 20:30 — still bright evening
+	[0.875,  0.7],    # 21:00 — full golden hour
+	[0.917,  0.20],   # 22:00 — fading fast
+	[0.958,  0.05],   # 23:00 — last traces
 	[0.98,   0.0],    # 23:31 — dark
 	[1.0,    0.0],    # midnight
 ]
@@ -63,10 +63,10 @@ const SUN_COLOR_KEYS := [
 	[0.167,  Color(1.0, 0.60, 0.30)],   # 04:00 golden
 	[0.229,  Color(1.0, 0.85, 0.60)],   # 05:30 morning gold
 	[0.50,   Color(1.0, 0.95, 0.88)],   # noon white-warm
-	[0.80,   Color(1.0, 0.85, 0.60)],   # afternoon gold
-	[0.875,  Color(1.0, 0.65, 0.35)],   # 21:00 sunset warm
-	[0.917,  Color(1.0, 0.50, 0.22)],   # 22:00 golden orange
-	[0.958,  Color(0.50, 0.25, 0.30)],  # 23:00 deep reddish
+	[0.854,  Color(1.0, 0.85, 0.60)],   # 20:30 still afternoon warm
+	[0.875,  Color(1.0, 0.50, 0.22)],   # 21:00 full golden orange
+	[0.917,  Color(0.50, 0.25, 0.30)],  # 22:00 deep reddish
+	[0.958,  Color(0.15, 0.18, 0.35)],  # 23:00 night blue
 	[0.98,   Color(0.15, 0.18, 0.35)],  # 23:31 night blue
 	[1.0,    Color(0.15, 0.18, 0.35)],  # midnight
 ]
@@ -78,10 +78,10 @@ const AMBIENT_ENERGY_KEYS := [
 	[0.167,  0.35],   # 04:00 — dawn ambient
 	[0.229,  0.55],   # 05:30 — full day
 	[0.50,   0.70],   # noon
-	[0.80,   0.55],   # afternoon
-	[0.875,  0.45],   # 21:00 — sunset
-	[0.917,  0.30],   # 22:00 — golden
-	[0.958,  0.18],   # 23:00 — dusk fading
+	[0.854,  0.55],   # 20:30 — still afternoon
+	[0.875,  0.35],   # 21:00 — full golden
+	[0.917,  0.20],   # 22:00 — fading
+	[0.958,  0.15],   # 23:00 — near dark
 	[0.98,   0.15],   # near midnight
 	[1.0,    0.15],   # midnight
 ]
@@ -93,10 +93,10 @@ const AMBIENT_COLOR_KEYS := [
 	[0.167,  Color(0.45, 0.38, 0.50)],  # 04:00 purple-pink
 	[0.229,  Color(0.40, 0.45, 0.60)],  # morning
 	[0.50,   Color(0.38, 0.42, 0.58)],  # noon
-	[0.80,   Color(0.40, 0.45, 0.60)],  # afternoon
-	[0.875,  Color(0.45, 0.40, 0.48)],  # 21:00 sunset warm
-	[0.917,  Color(0.35, 0.28, 0.40)],  # golden warm
-	[0.958,  Color(0.22, 0.22, 0.32)],  # dusk
+	[0.854,  Color(0.40, 0.45, 0.60)],  # 20:30 afternoon
+	[0.875,  Color(0.35, 0.28, 0.40)],  # 21:00 golden warm
+	[0.917,  Color(0.22, 0.22, 0.32)],  # 22:00 dusk
+	[0.958,  Color(0.18, 0.20, 0.32)],  # 23:00 near night
 	[0.98,   Color(0.18, 0.20, 0.32)],  # near midnight
 	[1.0,    Color(0.18, 0.20, 0.32)],  # midnight
 ]
@@ -108,10 +108,10 @@ const SKY_TOP_KEYS := [
 	[0.167,  Color(0.15, 0.12, 0.30)],  # dawn purple
 	[0.229,  Color(0.18, 0.35, 0.70)],  # morning blue
 	[0.50,   Color(0.22, 0.42, 0.78)],  # noon
-	[0.80,   Color(0.18, 0.35, 0.70)],  # afternoon
-	[0.875,  Color(0.22, 0.25, 0.50)],  # 21:00 sunset blue-purple
-	[0.917,  Color(0.18, 0.12, 0.30)],  # golden purple
-	[0.958,  Color(0.08, 0.07, 0.16)],  # near dark
+	[0.854,  Color(0.18, 0.35, 0.70)],  # 20:30 afternoon
+	[0.875,  Color(0.18, 0.12, 0.30)],  # 21:00 golden purple
+	[0.917,  Color(0.08, 0.07, 0.16)],  # 22:00 near dark
+	[0.958,  Color(0.05, 0.05, 0.12)],  # 23:00 dark
 	[0.98,   Color(0.05, 0.05, 0.12)],  # dark
 	[1.0,    Color(0.05, 0.05, 0.12)],  # midnight
 ]
@@ -123,10 +123,10 @@ const SKY_HORIZON_KEYS := [
 	[0.167,  Color(0.85, 0.50, 0.28)],  # golden orange horizon
 	[0.229,  Color(0.60, 0.65, 0.78)],  # morning
 	[0.50,   Color(0.50, 0.62, 0.78)],  # noon
-	[0.80,   Color(0.60, 0.65, 0.78)],  # afternoon
-	[0.875,  Color(0.85, 0.50, 0.25)],  # 21:00 sunset orange
-	[0.917,  Color(0.80, 0.35, 0.18)],  # golden deep orange
-	[0.958,  Color(0.25, 0.12, 0.10)],  # last glow
+	[0.854,  Color(0.60, 0.65, 0.78)],  # 20:30 afternoon
+	[0.875,  Color(0.80, 0.35, 0.18)],  # 21:00 full golden deep orange
+	[0.917,  Color(0.25, 0.12, 0.10)],  # 22:00 last glow
+	[0.958,  Color(0.07, 0.07, 0.12)],  # 23:00 dark
 	[0.98,   Color(0.07, 0.07, 0.12)],  # dark
 	[1.0,    Color(0.07, 0.07, 0.12)],  # midnight
 ]
@@ -137,8 +137,8 @@ const FOG_DENSITY_KEYS := [
 	[0.146,  1.5],    # dawn: misty
 	[0.229,  1.0],    # morning: clearing
 	[0.50,   1.0],    # noon: base
-	[0.80,   1.0],    # afternoon
-	[0.917,  1.3],    # 22:00 golden mist
+	[0.854,  1.0],    # 20:30 afternoon
+	[0.875,  1.3],    # 21:00 golden mist
 	[0.958,  1.8],    # near dark
 	[1.0,    2.0],    # midnight
 ]
@@ -149,10 +149,10 @@ const FOG_COLOR_KEYS := [
 	[0.146,  Color(0.50, 0.35, 0.28)],  # dawn warm fog
 	[0.229,  Color(0.65, 0.72, 0.82)],  # morning
 	[0.50,   Color(0.65, 0.72, 0.82)],  # noon
-	[0.80,   Color(0.65, 0.72, 0.82)],  # afternoon
-	[0.875,  Color(0.65, 0.48, 0.32)],  # 21:00 sunset warm
-	[0.917,  Color(0.50, 0.32, 0.22)],  # golden
-	[0.958,  Color(0.12, 0.10, 0.16)],  # near dark
+	[0.854,  Color(0.65, 0.72, 0.82)],  # 20:30 afternoon
+	[0.875,  Color(0.50, 0.32, 0.22)],  # 21:00 full golden fog
+	[0.917,  Color(0.12, 0.10, 0.16)],  # 22:00 near dark
+	[0.958,  Color(0.05, 0.05, 0.10)],  # 23:00 dark
 	[1.0,    Color(0.05, 0.05, 0.10)],  # midnight
 ]
 
@@ -163,9 +163,9 @@ const SUN_SCATTER_KEYS := [
 	[0.167,  0.9],    # golden dawn
 	[0.229,  0.4],
 	[0.50,   0.3],    # noon: mild
-	[0.80,   0.4],
-	[0.875,  0.7],    # sunset scatter
-	[0.917,  0.9],    # golden hour
+	[0.854,  0.4],    # 20:30
+	[0.875,  0.9],    # 21:00 full golden scatter
+	[0.917,  0.3],    # 22:00 fading
 	[0.958,  0.3],
 	[0.98,   0.0],
 	[1.0,    0.0],
@@ -177,8 +177,8 @@ const GLOW_INTENSITY_KEYS := [
 	[0.146,  0.35],
 	[0.167,  0.5],    # dawn glow
 	[0.50,   0.6],    # noon
-	[0.875,  0.5],    # sunset glow
-	[0.917,  0.5],    # golden glow
+	[0.875,  0.5],    # 21:00 golden glow
+	[0.917,  0.25],   # 22:00 fading
 	[0.958,  0.25],
 	[0.98,   0.15],
 	[1.0,    0.15],
@@ -191,10 +191,10 @@ const TONEMAP_EXPOSURE_KEYS := [
 	[0.167,  0.90],   # dawn
 	[0.229,  1.0],    # full day
 	[0.50,   1.0],    # noon
-	[0.80,   1.0],
-	[0.875,  0.95],   # sunset
-	[0.917,  0.85],   # golden
-	[0.958,  0.70],   # last light
+	[0.854,  1.0],    # 20:30
+	[0.875,  0.85],   # 21:00 golden
+	[0.917,  0.70],   # 22:00 fading
+	[0.958,  0.65],   # 23:00 near dark
 	[0.98,   0.65],
 	[1.0,    0.65],
 ]
@@ -206,8 +206,8 @@ const SATURATION_KEYS := [
 	[0.167,  0.90],   # dawn boosted
 	[0.229,  1.05],
 	[0.50,   0.95],   # noon
-	[0.80,   1.05],   # golden hour boosted
-	[0.917,  0.85],   # sunset
+	[0.854,  1.05],   # 20:30 warm boosted
+	[0.875,  0.90],   # 21:00 golden
 	[0.958,  0.60],
 	[0.98,   0.50],
 	[1.0,    0.50],
@@ -222,9 +222,9 @@ const SHADOW_OPACITY_KEYS := [
 	[0.35,   0.75],
 	[0.50,   0.75],   # noon
 	[0.70,   0.75],
-	[0.83,   0.70],
-	[0.875,  0.55],   # sunset
-	[0.917,  0.30],   # golden
+	[0.854,  0.70],   # 20:30
+	[0.875,  0.35],   # 21:00 golden
+	[0.917,  0.10],   # 22:00 fading
 	[0.958,  0.10],   # last light
 	[0.98,   0.0],
 	[1.0,    0.0],
@@ -238,9 +238,9 @@ const VOLUMETRIC_DENSITY_KEYS := [
 	[0.167,  0.015],  # golden dawn
 	[0.229,  0.005],
 	[0.50,   0.002],  # noon: subtle
-	[0.80,   0.005],
-	[0.875,  0.010],  # sunset rays
-	[0.917,  0.015],  # golden sunset
+	[0.854,  0.005],  # 20:30
+	[0.875,  0.015],  # 21:00 golden rays
+	[0.917,  0.005],  # 22:00 fading
 	[0.958,  0.005],
 	[0.98,   0.0],
 	[1.0,    0.0],

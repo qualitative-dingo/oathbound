@@ -53,9 +53,21 @@ void fragment() {
 	float bm = smoothstep(0.1, 0.6, v_river_bank);
 
 	vec3 grass_col = vec3(0.10, 0.28, 0.07) * tint_color;
-	vec3 rock_col = vec3(0.32, 0.30, 0.28);
+
+	// Simplified rock strata for distant terrain
+	float warp_y = vnoise_fast(wpos.xz * 0.04 + vec2(123.0, 456.0)) * 6.0;
+	float warped_y = wpos.y * 2.5 + warp_y;
+	float band = sin(warped_y) * 0.5 + 0.5;
+	band = pow(band, 0.17);
+	vec3 rock_dark = vec3(0.18, 0.17, 0.16);
+	vec3 rock_light = vec3(0.52, 0.50, 0.48);
+	vec3 rock_col = mix(rock_dark, rock_light, band);
+	float grain = vnoise_fast(wpos.xz * 1.5 + vec2(200.0, 400.0));
+	rock_col *= 0.88 + grain * 0.18;
+
 	vec3 ground = mix(grass_col, rock_col, cliff_w) * v_brightness;
 	ground = mix(ground, bank_color, bm);
 	ALBEDO = mix(ground, path_color, pm);
-	ROUGHNESS = mix(mix(0.85, 0.95, bm), 0.7, pm);
+	float strata_rough = 0.78 + grain * 0.15;
+	ROUGHNESS = mix(mix(mix(0.85, strata_rough, cliff_w), 0.95, bm), 0.7, pm);
 }

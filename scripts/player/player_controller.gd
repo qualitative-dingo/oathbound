@@ -3580,9 +3580,10 @@ func _check_speech_triggers(delta: float) -> void:
 
 	var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree() and get_tree().current_scene else null
 
-	# 1. Light source warning: dark + no torch
-	if dnc and dnc.has_method("is_daytime"):
-		if not dnc.is_daytime() and not _torch_light:
+	# 1. Light source warning: evening/night + no torch (triggers from 20:00 onward)
+	if dnc and dnc.has_method("get_hour"):
+		var dark_hour: int = dnc.get_hour()
+		if (dark_hour >= 20 or dark_hour < 5) and not _torch_light:
 			_show_speech(_LINES_DARK, &"dark")
 			return
 

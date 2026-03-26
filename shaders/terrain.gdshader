@@ -25,6 +25,13 @@ group_uniforms riverbank;
 uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 uniform float bank_roughness : hint_range(0.0, 1.0) = 0.95;
 
+group_uniforms rock_strata;
+uniform vec3 rock_dark : source_color = vec3(0.18, 0.17, 0.16);
+uniform vec3 rock_light : source_color = vec3(0.52, 0.50, 0.48);
+uniform vec3 rock_accent : source_color = vec3(0.35, 0.32, 0.28);
+uniform float strata_scale : hint_range(0.1, 8.0) = 2.5;
+uniform float strata_sharpness : hint_range(1.0, 20.0) = 6.0;
+
 float hash12(vec2 p) {
 	float h = dot(p, vec2(127.1, 311.7));
 	return fract(sin(h) * 43758.5453);
@@ -45,6 +52,45 @@ float fbm2(vec2 p) {
 	float v = vnoise(p) * 0.6;
 	v += vnoise(p * 2.1 + vec2(100.0)) * 0.4;
 	return v;
+}
+
+// Procedural rock strata — alternating dark/light bands with noise-warped layers
+vec3 rock_strata_color(vec3 wpos, float cliff_amount) {
+	// Warp the Y coordinate with noise for organic, non-uniform layers
+	float warp1 = vnoise(wpos.xz * 0.04 + vec2(123.0, 456.0)) * 6.0;
+	float warp2 = vnoise(wpos.xz * 0.12 + vec2(789.0, 321.0)) * 2.0;
+	float warped_y = wpos.y * strata_scale + warp1 + warp2;
+
+	// Primary strata bands — sharp-ish sine pattern
+	float band1 = sin(warped_y * 1.0) * 0.5 + 0.5;
+	band1 = pow(band1, 1.0 / strata_sharpness);
+
+	// Secondary finer bands offset
+	float fine_warp = vnoise(wpos.xz * 0.08 + vec2(555.0, 888.0)) * 3.0;
+	float band2 = sin((warped_y + fine_warp) * 2.7 + 1.3) * 0.5 + 0.5;
+	band2 = pow(band2, 1.0 / (strata_sharpness * 0.7));
+
+	// Tertiary very fine detail cracks/veins
+	float vein = vnoise(vec2(warped_y * 4.0, wpos.x * 0.3 + wpos.z * 0.3));
+	float vein_mask = smoothstep(0.45, 0.55, vein) * 0.3;
+
+	// Mix dark, light, and accent colors based on the band patterns
+	vec3 base_rock = mix(rock_dark, rock_light, band1);
+	base_rock = mix(base_rock, rock_accent, band2 * 0.5);
+
+	// Surface detail — small-scale noise for texture grain
+	float grain = vnoise(wpos.xz * 1.5 + vec2(200.0, 400.0));
+	float grain2 = vnoise(wpos.xz * 4.0 + vec2(600.0, 100.0));
+	base_rock *= 0.85 + grain * 0.2 + grain2 * 0.1;
+
+	// Dark vein lines in crevices
+	base_rock = mix(base_rock, rock_dark * 0.6, vein_mask);
+
+	// Large-scale color variation to break repetition
+	float region = vnoise(wpos.xz * 0.015 + vec2(900.0, 700.0));
+	base_rock = mix(base_rock, base_rock * vec3(0.9, 0.88, 0.95), (region - 0.5) * 0.4);
+
+	return base_rock;
 }
 
 vec3 triplanar(sampler2D tex, vec3 wpos, vec3 blend, float scale) {
@@ -115,7 +161,12 @@ void fragment() {
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
 	vec3 col_slope = triplanar(tex_slope, world_pos, blend, texture_scale);
-	vec3 col_cliff = triplanar(tex_cliff, world_pos, blend, texture_scale);
+
+	// Rock strata pattern for steep slopes instead of plain cliff texture
+	vec3 col_cliff = rock_strata_color(world_pos, cliff_w);
+	// Blend in a bit of the cliff texture for micro detail
+	vec3 tex_cliff_col = triplanar(tex_cliff, world_pos, blend, texture_scale);
+	col_cliff = mix(col_cliff, col_cliff * tex_cliff_col * 2.5, 0.25);
 
 	// Subtle scatter on gentle slopes only — never on steep terrain
 	float scatter = vnoise(world_pos.xz * 0.35 + vec2(610.0, 390.0));
@@ -173,31 +224,34 @@ void fragment() {
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// Tint slope textures to match biome — preserves texture detail, just shifts color
-	albedo *= mix(vec3(1.0), vec3(0.70, 0.75, 0.65), steep_override);
+	// Tint slope textures to match biome — less tinting on steep rock so strata colors show
+	albedo *= mix(vec3(1.0), vec3(0.80, 0.82, 0.78), steep_override);
 
-	// Strong biome tint on slopes so rocky textures blend into surrounding environment
-	float tint_strength = flat_w + slope_w * 0.50 + steep_override * 0.80;
+	// Biome tint on flat/slope areas, very subtle on cliffs to preserve strata
+	float tint_strength = flat_w + slope_w * 0.50 + cliff_w * 0.15;
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
 	ALBEDO = albedo * final_tint * v_brightness;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
 	base_rough = mix(base_rough, bank_roughness, bank_mask * flat_w);
+	// Rock strata has variable roughness — lighter bands are smoother
+	float strata_rough = 0.75 + vnoise(world_pos.xz * 1.2 + vec2(444.0, 222.0)) * 0.2;
+	base_rough = mix(base_rough, strata_rough, cliff_w);
 	ROUGHNESS = mix(base_rough, path_roughness, pm);
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
-	// Fix 3: gate dFdx/dFdy bump — hard edge lines on steep faces
-	float rock_strength = (slope_w + cliff_w) * 0.6 * (1.0 - steep_override);
+	// Procedural bump mapping on rocky surfaces — stronger on cliffs for craggy look
+	float rock_strength = slope_w * 0.4 + cliff_w * 0.8;
 	if (rock_strength > 0.01) {
 		float rn1 = vnoise(world_pos.xz * 2.5 + vec2(311.0, 719.0));
 		float rn2 = vnoise(world_pos.xz * 6.0 + vec2(853.0, 127.0));
 		float rn3 = vnoise(world_pos.xz * 14.0 + vec2(491.0, 953.0));
 		float rock_detail = (rn1 - 0.5) * 0.5 + (rn2 - 0.5) * 0.3 + (rn3 - 0.5) * 0.2;
 		NORMAL = normalize(NORMAL + vec3(
-			dFdx(rock_detail) * 40.0 * rock_strength,
+			dFdx(rock_detail) * 50.0 * rock_strength,
 			0.0,
-			dFdy(rock_detail) * 40.0 * rock_strength
+			dFdy(rock_detail) * 50.0 * rock_strength
 		));
 	}
 }
