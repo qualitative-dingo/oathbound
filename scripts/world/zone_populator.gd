@@ -2439,9 +2439,8 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		trunk_mi.add_child(branch_mi)
 
 		var tip_curve := _sample_branch_curve(1.0, branch_len, upward_arc, branch_bend)
-		var tip_world := branch_basis * tip_curve + branch_mi.position
-		var tip_local := Vector3(tip_world.x, branch_y + tip_world.y, tip_world.z)
-		branch_tip_positions.append(tip_local)
+		var tip_in_root := branch_basis * tip_curve + branch_mi.position
+		branch_tip_positions.append(tip_in_root)
 
 		# Sub-branches: 1-2 smaller twigs per major branch
 		var sub_count := rng.randi_range(1, 2)
@@ -2476,12 +2475,12 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 			sub_mi.basis = Basis(sub_right, sub_dir, sub_fwd)
 			branch_mi.add_child(sub_mi)
 
-			var sub_attach_world := branch_basis * attach_pt + branch_mi.position
-			var sub_tip := Vector3(
-				sub_attach_world.x + cos(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad),
-				branch_y + sub_attach_world.y + sub_len * sin(sub_tilt_rad) + sub_arc,
-				sub_attach_world.z + sin(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad))
-			branch_tip_positions.append(sub_tip)
+			var sub_attach_in_root := branch_basis * attach_pt + branch_mi.position
+			var sub_tip_offset := Vector3(
+				cos(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad),
+				sub_len * sin(sub_tilt_rad) + sub_arc,
+				sin(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad))
+			branch_tip_positions.append(sub_attach_in_root + sub_tip_offset)
 
 	# ── Choose leaf texture and base color by tree family ──
 	var leaf_tex: ImageTexture
