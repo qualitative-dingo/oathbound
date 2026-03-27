@@ -2077,7 +2077,7 @@ static func _build_trunk_mesh(
 
 	var sorted_branches := Array(branch_fracs)
 	sorted_branches.sort()
-	var step_down_per_branch := 0.16
+	var step_down_per_branch := 0.08
 
 	# --- Buttress roots with varied strength ---
 	var root_angles := PackedFloat32Array()
@@ -2328,29 +2328,29 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	var branch_r_frac: float
 
 	if is_birch:
-		branch_count = rng.randi_range(3, 5)
+		branch_count = rng.randi_range(6, 10)
 		branch_zone_lo = 0.25
 		branch_zone_hi = 0.70
-		branch_len_frac_lo = 0.20
-		branch_len_frac_hi = 0.40
+		branch_len_frac_lo = 0.14
+		branch_len_frac_hi = 0.28
 		branch_tilt_lo = 30.0
 		branch_tilt_hi = 55.0
 		branch_r_frac = 0.55
 	elif is_oak:
-		branch_count = rng.randi_range(4, 6)
+		branch_count = rng.randi_range(8, 12)
 		branch_zone_lo = 0.20
 		branch_zone_hi = 0.65
-		branch_len_frac_lo = 0.25
-		branch_len_frac_hi = 0.50
+		branch_len_frac_lo = 0.175
+		branch_len_frac_hi = 0.35
 		branch_tilt_lo = 20.0
 		branch_tilt_hi = 45.0
 		branch_r_frac = 0.65
 	else:
-		branch_count = rng.randi_range(3, 5)
+		branch_count = rng.randi_range(6, 10)
 		branch_zone_lo = 0.25
 		branch_zone_hi = 0.68
-		branch_len_frac_lo = 0.22
-		branch_len_frac_hi = 0.45
+		branch_len_frac_lo = 0.154
+		branch_len_frac_hi = 0.315
 		branch_tilt_lo = 25.0
 		branch_tilt_hi = 50.0
 		branch_r_frac = 0.60
