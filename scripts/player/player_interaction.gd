@@ -619,7 +619,6 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	var amount := rng.randi_range(drop_min, drop_max)
-	Inventory.add_item(drop_id, amount)
 
 	AudioManager.play_sfx("fist_hit_tree", -14.0, 0.2)
 	AudioManager.play_sfx("wood_pickup", -6.0, 0.15)
