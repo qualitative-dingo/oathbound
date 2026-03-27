@@ -1441,8 +1441,8 @@ func _create_global_water() -> void:
 	_global_water_plane.name = "GlobalWater"
 	var plane := PlaneMesh.new()
 	plane.size = _water_plane_size()
-	plane.subdivide_width = 32
-	plane.subdivide_depth = 32
+	plane.subdivide_width = 128
+	plane.subdivide_depth = 128
 	_global_water_plane.mesh = plane
 
 	if _water_shader_mat:

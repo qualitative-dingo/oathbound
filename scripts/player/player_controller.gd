@@ -217,7 +217,10 @@ var _dodge_dir: Vector3 = Vector3.ZERO
 
 # Swimming / buoyancy
 var _is_swimming := false
+var _was_swimming := false
 var _swim_time := 0.0
+var _swim_splash_particles: GPUParticles3D
+var _swim_entry_particles: GPUParticles3D
 const SWIM_SPEED := 3.0
 const SWIM_SPRINT_SPEED := 4.5
 const BUOYANCY_FORCE := 12.0
@@ -2236,6 +2239,103 @@ func _setup_movement_audio() -> void:
 
 	_gallop_normal_stream = AudioManager.get_stream("horse_gallop")
 	_gallop_fast_stream = AudioManager.get_stream("horse_gallop_fast")
+
+	_setup_swim_effects()
+
+
+func _setup_swim_effects() -> void:
+	# Continuous swim wake particles (ring around player while moving in water)
+	_swim_splash_particles = GPUParticles3D.new()
+	_swim_splash_particles.emitting = false
+	_swim_splash_particles.amount = 24
+	_swim_splash_particles.lifetime = 0.5
+	_swim_splash_particles.explosiveness = 0.0
+	_swim_splash_particles.randomness = 0.4
+	_swim_splash_particles.visibility_aabb = AABB(Vector3(-3, -1, -3), Vector3(6, 3, 6))
+
+	var splash_mat := ParticleProcessMaterial.new()
+	splash_mat.direction = Vector3(0, 1, 0)
+	splash_mat.spread = 80.0
+	splash_mat.initial_velocity_min = 0.8
+	splash_mat.initial_velocity_max = 1.6
+	splash_mat.gravity = Vector3(0, -4.0, 0)
+	splash_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	splash_mat.emission_ring_radius = 0.5
+	splash_mat.emission_ring_inner_radius = 0.2
+	splash_mat.emission_ring_height = 0.05
+	splash_mat.emission_ring_axis = Vector3(0, 1, 0)
+	splash_mat.scale_min = 0.04
+	splash_mat.scale_max = 0.08
+	splash_mat.damping_min = 2.0
+	splash_mat.damping_max = 4.0
+	splash_mat.color = Color(0.85, 0.90, 0.92, 0.75)
+	var alpha_curve := CurveTexture.new()
+	var curve := Curve.new()
+	curve.add_point(Vector2(0.0, 1.0))
+	curve.add_point(Vector2(0.4, 0.8))
+	curve.add_point(Vector2(1.0, 0.0))
+	alpha_curve.curve = curve
+	splash_mat.alpha_curve = alpha_curve
+	_swim_splash_particles.process_material = splash_mat
+
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.1, 0.1)
+	var draw_mat := StandardMaterial3D.new()
+	draw_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	draw_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	draw_mat.albedo_color = Color(0.9, 0.95, 0.95, 0.8)
+	draw_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	draw_mat.vertex_color_use_as_albedo = true
+	quad.material = draw_mat
+	_swim_splash_particles.draw_pass_1 = quad
+	add_child(_swim_splash_particles)
+
+	# One-shot entry splash (burst when entering water)
+	_swim_entry_particles = GPUParticles3D.new()
+	_swim_entry_particles.emitting = false
+	_swim_entry_particles.one_shot = true
+	_swim_entry_particles.amount = 12
+	_swim_entry_particles.lifetime = 0.6
+	_swim_entry_particles.explosiveness = 0.9
+	_swim_entry_particles.randomness = 0.3
+	_swim_entry_particles.visibility_aabb = AABB(Vector3(-3, -1, -3), Vector3(6, 3, 6))
+
+	var entry_mat := ParticleProcessMaterial.new()
+	entry_mat.direction = Vector3(0, 1, 0)
+	entry_mat.spread = 60.0
+	entry_mat.initial_velocity_min = 2.0
+	entry_mat.initial_velocity_max = 3.5
+	entry_mat.gravity = Vector3(0, -6.0, 0)
+	entry_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	entry_mat.emission_ring_radius = 0.4
+	entry_mat.emission_ring_inner_radius = 0.0
+	entry_mat.emission_ring_height = 0.05
+	entry_mat.emission_ring_axis = Vector3(0, 1, 0)
+	entry_mat.scale_min = 0.06
+	entry_mat.scale_max = 0.12
+	entry_mat.damping_min = 1.0
+	entry_mat.damping_max = 3.0
+	entry_mat.color = Color(0.9, 0.95, 0.95, 0.85)
+	var entry_alpha_curve := CurveTexture.new()
+	var entry_curve := Curve.new()
+	entry_curve.add_point(Vector2(0.0, 1.0))
+	entry_curve.add_point(Vector2(0.3, 0.9))
+	entry_curve.add_point(Vector2(1.0, 0.0))
+	entry_alpha_curve.curve = entry_curve
+	entry_mat.alpha_curve = entry_alpha_curve
+	_swim_entry_particles.process_material = entry_mat
+
+	var entry_quad := QuadMesh.new()
+	entry_quad.size = Vector2(0.12, 0.12)
+	var entry_draw := StandardMaterial3D.new()
+	entry_draw.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	entry_draw.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	entry_draw.albedo_color = Color(0.9, 0.95, 0.95, 0.85)
+	entry_draw.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	entry_draw.vertex_color_use_as_albedo = true
+	entry_quad.material = entry_draw
+	_swim_entry_particles.draw_pass_1 = entry_quad
+	add_child(_swim_entry_particles)
 
 
 func _on_footstep_finished() -> void:
@@ -5276,7 +5376,7 @@ func _update_torch_light() -> void:
 		_torch_light.name = "PlayerTorchLight"
 		_torch_light.light_color = Color(1.0, 0.65, 0.25)
 		_torch_light.light_energy = 4.0
-		_torch_light.omni_range = 48.0
+		_torch_light.omni_range = 144.0
 		_torch_light.omni_attenuation = 1.2
 		_torch_light.shadow_enabled = true
 		_torch_light.light_volumetric_fog_energy = 1.0
@@ -7373,7 +7473,7 @@ func _add_torch_light(structure: Node3D, offset: Vector3) -> void:
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
 	light.light_energy = 2.0
-	light.omni_range = 7.0
+	light.omni_range = 21.0
 	light.shadow_enabled = true
 	light.light_volumetric_fog_energy = 1.0
 	light.position = offset
@@ -7432,7 +7532,7 @@ func _build_wall_torch_visual(structure: StaticBody3D) -> void:
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
 	light.light_energy = 2.5
-	light.omni_range = 8.0
+	light.omni_range = 24.0
 	light.shadow_enabled = true
 	light.position = Vector3(0.0, 2.15, 0.12)
 	structure.add_child(light)
