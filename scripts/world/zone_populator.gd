@@ -978,6 +978,9 @@ static func populate_zone_phase(
 		var structs := (Engine.get_main_loop() as SceneTree).get_nodes_in_group(&"structures") if Engine.get_main_loop() else []
 		var scatter_n := int(tree_n * 0.4)
 
+		var _placed_trees: Array[Vector2] = []
+		var _min_tree_dist := 5.0
+
 		if not debug_skip_trees:
 			for i in scatter_n:
 				var lx := rng.randf_range(4.0, ZONE_SIZE - 4.0)
@@ -996,9 +999,17 @@ static func populate_zone_phase(
 					continue
 				if _is_near_structure(wx, wz, 4.0, structs):
 					continue
+				var too_close := false
+				for pt in _placed_trees:
+					if Vector2(lx, lz).distance_to(pt) < _min_tree_dist:
+						too_close = true
+						break
+				if too_close:
+					continue
 				var obj := _create_tree(biome, rng, microbiome)
 				zone_root.add_child(obj)
 				obj.position = Vector3(lx, ground_y - 1.5, lz)
+				_placed_trees.append(Vector2(lx, lz))
 
 		return false
 
@@ -1006,6 +1017,9 @@ static func populate_zone_phase(
 		# ── Phase 1: cluster trees + rocks + stones ──
 		var structs := (Engine.get_main_loop() as SceneTree).get_nodes_in_group(&"structures") if Engine.get_main_loop() else []
 		var cluster_budget := tree_n - int(tree_n * 0.4)
+
+		var _cluster_placed: Array[Vector2] = []
+		var _min_cluster_dist := 4.5
 
 		if not debug_skip_trees:
 			var cluster_count := rng.randi_range(1, 3)
@@ -1038,9 +1052,17 @@ static func populate_zone_phase(
 						continue
 					if _is_near_structure(wx, wz, 4.0, structs):
 						continue
+					var too_close := false
+					for pt in _cluster_placed:
+						if Vector2(lx, lz).distance_to(pt) < _min_cluster_dist:
+							too_close = true
+							break
+					if too_close:
+						continue
 					var obj := _create_tree(biome, rng, microbiome)
 					zone_root.add_child(obj)
 					obj.position = Vector3(lx, ground_y - 1.5, lz)
+					_cluster_placed.append(Vector2(lx, lz))
 
 		if not debug_skip_rocks:
 			for i in rock_n:
