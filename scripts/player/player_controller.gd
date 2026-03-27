@@ -2641,6 +2641,9 @@ func _tick_swim_fatigue(delta: float) -> void:
 func _tick_swim_visual(delta: float) -> void:
 	if not _player_sprite:
 		return
+
+	var water_y := WaterSystem.get_surface_y(global_position.x, global_position.z)
+
 	if _is_swimming:
 		_swim_time += delta
 		var bob := sin(_swim_time * 3.0) * 0.06
@@ -2651,11 +2654,23 @@ func _tick_swim_visual(delta: float) -> void:
 		if flat_speed > 0.3:
 			var paddle := sin(_swim_time * 6.0) * 0.12
 			_player_sprite.rotation.z += paddle
+
+		if not _was_swimming and _swim_entry_particles:
+			_swim_entry_particles.global_position = Vector3(global_position.x, water_y, global_position.z)
+			_swim_entry_particles.emitting = true
+
+		if _swim_splash_particles:
+			_swim_splash_particles.global_position = Vector3(global_position.x, water_y, global_position.z)
+			_swim_splash_particles.emitting = flat_speed > 0.3
 	else:
 		if _swim_time > 0.0:
 			_swim_time = 0.0
 			_player_sprite.position.y = _base_sprite_y
 			_player_sprite.rotation.z = 0.0
+		if _swim_splash_particles:
+			_swim_splash_particles.emitting = false
+
+	_was_swimming = _is_swimming
 
 
 func _tick_3d_model(delta: float) -> void:

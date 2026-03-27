@@ -175,6 +175,7 @@ static var _lily_pad_mesh: ArrayMesh
 static var _lily_pad_mat: StandardMaterial3D
 static var _lily_flower_mesh: ArrayMesh
 static var _lily_flower_mat: StandardMaterial3D
+static var _lily_stem_mat: StandardMaterial3D
 static var _cattail_mat: StandardMaterial3D
 static var _cattail_head_mat: StandardMaterial3D
 static var _loosestrife_mat: StandardMaterial3D
@@ -3640,6 +3641,12 @@ static func _ensure_water_plants() -> void:
 	_lily_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 	_lily_flower_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
+	# Lily pad stem — dark underwater branch
+	_lily_stem_mat = StandardMaterial3D.new()
+	_lily_stem_mat.albedo_color = Color(0.05, 0.08, 0.03)
+	_lily_stem_mat.roughness = 0.95
+	_lily_stem_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+
 	# Cattail stalk
 	_cattail_mat = StandardMaterial3D.new()
 	_cattail_mat.albedo_color = Color(0.22, 0.38, 0.15)
@@ -4093,6 +4100,25 @@ static func _scatter_water_plants(
 		pad.rotation.y = rng.randf_range(0.0, TAU)
 		pad.position = Vector3(lx, _WATER_LEVEL + 0.02, lz)
 		zone_root.add_child(pad)
+
+		# Underwater stem connecting pad to the pool bottom
+		if _lily_stem_mat:
+			var stem_len := absf(mesh_h)
+			var stem_mesh := CylinderMesh.new()
+			stem_mesh.top_radius = 0.01
+			stem_mesh.bottom_radius = 0.015
+			stem_mesh.height = stem_len
+			stem_mesh.radial_segments = 5
+			stem_mesh.rings = 1
+			var stem := MeshInstance3D.new()
+			stem.mesh = stem_mesh
+			stem.material_override = _lily_stem_mat
+			stem.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			stem.position = Vector3(0.0, -stem_len * 0.5, 0.0)
+			stem.rotation.x = rng.randf_range(-0.08, 0.08)
+			stem.rotation.z = rng.randf_range(-0.08, 0.08)
+			pad.add_child(stem)
+
 		if rng.randf() < 0.1 and _lily_flower_mesh:
 			var flower := MeshInstance3D.new()
 			flower.mesh = _lily_flower_mesh
