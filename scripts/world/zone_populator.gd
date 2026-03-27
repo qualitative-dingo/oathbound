@@ -2093,8 +2093,8 @@ static func _build_trunk_mesh(
 	# --- Organic lean: accumulated XZ drift per ring ---
 	var drift_x := 0.0
 	var drift_z := 0.0
-	var drift_step_x := rng.randf_range(-0.015, 0.015) * bot_r
-	var drift_step_z := rng.randf_range(-0.015, 0.015) * bot_r
+	var drift_step_x := rng.randf_range(-0.035, 0.035) * bot_r
+	var drift_step_z := rng.randf_range(-0.035, 0.035) * bot_r
 
 	# --- Per-ring ovalization ---
 	var oval_angle := rng.randf_range(0.0, TAU)
@@ -2120,11 +2120,11 @@ static func _build_trunk_mesh(
 				cumulative_reduction += step_down_per_branch
 		r *= (1.0 - cumulative_reduction)
 
-		drift_x += drift_step_x * (1.0 - t * 0.5)
-		drift_z += drift_step_z * (1.0 - t * 0.5)
-		if ri % 5 == 0:
-			drift_step_x += rng.randf_range(-0.006, 0.006) * bot_r
-			drift_step_z += rng.randf_range(-0.006, 0.006) * bot_r
+		drift_x += drift_step_x * (1.0 - t * 0.3)
+		drift_z += drift_step_z * (1.0 - t * 0.3)
+		if ri % 4 == 0:
+			drift_step_x += rng.randf_range(-0.012, 0.012) * bot_r
+			drift_step_z += rng.randf_range(-0.012, 0.012) * bot_r
 
 		var ring := PackedVector3Array()
 		ring.resize(radial_segs)
@@ -2379,7 +2379,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		branch_r_frac = 0.60
 
 	var branch_heights: PackedFloat32Array = PackedFloat32Array()
-	var branch_tip_positions: Array[Vector3] = []
+	var leaf_anchor_positions: Array[Vector3] = []
 	var branch_base_angle := rng.randf_range(0.0, TAU)
 	for bi in branch_count:
 		var t_in_zone := float(bi) / float(maxi(branch_count - 1, 1))
@@ -2438,9 +2438,11 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 		trunk_mi.add_child(branch_mi)
 
-		var tip_curve := _sample_branch_curve(1.0, branch_len, upward_arc, branch_bend)
-		var tip_in_root := branch_basis * tip_curve + branch_mi.position
-		branch_tip_positions.append(tip_in_root)
+		# Sample leaf anchors along the branch (midpoints + tip)
+		for sample_t in [0.35, 0.65, 1.0]:
+			var pt := _sample_branch_curve(sample_t, branch_len, upward_arc, branch_bend)
+			var pt_in_root := branch_basis * pt + branch_mi.position
+			leaf_anchor_positions.append(pt_in_root)
 
 		# Sub-branches: 1-2 smaller twigs per major branch
 		var sub_count := rng.randi_range(1, 2)
@@ -2480,7 +2482,18 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 				cos(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad),
 				sub_len * sin(sub_tilt_rad) + sub_arc,
 				sin(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad))
-			branch_tip_positions.append(sub_attach_in_root + sub_tip_offset)
+			leaf_anchor_positions.append(sub_attach_in_root + sub_tip_offset)
+
+	# ── Trunk spine leaf anchors: upper 40% of trunk always covered ──
+	var trunk_leaf_start := trunk_h * 0.60
+	var trunk_spine_steps := 8
+	for ti in trunk_spine_steps:
+		var frac := float(ti) / float(trunk_spine_steps - 1)
+		var spine_y := lerpf(trunk_leaf_start, trunk_h, frac)
+		var spine_angle := rng.randf_range(0.0, TAU)
+		var spine_r := rng.randf_range(0.0, trunk_top_r * 1.5)
+		leaf_anchor_positions.append(Vector3(
+			cos(spine_angle) * spine_r, spine_y, sin(spine_angle) * spine_r))
 
 	# ── Choose leaf texture and base color by tree family ──
 	var leaf_tex: ImageTexture
@@ -2557,33 +2570,33 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 	var leaf_xforms: Array[Transform3D] = []
 
-	var n_tips := branch_tip_positions.size()
-	var min_per_tip := 4
-	var tip_count := maxi(int(plane_count * 0.70), n_tips * min_per_tip) if n_tips > 0 else 0
-	if n_tips > 0:
-		var per_tip := maxi(min_per_tip, tip_count / n_tips)
+	var n_anchors := leaf_anchor_positions.size()
+	var min_per_anchor := 3
+	var anchor_count := maxi(int(plane_count * 0.80), n_anchors * min_per_anchor) if n_anchors > 0 else 0
+	if n_anchors > 0:
+		var per_anchor := maxi(min_per_anchor, anchor_count / n_anchors)
 		var placed := 0
-		for tip_idx in n_tips:
-			var tip_world: Vector3 = branch_tip_positions[tip_idx]
-			var tip_in_canopy := tip_world - Vector3(0.0, canopy_center_y, 0.0)
-			var cluster_r := canopy_spread * 0.25
-			var n_for_tip := per_tip if tip_idx < n_tips - 1 else maxi(min_per_tip, tip_count - placed)
-			for _pi in n_for_tip:
+		for ai in n_anchors:
+			var anchor: Vector3 = leaf_anchor_positions[ai]
+			var anchor_in_canopy := anchor - Vector3(0.0, canopy_center_y, 0.0)
+			var cluster_r := canopy_spread * 0.22
+			var n_for := per_anchor if ai < n_anchors - 1 else maxi(min_per_anchor, anchor_count - placed)
+			for _pi in n_for:
 				var this_size := plane_size_base * rng.randf_range(0.6, 1.15)
 				var off := Vector3(
 					rng.randf_range(-cluster_r, cluster_r),
 					rng.randf_range(-cluster_r * 0.5, cluster_r * 0.5),
 					rng.randf_range(-cluster_r, cluster_r))
-				var pos := tip_in_canopy + off
+				var pos := anchor_in_canopy + off
 				var rot := Vector3(
 					rng.randf_range(-0.7, 0.7),
 					rng.randf_range(0.0, TAU),
 					rng.randf_range(-0.5, 0.5))
 				var basis := Basis.from_euler(rot).scaled(Vector3(this_size, this_size, this_size))
 				leaf_xforms.append(Transform3D(basis, pos))
-			placed += n_for_tip
+			placed += n_for
 
-	var remaining := maxi(0, plane_count - tip_count)
+	var remaining := maxi(0, plane_count - anchor_count)
 	var fill_count := int(remaining * 0.65)
 	for pi in fill_count:
 		var this_size := plane_size_base * rng.randf_range(0.55, 1.1)
