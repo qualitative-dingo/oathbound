@@ -34,8 +34,8 @@ signal biome_at_player_changed(biome_id: StringName)
 const ZONE_SIZE := 64.0
 
 @export_group("Loading")
-@export var load_radius_zones: int = 2
-@export var unload_radius_zones: int = 3
+@export var load_radius_zones: int = 5
+@export var unload_radius_zones: int = 6
 const MAX_ZONES_PER_FRAME := 4  # raised — builds happen off-thread
 const MESH_RESOLUTION := 48
 
@@ -1498,7 +1498,7 @@ func _resize_water_plane() -> void:
 
 
 func set_render_distance(radius: int) -> void:
-	load_radius_zones = clampi(radius, 1, 5)
+	load_radius_zones = clampi(radius, 1, 8)
 	unload_radius_zones = load_radius_zones + 1
 	_resize_water_plane()
 
