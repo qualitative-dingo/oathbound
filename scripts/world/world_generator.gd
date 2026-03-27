@@ -36,7 +36,7 @@ const ZONE_SIZE := 64.0
 @export_group("Loading")
 @export var load_radius_zones: int = 2
 @export var unload_radius_zones: int = 3
-const MAX_ZONES_PER_FRAME := 2  # can be higher now since builds happen off-thread
+const MAX_ZONES_PER_FRAME := 4  # raised — builds happen off-thread
 const MESH_RESOLUTION := 48
 
 @export_group("Terrain")
@@ -455,13 +455,20 @@ func _physics_process(delta: float) -> void:
 				p.velocity = Vector3.ZERO
 
 	var t1 := Time.get_ticks_usec()
+	var any_flying := false
+	for p in _players:
+		if p.get(&"flight_mode"):
+			any_flying = true
+			break
+	var effective_radius: int = (load_radius_zones + 2) if any_flying else load_radius_zones
+
 	var cur_zones: Array[Vector2i] = []
 	for p in _players:
 		cur_zones.append(world_to_zone(get_world_position(p)))
-	if cur_zones != _last_player_zones:
+	if cur_zones != _last_player_zones or any_flying:
 		_last_player_zones = cur_zones
 		for pz in cur_zones:
-			_queue_zones_around(pz)
+			_queue_zones_around(pz, effective_radius)
 	var t2 := Time.get_ticks_usec()
 	_process_pending_zones()
 	var t3 := Time.get_ticks_usec()
@@ -773,6 +780,10 @@ func world_to_zone(world_pos: Vector3) -> Vector2i:
 	return Vector2i(floori(world_pos.x / ZONE_SIZE), floori(world_pos.z / ZONE_SIZE))
 
 
+func is_zone_loaded(coord: Vector2i) -> bool:
+	return coord in _loaded_zones
+
+
 func zone_to_world_center(coord: Vector2i) -> Vector3:
 	return Vector3(
 		(coord.x + 0.5) * ZONE_SIZE,
@@ -1063,9 +1074,11 @@ func _spawn_starter_goblins() -> void:
 	print("[WORLD] Spawned %d starter goblins near (%.0f, %.0f)" % [spawned, center_x, center_z])
 
 
-func _queue_zones_around(center: Vector2i) -> void:
-	for x in range(center.x - load_radius_zones, center.x + load_radius_zones + 1):
-		for z in range(center.y - load_radius_zones, center.y + load_radius_zones + 1):
+func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
+	if radius < 0:
+		radius = load_radius_zones
+	for x in range(center.x - radius, center.x + radius + 1):
+		for z in range(center.y - radius, center.y + radius + 1):
 			var coord := Vector2i(x, z)
 			if coord in _loaded_zones or coord in _pending_zones or coord in _gen_in_flight:
 				continue
@@ -1073,6 +1086,12 @@ func _queue_zones_around(center: Vector2i) -> void:
 			if Vector2(world_center.x, world_center.z).length() > world_radius * 1.1:
 				continue
 			_pending_zones.append(coord)
+	# Nearest zones first so the player's surroundings always load before distant ones
+	_pending_zones.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var da := (a - center).length_squared()
+		var db := (b - center).length_squared()
+		return da < db
+	)
 
 
 var _finalize_backlog: Array = []   # zones ready for mesh setup
@@ -1161,7 +1180,7 @@ func _process_pending_zones() -> void:
 				break
 
 	# 4. Submit new zone builds — stop if backlog is already large
-	if _finalize_backlog.size() + _gen_in_flight.size() > 8:
+	if _finalize_backlog.size() + _gen_in_flight.size() > 16:
 		return
 	var submitted := 0
 	while submitted < MAX_ZONES_PER_FRAME and not _pending_zones.is_empty():
@@ -1196,12 +1215,18 @@ func _evict_terrain_cache() -> void:
 const _MAX_UNLOADS_PER_FRAME := 2
 
 func _unload_distant_zones(players: Array[Node3D]) -> void:
+	var any_flying := false
+	for p in players:
+		if p.get(&"flight_mode"):
+			any_flying = true
+			break
+	var effective_unload: float = float(unload_radius_zones + 2) if any_flying else float(unload_radius_zones)
 	var to_remove: Array[Vector2i] = []
 	for coord in _loaded_zones:
 		var near_any := false
 		for p in players:
 			var pz := world_to_zone(get_world_position(p))
-			if float((coord - pz).length()) <= unload_radius_zones:
+			if float((coord - pz).length()) <= effective_unload:
 				near_any = true
 				break
 		if not near_any:

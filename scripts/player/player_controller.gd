@@ -1615,6 +1615,16 @@ func _handle_flight(delta: float) -> void:
 	var speed := FLIGHT_SPEED
 	if Input.is_action_pressed(&"sprint"):
 		speed *= 2.0
+
+	# Throttle speed when approaching unloaded zones
+	if not _in_cave and move_dir.length_squared() > 0.001:
+		var wg := _find_world_generator()
+		if wg:
+			var look_ahead := global_position + Vector3(move_dir.x, 0, move_dir.z).normalized() * 48.0
+			var ahead_zone: Vector2i = wg.world_to_zone(wg.get_world_position_vec(look_ahead))
+			if not wg.is_zone_loaded(ahead_zone):
+				speed = minf(speed, 12.0)
+
 	velocity = Vector3.ZERO
 	global_position += move_dir * speed * delta
 	if not _in_cave:
