@@ -9153,13 +9153,8 @@ func _try_attack() -> void:
 	)
 
 
-const TERRAFORM_STAMINA_COST := 8.0
-const TERRAFORM_COOLDOWN := 0.35
-
 func _try_hoe_use() -> void:
 	if _is_dodging or _mounted:
-		return
-	if _attack_cooldown > 0.0 or not _can_spend_stamina(TERRAFORM_STAMINA_COST):
 		return
 
 	var cam := get_viewport().get_camera_3d()
@@ -9186,9 +9181,6 @@ func _try_hoe_use() -> void:
 
 	var player_world := wg.get_world_position(self)
 	var target_h := wg.get_height_at(player_world.x, player_world.z)
-
-	_spend_stamina(TERRAFORM_STAMINA_COST)
-	_attack_cooldown = TERRAFORM_COOLDOWN
 
 	wg.flatten_terrain_to(world_hit.x, world_hit.z, HOE_RADIUS, target_h)
 
