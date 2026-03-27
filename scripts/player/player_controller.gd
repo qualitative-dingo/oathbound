@@ -2247,28 +2247,28 @@ func _setup_swim_effects() -> void:
 	# Continuous swim wake particles (ring around player while moving in water)
 	_swim_splash_particles = GPUParticles3D.new()
 	_swim_splash_particles.emitting = false
-	_swim_splash_particles.amount = 24
-	_swim_splash_particles.lifetime = 0.5
+	_swim_splash_particles.amount = 72
+	_swim_splash_particles.lifetime = 0.8
 	_swim_splash_particles.explosiveness = 0.0
-	_swim_splash_particles.randomness = 0.4
-	_swim_splash_particles.visibility_aabb = AABB(Vector3(-3, -1, -3), Vector3(6, 3, 6))
+	_swim_splash_particles.randomness = 0.5
+	_swim_splash_particles.visibility_aabb = AABB(Vector3(-5, -2, -5), Vector3(10, 5, 10))
 
 	var splash_mat := ParticleProcessMaterial.new()
 	splash_mat.direction = Vector3(0, 1, 0)
-	splash_mat.spread = 80.0
-	splash_mat.initial_velocity_min = 0.8
-	splash_mat.initial_velocity_max = 1.6
-	splash_mat.gravity = Vector3(0, -4.0, 0)
+	splash_mat.spread = 85.0
+	splash_mat.initial_velocity_min = 2.0
+	splash_mat.initial_velocity_max = 4.5
+	splash_mat.gravity = Vector3(0, -6.0, 0)
 	splash_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-	splash_mat.emission_ring_radius = 0.5
-	splash_mat.emission_ring_inner_radius = 0.2
-	splash_mat.emission_ring_height = 0.05
+	splash_mat.emission_ring_radius = 1.0
+	splash_mat.emission_ring_inner_radius = 0.3
+	splash_mat.emission_ring_height = 0.1
 	splash_mat.emission_ring_axis = Vector3(0, 1, 0)
-	splash_mat.scale_min = 0.04
-	splash_mat.scale_max = 0.08
+	splash_mat.scale_min = 0.10
+	splash_mat.scale_max = 0.22
 	splash_mat.damping_min = 2.0
 	splash_mat.damping_max = 4.0
-	splash_mat.color = Color(0.85, 0.90, 0.92, 0.75)
+	splash_mat.color = Color(0.85, 0.90, 0.92, 0.80)
 	var alpha_curve := CurveTexture.new()
 	var curve := Curve.new()
 	curve.add_point(Vector2(0.0, 1.0))
@@ -2279,7 +2279,7 @@ func _setup_swim_effects() -> void:
 	_swim_splash_particles.process_material = splash_mat
 
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.1, 0.1)
+	quad.size = Vector2(0.25, 0.25)
 	var draw_mat := StandardMaterial3D.new()
 	draw_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	draw_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
@@ -2294,28 +2294,28 @@ func _setup_swim_effects() -> void:
 	_swim_entry_particles = GPUParticles3D.new()
 	_swim_entry_particles.emitting = false
 	_swim_entry_particles.one_shot = true
-	_swim_entry_particles.amount = 12
-	_swim_entry_particles.lifetime = 0.6
+	_swim_entry_particles.amount = 36
+	_swim_entry_particles.lifetime = 0.8
 	_swim_entry_particles.explosiveness = 0.9
-	_swim_entry_particles.randomness = 0.3
-	_swim_entry_particles.visibility_aabb = AABB(Vector3(-3, -1, -3), Vector3(6, 3, 6))
+	_swim_entry_particles.randomness = 0.4
+	_swim_entry_particles.visibility_aabb = AABB(Vector3(-5, -2, -5), Vector3(10, 5, 10))
 
 	var entry_mat := ParticleProcessMaterial.new()
 	entry_mat.direction = Vector3(0, 1, 0)
-	entry_mat.spread = 60.0
-	entry_mat.initial_velocity_min = 2.0
-	entry_mat.initial_velocity_max = 3.5
-	entry_mat.gravity = Vector3(0, -6.0, 0)
+	entry_mat.spread = 70.0
+	entry_mat.initial_velocity_min = 4.0
+	entry_mat.initial_velocity_max = 7.0
+	entry_mat.gravity = Vector3(0, -8.0, 0)
 	entry_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
-	entry_mat.emission_ring_radius = 0.4
+	entry_mat.emission_ring_radius = 0.8
 	entry_mat.emission_ring_inner_radius = 0.0
-	entry_mat.emission_ring_height = 0.05
+	entry_mat.emission_ring_height = 0.1
 	entry_mat.emission_ring_axis = Vector3(0, 1, 0)
-	entry_mat.scale_min = 0.06
-	entry_mat.scale_max = 0.12
-	entry_mat.damping_min = 1.0
-	entry_mat.damping_max = 3.0
-	entry_mat.color = Color(0.9, 0.95, 0.95, 0.85)
+	entry_mat.scale_min = 0.14
+	entry_mat.scale_max = 0.30
+	entry_mat.damping_min = 1.5
+	entry_mat.damping_max = 4.0
+	entry_mat.color = Color(0.9, 0.95, 0.95, 0.90)
 	var entry_alpha_curve := CurveTexture.new()
 	var entry_curve := Curve.new()
 	entry_curve.add_point(Vector2(0.0, 1.0))
@@ -2326,7 +2326,7 @@ func _setup_swim_effects() -> void:
 	_swim_entry_particles.process_material = entry_mat
 
 	var entry_quad := QuadMesh.new()
-	entry_quad.size = Vector2(0.12, 0.12)
+	entry_quad.size = Vector2(0.30, 0.30)
 	var entry_draw := StandardMaterial3D.new()
 	entry_draw.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	entry_draw.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
