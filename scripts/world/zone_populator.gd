@@ -2077,7 +2077,7 @@ static func _build_trunk_mesh(
 
 	var sorted_branches := Array(branch_fracs)
 	sorted_branches.sort()
-	var step_down_per_branch := 0.12
+	var step_down_per_branch := 0.16
 
 	# --- Buttress roots with varied strength ---
 	var root_angles := PackedFloat32Array()
@@ -2197,8 +2197,14 @@ static func _build_branch_mesh(
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
 	var radial_segs := 8
-	var h_rings := 6
-	var tip_r := base_r * 0.25
+	var h_rings := 10
+	var tip_r := base_r * 0.20
+
+	var bend_freq := rng.randf_range(1.5, 3.0)
+	var bend_amp_x := length * rng.randf_range(0.06, 0.15)
+	var bend_amp_z := length * rng.randf_range(0.04, 0.10)
+	var bend_phase_x := rng.randf_range(0.0, TAU)
+	var bend_phase_z := rng.randf_range(0.0, TAU)
 
 	var all_rings: Array[PackedVector3Array] = []
 	for ri in range(h_rings + 1):
@@ -2209,12 +2215,15 @@ static func _build_branch_mesh(
 		var y_offset := upward_arc * t * t
 		var along := t * length
 
+		var curve_x := sin(t * bend_freq * PI + bend_phase_x) * bend_amp_x * t
+		var curve_z := sin(t * bend_freq * PI * 0.7 + bend_phase_z) * bend_amp_z * t
+
 		var ring := PackedVector3Array()
 		ring.resize(radial_segs)
 		for si in radial_segs:
 			var angle := TAU * float(si) / float(radial_segs)
-			var px := cos(angle) * r
-			var pz := sin(angle) * r
+			var px := cos(angle) * r + curve_x
+			var pz := sin(angle) * r + curve_z
 			ring[si] = Vector3(px, y_offset + along, pz)
 		all_rings.append(ring)
 
@@ -2319,30 +2328,30 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	var branch_r_frac: float
 
 	if is_birch:
-		branch_count = rng.randi_range(3, 4)
-		branch_zone_lo = 0.45
-		branch_zone_hi = 0.80
+		branch_count = rng.randi_range(3, 5)
+		branch_zone_lo = 0.25
+		branch_zone_hi = 0.70
 		branch_len_frac_lo = 0.20
-		branch_len_frac_hi = 0.35
-		branch_tilt_lo = 35.0
+		branch_len_frac_hi = 0.40
+		branch_tilt_lo = 30.0
 		branch_tilt_hi = 55.0
 		branch_r_frac = 0.55
 	elif is_oak:
-		branch_count = rng.randi_range(4, 5)
-		branch_zone_lo = 0.35
-		branch_zone_hi = 0.75
+		branch_count = rng.randi_range(4, 6)
+		branch_zone_lo = 0.20
+		branch_zone_hi = 0.65
 		branch_len_frac_lo = 0.25
-		branch_len_frac_hi = 0.45
-		branch_tilt_lo = 25.0
+		branch_len_frac_hi = 0.50
+		branch_tilt_lo = 20.0
 		branch_tilt_hi = 45.0
 		branch_r_frac = 0.65
 	else:
-		branch_count = rng.randi_range(3, 4)
-		branch_zone_lo = 0.40
-		branch_zone_hi = 0.75
+		branch_count = rng.randi_range(3, 5)
+		branch_zone_lo = 0.25
+		branch_zone_hi = 0.68
 		branch_len_frac_lo = 0.22
-		branch_len_frac_hi = 0.40
-		branch_tilt_lo = 30.0
+		branch_len_frac_hi = 0.45
+		branch_tilt_lo = 25.0
 		branch_tilt_hi = 50.0
 		branch_r_frac = 0.60
 
@@ -2376,7 +2385,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		var trunk_r_at_h := lerpf(trunk_bot_r, trunk_top_r, h_frac)
 		var b_base_r := trunk_r_at_h * branch_r_frac * lerpf(1.0, 0.6, height_t)
 		var tilt_deg := lerpf(branch_tilt_lo, branch_tilt_hi, height_t) + rng.randf_range(-5.0, 5.0)
-		var upward_arc := branch_len * rng.randf_range(0.15, 0.35)
+		var upward_arc := branch_len * rng.randf_range(0.25, 0.50)
 
 		var branch_mesh := _build_branch_mesh(b_base_r, branch_len, upward_arc, rng)
 		var branch_mi := MeshInstance3D.new()
@@ -2417,7 +2426,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 			var sub_t := rng.randf_range(0.5, 0.7)
 			var sub_len := branch_len * rng.randf_range(0.35, 0.50)
 			var sub_r := b_base_r * 0.3
-			var sub_arc := sub_len * rng.randf_range(0.1, 0.3)
+			var sub_arc := sub_len * rng.randf_range(0.20, 0.45)
 			var sub_angle := branch_angle + rng.randf_range(-0.8, 0.8)
 			var sub_tilt_deg := tilt_deg + rng.randf_range(10.0, 25.0)
 			var sub_tilt_rad := deg_to_rad(sub_tilt_deg)
@@ -2483,33 +2492,33 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 	if is_birch:
 		canopy_spread = 6.05 * sf * wsf
-		canopy_base_y = trunk_h * 0.38
-		plane_count = rng.randi_range(32, 44)
+		canopy_base_y = trunk_h * 0.28
+		plane_count = rng.randi_range(64, 88)
 		plane_size_base = 6.0 * sf * wsf
 	elif is_pine:
 		canopy_spread = 4.4 * sf * wsf
 		canopy_base_y = trunk_h * 0.2
-		plane_count = rng.randi_range(18, 26)
+		plane_count = rng.randi_range(36, 52)
 		plane_size_base = 5.0 * sf * wsf
 	elif is_willow:
 		canopy_spread = 7.7 * sf * wsf
 		canopy_base_y = trunk_h * 0.35
-		plane_count = rng.randi_range(18, 24)
+		plane_count = rng.randi_range(36, 48)
 		plane_size_base = 7.5 * sf * wsf
 	elif is_palm:
 		canopy_spread = 5.5 * sf * wsf
 		canopy_base_y = trunk_h * 0.7
-		plane_count = rng.randi_range(10, 14)
+		plane_count = rng.randi_range(20, 28)
 		plane_size_base = 7.0 * sf * wsf
 	elif is_oak:
 		canopy_spread = 6.6 * sf * wsf
-		canopy_base_y = trunk_h * 0.25
-		plane_count = rng.randi_range(48, 72)
+		canopy_base_y = trunk_h * 0.20
+		plane_count = rng.randi_range(96, 144)
 		plane_size_base = 6.5 * sf * wsf
 	else:
 		canopy_spread = 6.6 * sf * wsf
-		canopy_base_y = trunk_h * 0.35
-		plane_count = rng.randi_range(16, 24)
+		canopy_base_y = trunk_h * 0.25
+		plane_count = rng.randi_range(32, 48)
 		plane_size_base = 6.5 * sf * wsf
 
 	# Canopy must always extend above trunk top with overshoot
