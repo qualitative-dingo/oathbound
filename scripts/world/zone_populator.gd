@@ -2553,20 +2553,22 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 	var leaf_xforms: Array[Transform3D] = []
 
-	# 60% of leaves clustered at branch tips
-	var tip_count := int(plane_count * 0.60)
-	if not branch_tip_positions.is_empty():
-		var per_tip := maxi(1, tip_count / branch_tip_positions.size())
-		for tip_idx in branch_tip_positions.size():
+	var n_tips := branch_tip_positions.size()
+	var min_per_tip := 4
+	var tip_count := maxi(int(plane_count * 0.70), n_tips * min_per_tip) if n_tips > 0 else 0
+	if n_tips > 0:
+		var per_tip := maxi(min_per_tip, tip_count / n_tips)
+		var placed := 0
+		for tip_idx in n_tips:
 			var tip_world: Vector3 = branch_tip_positions[tip_idx]
 			var tip_in_canopy := tip_world - Vector3(0.0, canopy_center_y, 0.0)
-			var cluster_r := canopy_spread * 0.35
-			var n_for_tip := per_tip if tip_idx < branch_tip_positions.size() - 1 else (tip_count - per_tip * tip_idx)
+			var cluster_r := canopy_spread * 0.25
+			var n_for_tip := per_tip if tip_idx < n_tips - 1 else maxi(min_per_tip, tip_count - placed)
 			for _pi in n_for_tip:
 				var this_size := plane_size_base * rng.randf_range(0.6, 1.15)
 				var off := Vector3(
 					rng.randf_range(-cluster_r, cluster_r),
-					rng.randf_range(-cluster_r * 0.6, cluster_r * 0.6),
+					rng.randf_range(-cluster_r * 0.5, cluster_r * 0.5),
 					rng.randf_range(-cluster_r, cluster_r))
 				var pos := tip_in_canopy + off
 				var rot := Vector3(
@@ -2575,11 +2577,10 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 					rng.randf_range(-0.5, 0.5))
 				var basis := Basis.from_euler(rot).scaled(Vector3(this_size, this_size, this_size))
 				leaf_xforms.append(Transform3D(basis, pos))
-	else:
-		tip_count = 0
+			placed += n_for_tip
 
-	# 25% general canopy fill (biased toward upper half)
-	var fill_count := int(plane_count * 0.25)
+	var remaining := maxi(0, plane_count - tip_count)
+	var fill_count := int(remaining * 0.65)
 	for pi in fill_count:
 		var this_size := plane_size_base * rng.randf_range(0.55, 1.1)
 		var fill_angle := rng.randf_range(0.0, TAU)
@@ -2595,9 +2596,8 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		var basis := Basis.from_euler(rot).scaled(Vector3(this_size, this_size, this_size))
 		leaf_xforms.append(Transform3D(basis, pos))
 
-	# 15% crown/collar at trunk top
 	var trunk_top_in_canopy := trunk_h - canopy_center_y
-	var crown_count := plane_count - tip_count - fill_count
+	var crown_count := maxi(0, remaining - fill_count)
 	for ci in crown_count:
 		var this_size := plane_size_base * rng.randf_range(0.7, 1.05)
 		var collar_angle := rng.randf_range(0.0, TAU)
