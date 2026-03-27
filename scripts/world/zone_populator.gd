@@ -2064,15 +2064,20 @@ static func _is_steep_edge(wx: float, wz: float, ground_y: float, height_func: C
 static func _build_trunk_mesh(
 	bot_r: float, top_r: float, height: float,
 	num_roots: int, rng: RandomNumberGenerator,
+	branch_fracs: PackedFloat32Array = PackedFloat32Array(),
 ) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
 	var radial_segs := 16
 	var h_rings := 18
-	var flare_mult := 1.55
+	var flare_mult := 1.40
 	var flare_zone := 0.15
 	var root_zone := 0.25
+
+	var sorted_branches := Array(branch_fracs)
+	sorted_branches.sort()
+	var step_down_per_branch := 0.12
 
 	# --- Buttress roots with varied strength ---
 	var root_angles := PackedFloat32Array()
@@ -2108,6 +2113,12 @@ static func _build_trunk_mesh(
 		else:
 			var tt := (t - flare_zone) / (1.0 - flare_zone)
 			r = lerpf(bot_r, top_r, tt)
+
+		var cumulative_reduction := 0.0
+		for bf in sorted_branches:
+			if t > bf:
+				cumulative_reduction += step_down_per_branch
+		r *= (1.0 - cumulative_reduction)
 
 		drift_x += drift_step_x * (1.0 - t * 0.5)
 		drift_z += drift_step_z * (1.0 - t * 0.5)
@@ -2178,6 +2189,64 @@ static func _build_trunk_mesh(
 	return st.commit()
 
 
+static func _build_branch_mesh(
+	base_r: float, length: float, upward_arc: float,
+	rng: RandomNumberGenerator,
+) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	var radial_segs := 8
+	var h_rings := 6
+	var tip_r := base_r * 0.25
+
+	var all_rings: Array[PackedVector3Array] = []
+	for ri in range(h_rings + 1):
+		var t := float(ri) / float(h_rings)
+		var r := lerpf(base_r, tip_r, t)
+		r += rng.randf_range(-0.02, 0.02) * base_r
+
+		var y_offset := upward_arc * t * t
+		var along := t * length
+
+		var ring := PackedVector3Array()
+		ring.resize(radial_segs)
+		for si in radial_segs:
+			var angle := TAU * float(si) / float(radial_segs)
+			var px := cos(angle) * r
+			var pz := sin(angle) * r
+			ring[si] = Vector3(px, y_offset + along, pz)
+		all_rings.append(ring)
+
+	for ri in h_rings:
+		for si in radial_segs:
+			var ns := (si + 1) % radial_segs
+			var v00: Vector3 = all_rings[ri][si]
+			var v10: Vector3 = all_rings[ri][ns]
+			var v01: Vector3 = all_rings[ri + 1][si]
+			var v11: Vector3 = all_rings[ri + 1][ns]
+			st.add_vertex(v00)
+			st.add_vertex(v10)
+			st.add_vertex(v01)
+			st.add_vertex(v10)
+			st.add_vertex(v11)
+			st.add_vertex(v01)
+
+	var bot_ring: PackedVector3Array = all_rings[0]
+	var bot_center := Vector3.ZERO
+	for vi in bot_ring.size():
+		bot_center += bot_ring[vi]
+	bot_center /= float(bot_ring.size())
+	for si in radial_segs:
+		var ns := (si + 1) % radial_segs
+		st.add_vertex(bot_center)
+		st.add_vertex(bot_ring[ns])
+		st.add_vertex(bot_ring[si])
+
+	st.generate_normals()
+	return st.commit()
+
+
 static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbiome: StringName = &"none") -> StaticBody3D:
 	var pooled := _ZonePool.get_tree_node()
 	if pooled:
@@ -2210,41 +2279,175 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 	if is_birch:
 		trunk_h = 40.5 * sf
-		trunk_bot_r = 0.9 * sf * wsf
-		trunk_top_r = 0.4 * sf * wsf
+		trunk_bot_r = 0.63 * sf * wsf
+		trunk_top_r = 0.28 * sf * wsf
 		bark_mat = _mat_birch_bark
 		num_roots = 3
 	elif is_pine:
 		trunk_h = 45.6 * sf
-		trunk_bot_r = 1.1 * sf * wsf
-		trunk_top_r = 0.35 * sf * wsf
+		trunk_bot_r = 0.77 * sf * wsf
+		trunk_top_r = 0.245 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 3
 	elif is_willow:
 		trunk_h = 30.45 * sf
-		trunk_bot_r = 1.3 * sf * wsf
-		trunk_top_r = 0.7 * sf * wsf
+		trunk_bot_r = 0.91 * sf * wsf
+		trunk_top_r = 0.49 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 4
 	elif is_palm:
 		trunk_h = 35.55 * sf
-		trunk_bot_r = 0.85 * sf * wsf
-		trunk_top_r = 0.5 * sf * wsf
+		trunk_bot_r = 0.595 * sf * wsf
+		trunk_top_r = 0.35 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 2
 	else:
 		trunk_h = 38.1 * sf
-		trunk_bot_r = 1.2 * sf * wsf
-		trunk_top_r = 0.5 * sf * wsf
+		trunk_bot_r = 0.84 * sf * wsf
+		trunk_top_r = 0.35 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 4
 
+	# ── Branches: define per-species parameters ──
+	var branch_count: int
+	var branch_zone_lo: float
+	var branch_zone_hi: float
+	var branch_len_frac_lo: float
+	var branch_len_frac_hi: float
+	var branch_tilt_lo: float
+	var branch_tilt_hi: float
+	var branch_r_frac: float
+
+	if is_birch:
+		branch_count = rng.randi_range(3, 4)
+		branch_zone_lo = 0.45
+		branch_zone_hi = 0.80
+		branch_len_frac_lo = 0.20
+		branch_len_frac_hi = 0.35
+		branch_tilt_lo = 35.0
+		branch_tilt_hi = 55.0
+		branch_r_frac = 0.55
+	elif is_oak:
+		branch_count = rng.randi_range(4, 5)
+		branch_zone_lo = 0.35
+		branch_zone_hi = 0.75
+		branch_len_frac_lo = 0.25
+		branch_len_frac_hi = 0.45
+		branch_tilt_lo = 25.0
+		branch_tilt_hi = 45.0
+		branch_r_frac = 0.65
+	else:
+		branch_count = rng.randi_range(3, 4)
+		branch_zone_lo = 0.40
+		branch_zone_hi = 0.75
+		branch_len_frac_lo = 0.22
+		branch_len_frac_hi = 0.40
+		branch_tilt_lo = 30.0
+		branch_tilt_hi = 50.0
+		branch_r_frac = 0.60
+
+	var branch_heights: PackedFloat32Array = PackedFloat32Array()
+	var branch_tip_positions: Array[Vector3] = []
+	var branch_base_angle := rng.randf_range(0.0, TAU)
+	for bi in branch_count:
+		var t_in_zone := float(bi) / float(maxi(branch_count - 1, 1))
+		var h_frac := lerpf(branch_zone_lo, branch_zone_hi, t_in_zone)
+		h_frac += rng.randf_range(-0.04, 0.04)
+		h_frac = clampf(h_frac, branch_zone_lo, branch_zone_hi)
+		branch_heights.append(h_frac)
+
 	var trunk_mi := MeshInstance3D.new()
 	trunk_mi.name = "MeshInstance3D"
-	trunk_mi.mesh = _build_trunk_mesh(trunk_bot_r, trunk_top_r, trunk_h, num_roots, rng)
+	trunk_mi.mesh = _build_trunk_mesh(trunk_bot_r, trunk_top_r, trunk_h, num_roots, rng, branch_heights)
 	trunk_mi.set_surface_override_material(0, bark_mat)
 	trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	root.add_child(trunk_mi)
+
+	# ── Spawn branch meshes as children of trunk ──
+	for bi in branch_count:
+		var h_frac: float = branch_heights[bi]
+		var branch_y := h_frac * trunk_h
+		var height_t := float(bi) / float(maxi(branch_count - 1, 1))
+
+		var branch_angle := branch_base_angle + TAU * float(bi) / float(branch_count) + rng.randf_range(-0.3, 0.3)
+		var len_frac := lerpf(branch_len_frac_hi, branch_len_frac_lo, height_t)
+		var branch_len := trunk_h * len_frac * rng.randf_range(0.85, 1.15)
+
+		var trunk_r_at_h := lerpf(trunk_bot_r, trunk_top_r, h_frac)
+		var b_base_r := trunk_r_at_h * branch_r_frac * lerpf(1.0, 0.6, height_t)
+		var tilt_deg := lerpf(branch_tilt_lo, branch_tilt_hi, height_t) + rng.randf_range(-5.0, 5.0)
+		var upward_arc := branch_len * rng.randf_range(0.15, 0.35)
+
+		var branch_mesh := _build_branch_mesh(b_base_r, branch_len, upward_arc, rng)
+		var branch_mi := MeshInstance3D.new()
+		branch_mi.name = "Branch_%d" % bi
+		branch_mi.mesh = branch_mesh
+		branch_mi.set_surface_override_material(0, bark_mat)
+		branch_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+		var tilt_rad := deg_to_rad(tilt_deg)
+		var branch_dir := Vector3(
+			cos(branch_angle) * cos(tilt_rad),
+			sin(tilt_rad),
+			sin(branch_angle) * cos(tilt_rad)).normalized()
+		var up_guess := Vector3.UP
+		if absf(branch_dir.dot(up_guess)) > 0.95:
+			up_guess = Vector3.FORWARD
+		var right := branch_dir.cross(up_guess).normalized()
+		var forward := right.cross(branch_dir).normalized()
+		var branch_basis := Basis(right, branch_dir, forward)
+
+		branch_mi.position = Vector3(
+			cos(branch_angle) * trunk_r_at_h * 0.5,
+			branch_y,
+			sin(branch_angle) * trunk_r_at_h * 0.5)
+		branch_mi.basis = branch_basis
+
+		trunk_mi.add_child(branch_mi)
+
+		var tip_local := Vector3(
+			cos(branch_angle) * branch_len * cos(tilt_rad),
+			branch_y + branch_len * sin(tilt_rad) + upward_arc,
+			sin(branch_angle) * branch_len * cos(tilt_rad))
+		branch_tip_positions.append(tip_local)
+
+		# Sub-branches: 1-2 smaller twigs per major branch
+		var sub_count := rng.randi_range(1, 2)
+		for si in sub_count:
+			var sub_t := rng.randf_range(0.5, 0.7)
+			var sub_len := branch_len * rng.randf_range(0.35, 0.50)
+			var sub_r := b_base_r * 0.3
+			var sub_arc := sub_len * rng.randf_range(0.1, 0.3)
+			var sub_angle := branch_angle + rng.randf_range(-0.8, 0.8)
+			var sub_tilt_deg := tilt_deg + rng.randf_range(10.0, 25.0)
+			var sub_tilt_rad := deg_to_rad(sub_tilt_deg)
+
+			var sub_mesh := _build_branch_mesh(sub_r, sub_len, sub_arc, rng)
+			var sub_mi := MeshInstance3D.new()
+			sub_mi.name = "SubBranch_%d_%d" % [bi, si]
+			sub_mi.mesh = sub_mesh
+			sub_mi.set_surface_override_material(0, bark_mat)
+			sub_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+			var sub_dir := Vector3(
+				cos(sub_angle) * cos(sub_tilt_rad),
+				sin(sub_tilt_rad),
+				sin(sub_angle) * cos(sub_tilt_rad)).normalized()
+			var sub_up := Vector3.UP
+			if absf(sub_dir.dot(sub_up)) > 0.95:
+				sub_up = Vector3.FORWARD
+			var sub_right := sub_dir.cross(sub_up).normalized()
+			var sub_fwd := sub_right.cross(sub_dir).normalized()
+
+			sub_mi.position = Vector3(0.0, sub_t * branch_len, 0.0)
+			sub_mi.basis = Basis(sub_right, sub_dir, sub_fwd)
+			branch_mi.add_child(sub_mi)
+
+			var sub_tip := Vector3(
+				cos(sub_angle) * (branch_len * sub_t + sub_len * 0.7) * cos(sub_tilt_rad),
+				branch_y + (branch_len * sub_t) * sin(tilt_rad) + sub_len * sin(sub_tilt_rad) + sub_arc,
+				sin(sub_angle) * (branch_len * sub_t + sub_len * 0.7) * cos(sub_tilt_rad))
+			branch_tip_positions.append(sub_tip)
 
 	# ── Choose leaf texture and base color by tree family ──
 	var leaf_tex: ImageTexture
@@ -2321,33 +2524,41 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 	var leaf_xforms: Array[Transform3D] = []
 
-	# Dense inner core (larger planes, tightly packed near center)
-	var core_count := int(plane_count * 0.4)
-	for pi in core_count:
-		var this_size := plane_size_base * rng.randf_range(0.85, 1.2)
-		var core_spread := canopy_spread * 0.45
-		var core_vspread := canopy_height * 0.3
-		var pos := Vector3(
-			rng.randf_range(-core_spread, core_spread),
-			rng.randf_range(-core_vspread, core_vspread),
-			rng.randf_range(-core_spread, core_spread))
-		var rot := Vector3(
-			rng.randf_range(-0.7, 0.7),
-			rng.randf_range(0.0, TAU),
-			rng.randf_range(-0.5, 0.5))
-		var basis := Basis.from_euler(rot).scaled(Vector3(this_size, this_size, this_size))
-		leaf_xforms.append(Transform3D(basis, pos))
+	# 60% of leaves clustered at branch tips
+	var tip_count := int(plane_count * 0.60)
+	if not branch_tip_positions.is_empty():
+		var per_tip := maxi(1, tip_count / branch_tip_positions.size())
+		for tip_idx in branch_tip_positions.size():
+			var tip_world: Vector3 = branch_tip_positions[tip_idx]
+			var tip_in_canopy := tip_world - Vector3(0.0, canopy_center_y, 0.0)
+			var cluster_r := canopy_spread * 0.35
+			var n_for_tip := per_tip if tip_idx < branch_tip_positions.size() - 1 else (tip_count - per_tip * tip_idx)
+			for _pi in n_for_tip:
+				var this_size := plane_size_base * rng.randf_range(0.6, 1.15)
+				var off := Vector3(
+					rng.randf_range(-cluster_r, cluster_r),
+					rng.randf_range(-cluster_r * 0.6, cluster_r * 0.6),
+					rng.randf_range(-cluster_r, cluster_r))
+				var pos := tip_in_canopy + off
+				var rot := Vector3(
+					rng.randf_range(-0.7, 0.7),
+					rng.randf_range(0.0, TAU),
+					rng.randf_range(-0.5, 0.5))
+				var basis := Basis.from_euler(rot).scaled(Vector3(this_size, this_size, this_size))
+				leaf_xforms.append(Transform3D(basis, pos))
+	else:
+		tip_count = 0
 
-	# Outer crown (varied sizes, full spread, gives shape)
-	var outer_count := plane_count - core_count
-	for pi in outer_count:
+	# 25% general canopy fill (biased toward upper half)
+	var fill_count := int(plane_count * 0.25)
+	for pi in fill_count:
 		var this_size := plane_size_base * rng.randf_range(0.55, 1.1)
-		var angle := rng.randf_range(0.0, TAU)
-		var r := rng.randf_range(canopy_spread * 0.25, canopy_spread)
-		var vert := rng.randf_range(-canopy_height * 0.48, canopy_height * 0.48)
+		var fill_angle := rng.randf_range(0.0, TAU)
+		var r := rng.randf_range(canopy_spread * 0.15, canopy_spread * 0.7)
+		var vert := rng.randf_range(-canopy_height * 0.15, canopy_height * 0.45)
 		if is_pine:
 			r *= (1.0 - (vert + canopy_height * 0.48) / canopy_height)
-		var pos := Vector3(cos(angle) * r, vert, sin(angle) * r)
+		var pos := Vector3(cos(fill_angle) * r, vert, sin(fill_angle) * r)
 		var rot := Vector3(
 			rng.randf_range(-0.8, 0.8),
 			rng.randf_range(0.0, TAU),
@@ -2355,16 +2566,16 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		var basis := Basis.from_euler(rot).scaled(Vector3(this_size, this_size, this_size))
 		leaf_xforms.append(Transform3D(basis, pos))
 
-	# Trunk-top collar
+	# 15% crown/collar at trunk top
 	var trunk_top_in_canopy := trunk_h - canopy_center_y
-	var collar_count := rng.randi_range(5, 8)
-	for ci in collar_count:
+	var crown_count := plane_count - tip_count - fill_count
+	for ci in crown_count:
 		var this_size := plane_size_base * rng.randf_range(0.7, 1.05)
 		var collar_angle := rng.randf_range(0.0, TAU)
-		var collar_r := rng.randf_range(0.0, canopy_spread * 0.5)
+		var collar_r := rng.randf_range(0.0, canopy_spread * 0.45)
 		var pos := Vector3(
 			cos(collar_angle) * collar_r,
-			trunk_top_in_canopy + rng.randf_range(-1.5, 1.5) * sf,
+			trunk_top_in_canopy + rng.randf_range(-2.0, 2.5) * sf,
 			sin(collar_angle) * collar_r)
 		var rot := Vector3(
 			rng.randf_range(-0.8, 0.8),

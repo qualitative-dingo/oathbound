@@ -1600,8 +1600,8 @@ func spawn_tree_stump(tree_node: Node3D, base_pos: Vector3) -> void:
 		bot_r = cyl.bottom_radius
 		top_r = lerpf(cyl.bottom_radius, cyl.top_radius, stump_h / trunk_h)
 	else:
-		bot_r = 0.4
-		top_r = 0.35
+		bot_r = 0.28
+		top_r = 0.24
 
 	var stump_mesh := CylinderMesh.new()
 	stump_mesh.bottom_radius = bot_r
