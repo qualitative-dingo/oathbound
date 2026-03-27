@@ -2189,9 +2189,27 @@ static func _build_trunk_mesh(
 	return st.commit()
 
 
+static func _sample_branch_curve(
+	t: float, length: float, upward_arc: float, bend: Dictionary,
+) -> Vector3:
+	var cx := sin(t * bend.freq * PI + bend.phase_x) * bend.amp_x * t
+	var cz := sin(t * bend.freq * PI * 0.7 + bend.phase_z) * bend.amp_z * t
+	return Vector3(cx, upward_arc * t * t + t * length, cz)
+
+
+static func _make_bend_params(length: float, rng: RandomNumberGenerator) -> Dictionary:
+	return {
+		"freq": rng.randf_range(1.5, 3.0),
+		"amp_x": length * rng.randf_range(0.06, 0.15),
+		"amp_z": length * rng.randf_range(0.04, 0.10),
+		"phase_x": rng.randf_range(0.0, TAU),
+		"phase_z": rng.randf_range(0.0, TAU),
+	}
+
+
 static func _build_branch_mesh(
 	base_r: float, length: float, upward_arc: float,
-	rng: RandomNumberGenerator,
+	rng: RandomNumberGenerator, bend: Dictionary = {},
 ) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -2200,11 +2218,11 @@ static func _build_branch_mesh(
 	var h_rings := 10
 	var tip_r := base_r * 0.20
 
-	var bend_freq := rng.randf_range(1.5, 3.0)
-	var bend_amp_x := length * rng.randf_range(0.06, 0.15)
-	var bend_amp_z := length * rng.randf_range(0.04, 0.10)
-	var bend_phase_x := rng.randf_range(0.0, TAU)
-	var bend_phase_z := rng.randf_range(0.0, TAU)
+	var bend_freq: float = bend.get("freq", rng.randf_range(1.5, 3.0))
+	var bend_amp_x: float = bend.get("amp_x", length * rng.randf_range(0.06, 0.15))
+	var bend_amp_z: float = bend.get("amp_z", length * rng.randf_range(0.04, 0.10))
+	var bend_phase_x: float = bend.get("phase_x", rng.randf_range(0.0, TAU))
+	var bend_phase_z: float = bend.get("phase_z", rng.randf_range(0.0, TAU))
 
 	var all_rings: Array[PackedVector3Array] = []
 	for ri in range(h_rings + 1):
@@ -2387,7 +2405,8 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		var tilt_deg := lerpf(branch_tilt_lo, branch_tilt_hi, height_t) + rng.randf_range(-5.0, 5.0)
 		var upward_arc := branch_len * rng.randf_range(0.25, 0.50)
 
-		var branch_mesh := _build_branch_mesh(b_base_r, branch_len, upward_arc, rng)
+		var branch_bend := _make_bend_params(branch_len, rng)
+		var branch_mesh := _build_branch_mesh(b_base_r, branch_len, upward_arc, rng, branch_bend)
 		var branch_mi := MeshInstance3D.new()
 		branch_mi.name = "Branch_%d" % bi
 		branch_mi.mesh = branch_mesh
@@ -2414,10 +2433,9 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 		trunk_mi.add_child(branch_mi)
 
-		var tip_local := Vector3(
-			cos(branch_angle) * branch_len * cos(tilt_rad),
-			branch_y + branch_len * sin(tilt_rad) + upward_arc,
-			sin(branch_angle) * branch_len * cos(tilt_rad))
+		var tip_curve := _sample_branch_curve(1.0, branch_len, upward_arc, branch_bend)
+		var tip_world := branch_basis * tip_curve + branch_mi.position
+		var tip_local := Vector3(tip_world.x, branch_y + tip_world.y, tip_world.z)
 		branch_tip_positions.append(tip_local)
 
 		# Sub-branches: 1-2 smaller twigs per major branch
@@ -2448,14 +2466,16 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 			var sub_right := sub_dir.cross(sub_up).normalized()
 			var sub_fwd := sub_right.cross(sub_dir).normalized()
 
-			sub_mi.position = Vector3(0.0, sub_t * branch_len, 0.0)
+			var attach_pt := _sample_branch_curve(sub_t, branch_len, upward_arc, branch_bend)
+			sub_mi.position = attach_pt
 			sub_mi.basis = Basis(sub_right, sub_dir, sub_fwd)
 			branch_mi.add_child(sub_mi)
 
+			var sub_attach_world := branch_basis * attach_pt + branch_mi.position
 			var sub_tip := Vector3(
-				cos(sub_angle) * (branch_len * sub_t + sub_len * 0.7) * cos(sub_tilt_rad),
-				branch_y + (branch_len * sub_t) * sin(tilt_rad) + sub_len * sin(sub_tilt_rad) + sub_arc,
-				sin(sub_angle) * (branch_len * sub_t + sub_len * 0.7) * cos(sub_tilt_rad))
+				sub_attach_world.x + cos(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad),
+				branch_y + sub_attach_world.y + sub_len * sin(sub_tilt_rad) + sub_arc,
+				sub_attach_world.z + sin(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad))
 			branch_tip_positions.append(sub_tip)
 
 	# ── Choose leaf texture and base color by tree family ──
