@@ -2192,8 +2192,13 @@ static func _build_trunk_mesh(
 static func _sample_branch_curve(
 	t: float, length: float, upward_arc: float, bend: Dictionary,
 ) -> Vector3:
-	var cx := sin(t * bend.freq * PI + bend.phase_x) * bend.amp_x * t
-	var cz := sin(t * bend.freq * PI * 0.7 + bend.phase_z) * bend.amp_z * t
+	var freq: float = bend.freq
+	var amp_x: float = bend.amp_x
+	var amp_z: float = bend.amp_z
+	var ph_x: float = bend.phase_x
+	var ph_z: float = bend.phase_z
+	var cx: float = sin(t * freq * PI + ph_x) * amp_x * t
+	var cz: float = sin(t * freq * PI * 0.7 + ph_z) * amp_z * t
 	return Vector3(cx, upward_arc * t * t + t * length, cz)
 
 
