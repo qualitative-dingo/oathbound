@@ -2238,7 +2238,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 
 
 func setup_campfire_distance_cull(structure: StaticBody3D) -> void:
-	const CAMPFIRE_RENDER_DIST := 30.0
+	const CAMPFIRE_RENDER_DIST := 60.0
 	const CAMPFIRE_RENDER_DIST_SQ := CAMPFIRE_RENDER_DIST * CAMPFIRE_RENDER_DIST
 	var cull_timer := Timer.new()
 	cull_timer.name = "CampfireCullTimer"
