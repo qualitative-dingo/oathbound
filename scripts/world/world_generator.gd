@@ -383,6 +383,7 @@ var _perf_pending_size_max := 0
 var _last_player_zones: Array[Vector2i] = []  # throttle _queue_zones_around
 var _unload_timer := 0.0  # throttle _unload_distant_zones
 var _requeue_timer := 0.0  # periodic re-queue to fill gaps from cap-limited passes
+var _any_flying := false
 
 
 func _process(_delta: float) -> void:
@@ -462,17 +463,17 @@ func _physics_process(delta: float) -> void:
 				p.velocity = Vector3.ZERO
 
 	var t1 := Time.get_ticks_usec()
-	var any_flying := false
+	_any_flying = false
 	for p in _players:
 		if p.get(&"flight_mode"):
-			any_flying = true
+			_any_flying = true
 			break
-	var effective_radius: int = (load_radius_zones + 1) if any_flying else load_radius_zones
+	var effective_radius: int = (load_radius_zones + 1) if _any_flying else load_radius_zones
 
 	var cur_zones: Array[Vector2i] = []
 	for p in _players:
 		cur_zones.append(world_to_zone(get_world_position(p)))
-	if cur_zones != _last_player_zones or any_flying:
+	if cur_zones != _last_player_zones or _any_flying:
 		_last_player_zones = cur_zones
 		for pz in cur_zones:
 			_queue_zones_around(pz, effective_radius)
@@ -1235,10 +1236,12 @@ func _process_pending_zones() -> void:
 				break
 
 	# 4. Submit new zone builds — stop if backlog is already large
-	if _finalize_backlog.size() + _gen_in_flight.size() > 8:
+	var max_backlog := 16 if _any_flying else 8
+	if _finalize_backlog.size() + _gen_in_flight.size() > max_backlog:
 		return
+	var zones_this_frame := (MAX_ZONES_PER_FRAME * 2) if _any_flying else MAX_ZONES_PER_FRAME
 	var submitted := 0
-	while submitted < MAX_ZONES_PER_FRAME and not _pending_zones.is_empty():
+	while submitted < zones_this_frame and not _pending_zones.is_empty():
 		var coord: Vector2i = _pending_zones.pop_front()
 		if coord in _loaded_zones or coord in _gen_in_flight:
 			continue
@@ -1286,9 +1289,10 @@ func _unload_distant_zones(players: Array[Node3D]) -> void:
 				break
 		if not near_any:
 			to_remove.append(coord)
+	var max_unloads := _MAX_UNLOADS_PER_FRAME * 2 if any_flying else _MAX_UNLOADS_PER_FRAME
 	var unloaded := 0
 	for coord in to_remove:
-		if unloaded >= _MAX_UNLOADS_PER_FRAME:
+		if unloaded >= max_unloads:
 			break
 		var zone_node: Node = _loaded_zones[coord]
 		if zone_node is StaticBody3D:
@@ -1569,7 +1573,9 @@ func _resize_water_plane() -> void:
 func set_render_distance(radius: int) -> void:
 	load_radius_zones = clampi(radius, 1, 8)
 	unload_radius_zones = load_radius_zones + 1
-	_max_loaded_zones = (2 * load_radius_zones + 1) ** 2 + 20
+	# Account for flight mode expanding radius by +1
+	var fly_radius := load_radius_zones + 1
+	_max_loaded_zones = (2 * fly_radius + 1) ** 2 + 20
 	_resize_water_plane()
 
 
