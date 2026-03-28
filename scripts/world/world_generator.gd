@@ -84,7 +84,7 @@ const _CREEK_MIN_ELEV := 1.5          # min terrain height above WATER_LEVEL
 const _CREEK_MIN_WIDTH := 0.6
 const _CREEK_MAX_WIDTH := 3.5
 const _CREEK_DEPTH := 0.4             # how deep the channel is carved
-const _CREEK_SUBDIV := 6              # interpolation points between grid cells
+const _CREEK_SUBDIV := 14             # interpolation points between grid cells
 var _creek_segments: Dictionary = {}   # Vector2i -> Array[Dictionary]
 var _creek_shader_mat: ShaderMaterial
 
@@ -911,28 +911,29 @@ func _trace_creek_paths() -> void:
 					var wz: float = -world_radius + gp.y * _WS_CELL
 
 					# Lateral meandering — multi-scale noise perpendicular to flow
-					var wander_large := _detail_noise.get_noise_2d(wx * 0.02 + 8000.0, wz * 0.02 + 8000.0) * 12.0
-					var wander_med := _detail_noise.get_noise_2d(wx * 0.06 + 9500.0, wz * 0.06 + 9500.0) * 5.0
-					var wander_small := _detail_noise.get_noise_2d(wx * 0.15 + 11000.0, wz * 0.15 + 11000.0) * 2.0
+					# Frequencies account for _detail_noise built-in freq of 0.02
+					var wander_large := _detail_noise.get_noise_2d(wx * 0.5 + 8000.0, wz * 0.5 + 8000.0) * 3.0
+					var wander_med := _detail_noise.get_noise_2d(wx * 2.0 + 9500.0, wz * 2.0 + 9500.0) * 1.5
+					var wander_small := _detail_noise.get_noise_2d(wx * 6.0 + 11000.0, wz * 6.0 + 11000.0) * 0.6
 					var lateral_offset := wander_large + wander_med + wander_small
-					# Taper meander at path start/end to keep endpoints anchored
+					# Taper meander near path endpoints to keep source/sink connected
 					var path_t := (float(i) + t_val) / float(raw_points.size() - 1)
-					var taper := smoothstep(0.0, 0.15, path_t) * smoothstep(1.0, 0.85, path_t)
+					var taper := smoothstep(0.0, 0.12, path_t) * smoothstep(1.0, 0.88, path_t)
 					lateral_offset *= taper
 
-					wx += seg_perp.x * lateral_offset * _WS_CELL * 0.15
-					wz += seg_perp.y * lateral_offset * _WS_CELL * 0.15
+					wx += seg_perp.x * lateral_offset * _WS_CELL * 0.18
+					wz += seg_perp.y * lateral_offset * _WS_CELL * 0.18
 
 					var terrain_h := get_height_at(wx, wz)
 					terrain_h = maxf(terrain_h, WATER_LEVEL + 0.3)
-					var creek_y := terrain_h + 0.02
+					var creek_y := terrain_h + 0.15
 
 					var acc := lerpf(a0, a1, t_val)
 					var norm_acc := clampf((acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 					var base_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, norm_acc) * 0.5
 
 					# Organic width variation — independent noise at different frequency
-					var width_noise := _detail_noise.get_noise_2d(wx * 0.04 + 13000.0, wz * 0.04 + 13000.0)
+					var width_noise := _detail_noise.get_noise_2d(wx * 1.5 + 13000.0, wz * 1.5 + 13000.0)
 					var w := base_w * (0.75 + width_noise * 0.5)
 
 					if not points.is_empty():
@@ -952,24 +953,23 @@ func _trace_creek_paths() -> void:
 			var last_acc := raw_accums[raw_accums.size() - 1]
 			var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 			var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
-			var lw_noise := _detail_noise.get_noise_2d(lwx * 0.04 + 13000.0, lwz * 0.04 + 13000.0)
+			var lw_noise := _detail_noise.get_noise_2d(lwx * 1.5 + 13000.0, lwz * 1.5 + 13000.0)
 			last_w *= (0.75 + lw_noise * 0.5)
 			if not points.is_empty():
-				cum_dist += Vector3(lwx, lh + 0.02, lwz).distance_to(points[points.size() - 1])
-			points.append(Vector3(lwx, lh + 0.02, lwz))
+				cum_dist += Vector3(lwx, lh + 0.15, lwz).distance_to(points[points.size() - 1])
+			points.append(Vector3(lwx, lh + 0.15, lwz))
 			widths.append(last_w)
 			flow_uvs.append(cum_dist)
 
 			if points.size() < 2:
 				continue
 
-			# Enforce monotonically decreasing Y — water only flows down or level
-			var max_y := points[0].y
+			# Enforce mostly-downhill Y — allow up to 0.3m uphill to follow terrain dips
+			var running_min_y := points[0].y
 			for pi in range(1, points.size()):
-				if points[pi].y > max_y:
-					points[pi].y = max_y
-				else:
-					max_y = points[pi].y
+				if points[pi].y > running_min_y + 0.3:
+					points[pi].y = running_min_y + 0.3
+				running_min_y = minf(running_min_y, points[pi].y)
 
 			_bucket_creek_by_zone(points, widths, flow_uvs)
 
