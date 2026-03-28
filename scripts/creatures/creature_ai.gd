@@ -43,6 +43,8 @@ var _stun_timer: float = 0.0
 var _poison_timer: float = 0.0
 var _poison_dps: float = 0.0
 var _poison_source: Node3D = null
+var _fire_exposure: float = 0.0  # seconds standing in campfire
+var _fire_damage_timer: float = 0.0  # cooldown between fire damage ticks
 var _disorient_timer: float = 0.0
 var _armor_shred_timer: float = 0.0
 var _armor_shred_factor: float = 0.0
@@ -1261,6 +1263,30 @@ func _tick_status_effects(delta: float) -> void:
 		if _poison_timer <= 0.0:
 			_poison_dps = 0.0
 			_poison_source = null
+	# -- Campfire burn damage --
+	if _state != State.DEAD:
+		var in_fire := false
+		for node in get_tree().get_nodes_in_group(&"campfire"):
+			if node is Node3D:
+				var cf2 := node as Node3D
+				var dx2 := cf2.global_position.x - global_position.x
+				var dz2 := cf2.global_position.z - global_position.z
+				if dx2*dx2 + dz2*dz2 < 1.0:
+					in_fire = true
+					break
+		if in_fire:
+			_fire_exposure += delta
+			if _fire_exposure >= 1.0:
+				_fire_damage_timer -= delta
+				if _fire_damage_timer <= 0.0:
+					_fire_damage_timer = 1.0
+					current_health = maxf(current_health - 10.0, 0.0)
+					_hp_bar_visible_timer = 5.0
+					_update_hp_bar()
+					if current_health <= 0.0:
+						_die()
+		else:
+			_fire_exposure = maxf(_fire_exposure - delta * 2.0, 0.0)
 	if _disorient_timer > 0.0:
 		_disorient_timer -= delta
 	if _armor_shred_timer > 0.0:

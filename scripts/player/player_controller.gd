@@ -229,6 +229,8 @@ const SWIM_STAMINA_COST := 6.0
 
 # Swim fatigue / drowning
 var _swim_fatigue: float = 0.0
+var _fire_exposure: float = 0.0
+var _fire_damage_timer: float = 0.0
 const SWIM_FATIGUE_MAX: float = 15.0
 const SWIM_FATIGUE_RECOVER_RATE: float = 5.0
 var _swim_fatigue_pulse: float = 0.0
@@ -1345,6 +1347,7 @@ func _physics_process(delta: float) -> void:
 	_handle_health_regen(delta)
 	_tick_affix_timers(delta)
 	_tick_swim_fatigue(delta)
+	_tick_campfire_damage(delta)
 	_rotate_model()
 	_update_target_hud(delta)
 	_tick_attack_animation(delta)
@@ -2636,6 +2639,35 @@ func _tick_swim_fatigue(delta: float) -> void:
 		if _swim_fatigue > 0.0:
 			_swim_fatigue = maxf(_swim_fatigue - SWIM_FATIGUE_RECOVER_RATE * delta, 0.0)
 		_drown_tick_timer = 0.0
+
+
+func _tick_campfire_damage(delta: float) -> void:
+	if current_health <= 0.0:
+		return
+	var in_fire := false
+	for node in get_tree().get_nodes_in_group(&"campfire"):
+		if node is Node3D:
+			var cf := node as Node3D
+			var dx := cf.global_position.x - global_position.x
+			var dz := cf.global_position.z - global_position.z
+			if dx*dx + dz*dz < 1.0:
+				in_fire = true
+				break
+	if in_fire:
+		_fire_exposure += delta
+		if _fire_exposure >= 1.0:
+			_fire_damage_timer -= delta
+			if _fire_damage_timer <= 0.0:
+				_fire_damage_timer = 1.0
+				current_health = maxf(current_health - 10.0, 0.0)
+				_hp_pulse = 1.0
+				_health_regen_timer = health_regen_delay
+				GameEvents.player_health_changed.emit(current_health, max_health)
+				DamageNumber.spawn(get_tree(), global_position + Vector3.UP * 2.0, 10.0, false, "enemy")
+				if current_health <= 0.0:
+					_on_death()
+	else:
+		_fire_exposure = maxf(_fire_exposure - delta * 2.0, 0.0)
 
 
 func _tick_swim_visual(delta: float) -> void:

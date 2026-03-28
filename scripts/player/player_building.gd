@@ -1959,17 +1959,17 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	if fire_shader:
 		var imat := ShaderMaterial.new()
 		imat.shader = fire_shader
-		imat.set_shader_parameter("top_radius", 0.0)
+		imat.set_shader_parameter("top_radius", 0.10)
 		imat.set_shader_parameter("bottom_radius", 0.2)
-		imat.set_shader_parameter("center_radius", 0.32)
-		imat.set_shader_parameter("center_position", 0.2)
-		imat.set_shader_parameter("cylinder_height", 1.1)
+		imat.set_shader_parameter("center_radius", 0.22)
+		imat.set_shader_parameter("center_position", 0.5)
+		imat.set_shader_parameter("cylinder_height", 0.75)
 		imat.set_shader_parameter("bottom_curve", 0.6)
-		imat.set_shader_parameter("vibrate_amplitude", 0.006)
+		imat.set_shader_parameter("vibrate_amplitude", 0.012)
 		imat.set_shader_parameter("vibrate_frequency", 100.0)
 		imat.set_shader_parameter("speed", 3.0)
-		imat.set_shader_parameter("noise_scale", 2.8)
-		imat.set_shader_parameter("brightness", 1.3)
+		imat.set_shader_parameter("noise_scale", 3.5)
+		imat.set_shader_parameter("brightness", 0.95)
 		imat.set_shader_parameter("cutoff_base", 0.18)
 		imat.set_shader_parameter("band_steps", 5.0)
 		imat.set_shader_parameter("color_core", Color(1.0, 1.0, 0.9))
@@ -1995,18 +1995,18 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	if fire_shader:
 		var omat := ShaderMaterial.new()
 		omat.shader = fire_shader
-		omat.set_shader_parameter("top_radius", 0.0)
+		omat.set_shader_parameter("top_radius", 0.22)
 		omat.set_shader_parameter("bottom_radius", 0.25)
-		omat.set_shader_parameter("center_radius", 0.42)
-		omat.set_shader_parameter("center_position", 0.25)
-		omat.set_shader_parameter("cylinder_height", 0.9)
+		omat.set_shader_parameter("center_radius", 0.34)
+		omat.set_shader_parameter("center_position", 0.55)
+		omat.set_shader_parameter("cylinder_height", 0.68)
 		omat.set_shader_parameter("bottom_curve", 0.6)
-		omat.set_shader_parameter("vibrate_amplitude", 0.01)
-		omat.set_shader_parameter("vibrate_frequency", 80.0)
+		omat.set_shader_parameter("vibrate_amplitude", 0.024)
+		omat.set_shader_parameter("vibrate_frequency", 50.0)
 		omat.set_shader_parameter("speed", 2.0)
-		omat.set_shader_parameter("noise_scale", 2.5)
+		omat.set_shader_parameter("noise_scale", 4.0)
 		omat.set_shader_parameter("brightness", 0.75)
-		omat.set_shader_parameter("cutoff_base", 0.22)
+		omat.set_shader_parameter("cutoff_base", 0.14)
 		omat.set_shader_parameter("band_steps", 4.0)
 		omat.set_shader_parameter("color_core", Color(1.0, 0.8, 0.25))
 		omat.set_shader_parameter("color_mid", Color(1.0, 0.4, 0.06))
@@ -2014,6 +2014,47 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		omat.set_shader_parameter("color_edge", Color(0.3, 0.04, 0.0))
 		outer_flame.material_override = omat
 	structure.add_child(outer_flame)
+	# -- Satellite flames (3 smaller offset flames around the base) --
+	var sat_data := [
+		{"offset": Vector3(0.30, 0.0, 0.0),   "scale": Vector3(0.42, 0.52, 0.42), "speed": 2.8},
+		{"offset": Vector3(-0.20, 0.0, 0.30),  "scale": Vector3(0.36, 0.46, 0.36), "speed": 3.1},
+		{"offset": Vector3(-0.20, 0.0, -0.30), "scale": Vector3(0.38, 0.50, 0.38), "speed": 2.6},
+	]
+	for sd: Dictionary in sat_data:
+		var sat := MeshInstance3D.new()
+		var sat_cyl := CylinderMesh.new()
+		sat_cyl.top_radius = 0.5
+		sat_cyl.bottom_radius = 0.5
+		sat_cyl.height = 2.0
+		sat_cyl.radial_segments = 8
+		sat_cyl.rings = 5
+		sat.mesh = sat_cyl
+		sat.position = (sd["offset"] as Vector3) + Vector3(0, 0.04, 0)
+		sat.scale = sd["scale"] as Vector3
+		sat.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if fire_shader:
+			var smat := ShaderMaterial.new()
+			smat.shader = fire_shader
+			smat.set_shader_parameter("top_radius", 0.08)
+			smat.set_shader_parameter("bottom_radius", 0.18)
+			smat.set_shader_parameter("center_radius", 0.22)
+			smat.set_shader_parameter("center_position", 0.45)
+			smat.set_shader_parameter("cylinder_height", 0.65)
+			smat.set_shader_parameter("bottom_curve", 0.5)
+			smat.set_shader_parameter("vibrate_amplitude", 0.018)
+			smat.set_shader_parameter("vibrate_frequency", 70.0)
+			smat.set_shader_parameter("speed", sd["speed"] as float)
+			smat.set_shader_parameter("noise_scale", 3.8)
+			smat.set_shader_parameter("brightness", 0.8)
+			smat.set_shader_parameter("cutoff_base", 0.18)
+			smat.set_shader_parameter("band_steps", 4.0)
+			smat.set_shader_parameter("color_core", Color(1.0, 0.9, 0.3))
+			smat.set_shader_parameter("color_mid", Color(1.0, 0.45, 0.06))
+			smat.set_shader_parameter("color_outer", Color(0.8, 0.18, 0.01))
+			smat.set_shader_parameter("color_edge", Color(0.3, 0.04, 0.0))
+			sat.material_override = smat
+		structure.add_child(sat)
+
 
 	# -- Flame tip wisps (subtle accents at flame tips) --
 	var wisp_particles := GPUParticles3D.new()
@@ -2235,6 +2276,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 
 	start_campfire_sound(structure)
 	setup_campfire_distance_cull(structure)
+	structure.add_to_group(&"campfire")
 
 
 func setup_campfire_distance_cull(structure: StaticBody3D) -> void:
