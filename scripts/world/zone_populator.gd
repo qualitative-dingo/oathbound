@@ -935,13 +935,13 @@ static func _make_triplanar_mat(tex: Texture2D, fallback_color: Color) -> Standa
 
 # ─── Zone Population ───────────────────────────────────────────────────────────
 
-## Populate a zone across 6 phases to spread work across frames.
+## Populate a zone across multiple phases to spread work across frames.
 ## phase=0: villages + scatter trees
 ## phase=1: cluster trees + rocks + pebbles + stones
 ## phase=2: creatures + caves + horses + fish
-## phase=3: grass types 0-3
-## phase=4: grass types 4-7
-## phase=5: blueberry bushes
+## phase=3-6: grass (2 types per phase)
+## phase=7-8: wildflowers (5 types per phase)
+## phase=9: blueberry bushes + water plants
 ## Returns true when ALL phases are done.
 static func populate_zone_phase(
 	zone_root: Node3D,
@@ -1183,20 +1183,21 @@ static func populate_zone_phase(
 
 		return false
 
-	# ── Phases 3–10: one grass type per frame ──
-	if phase >= 3 and phase <= 10:
+	# ── Phases 3–6: grass (2 types per frame) ──
+	if phase >= 3 and phase <= 6:
 		if not debug_skip_grass:
-			_scatter_grass(zone_root, coord, biome, rng, height_func, phase - 3, phase - 2)
+			var gi_start := (phase - 3) * 2
+			_scatter_grass(zone_root, coord, biome, rng, height_func, gi_start, gi_start + 2)
 		return false
 
-	# ── Phases 11–15: wildflowers (2 types per frame) ──
-	if phase >= 11 and phase <= 15:
+	# ── Phases 7–8: wildflowers (5 types per frame) ──
+	if phase >= 7 and phase <= 8:
 		if not debug_skip_grass:
-			var fi_start := (phase - 11) * 2
-			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 2)
+			var fi_start := (phase - 7) * 5
+			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 5)
 		return false
 
-	# ── Phase 16: blueberry bushes + water plants ──
+	# ── Phase 9: blueberry bushes + water plants ──
 	if not debug_skip_saplings:
 		_scatter_blueberry_bushes(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 
@@ -1214,7 +1215,7 @@ static func populate_zone(
 	height_func: Callable,
 	microbiome: StringName = &"none",
 ) -> void:
-	for p in 17:
+	for p in 10:
 		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
 
 
@@ -1675,7 +1676,7 @@ static func _scatter_flowers(
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mmi.visibility_range_end = 96.0
-		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		zone_root.add_child(mmi)
 
 
@@ -1737,14 +1738,14 @@ static func _get_grass_types() -> Array:
 	if _grass_types_table.is_empty():
 		# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
 		_grass_types_table = [
-			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 300, 0.9, 1.7, 1.8, 1.2],
-			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 280, 0.8, 1.6, 1.7, 1.1],
-			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 280, 0.9, 1.8, 1.9, 1.1],
-			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 260, 0.8, 1.5, 1.6, 1.0],
-			[_grass_textures[10], Color(0.12, 0.36, 0.06), 250, 1.0, 1.9, 1.6, 1.6],
-			[_grass_textures[12], Color(0.14, 0.34, 0.07), 240, 0.9, 1.7, 1.5, 1.5],
-			[_grass_textures[16], Color(0.14, 0.36, 0.08), 240, 0.9, 1.7, 1.7, 1.4],
-			[_grass_textures[18], Color(0.12, 0.39, 0.06), 220, 0.8, 1.6, 1.8, 1.3],
+			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 1000, 0.9, 1.7, 1.8, 1.2],
+			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 960, 0.8, 1.6, 1.7, 1.1],
+			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 960, 0.9, 1.8, 1.9, 1.1],
+			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 900, 0.8, 1.5, 1.6, 1.0],
+			[_grass_textures[10], Color(0.12, 0.36, 0.06), 840, 1.0, 1.9, 1.6, 1.6],
+			[_grass_textures[12], Color(0.14, 0.34, 0.07), 800, 0.9, 1.7, 1.5, 1.5],
+			[_grass_textures[16], Color(0.14, 0.36, 0.08), 800, 0.9, 1.7, 1.7, 1.4],
+			[_grass_textures[18], Color(0.12, 0.39, 0.06), 760, 0.8, 1.6, 1.8, 1.3],
 		]
 	return _grass_types_table
 
@@ -1867,7 +1868,7 @@ static func _scatter_grass(
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mmi.visibility_range_end = 96.0
-		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		zone_root.add_child(mmi)
 
 
