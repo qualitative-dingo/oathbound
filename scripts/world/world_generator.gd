@@ -1435,9 +1435,10 @@ func _process_pending_zones() -> void:
 			break
 
 	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
+	var max_finalize := 6 if _any_flying else 3
 	var finalized := 0
 	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
-		while not _finalize_backlog.is_empty() and finalized < 3:
+		while not _finalize_backlog.is_empty() and finalized < max_finalize:
 			if finalized > 0 and Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
 				break
 			var item: Dictionary = _finalize_backlog.pop_front()
