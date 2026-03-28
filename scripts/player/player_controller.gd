@@ -162,6 +162,7 @@ var _raft_paddle_side: bool = false  # false=left, true=right
 var _last_safe_position: Vector3 = Vector3.ZERO
 var _safe_pos_timer: float = 0.0
 var _respawn_grace: float = 0.0
+var _death_immunity_timer: float = 0.0
 const MOUNT_SPEED_MULT_BASE := 2.0
 const MOUNT_SPEED_PER_STAR := 0.2
 const MOUNT_STAMINA_COST := 14.0
@@ -347,6 +348,7 @@ var _last_broadcast_clip: String = ""
 
 # HUD references
 var _hud_root: Control
+var _death_overlay: Control = null
 var _pause_overlay: CanvasLayer
 var _pause_open := false
 var _pause_res_options: OptionButton
@@ -617,7 +619,6 @@ func _ready() -> void:
 	collision_mask = 1 | 4 | 8
 	floor_snap_length = 0.55
 	floor_max_angle = deg_to_rad(55.0)
-	_respawn_grace = 3.0
 
 	_movement = PlayerMovement.new()
 	_movement.name = "PlayerMovement"
@@ -1345,6 +1346,8 @@ func _physics_process(delta: float) -> void:
 			_clamp_to_terrain()
 	_handle_stamina(delta)
 	_handle_health_regen(delta)
+	if _death_immunity_timer > 0.0:
+		_death_immunity_timer = maxf(_death_immunity_timer - delta, 0.0)
 	_tick_affix_timers(delta)
 	_tick_swim_fatigue(delta)
 	_tick_campfire_damage(delta)
@@ -3764,6 +3767,60 @@ func _close_map() -> void:
 		_map_panel.visible = false
 
 
+func _build_death_overlay(root: Control) -> void:
+	_death_overlay = Control.new()
+	_death_overlay.name = "DeathOverlay"
+	_death_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_death_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_death_overlay.visible = false
+	root.add_child(_death_overlay)
+
+	var fade := ColorRect.new()
+	fade.name = "Fade"
+	fade.color = Color(0.0, 0.0, 0.0, 0.0)
+	fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_death_overlay.add_child(fade)
+
+	# YOU DIED - Cinzel bold font with blood styling
+	var cinzel_font := load("res://fonts/Cinzel-Variable.ttf") as FontFile
+	var death_text := "YOU DIED"
+	# Multiple shadow layers for depth
+	var sh_data := [[6, 8, 0.5], [-4, 10, 0.35], [5, 14, 0.22], [-2, 18, 0.12]]
+	for sd in sh_data:
+		var sh := Label.new()
+		sh.text = death_text
+		if cinzel_font:
+			sh.add_theme_font_override("font", cinzel_font)
+		sh.add_theme_font_size_override("font_size", 120)
+		sh.add_theme_color_override("font_color", Color(0.3, 0.0, 0.0, sd[2] as float))
+		sh.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sh.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		sh.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		sh.offset_left = sd[0] as float
+		sh.offset_top = sd[1] as float
+		sh.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_death_overlay.add_child(sh)
+	# Main label
+	var skull := Label.new()
+	skull.name = "Skull"
+	skull.text = death_text
+	if cinzel_font:
+		skull.add_theme_font_override("font", cinzel_font)
+	skull.add_theme_font_size_override("font_size", 120)
+	skull.add_theme_color_override("font_color", Color(0.88, 0.05, 0.05))
+	skull.add_theme_color_override("font_outline_color", Color(0.04, 0.0, 0.0))
+	skull.add_theme_constant_override("outline_size", 16)
+	skull.add_theme_color_override("font_shadow_color", Color(0.5, 0.0, 0.0, 0.9))
+	skull.add_theme_constant_override("shadow_offset_x", 4)
+	skull.add_theme_constant_override("shadow_offset_y", 6)
+	skull.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	skull.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	skull.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	skull.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_death_overlay.add_child(skull)
+
+
 func _build_hud() -> void:
 	var hud := get_node_or_null("HUD") as CanvasLayer
 	if not hud:
@@ -3777,6 +3834,7 @@ func _build_hud() -> void:
 
 	_build_hotbar(_hud_root)
 	_build_drown_bar(_hud_root)
+	_build_death_overlay(_hud_root)
 	_build_inventory_panel(_hud_root)
 	_build_tooltip(_hud_root)
 	_build_map_panel(_hud_root)
@@ -10546,6 +10604,8 @@ func _exit_cave() -> void:
 func take_damage(amount: float, _source: Node3D = null) -> void:
 	if current_health <= 0.0:
 		return
+	if _death_immunity_timer > 0.0:
+		return
 	if _is_dodging:
 		return
 	if _source and _source != self and _source.is_in_group(&"player"):
@@ -10776,8 +10836,22 @@ func _tick_affix_timers(delta: float) -> void:
 		current_health = minf(current_health + 2.0 * delta, max_health)
 		GameEvents.player_health_changed.emit(current_health, max_health)
 
+func _show_death_screen() -> void:
+	if not _death_overlay:
+		return
+	_death_overlay.visible = true
+	var fade := _death_overlay.get_node_or_null("Fade") as ColorRect
+	if fade:
+		fade.color = Color(0.0, 0.0, 0.0, 0.0)
+		var tw := create_tween()
+		tw.tween_property(fade, "color", Color(0.0, 0.0, 0.0, 1.0), 2.0)
+
+
 func _on_death() -> void:
 	GameEvents.player_died.emit()
+	current_health = 0.0
+	GameEvents.player_health_changed.emit(0.0, max_health)
+	_show_death_screen()
 	AudioManager.play_sfx("player_death", 0.0, 0.0)
 	if _footstep_player and _footstep_player.playing:
 		_footstep_player.stop()
@@ -10787,12 +10861,15 @@ func _on_death() -> void:
 		_interaction.force_dismount()
 	velocity = Vector3.ZERO
 	set_physics_process(false)
-	await get_tree().create_timer(2.0).timeout
+	await get_tree().create_timer(3.0).timeout
 	_respawn()
 	set_physics_process(true)
 
 
 func _respawn() -> void:
+	if _death_overlay:
+		_death_overlay.visible = false
+	_death_immunity_timer = 5.0
 	if _in_cave:
 		_in_cave = false
 		if is_instance_valid(_cave_instance):
