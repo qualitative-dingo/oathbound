@@ -1,0 +1,30 @@
+---
+description: Critical invariants for the zone loading/unloading pipeline in world_generator.gd
+globs: scripts/world/world_generator.gd
+alwaysApply: false
+---
+
+# World Generation — Critical Invariants
+
+These constraints exist because violating them causes game-breaking terrain disappearance bugs. Do NOT change these without understanding the full zone lifecycle.
+
+## Zone Cap (`_max_loaded_zones`)
+
+`_max_loaded_zones` must ALWAYS be >= `(2 * load_radius + 1)^2` plus headroom for the pipeline (`_pending_zones` + `_gen_in_flight`). The formula in `set_render_distance` computes this automatically.
+
+**NEVER hard-cap it** with `mini(...)` or any arbitrary upper bound. If you need to limit zones for performance, reduce `load_radius_zones` instead — that correctly scales everything downstream.
+
+## Zone Unloading
+
+`_unload_distant_zones` must run every physics frame (not throttled). The per-call budget (`_MAX_UNLOADS_PER_FRAME`) limits work per frame. Throttling unloads to every Nth frame causes the zone cap to be hit by stale distant zones, blocking new zone loading entirely.
+
+## Performance Management
+
+Manage FPS via LOD and collision disabling, NOT by capping how many zones can exist:
+- `_update_zone_lod` disables `TerrainCol` (collision) for `zone_dist > 2.0`
+- LOD 2 hides all non-terrain objects (grass, trees, rocks)
+- Only `TerrainMesh` renders at far distances (lightweight)
+
+## Pipeline Integrity
+
+The zone pipeline (`_pending_zones` -> `_gen_in_flight` -> `_gen_ready_queue` -> `_finalize_backlog` -> `_loaded_zones`) must never drop a coordinate without re-queuing it to `_pending_zones`. If a zone is popped from any stage and can't be processed, it must go back into `_pending_zones`.

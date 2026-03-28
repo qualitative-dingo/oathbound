@@ -36,7 +36,7 @@ const ZONE_SIZE := 64.0
 @export_group("Loading")
 @export var load_radius_zones: int = 2
 @export var unload_radius_zones: int = 3
-const MAX_ZONES_PER_FRAME := 2
+const MAX_ZONES_PER_FRAME := 4
 const MESH_RESOLUTION := 48
 
 @export_group("Terrain")
@@ -392,7 +392,6 @@ var _perf_max_explore_ms := 0.0
 var _perf_max_total_ms := 0.0
 var _perf_pending_size_max := 0
 var _last_player_zones: Array[Vector2i] = []  # throttle _queue_zones_around
-var _unload_timer := 0.0  # throttle _unload_distant_zones
 var _requeue_timer := 0.0  # periodic re-queue to fill gaps from cap-limited passes
 var _any_flying := false
 
@@ -497,10 +496,8 @@ func _physics_process(delta: float) -> void:
 	var t2 := Time.get_ticks_usec()
 	_process_pending_zones()
 	var t3 := Time.get_ticks_usec()
-	_unload_timer -= delta
-	if _unload_timer <= 0.0:
-		_unload_timer = 0.5
-		_unload_distant_zones(_players)
+	# Must run every frame (not throttled) to free capacity for new zones
+	_unload_distant_zones(_players)
 	var t4 := Time.get_ticks_usec()
 	_update_zone_lods(_players, delta)
 	_check_biome_change(world_to_zone(host_wp))
@@ -1323,6 +1320,8 @@ var _max_loaded_zones: int = 50
 func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 	if radius < 0:
 		radius = load_radius_zones
+	# If this cap is hit, NO zones get queued — player sees only water.
+	# _max_loaded_zones must always exceed the load area. See .cursor/rules/world-generation.mdc
 	var total_queued := _loaded_zones.size() + _pending_zones.size() + _gen_in_flight.size()
 	for x in range(center.x - radius, center.x + radius + 1):
 		for z in range(center.y - radius, center.y + radius + 1):
@@ -1958,7 +1957,9 @@ func set_render_distance(radius: int) -> void:
 	load_radius_zones = clampi(radius, 1, 5)
 	unload_radius_zones = load_radius_zones + 1
 	var fly_radius := load_radius_zones + 1
-	_max_loaded_zones = mini((2 * fly_radius + 1) ** 2 + 10, 50)
+	# INVARIANT: must be >= load area size. NEVER hard-cap with mini().
+	# To limit zones for FPS, reduce load_radius_zones instead.
+	_max_loaded_zones = (2 * fly_radius + 1) ** 2 + 10
 	_resize_water_plane()
 
 
