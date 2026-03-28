@@ -1187,6 +1187,8 @@ func _process_pending_zones() -> void:
 			_terrain_shape_cache[coord] = item["shape"]
 		if _is_in_load_range(coord):
 			_finalize_backlog.append(item)
+		elif coord not in _pending_zones:
+			_pending_zones.append(coord)
 
 	_evict_terrain_cache()
 
@@ -1225,6 +1227,8 @@ func _process_pending_zones() -> void:
 			var item: Dictionary = _finalize_backlog.pop_front()
 			var coord: Vector2i = item["coord"]
 			if not _is_in_load_range(coord):
+				if coord not in _pending_zones and coord not in _loaded_zones:
+					_pending_zones.append(coord)
 				continue
 			if coord not in _loaded_zones:
 				_finalize_zone(coord, item["arrays"], item["shape"])
