@@ -1252,6 +1252,7 @@ func _generate_spawn_area() -> void:
 	_spawn_debug_portals()
 	_spawn_village_cave_entrance()
 	_spawn_starter_goblins()
+	_spawn_majestic_egg()
 	_dismiss_loading_screen.call_deferred()
 
 
@@ -1323,6 +1324,175 @@ func _spawn_starter_goblins() -> void:
 		zone_root.add_child(goblin)
 		spawned += 1
 	print("[WORLD] Spawned %d starter goblins near (%.0f, %.0f)" % [spawned, center_x, center_z])
+
+
+func _spawn_majestic_egg() -> void:
+	var spawn_zone := world_to_zone(Vector3.ZERO)
+	var zone_root: Node3D = _loaded_zones.get(spawn_zone, null)
+	if not zone_root:
+		return
+	var zone_ox: float = spawn_zone.x * ZONE_SIZE
+	var zone_oz: float = spawn_zone.y * ZONE_SIZE
+	var egg_wx := 6.0
+	var egg_wz := 6.0
+	var egg_h := get_height_at(egg_wx, egg_wz)
+
+	var egg := Node3D.new()
+	egg.name = "MajesticEgg"
+
+	# --- Egg mesh (elongated sphere) ---
+	var mi := MeshInstance3D.new()
+	mi.name = "EggMesh"
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.22
+	sphere.height = 0.5
+	sphere.radial_segments = 32
+	sphere.rings = 16
+	mi.mesh = sphere
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.93, 0.90, 0.82)
+	mat.metallic = 0.45
+	mat.roughness = 0.12
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.96, 0.87)
+	mat.emission_energy_multiplier = 0.6
+	mat.rim_enabled = true
+	mat.rim = 0.4
+	mat.rim_tint = 0.3
+	mi.material_override = mat
+	egg.add_child(mi)
+
+	# --- Warm glow ---
+	var light := OmniLight3D.new()
+	light.name = "EggGlow"
+	light.light_energy = 2.5
+	light.light_color = Color(1.0, 0.93, 0.76)
+	light.omni_range = 10.0
+	light.omni_attenuation = 1.8
+	light.position.y = 0.3
+	egg.add_child(light)
+
+	# --- Golden sparkle particles ---
+	var sparkles := GPUParticles3D.new()
+	sparkles.name = "EggSparkles"
+	sparkles.amount = 24
+	sparkles.lifetime = 1.5
+	sparkles.explosiveness = 0.0
+	sparkles.randomness = 0.6
+	sparkles.visibility_aabb = AABB(Vector3(-2, -1, -2), Vector3(4, 3, 4))
+	var spark_mat := ParticleProcessMaterial.new()
+	spark_mat.direction = Vector3(0, 1, 0)
+	spark_mat.spread = 180.0
+	spark_mat.initial_velocity_min = 0.3
+	spark_mat.initial_velocity_max = 0.8
+	spark_mat.gravity = Vector3(0, -0.5, 0)
+	spark_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	spark_mat.emission_sphere_radius = 0.4
+	spark_mat.scale_min = 0.02
+	spark_mat.scale_max = 0.06
+	spark_mat.damping_min = 1.0
+	spark_mat.damping_max = 2.0
+	spark_mat.color = Color(1.0, 0.92, 0.55, 0.9)
+	var spark_alpha := CurveTexture.new()
+	var sc := Curve.new()
+	sc.add_point(Vector2(0.0, 0.0))
+	sc.add_point(Vector2(0.3, 1.0))
+	sc.add_point(Vector2(1.0, 0.0))
+	spark_alpha.curve = sc
+	spark_mat.alpha_curve = spark_alpha
+	sparkles.process_material = spark_mat
+	var spark_draw := QuadMesh.new()
+	spark_draw.size = Vector2(0.05, 0.05)
+	sparkles.draw_pass_1 = spark_draw
+	egg.add_child(sparkles)
+
+	# --- Hawk spawn timer ---
+	var timer := Timer.new()
+	timer.name = "HawkTimer"
+	timer.wait_time = 3.0
+	timer.autostart = true
+	egg.add_child(timer)
+
+	var lx := egg_wx - zone_ox
+	var lz := egg_wz - zone_oz
+	egg.position = Vector3(lx, egg_h + 0.25, lz)
+	zone_root.add_child(egg)
+
+	timer.timeout.connect(_on_egg_spawn_hawk.bind(egg, zone_root, Vector3(lx, egg_h, lz)))
+	print("[WORLD] Majestic Egg placed at world (%.0f, %.1f, %.0f)" % [egg_wx, egg_h, egg_wz])
+
+
+const _MAX_SAD_HAWKS := 20
+const _HAWK_MODEL_PATH := "res://models/creatures/Hawk/hawk.gltf"
+
+func _on_egg_spawn_hawk(egg: Node3D, zone_root: Node3D, egg_local_pos: Vector3) -> void:
+	if not is_instance_valid(egg) or not is_instance_valid(zone_root):
+		return
+
+	var hawk_count := 0
+	for child in zone_root.get_children():
+		if child.name.begins_with("SadHawk_"):
+			hawk_count += 1
+	if hawk_count >= _MAX_SAD_HAWKS:
+		return
+
+	if not ResourceLoader.exists(_HAWK_MODEL_PATH):
+		return
+	var scene: PackedScene = load(_HAWK_MODEL_PATH)
+	if not scene:
+		return
+
+	var hawk := SadHawk.new()
+	hawk.name = "SadHawk_%d" % hawk_count
+
+	var model := scene.instantiate()
+	model.name = "HawkModel"
+	model.scale = Vector3(2.5, 2.5, 2.5)
+	hawk.add_child(model)
+
+	# --- Tear particles (small blue droplets) ---
+	var tears := GPUParticles3D.new()
+	tears.name = "Tears"
+	tears.amount = 6
+	tears.lifetime = 0.8
+	tears.explosiveness = 0.3
+	tears.randomness = 0.5
+	tears.visibility_aabb = AABB(Vector3(-0.5, -1, -0.5), Vector3(1, 1.5, 1))
+	var tear_mat := ParticleProcessMaterial.new()
+	tear_mat.direction = Vector3(0, -1, 0)
+	tear_mat.spread = 15.0
+	tear_mat.initial_velocity_min = 0.5
+	tear_mat.initial_velocity_max = 1.0
+	tear_mat.gravity = Vector3(0, -4.0, 0)
+	tear_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	tear_mat.emission_box_extents = Vector3(0.15, 0.02, 0.05)
+	tear_mat.scale_min = 0.02
+	tear_mat.scale_max = 0.04
+	tear_mat.damping_min = 0.5
+	tear_mat.damping_max = 1.0
+	tear_mat.color = Color(0.5, 0.7, 1.0, 0.85)
+	var tear_alpha := CurveTexture.new()
+	var tc := Curve.new()
+	tc.add_point(Vector2(0.0, 1.0))
+	tc.add_point(Vector2(0.7, 0.8))
+	tc.add_point(Vector2(1.0, 0.0))
+	tear_alpha.curve = tc
+	tear_mat.alpha_curve = tear_alpha
+	tears.process_material = tear_mat
+	var tear_draw := SphereMesh.new()
+	tear_draw.radius = 0.02
+	tear_draw.height = 0.035
+	tears.draw_pass_1 = tear_draw
+	tears.position.y = 0.4
+	hawk.add_child(tears)
+
+	var rng_radius := randf_range(1.5, 3.5)
+	var rng_speed := randf_range(0.5, 1.2)
+	var start_angle := randf_range(0.0, TAU)
+	hawk.position = egg_local_pos + Vector3(cos(start_angle) * rng_radius, 0.0, sin(start_angle) * rng_radius)
+	zone_root.add_child(hawk)
+
+	hawk.setup(egg_local_pos, rng_radius, rng_speed)
 
 
 var _max_loaded_zones: int = 50

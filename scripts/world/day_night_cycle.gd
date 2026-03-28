@@ -25,7 +25,6 @@ var weather_fog_mult: float = 1.0
 var weather_ambient_mult: float = 1.0
 
 # ── Feature toggles (set by DebugPanel) ─────────────────────────────────
-var volumetric_fog_enabled: bool = false
 var glow_override_enabled: bool = true
 
 # ── Sun arc parameters ──────────────────────────────────────────────────
@@ -234,21 +233,6 @@ const SHADOW_OPACITY_KEYS := [
 	[1.0,    0.0],
 ]
 
-# ── Volumetric fog (god rays) ───────────────────────────────────────────
-const VOLUMETRIC_DENSITY_KEYS := [
-	[0.0,    0.003],  # midnight: subtle so torch/point lights scatter through air
-	[0.125,  0.003],  # 03:00
-	[0.146,  0.010],  # dawn rays
-	[0.167,  0.015],  # golden dawn
-	[0.229,  0.005],
-	[0.50,   0.002],  # noon: subtle
-	[0.854,  0.005],  # 20:30
-	[0.875,  0.015],  # 21:00 golden rays
-	[0.917,  0.005],  # 22:00 fading
-	[0.958,  0.003],  # 23:00
-	[1.0,    0.003],  # midnight: matches start
-]
-
 
 func _ready() -> void:
 	_find_scene_nodes()
@@ -352,34 +336,8 @@ func _update_environment() -> void:
 	# Color grading
 	_env.adjustment_saturation = _sample_float(SATURATION_KEYS, game_time)
 
-	# Volumetric fog — god rays during day, subtle haze at night for torch/point light glow
-	if not volumetric_fog_enabled:
-		if _env.volumetric_fog_enabled:
-			_env.volumetric_fog_enabled = false
-	else:
-		var vol_density := _sample_float(VOLUMETRIC_DENSITY_KEYS, game_time) * weather_fog_mult
-		if vol_density > 0.0001:
-			if not _env.volumetric_fog_enabled:
-				_env.volumetric_fog_enabled = true
-			_env.volumetric_fog_density = vol_density
-
-			var is_night := game_time < 0.146 or game_time > 0.917
-			if is_night:
-				_env.volumetric_fog_albedo = Color(0.15, 0.18, 0.25)
-				_env.volumetric_fog_emission = Color(0.05, 0.06, 0.1)
-				_env.volumetric_fog_emission_energy = 0.1
-				_env.volumetric_fog_gi_inject = 0.3
-				_env.volumetric_fog_anisotropy = 0.2
-			else:
-				_env.volumetric_fog_albedo = _env.fog_light_color.lerp(Color.WHITE, 0.3)
-				_env.volumetric_fog_emission = _sun.light_color * 0.15
-				_env.volumetric_fog_emission_energy = _sun.light_energy * 0.5
-				_env.volumetric_fog_gi_inject = 0.5
-				_env.volumetric_fog_anisotropy = 0.6
-			_env.volumetric_fog_length = 120.0
-		else:
-			if _env.volumetric_fog_enabled:
-				_env.volumetric_fog_enabled = false
+	if _env.volumetric_fog_enabled:
+		_env.volumetric_fog_enabled = false
 
 
 # ── Gradient sampling helpers ────────────────────────────────────────────
