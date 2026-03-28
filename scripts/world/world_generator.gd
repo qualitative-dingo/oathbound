@@ -1545,9 +1545,11 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 			continue
 		if cname == "TerrainMesh":
 			continue
-		var is_vegetation := cname.begins_with("Grass_") or cname.begins_with("Flower_") \
-			or cname == "Reeds" or cname.begins_with("BlueberryBush")
-		if is_vegetation:
+		var is_grass := cname.begins_with("Grass_") or cname.begins_with("Flower_")
+		var is_vegetation := is_grass or cname == "Reeds" or cname.begins_with("BlueberryBush")
+		if is_grass:
+			child.visible = new_lod == 0
+		elif is_vegetation:
 			child.visible = new_lod <= 1
 		else:
 			child.visible = new_lod <= 1

@@ -1674,6 +1674,8 @@ static func _scatter_flowers(
 		mmi.name = "Flower_%d" % fi
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = 96.0
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		zone_root.add_child(mmi)
 
 
@@ -1735,14 +1737,14 @@ static func _get_grass_types() -> Array:
 	if _grass_types_table.is_empty():
 		# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
 		_grass_types_table = [
-			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 500, 0.9, 1.7, 1.8, 1.2],
-			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 480, 0.8, 1.6, 1.7, 1.1],
-			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 480, 0.9, 1.8, 1.9, 1.1],
-			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 450, 0.8, 1.5, 1.6, 1.0],
-			[_grass_textures[10], Color(0.12, 0.36, 0.06), 420, 1.0, 1.9, 1.6, 1.6],
-			[_grass_textures[12], Color(0.14, 0.34, 0.07), 400, 0.9, 1.7, 1.5, 1.5],
-			[_grass_textures[16], Color(0.14, 0.36, 0.08), 400, 0.9, 1.7, 1.7, 1.4],
-			[_grass_textures[18], Color(0.12, 0.39, 0.06), 380, 0.8, 1.6, 1.8, 1.3],
+			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 300, 0.9, 1.7, 1.8, 1.2],
+			[_grass_textures[1],  Color(0.15, 0.42, 0.09), 280, 0.8, 1.6, 1.7, 1.1],
+			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 280, 0.9, 1.8, 1.9, 1.1],
+			[_grass_textures[4],  Color(0.11, 0.37, 0.07), 260, 0.8, 1.5, 1.6, 1.0],
+			[_grass_textures[10], Color(0.12, 0.36, 0.06), 250, 1.0, 1.9, 1.6, 1.6],
+			[_grass_textures[12], Color(0.14, 0.34, 0.07), 240, 0.9, 1.7, 1.5, 1.5],
+			[_grass_textures[16], Color(0.14, 0.36, 0.08), 240, 0.9, 1.7, 1.7, 1.4],
+			[_grass_textures[18], Color(0.12, 0.39, 0.06), 220, 0.8, 1.6, 1.8, 1.3],
 		]
 	return _grass_types_table
 
@@ -1864,6 +1866,8 @@ static func _scatter_grass(
 		mmi.name = "Grass_%d" % gi
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = 96.0
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		zone_root.add_child(mmi)
 
 
