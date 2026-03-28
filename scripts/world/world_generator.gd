@@ -920,50 +920,50 @@ func get_height_at(x: float, z: float) -> float:
 	# Pre-sample lake noise so bias and clamp can respect water bodies
 	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _detail_noise else 0.0
 
+	# Suppress water bodies near spawn — guarantees a large starting landmass
+	# 0 within 1km, ramps to 1 at 2.5km
+	var water_suppress := smoothstep(1000.0, 2500.0, dist)
+
 	# Continental bias — lift central play area above water, but fade to zero
-	# in lake/shore regions so the bias doesn't create terrain arches over water
+	# in lake/shore regions (only where water bodies are allowed)
 	var bias := lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
-	bias *= smoothstep(-0.45, -0.12, lake_n)
+	bias *= lerpf(1.0, smoothstep(-0.45, -0.12, lake_n), water_suppress)
 	h += bias
 
-	# Keep terrain above water — soft floor that respects lake basins
-	var min_land := lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 2.0, smoothstep(-0.28, 0.05, lake_n))
+	# Keep terrain above water — higher floor near spawn where water is suppressed
+	var min_land := lerpf(WATER_LEVEL + 2.0, lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 2.0, smoothstep(-0.28, 0.05, lake_n)), water_suppress)
 	h = maxf(h, min_land)
 
-	# Watershed river/creek carving — accumulation drives depth and width
+	# Watershed river/creek carving — suppressed near spawn
 	var accum := _ws_sample_accum(x, z)
-	if accum > _CREEK_ACCUM_THRESH * 0.5:
+	if accum > _CREEK_ACCUM_THRESH * 0.5 and water_suppress > 0.01:
 		var widen_n := _detail_noise.get_noise_2d(x * 0.025 + 3000.0, z * 0.025 + 3000.0)
 		var effective_accum := accum + widen_n * _WS_RIVER_THRESH * 0.35
 
 		if h > WATER_LEVEL + _CREEK_MIN_ELEV and effective_accum < _WS_RIVER_FULL * 0.4:
-			# Elevated creek channel — shallow trench at local elevation
 			var creek_t := smoothstep(_CREEK_ACCUM_THRESH * 0.5, _CREEK_ACCUM_THRESH * 1.5, effective_accum)
 			if creek_t > 0.0:
 				var norm_acc := clampf((effective_accum - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 				var channel_w_factor := lerpf(0.3, 1.0, norm_acc)
-				h -= _CREEK_DEPTH * creek_t * channel_w_factor
+				h -= _CREEK_DEPTH * creek_t * channel_w_factor * water_suppress
 		else:
-			# Standard sea-level river carving
-			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum)
+			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum) * water_suppress
 			if bank_t > 0.0:
 				h = lerpf(h, WATER_LEVEL + 0.15, bank_t)
 
 			if effective_accum > _WS_RIVER_THRESH:
 				var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, effective_accum)
 				var depth := lerpf(1.5, 5.0, t)
-				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
+				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0) * water_suppress
 				h = lerpf(h, WATER_LEVEL - depth, carve)
 
-	# Noise-driven lakes (~3x more than original -0.30/-0.55/-0.75 thresholds)
-	if _detail_noise:
-		# Gradual shore
+	# Noise-driven lakes — suppressed near spawn
+	if _detail_noise and water_suppress > 0.01:
 		if lake_n < -0.20 and lake_n >= -0.42:
-			var shore_t := smoothstep(-0.20, -0.42, lake_n)
+			var shore_t := smoothstep(-0.20, -0.42, lake_n) * water_suppress
 			h = lerpf(h, WATER_LEVEL + 0.05, shore_t)
-		# Full lake basin carve
 		if lake_n < -0.42:
-			var lake_t := smoothstep(-0.42, -0.62, lake_n)
+			var lake_t := smoothstep(-0.42, -0.62, lake_n) * water_suppress
 			var lake_depth := lerpf(1.0, 3.5, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
