@@ -1355,7 +1355,7 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 	return false
 
 
-const _PENDING_BUDGET_US := 2500  # max microseconds per frame for pending work
+const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
@@ -1370,13 +1370,20 @@ func _process_pending_zones() -> void:
 	# 0.5. Apply completed terrain rebuilds (from terraform / hoe) immediately
 	_apply_rebuild_results()
 
-	# 1. Collect completed background builds — only 1 per frame to spread out finalize work
+	# 1. Collect completed background builds — cap per frame to prevent burst spikes
+	const _MAX_READY_PER_FRAME := 4
 	_gen_mutex.lock()
 	var ready: Array = _gen_ready_queue.duplicate()
 	_gen_ready_queue.clear()
 	_gen_mutex.unlock()
 
+	var ready_count := 0
 	for item in ready:
+		if ready_count >= _MAX_READY_PER_FRAME:
+			_gen_mutex.lock()
+			_gen_ready_queue.append(item)
+			_gen_mutex.unlock()
+			continue
 		var coord: Vector2i = item["coord"]
 		_gen_in_flight.erase(coord)
 		if not _terrain_mesh_cache.has(coord):
@@ -1386,6 +1393,7 @@ func _process_pending_zones() -> void:
 			_finalize_backlog.append(item)
 		elif coord not in _pending_zones:
 			_pending_zones.append(coord)
+		ready_count += 1
 
 	_evict_terrain_cache()
 
@@ -1418,10 +1426,12 @@ func _process_pending_zones() -> void:
 				pitem["phase"] = phase + 1
 			break
 
-	# 3. Finalize up to 3 zone meshes per frame — only if within budget
+	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
 	var finalized := 0
 	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
 		while not _finalize_backlog.is_empty() and finalized < 3:
+			if finalized > 0 and Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
+				break
 			var item: Dictionary = _finalize_backlog.pop_front()
 			var coord: Vector2i = item["coord"]
 			if not _is_in_load_range(coord):

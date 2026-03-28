@@ -386,18 +386,23 @@ func _physics_process(delta: float) -> void:
 		State.EAT_FISH:
 			_process_eat_fish(delta)
 
-	var y_before := global_position.y
-	move_and_slide()
+	var _skip_sweep := not is_flying \
+		and (_state == State.IDLE or _state == State.WANDER) \
+		and Engine.get_physics_frames() % 2 != get_index() % 2
 
-	if not is_flying:
-		if velocity.y > 8.0:
-			velocity.y = 0.0
-		_clamp_to_terrain()
-		_avoid_water()
-		var y_rise := global_position.y - y_before
-		if y_rise > 0.4:
-			global_position.y = y_before + 0.4
-			velocity.y = 0.0
+	if not _skip_sweep:
+		var y_before := global_position.y
+		move_and_slide()
+
+		if not is_flying:
+			if velocity.y > 8.0:
+				velocity.y = 0.0
+			_clamp_to_terrain()
+			_avoid_water()
+			var y_rise := global_position.y - y_before
+			if y_rise > 0.4:
+				global_position.y = y_before + 0.4
+				velocity.y = 0.0
 
 	_update_sprite_direction()
 	_tick_animation(delta)

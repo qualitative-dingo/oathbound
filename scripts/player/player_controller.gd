@@ -1509,8 +1509,7 @@ func _clamp_to_terrain() -> void:
 	if not space:
 		return
 
-	# Cast 5 rays (center + 4 offsets) and take the max -- prevents ridge rubberband
-	var offsets := [Vector2(0,0), Vector2(0.3,0), Vector2(-0.3,0), Vector2(0,0.3), Vector2(0,-0.3)]
+	var offsets := [Vector2(0,0), Vector2(0.35,0), Vector2(0,0.35)]
 	var surface_y := -999.0
 	for off in offsets:
 		var from := Vector3(global_position.x + off.x, global_position.y + 3.0, global_position.z + off.y)
