@@ -33,19 +33,27 @@ float vnoise(vec2 p) {
 }
 
 varying vec2 v_uv;
+varying float v_slope;
 
 void vertex() {
 	v_uv = UV;
+	v_slope = COLOR.r;
+
+	// Slope-scaled speed: flat = base, steep = up to 4x
+	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
 	// Subtle ripple displacement along flow direction
-	float ripple = sin(UV.y * ripple_scale * 12.0 + TIME * flow_speed * 4.0) * ripple_strength;
-	ripple += sin(UV.y * ripple_scale * 7.3 + UV.x * 3.0 + TIME * flow_speed * 2.8) * ripple_strength * 0.6;
+	float ripple = sin(UV.y * ripple_scale * 12.0 + TIME * speed * 4.0) * ripple_strength;
+	ripple += sin(UV.y * ripple_scale * 7.3 + UV.x * 3.0 + TIME * speed * 2.8) * ripple_strength * 0.6;
 	VERTEX.y += ripple;
 }
 
 void fragment() {
+	// Slope-scaled speed for consistent vertex/fragment animation
+	float speed = flow_speed * (0.5 + v_slope * 3.5);
+
 	// Scrolling UV along the flow direction (V axis = along creek)
-	float scroll = TIME * flow_speed;
+	float scroll = TIME * speed;
 	vec2 flow_uv = vec2(v_uv.x, v_uv.y + scroll);
 
 	// Multi-octave noise for surface detail

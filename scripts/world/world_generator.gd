@@ -838,6 +838,22 @@ func _trace_creek_paths() -> void:
 			if visited.has(idx):
 				continue
 
+			# Require a lake neighbor — creeks must emerge from water pools
+			var has_lake_neighbor := false
+			for d in 8:
+				var lnx: int = gx + _D8X[d]
+				var lnz: int = gz + _D8Z[d]
+				if lnx < 0 or lnx >= _ws_dim or lnz < 0 or lnz >= _ws_dim:
+					continue
+				var lnwx: float = -world_radius + float(lnx) * _WS_CELL
+				var lnwz: float = -world_radius + float(lnz) * _WS_CELL
+				var ln_val := _continent_noise.get_noise_2d(lnwx * 0.7 + 5000.0, lnwz * 0.7 + 5000.0)
+				if ln_val < -0.20:
+					has_lake_neighbor = true
+					break
+			if not has_lake_neighbor:
+				continue
+
 			# Trace downstream from this cell
 			var raw_points: Array[Vector2] = []
 			var raw_accums: Array[float] = []
@@ -883,18 +899,17 @@ func _trace_creek_paths() -> void:
 				var a0 := raw_accums[i]
 				var a1 := raw_accums[i + 1]
 				for s in _CREEK_SUBDIV:
-					var t: float = float(s) / float(_CREEK_SUBDIV)
-					var gp := g0.lerp(g1, t)
+					var t_val: float = float(s) / float(_CREEK_SUBDIV)
+					var gp := g0.lerp(g1, t_val)
 					var wx: float = -world_radius + gp.x * _WS_CELL
 					var wz: float = -world_radius + gp.y * _WS_CELL
 
-					var terrain_h := _get_base_height(wx, wz)
-					if _detail_noise:
-						terrain_h += _detail_noise.get_noise_2d(wx, wz) * height_scale * 0.15
+					# Use get_height_at for accurate terrain surface
+					var terrain_h := get_height_at(wx, wz)
 					terrain_h = maxf(terrain_h, WATER_LEVEL + 0.3)
-					var creek_y := terrain_h - _CREEK_DEPTH * 0.5
+					var creek_y := terrain_h + 0.02
 
-					var acc := lerpf(a0, a1, t)
+					var acc := lerpf(a0, a1, t_val)
 					var norm_acc := clampf((acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 					var w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, norm_acc) * 0.5
 
@@ -910,21 +925,27 @@ func _trace_creek_paths() -> void:
 			var last_g := raw_points[raw_points.size() - 1]
 			var lwx: float = -world_radius + last_g.x * _WS_CELL
 			var lwz: float = -world_radius + last_g.y * _WS_CELL
-			var lh := _get_base_height(lwx, lwz)
-			if _detail_noise:
-				lh += _detail_noise.get_noise_2d(lwx, lwz) * height_scale * 0.15
+			var lh := get_height_at(lwx, lwz)
 			lh = maxf(lh, WATER_LEVEL + 0.3)
 			var last_acc := raw_accums[raw_accums.size() - 1]
 			var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 			var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
 			if not points.is_empty():
-				cum_dist += Vector3(lwx, lh - _CREEK_DEPTH * 0.5, lwz).distance_to(points[points.size() - 1])
-			points.append(Vector3(lwx, lh - _CREEK_DEPTH * 0.5, lwz))
+				cum_dist += Vector3(lwx, lh + 0.02, lwz).distance_to(points[points.size() - 1])
+			points.append(Vector3(lwx, lh + 0.02, lwz))
 			widths.append(last_w)
 			flow_uvs.append(cum_dist)
 
 			if points.size() < 2:
 				continue
+
+			# Enforce monotonically decreasing Y — water only flows down or level
+			var max_y := points[0].y
+			for pi in range(1, points.size()):
+				if points[pi].y > max_y:
+					points[pi].y = max_y
+				else:
+					max_y = points[pi].y
 
 			_bucket_creek_by_zone(points, widths, flow_uvs)
 
@@ -1077,23 +1098,19 @@ func get_height_at(x: float, z: float) -> float:
 	# Pre-sample lake noise so bias and clamp can respect water bodies
 	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _detail_noise else 0.0
 
-	# Suppress water bodies near spawn — guarantees a large starting landmass
-	# 0 within 1km, ramps to 1 at 2.5km
-	var water_suppress := smoothstep(1000.0, 2500.0, dist)
-
 	# Continental bias — lift central play area above water, but fade to zero
-	# in lake/shore regions (only where water bodies are allowed)
+	# in lake/shore regions so the bias doesn't create terrain arches over water
 	var bias := lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
-	bias *= lerpf(1.0, smoothstep(-0.45, -0.12, lake_n), water_suppress)
+	bias *= smoothstep(-0.45, -0.12, lake_n)
 	h += bias
 
-	# Keep terrain above water — higher floor near spawn where water is suppressed
-	var min_land := lerpf(WATER_LEVEL + 2.0, lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 2.0, smoothstep(-0.28, 0.05, lake_n)), water_suppress)
+	# Keep terrain above water — soft floor that respects lake basins
+	var min_land := lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 2.0, smoothstep(-0.28, 0.05, lake_n))
 	h = maxf(h, min_land)
 
-	# Watershed river/creek carving — suppressed near spawn
+	# Watershed river/creek carving
 	var accum := _ws_sample_accum(x, z)
-	if accum > _CREEK_ACCUM_THRESH * 0.5 and water_suppress > 0.01:
+	if accum > _CREEK_ACCUM_THRESH * 0.5:
 		var widen_n := _detail_noise.get_noise_2d(x * 0.025 + 3000.0, z * 0.025 + 3000.0)
 		var effective_accum := accum + widen_n * _WS_RIVER_THRESH * 0.35
 
@@ -1102,25 +1119,25 @@ func get_height_at(x: float, z: float) -> float:
 			if creek_t > 0.0:
 				var norm_acc := clampf((effective_accum - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 				var channel_w_factor := lerpf(0.3, 1.0, norm_acc)
-				h -= _CREEK_DEPTH * creek_t * channel_w_factor * water_suppress
+				h -= _CREEK_DEPTH * creek_t * channel_w_factor
 		else:
-			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum) * water_suppress
+			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum)
 			if bank_t > 0.0:
 				h = lerpf(h, WATER_LEVEL + 0.15, bank_t)
 
 			if effective_accum > _WS_RIVER_THRESH:
 				var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, effective_accum)
 				var depth := lerpf(1.5, 5.0, t)
-				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0) * water_suppress
+				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
 				h = lerpf(h, WATER_LEVEL - depth, carve)
 
-	# Noise-driven lakes — suppressed near spawn
-	if _detail_noise and water_suppress > 0.01:
+	# Noise-driven lakes
+	if _detail_noise:
 		if lake_n < -0.20 and lake_n >= -0.42:
-			var shore_t := smoothstep(-0.20, -0.42, lake_n) * water_suppress
+			var shore_t := smoothstep(-0.20, -0.42, lake_n)
 			h = lerpf(h, WATER_LEVEL + 0.05, shore_t)
 		if lake_n < -0.42:
-			var lake_t := smoothstep(-0.42, -0.62, lake_n) * water_suppress
+			var lake_t := smoothstep(-0.42, -0.62, lake_n)
 			var lake_depth := lerpf(1.0, 3.5, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
@@ -1332,9 +1349,8 @@ func _process_pending_zones() -> void:
 
 	# 1. Collect completed background builds — only 1 per frame to spread out finalize work
 	_gen_mutex.lock()
-	var ready: Array = []
-	if not _gen_ready_queue.is_empty():
-		ready.append(_gen_ready_queue.pop_front())
+	var ready: Array = _gen_ready_queue.duplicate()
+	_gen_ready_queue.clear()
 	_gen_mutex.unlock()
 
 	for item in ready:
@@ -1379,9 +1395,10 @@ func _process_pending_zones() -> void:
 				pitem["phase"] = phase + 1
 			break
 
-	# 3. Finalize up to 1 zone mesh per frame — only if within budget
+	# 3. Finalize up to 3 zone meshes per frame — only if within budget
+	var finalized := 0
 	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
-		while not _finalize_backlog.is_empty():
+		while not _finalize_backlog.is_empty() and finalized < 3:
 			var item: Dictionary = _finalize_backlog.pop_front()
 			var coord: Vector2i = item["coord"]
 			if not _is_in_load_range(coord):
@@ -1390,7 +1407,7 @@ func _process_pending_zones() -> void:
 				continue
 			if coord not in _loaded_zones:
 				_finalize_zone(coord, item["arrays"], item["shape"])
-				break
+				finalized += 1
 
 	# 4. Submit new zone builds — stop if backlog is already large
 	var max_backlog := 16 if _any_flying else 8
@@ -1745,9 +1762,24 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 		if points.size() < 2:
 			continue
 
+		# Pre-compute per-point slope (dy/dx) for flow speed modulation
+		var slopes := PackedFloat32Array()
+		for i in points.size():
+			var dy := 0.0
+			var dx := 0.0
+			if i < points.size() - 1:
+				dy = points[i].y - points[i + 1].y
+				dx = Vector2(points[i + 1].x - points[i].x, points[i + 1].z - points[i].z).length()
+			elif i > 0:
+				dy = points[i - 1].y - points[i].y
+				dx = Vector2(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z).length()
+			var slope_val := clampf(dy / maxf(dx, 0.01), 0.0, 2.0)
+			slopes.append(slope_val)
+
 		var verts := PackedVector3Array()
 		var norms := PackedVector3Array()
 		var mesh_uvs := PackedVector2Array()
+		var colors := PackedColorArray()
 		var indices := PackedInt32Array()
 
 		var uv_scale := 0.05
@@ -1773,12 +1805,18 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var left := Vector3(local_p.x - perp.x * w, local_p.y, local_p.z - perp.y * w)
 			var right := Vector3(local_p.x + perp.x * w, local_p.y, local_p.z + perp.y * w)
 
+			# R channel = slope factor (0 = flat, 1 = steep 45deg+)
+			var slope_factor := clampf(slopes[i] / 1.0, 0.0, 1.0)
+			var col := Color(slope_factor, 1.0, 1.0, 1.0)
+
 			verts.append(left)
 			verts.append(right)
 			norms.append(Vector3.UP)
 			norms.append(Vector3.UP)
 			mesh_uvs.append(Vector2(0.0, uv_y))
 			mesh_uvs.append(Vector2(1.0, uv_y))
+			colors.append(col)
+			colors.append(col)
 
 			if i > 0:
 				var base := (i - 1) * 2
@@ -1797,6 +1835,7 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 		arrays[Mesh.ARRAY_VERTEX] = verts
 		arrays[Mesh.ARRAY_NORMAL] = norms
 		arrays[Mesh.ARRAY_TEX_UV] = mesh_uvs
+		arrays[Mesh.ARRAY_COLOR] = colors
 		arrays[Mesh.ARRAY_INDEX] = indices
 
 		var arr_mesh := ArrayMesh.new()
