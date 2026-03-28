@@ -54,9 +54,12 @@ void fragment() {
 	                   + vnoise_fast(wpos.xz * 0.15 + vec2(53.0, 97.0)) * 0.1;
 	float noise_rock = smoothstep(0.40, 0.60, rock_pattern);
 
-	// Slope gates: definitively grass when flat, definitively rock when steep
-	float definitely_grass = smoothstep(slope_start + 0.05, slope_start - 0.03, slope);
-	float definitely_rock  = smoothstep(slope_start + 0.12, slope_start + 0.45, slope);
+	// Perturb slope with world-space noise so gate boundaries follow noise, not triangle edges
+	float gate_perturb = (rock_pattern - 0.5) * 0.25;
+	float slope_g = slope + gate_perturb * 0.35;
+	float slope_r = slope + gate_perturb;
+	float definitely_grass = smoothstep(slope_start + 0.05, max(slope_start - 0.03, 0.0), slope_g);
+	float definitely_rock  = smoothstep(slope_start + 0.20, slope_start + 0.55, slope_r);
 
 	// In the transition zone, noise determines grass vs rock
 	float rock_w = mix(noise_rock, 1.0, definitely_rock);
