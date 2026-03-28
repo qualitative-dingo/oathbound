@@ -34,9 +34,9 @@ signal biome_at_player_changed(biome_id: StringName)
 const ZONE_SIZE := 64.0
 
 @export_group("Loading")
-@export var load_radius_zones: int = 5
-@export var unload_radius_zones: int = 6
-const MAX_ZONES_PER_FRAME := 4  # raised — builds happen off-thread
+@export var load_radius_zones: int = 4
+@export var unload_radius_zones: int = 5
+const MAX_ZONES_PER_FRAME := 2
 const MESH_RESOLUTION := 48
 
 @export_group("Terrain")
@@ -1180,7 +1180,7 @@ func _process_pending_zones() -> void:
 				break
 
 	# 4. Submit new zone builds — stop if backlog is already large
-	if _finalize_backlog.size() + _gen_in_flight.size() > 16:
+	if _finalize_backlog.size() + _gen_in_flight.size() > 8:
 		return
 	var submitted := 0
 	while submitted < MAX_ZONES_PER_FRAME and not _pending_zones.is_empty():
@@ -1280,7 +1280,10 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 		if not is_instance_valid(child):
 			continue
 		var cname: String = child.name
-		if cname == "TerrainMesh" or cname == "TerrainCol":
+		if cname == "TerrainCol":
+			(child as CollisionShape3D).set_deferred("disabled", zone_dist > 2.0)
+			continue
+		if cname == "TerrainMesh":
 			continue
 		var is_vegetation := cname.begins_with("Grass_") or cname.begins_with("Flower_") \
 			or cname == "Reeds" or cname.begins_with("BlueberryBush")
