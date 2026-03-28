@@ -2227,8 +2227,8 @@ static func _sample_branch_curve(
 static func _make_bend_params(length: float, rng: RandomNumberGenerator) -> Dictionary:
 	return {
 		"freq": rng.randf_range(1.5, 3.0),
-		"amp_x": length * rng.randf_range(0.06, 0.15),
-		"amp_z": length * rng.randf_range(0.04, 0.10),
+		"amp_x": length * rng.randf_range(0.075, 0.1875),
+		"amp_z": length * rng.randf_range(0.05, 0.125),
 		"phase_x": rng.randf_range(0.0, TAU),
 		"phase_z": rng.randf_range(0.0, TAU),
 	}
@@ -2402,6 +2402,8 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 	var branch_heights: PackedFloat32Array = PackedFloat32Array()
 	var leaf_anchor_positions: Array[Vector3] = []
+	# Golden angle (~137.5 deg) ensures branches spread evenly around trunk
+	const GOLDEN_ANGLE := 2.39996323
 	var branch_base_angle := rng.randf_range(0.0, TAU)
 	for bi in branch_count:
 		var t_in_zone := float(bi) / float(maxi(branch_count - 1, 1))
@@ -2410,20 +2412,20 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		h_frac = clampf(h_frac, branch_zone_lo, branch_zone_hi)
 		branch_heights.append(h_frac)
 
-	var trunk_mi := MeshInstance3D.new()
-	trunk_mi.name = "MeshInstance3D"
-	trunk_mi.mesh = _build_trunk_mesh(trunk_bot_r, trunk_top_r, trunk_h, num_roots, rng, branch_heights)
-	trunk_mi.set_surface_override_material(0, bark_mat)
-	trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	root.add_child(trunk_mi)
+	var trunk_mesh := _build_trunk_mesh(trunk_bot_r, trunk_top_r, trunk_h, num_roots, rng, branch_heights)
 
-	# ── Spawn branch meshes as children of trunk ──
+	# Merge trunk + all branches into a single mesh for performance
+	var merge_st := SurfaceTool.new()
+	merge_st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	merge_st.append_from(trunk_mesh, 0, Transform3D.IDENTITY)
+
+	# ── Build branches and merge geometry into trunk mesh ──
 	for bi in branch_count:
 		var h_frac: float = branch_heights[bi]
 		var branch_y := h_frac * trunk_h
 		var height_t := float(bi) / float(maxi(branch_count - 1, 1))
 
-		var branch_angle := branch_base_angle + TAU * float(bi) / float(branch_count) + rng.randf_range(-0.3, 0.3)
+		var branch_angle := branch_base_angle + GOLDEN_ANGLE * float(bi) + rng.randf_range(-0.2, 0.2)
 		var len_frac := lerpf(branch_len_frac_hi, branch_len_frac_lo, height_t)
 		var branch_len := trunk_h * len_frac * rng.randf_range(0.85, 1.15)
 
@@ -2434,11 +2436,6 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 		var branch_bend := _make_bend_params(branch_len, rng)
 		var branch_mesh := _build_branch_mesh(b_base_r, branch_len, upward_arc, rng, branch_bend)
-		var branch_mi := MeshInstance3D.new()
-		branch_mi.name = "Branch_%d" % bi
-		branch_mi.mesh = branch_mesh
-		branch_mi.set_surface_override_material(0, bark_mat)
-		branch_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 		var tilt_rad := deg_to_rad(tilt_deg)
 		var branch_dir := Vector3(
@@ -2448,25 +2445,22 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		var up_guess := Vector3.UP
 		if absf(branch_dir.dot(up_guess)) > 0.95:
 			up_guess = Vector3.FORWARD
-		var right := branch_dir.cross(up_guess).normalized()
-		var forward := right.cross(branch_dir).normalized()
-		var branch_basis := Basis(right, branch_dir, forward)
+		var b_right := branch_dir.cross(up_guess).normalized()
+		var b_forward := b_right.cross(branch_dir).normalized()
+		var branch_basis := Basis(b_right, branch_dir, b_forward)
 
-		branch_mi.position = Vector3(
+		var branch_pos := Vector3(
 			cos(branch_angle) * trunk_r_at_h * 0.5,
 			branch_y,
 			sin(branch_angle) * trunk_r_at_h * 0.5)
-		branch_mi.basis = branch_basis
+		var branch_xform := Transform3D(branch_basis, branch_pos)
+		merge_st.append_from(branch_mesh, 0, branch_xform)
 
-		trunk_mi.add_child(branch_mi)
-
-		# Sample leaf anchors along the branch (midpoints + tip)
 		for sample_t in [0.35, 0.65, 1.0]:
 			var pt := _sample_branch_curve(sample_t, branch_len, upward_arc, branch_bend)
-			var pt_in_root := branch_basis * pt + branch_mi.position
+			var pt_in_root := branch_basis * pt + branch_pos
 			leaf_anchor_positions.append(pt_in_root)
 
-		# Sub-branches: 1-2 smaller twigs per major branch
 		var sub_count := rng.randi_range(1, 2)
 		for si in sub_count:
 			var sub_t := rng.randf_range(0.5, 0.7)
@@ -2478,11 +2472,6 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 			var sub_tilt_rad := deg_to_rad(sub_tilt_deg)
 
 			var sub_mesh := _build_branch_mesh(sub_r, sub_len, sub_arc, rng)
-			var sub_mi := MeshInstance3D.new()
-			sub_mi.name = "SubBranch_%d_%d" % [bi, si]
-			sub_mi.mesh = sub_mesh
-			sub_mi.set_surface_override_material(0, bark_mat)
-			sub_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 			var sub_dir := Vector3(
 				cos(sub_angle) * cos(sub_tilt_rad),
@@ -2495,16 +2484,24 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 			var sub_fwd := sub_right.cross(sub_dir).normalized()
 
 			var attach_pt := _sample_branch_curve(sub_t, branch_len, upward_arc, branch_bend)
-			sub_mi.position = attach_pt
-			sub_mi.basis = Basis(sub_right, sub_dir, sub_fwd)
-			branch_mi.add_child(sub_mi)
+			var sub_basis := Basis(sub_right, sub_dir, sub_fwd)
+			var sub_xform := branch_xform * Transform3D(sub_basis, attach_pt)
+			merge_st.append_from(sub_mesh, 0, sub_xform)
 
-			var sub_attach_in_root := branch_basis * attach_pt + branch_mi.position
+			var sub_attach_in_root := branch_basis * attach_pt + branch_pos
 			var sub_tip_offset := Vector3(
 				cos(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad),
 				sub_len * sin(sub_tilt_rad) + sub_arc,
 				sin(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad))
 			leaf_anchor_positions.append(sub_attach_in_root + sub_tip_offset)
+
+	merge_st.generate_normals()
+	var trunk_mi := MeshInstance3D.new()
+	trunk_mi.name = "MeshInstance3D"
+	trunk_mi.mesh = merge_st.commit()
+	trunk_mi.set_surface_override_material(0, bark_mat)
+	trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	root.add_child(trunk_mi)
 
 	# ── Trunk spine leaf anchors: upper 40% of trunk always covered ──
 	var trunk_leaf_start := trunk_h * 0.60

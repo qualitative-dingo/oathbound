@@ -460,7 +460,7 @@ func _physics_process(delta: float) -> void:
 		if p.get(&"flight_mode"):
 			any_flying = true
 			break
-	var effective_radius: int = (load_radius_zones + 2) if any_flying else load_radius_zones
+	var effective_radius: int = (load_radius_zones + 1) if any_flying else load_radius_zones
 
 	var cur_zones: Array[Vector2i] = []
 	for p in _players:
@@ -573,6 +573,9 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
 	h += ridge * height_scale * 0.4 - height_scale * 0.12
 
+	# Continental bias — central play area stays above water
+	h += lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
+
 	var center_dist := Vector2(wx, wz).length()
 	if center_dist < 100.0:
 		h = lerpf(h, 2.0, 1.0 - smoothstep(0.0, 100.0, center_dist))
@@ -673,7 +676,7 @@ func _trace_lake_outflows() -> void:
 			var wx: float = -world_radius + float(gx) * _WS_CELL
 			var wz: float = -world_radius + float(gz) * _WS_CELL
 			var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
-			if lake_n > -0.50:
+			if lake_n > -0.60:
 				continue
 			if _ws_accum[gz * _ws_dim + gx] > _WS_RIVER_THRESH:
 				continue
@@ -883,12 +886,14 @@ func get_height_at(x: float, z: float) -> float:
 		var crag := _detail_noise.get_noise_2d(x * 0.12 + 7000.0, z * 0.12 + 7000.0)
 		h += crag * height_scale * 0.08 * elev_t
 
+	# Continental bias — central play area stays above water
+	h += lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
+
 	# Pre-sample lake noise so the minimum-height clamp can be softened near lakes
 	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _detail_noise else 0.0
 
-	# Keep terrain above water — soften the clamp near lake basins so that
-	# nearby water bodies merge instead of being separated by thin ridges.
-	var min_land := lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 1.5, smoothstep(-0.35, 0.05, lake_n))
+	# Keep terrain above water — raised floor so thin ridges don't dip underwater
+	var min_land := lerpf(WATER_LEVEL + 1.0, WATER_LEVEL + 2.5, smoothstep(-0.45, 0.05, lake_n))
 	h = maxf(h, min_land)
 
 	# Watershed river carving — accumulation drives depth and width
@@ -902,23 +907,23 @@ func get_height_at(x: float, z: float) -> float:
 		if bank_t > 0.0:
 			h = lerpf(h, WATER_LEVEL + 0.15, bank_t)
 
-		# Channel carving below water for the riverbed
+		# Channel carving below water for the riverbed (shallower rivers)
 		if effective_accum > _WS_RIVER_THRESH:
 			var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, effective_accum)
-			var depth := lerpf(2.0, 8.0, t)
+			var depth := lerpf(1.5, 5.0, t)
 			var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
 			h = lerpf(h, WATER_LEVEL - depth, carve)
 
-	# Noise-driven lakes — wider shore zone so water bodies connect naturally
+	# Noise-driven lakes — tighter thresholds so lakes are rarer and smaller
 	if _detail_noise:
-		# Wide gradual shore (-0.18 to -0.42 transition)
-		if lake_n < -0.18 and lake_n >= -0.42:
-			var shore_t := smoothstep(-0.18, -0.42, lake_n)
+		# Gradual shore (-0.30 to -0.55 transition)
+		if lake_n < -0.30 and lake_n >= -0.55:
+			var shore_t := smoothstep(-0.30, -0.55, lake_n)
 			h = lerpf(h, WATER_LEVEL + 0.05, shore_t)
-		# Full lake basin carve
-		if lake_n < -0.42:
-			var lake_t := smoothstep(-0.42, -0.65, lake_n)
-			var lake_depth := lerpf(1.5, 5.0, lake_t)
+		# Full lake basin carve (shallower)
+		if lake_n < -0.55:
+			var lake_t := smoothstep(-0.55, -0.75, lake_n)
+			var lake_depth := lerpf(1.0, 3.0, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
 	# Flatten spawn area — fully flat within 20m, fading to 80m
@@ -1074,11 +1079,16 @@ func _spawn_starter_goblins() -> void:
 	print("[WORLD] Spawned %d starter goblins near (%.0f, %.0f)" % [spawned, center_x, center_z])
 
 
+const MAX_LOADED_ZONES := 60
+
 func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 	if radius < 0:
 		radius = load_radius_zones
+	var total_queued := _loaded_zones.size() + _pending_zones.size() + _gen_in_flight.size()
 	for x in range(center.x - radius, center.x + radius + 1):
 		for z in range(center.y - radius, center.y + radius + 1):
+			if total_queued >= MAX_LOADED_ZONES:
+				return
 			var coord := Vector2i(x, z)
 			if coord in _loaded_zones or coord in _pending_zones or coord in _gen_in_flight:
 				continue
@@ -1086,6 +1096,7 @@ func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 			if Vector2(world_center.x, world_center.z).length() > world_radius * 1.1:
 				continue
 			_pending_zones.append(coord)
+			total_queued += 1
 	# Nearest zones first so the player's surroundings always load before distant ones
 	_pending_zones.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		var da := (a - center).length_squared()
@@ -1220,7 +1231,7 @@ func _unload_distant_zones(players: Array[Node3D]) -> void:
 		if p.get(&"flight_mode"):
 			any_flying = true
 			break
-	var effective_unload: float = float(unload_radius_zones + 2) if any_flying else float(unload_radius_zones)
+	var effective_unload: float = float(unload_radius_zones + 1) if any_flying else float(unload_radius_zones)
 	var to_remove: Array[Vector2i] = []
 	for coord in _loaded_zones:
 		var near_any := false
@@ -1295,6 +1306,8 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 			for sub in child.get_children():
 				if sub is CollisionShape3D:
 					sub.set_deferred("disabled", new_lod >= 2)
+				elif sub is Node3D and sub.name == "Canopy":
+					sub.visible = new_lod == 0
 
 
 ## Build a half-resolution ConcavePolygonShape3D for terrain collision.
@@ -1543,7 +1556,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			# Lake shores also get bank signal so muddy edges appear around lakes
 			if _detail_noise:
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
-				var lake_shore := smoothstep(-0.15, -0.38, lake_n)
+				var lake_shore := smoothstep(-0.25, -0.50, lake_n)
 				river_bank = maxf(river_bank, lake_shore)
 
 			river_bank = clampf(river_bank, 0.0, 1.0)
