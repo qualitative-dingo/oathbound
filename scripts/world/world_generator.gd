@@ -34,8 +34,8 @@ signal biome_at_player_changed(biome_id: StringName)
 const ZONE_SIZE := 64.0
 
 @export_group("Loading")
-@export var load_radius_zones: int = 4
-@export var unload_radius_zones: int = 5
+@export var load_radius_zones: int = 2
+@export var unload_radius_zones: int = 3
 const MAX_ZONES_PER_FRAME := 2
 const MESH_RESOLUTION := 48
 
@@ -1277,7 +1277,7 @@ func _spawn_starter_goblins() -> void:
 	print("[WORLD] Spawned %d starter goblins near (%.0f, %.0f)" % [spawned, center_x, center_z])
 
 
-var _max_loaded_zones: int = 100
+var _max_loaded_zones: int = 50
 
 func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 	if radius < 0:
@@ -1427,7 +1427,7 @@ func _evict_terrain_cache() -> void:
 		_terrain_shape_cache.erase(coord)
 
 
-const _MAX_UNLOADS_PER_FRAME := 2
+const _MAX_UNLOADS_PER_FRAME := 4
 
 func _unload_distant_zones(players: Array[Node3D]) -> void:
 	var any_flying := false
@@ -1890,11 +1890,10 @@ func _resize_water_plane() -> void:
 
 
 func set_render_distance(radius: int) -> void:
-	load_radius_zones = clampi(radius, 1, 8)
+	load_radius_zones = clampi(radius, 1, 5)
 	unload_radius_zones = load_radius_zones + 1
-	# Account for flight mode expanding radius by +1
 	var fly_radius := load_radius_zones + 1
-	_max_loaded_zones = (2 * fly_radius + 1) ** 2 + 20
+	_max_loaded_zones = mini((2 * fly_radius + 1) ** 2 + 10, 50)
 	_resize_water_plane()
 
 

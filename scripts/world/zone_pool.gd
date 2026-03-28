@@ -63,6 +63,14 @@ static func get_tree_node() -> StaticBody3D:
 	while not _trees.is_empty():
 		var t := _trees.pop_back() as StaticBody3D
 		if is_instance_valid(t):
+			# Strip old branch MeshInstance3D children from trunk
+			# (pre-merge trees had separate Branch_/SubBranch_ nodes)
+			var trunk := t.get_node_or_null("MeshInstance3D")
+			if trunk:
+				for child in trunk.get_children():
+					if child is MeshInstance3D:
+						trunk.remove_child(child)
+						child.queue_free()
 			t.visible = true
 			t.collision_layer = 4
 			t.process_mode = Node.PROCESS_MODE_INHERIT
