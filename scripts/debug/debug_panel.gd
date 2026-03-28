@@ -27,6 +27,7 @@ var _toggles: Dictionary = {
 	"terrain_visible": true,
 	"ssao": true,
 	"glow": true,
+	"nearest_filter": false,
 }
 
 
@@ -138,6 +139,7 @@ func _build_ui() -> void:
 	_add_toggle(left, "Terrain Visible", "terrain_visible")
 	_add_toggle(left, "SSAO", "ssao")
 	_add_toggle(left, "Glow", "glow")
+	_add_toggle(left, "Nearest Tex Filter", "nearest_filter")
 
 	var deselect_btn := _make_button("Disable ALL", Color(0.7, 0.15, 0.15))
 	deselect_btn.pressed.connect(_deselect_all)
@@ -347,6 +349,13 @@ func _apply_toggle(key: String, on: bool) -> void:
 		var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree().current_scene else null
 		if dnc:
 			dnc.set("glow_override_enabled", on)
+
+	if key == "nearest_filter":
+		var scene := get_tree().current_scene
+		if scene and scene.has_method("_force_nearest_recursive"):
+			scene.set("force_nearest_filter", on)
+			if on:
+				scene._force_nearest_recursive(scene)
 
 	# Also show/hide existing instances in the current scene
 	_toggle_existing(key, on)
