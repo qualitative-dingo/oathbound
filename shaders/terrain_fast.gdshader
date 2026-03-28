@@ -46,18 +46,24 @@ void fragment() {
 	vec3 wpos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float slope = 1.0 - abs(world_normal.y);
+
+	// Noise-driven rock pattern (world-space, independent of mesh normals)
 	float warp_n = vnoise_fast(wpos.xz * 0.012 + vec2(430.0, 170.0));
-	float blob_n = vnoise_fast(wpos.xz * 0.015 + vec2(90.0, 260.0) + vec2(warp_n) * 60.0);
-	float slope_noise = (blob_n - 0.5) * 0.28
-	                   + (vnoise_fast(wpos.xz * 0.05 + vec2(731.0, 419.0)) - 0.5) * 0.18
-	                   + (vnoise_fast(wpos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.12;
-	float noisy_slope = slope + slope_noise;
-	// Wide transition for organic grass/rock blending
-	float rock_w = smoothstep(slope_start - 0.05, slope_start + 0.30, noisy_slope);
+	float rock_pattern = vnoise_fast(wpos.xz * 0.015 + vec2(90.0, 260.0) + vec2(warp_n) * 60.0) * 0.6
+	                   + vnoise_fast(wpos.xz * 0.05 + vec2(731.0, 419.0)) * 0.3
+	                   + vnoise_fast(wpos.xz * 0.15 + vec2(53.0, 97.0)) * 0.1;
+	float noise_rock = smoothstep(0.40, 0.60, rock_pattern);
+
+	// Slope gates: definitively grass when flat, definitively rock when steep
+	float definitely_grass = smoothstep(slope_start + 0.05, slope_start - 0.03, slope);
+	float definitely_rock  = smoothstep(slope_start + 0.12, slope_start + 0.45, slope);
+
+	// In the transition zone, noise determines grass vs rock
+	float rock_w = mix(noise_rock, 1.0, definitely_rock);
+	rock_w *= (1.0 - definitely_grass);
 
 	float pm = smoothstep(0.2, 0.7, v_path_mask);
 	float bm = smoothstep(0.1, 0.6, v_river_bank);
-	float creek_mask = smoothstep(0.50, 0.90, v_river_bank);
 
 	vec3 grass_col = vec3(0.10, 0.28, 0.07) * tint_color;
 
@@ -92,21 +98,6 @@ void fragment() {
 
 	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * v_brightness;
 	ground = mix(ground, bank_color, bm * (1.0 - rock_w));
-	// Creek flow — direction from terrain normal (downhill), speed scales with steepness
-	if (creek_mask > 0.01) {
-		vec2 downhill = -world_normal.xz;
-		float steepness = length(downhill);
-		vec2 flow_dir = steepness > 0.001 ? normalize(downhill) : vec2(0.0, 1.0);
-		float speed = 0.6 * (0.5 + steepness * 8.0) * TIME;
-		vec2 ruv = mat2(vec2(0.894, 0.447), vec2(-0.447, 0.894)) * wpos.xz;
-		float caustic = vnoise_fast(ruv * 1.2 + flow_dir * speed);
-		float shimmer = smoothstep(0.38, 0.62, caustic) * 0.15;
-		vec3 wet_col = mix(ground * 0.75, vec3(0.06, 0.10, 0.08) + shimmer, 0.45);
-		ground = mix(ground, wet_col, creek_mask * (1.0 - rock_w) * 0.5);
-	}
 	ALBEDO = mix(ground, path_color, pm * (1.0 - rock_w));
-	float base_rough = mix(mix(0.85, 0.85, rock_w), 0.7, pm * (1.0 - rock_w));
-	base_rough = mix(base_rough, 0.50, creek_mask * (1.0 - rock_w));
-	ROUGHNESS = base_rough;
-	METALLIC = creek_mask * (1.0 - rock_w) * 0.04;
+	ROUGHNESS = mix(mix(0.85, 0.85, rock_w), 0.7, pm * (1.0 - rock_w));
 }

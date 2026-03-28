@@ -73,10 +73,20 @@ var _ws_accum: PackedFloat32Array
 var _ws_heights: PackedFloat32Array
 var _ws_flow: PackedInt32Array
 
-# ─── Elevated Creek Channels ──────────────────────────────────────────────────
+# ─── Elevated Creek Paths ─────────────────────────────────────────────────────
+# Creek paths for zones above WATER_LEVEL.  Keyed by zone Vector2i.
+# Each value is an Array of Dictionaries:
+#   { "points": PackedVector3Array,    -- world XYZ centerline
+#     "widths": PackedFloat32Array,    -- half-width at each point
+#     "uvs":    PackedFloat32Array }   -- cumulative UV distance for flow scroll
 const _CREEK_ACCUM_THRESH := 2.5
 const _CREEK_MIN_ELEV := 1.5          # min terrain height above WATER_LEVEL
+const _CREEK_MIN_WIDTH := 0.6
+const _CREEK_MAX_WIDTH := 3.5
 const _CREEK_DEPTH := 0.4             # how deep the channel is carved
+const _CREEK_SUBDIV := 6              # interpolation points between grid cells
+var _creek_segments: Dictionary = {}   # Vector2i -> Array[Dictionary]
+var _creek_shader_mat: ShaderMaterial
 
 # ─── Terrain Modifications (hoe / leveling) ──────────────────────────────────
 # Keyed by Vector2i grid coords (world pos quantized to TERRAIN_MOD_STEP).
@@ -340,6 +350,7 @@ func _ready() -> void:
 	_compute_watershed()
 	_init_biome_materials()
 	_init_water_material()
+	_init_creek_material()
 	set_render_distance(SaveManager.render_distance)
 	_generate_spawn_area()
 	_create_global_water()
@@ -682,6 +693,8 @@ func _compute_watershed() -> void:
 	# Step 6 — trace winding outflow streams from noise-driven lakes
 	_trace_lake_outflows()
 
+	# Step 7 — trace elevated creek paths for visual flowing-water strips
+	_trace_creek_paths()
 
 
 func _trace_lake_outflows() -> void:

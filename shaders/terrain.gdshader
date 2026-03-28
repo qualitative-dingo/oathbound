@@ -24,8 +24,6 @@ uniform float path_roughness : hint_range(0.0, 1.0) = 0.92;
 group_uniforms riverbank;
 uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 uniform float bank_roughness : hint_range(0.0, 1.0) = 0.95;
-uniform float creek_flow_speed : hint_range(0.0, 2.0) = 0.6;
-uniform vec3 creek_wet_tint : source_color = vec3(0.06, 0.10, 0.08);
 
 group_uniforms rock;
 uniform vec3 rock_color_base : source_color = vec3(0.26, 0.27, 0.30);
@@ -136,45 +134,43 @@ void fragment() {
 
 	float slope = 1.0 - abs(world_normal.y);
 
-	// Large domain-warped noise blobs that push grass up into rock and vice versa
+	// Noise-driven rock pattern (world-space, independent of mesh normals)
 	vec2 warp_a = vec2(
 		fbm2(world_pos.xz * 0.012 + vec2(430.0, 170.0)),
 		fbm2(world_pos.xz * 0.012 + vec2(810.0, 560.0))
 	) * 60.0;
-	float blob_noise = fbm2((world_pos.xz + warp_a) * 0.015 + vec2(90.0, 260.0));
+	float rock_pattern = fbm2((world_pos.xz + warp_a) * 0.015 + vec2(90.0, 260.0)) * 0.6
+	                   + vnoise(world_pos.xz * 0.05 + vec2(731.0, 419.0)) * 0.3
+	                   + vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) * 0.1;
+	float noise_rock = smoothstep(0.40, 0.60, rock_pattern);
 
-	// Multi-scale noise to break up the slope contour into organic patches
-	float slope_noise = (blob_noise - 0.5) * 0.28
-	                   + (vnoise(world_pos.xz * 0.05 + vec2(731.0, 419.0)) - 0.5) * 0.18
-	                   + (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.12
-	                   + (vnoise(world_pos.xz * 0.4 + vec2(200.0, 140.0)) - 0.5) * 0.06;
+	// Slope gates: definitively grass when flat, definitively rock when steep
+	float definitely_grass = smoothstep(slope_start + 0.05, slope_start - 0.03, slope);
+	float definitely_rock  = smoothstep(slope_start + 0.12, slope_start + 0.45, slope);
 
-	float noisy_slope = slope + slope_noise;
+	// In the transition zone, noise determines grass vs rock
+	float rock_w = mix(noise_rock, 1.0, definitely_rock);
+	rock_w *= (1.0 - definitely_grass);
+	float grass_w = 1.0 - rock_w;
 
 	// Fade vertex-color features on slopes to prevent zigzag mesh artifacts
-	float slope_path_fade = smoothstep(0.12, 0.03, noisy_slope);
+	float slope_path_fade = smoothstep(0.12, 0.03, slope);
 
-	// Procedural color override on slopes uses noisy_slope so it doesn't create its own line
-	float steep_override = smoothstep(0.20, 0.45, noisy_slope);
-
-	// Soften triplanar blending on steep terrain to reduce projection seam stripes
+	// Triplanar blend softening on steep terrain
+	float steep_override = smoothstep(0.20, 0.45, slope);
 	float blend_power = mix(8.0, 2.0, steep_override);
 	vec3 blend = abs(world_normal);
 	blend = pow(blend, vec3(blend_power));
 	blend /= (blend.x + blend.y + blend.z + 0.0001);
-
-	// Wide transition for organic grass/rock blending
-	float grass_w = smoothstep(slope_start + 0.30, slope_start - 0.05, noisy_slope);
-	float rock_w  = 1.0 - grass_w;
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
 
 	// Valheim-style patchy rock — used for ALL non-grass terrain
 	vec3 col_rock = rock_color(world_pos, world_normal, steep_override);
 
-	// Dirt edge where grass meets rock (like Valheim's muddy transition)
+	// Dirt edge where grass meets rock (muddy transition at boundaries)
 	vec3 col_slope = triplanar(tex_slope, world_pos, blend, texture_scale);
-	float edge_band = smoothstep(0.0, 0.10, noisy_slope) * smoothstep(slope_start + 0.35, slope_start + 0.10, noisy_slope);
+	float edge_band = grass_w * rock_w * 4.0;
 	vec3 edge_dirt = mix(col_slope * 0.6, col_rock, 0.5);
 
 	// Subtle grass scatter at the very edge of flat areas
@@ -230,24 +226,6 @@ void fragment() {
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
 	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
 
-	// Creek flow effect — direction derived from terrain normal (downhill), speed scales with steepness
-	float creek_mask = smoothstep(0.50, 0.90, v_river_bank + (bank_noise - 0.5) * 0.15);
-	if (creek_mask > 0.01) {
-		vec2 downhill = -world_normal.xz;
-		float steepness = length(downhill);
-		vec2 flow_dir = steepness > 0.001 ? normalize(downhill) : vec2(0.0, 1.0);
-		float speed = creek_flow_speed * (0.5 + steepness * 8.0) * TIME;
-		// Rotated UVs to break grid artifacts, scrolled along downhill direction
-		vec2 uv1 = mat2(vec2(0.894, 0.447), vec2(-0.447, 0.894)) * world_pos.xz;
-		vec2 uv2 = mat2(vec2(0.447, 0.894), vec2(-0.894, 0.447)) * world_pos.xz;
-		float caustic1 = vnoise(uv1 * 1.2 + flow_dir * speed);
-		float caustic2 = vnoise(uv2 * 2.0 + flow_dir * speed * 0.7 + vec2(200.0, 100.0));
-		float caustic = (caustic1 + caustic2) * 0.5;
-		float shimmer = smoothstep(0.38, 0.62, caustic) * 0.18;
-		vec3 wet_col = mix(albedo * 0.7, creek_wet_tint + shimmer, 0.5);
-		albedo = mix(albedo, wet_col, creek_mask * slope_path_fade * 0.6);
-	}
-
 	float ao_mask = smoothstep(0.3, 0.6, n_med) * grass_w * 0.2;
 	albedo *= (1.0 - ao_mask);
 
@@ -265,13 +243,11 @@ void fragment() {
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
 	base_rough = mix(base_rough, bank_roughness, bank_mask * grass_w);
-	// Creek wetness — slightly reduced roughness for a damp look (not mirror-like)
-	base_rough = mix(base_rough, 0.45, creek_mask * slope_path_fade);
 	// Rock roughness with subtle variation so it doesn't look like plastic
 	float rock_rough_var = vnoise(world_pos.xz * 0.08 + vec2(777.0, 333.0)) * 0.12;
 	base_rough = mix(base_rough, 0.78 + rock_rough_var, cliff_w);
 	ROUGHNESS = mix(base_rough, path_roughness, pm);
-	METALLIC = mix(cliff_w * 0.03, 0.05, creek_mask * slope_path_fade);
+	METALLIC = cliff_w * 0.03;
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
