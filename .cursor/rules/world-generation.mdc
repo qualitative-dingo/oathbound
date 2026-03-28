@@ -8,15 +8,21 @@ alwaysApply: false
 
 These constraints exist because violating them causes game-breaking terrain disappearance bugs. Do NOT change these without understanding the full zone lifecycle.
 
+## Floating Origin and Zone Positioning
+
+WorldGenerator extends Node3D and is shifted by `_check_origin_shift`. After a shift, `WorldGenerator.global_position = -origin_shift`.
+
+Zone roots are children of WorldGenerator. Their `position` property is LOCAL (relative to WorldGenerator). Therefore:
+
+- Zone local position must be the RAW world coordinate: `Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE)`
+- NEVER use `world_to_scene_pos()` for zone_root.position — that returns a GLOBAL scene position, which when combined with the parent's shifted transform causes DOUBLE offset
+- `world_to_scene_pos()` is correct for `global_position` assignments on nodes already in the tree (e.g., cave entrance, player teleport)
+
+The `displaced` counter in `[PERF DETAIL]` catches this: if it's ever > 0, zone positions are broken.
+
 ## Zone Cap (`_max_loaded_zones`)
 
-`_max_loaded_zones` must ALWAYS be >= `(2 * load_radius + 1)^2` plus headroom for the pipeline (`_pending_zones` + `_gen_in_flight`). The formula in `set_render_distance` computes this automatically.
-
-**NEVER hard-cap it** with `mini(...)` or any arbitrary upper bound. If you need to limit zones for performance, reduce `load_radius_zones` instead — that correctly scales everything downstream.
-
-## Zone Unloading
-
-`_unload_distant_zones` must run every physics frame (not throttled). The per-call budget (`_MAX_UNLOADS_PER_FRAME`) limits work per frame. Throttling unloads to every Nth frame causes the zone cap to be hit by stale distant zones, blocking new zone loading entirely.
+`_max_loaded_zones` must ALWAYS be >= `(2 * load_radius + 1)^2` plus headroom for the pipeline. The formula in `set_render_distance` computes this automatically. Do not hard-cap it with `mini(...)`.
 
 ## Performance Management
 
@@ -27,4 +33,4 @@ Manage FPS via LOD and collision disabling, NOT by capping how many zones can ex
 
 ## Pipeline Integrity
 
-The zone pipeline (`_pending_zones` -> `_gen_in_flight` -> `_gen_ready_queue` -> `_finalize_backlog` -> `_loaded_zones`) must never drop a coordinate without re-queuing it to `_pending_zones`. If a zone is popped from any stage and can't be processed, it must go back into `_pending_zones`.
+The zone pipeline (`_pending_zones` -> `_gen_in_flight` -> `_gen_ready_queue` -> `_finalize_backlog` -> `_loaded_zones`) must never drop a coordinate without re-queuing it to `_pending_zones`.

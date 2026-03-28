@@ -36,7 +36,7 @@ const ZONE_SIZE := 64.0
 @export_group("Loading")
 @export var load_radius_zones: int = 2
 @export var unload_radius_zones: int = 3
-const MAX_ZONES_PER_FRAME := 4
+const MAX_ZONES_PER_FRAME := 2
 const MESH_RESOLUTION := 48
 
 @export_group("Terrain")
@@ -392,6 +392,7 @@ var _perf_max_explore_ms := 0.0
 var _perf_max_total_ms := 0.0
 var _perf_pending_size_max := 0
 var _last_player_zones: Array[Vector2i] = []  # throttle _queue_zones_around
+var _unload_timer := 0.0
 var _requeue_timer := 0.0  # periodic re-queue to fill gaps from cap-limited passes
 var _any_flying := false
 
@@ -420,10 +421,17 @@ func _process(_delta: float) -> void:
 		_terrain_mesh_cache.size(), _gen_in_flight.size(),
 		_finalize_backlog.size(), _populate_backlog.size(),
 		_ZonePool.get_pool_stats()])
-	print("[PERF DETAIL] wg_total=%.2fms queue=%.2fms pending=%.2fms unload=%.2fms explore=%.2fms pending_q=%d origin_shift=(%.0f,%.0f)" % [
+	var displaced := 0
+	for coord in _loaded_zones:
+		var zn: Node3D = _loaded_zones[coord]
+		if is_instance_valid(zn) and zn.is_inside_tree():
+			var expected := Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE) - origin_shift
+			if zn.global_position.distance_to(expected) > 1.0:
+				displaced += 1
+	print("[PERF DETAIL] wg_total=%.2fms queue=%.2fms pending=%.2fms unload=%.2fms explore=%.2fms pending_q=%d origin_shift=(%.0f,%.0f) displaced=%d" % [
 		_perf_max_total_ms, _perf_max_queue_ms, _perf_max_pending_ms,
 		_perf_max_unload_ms, _perf_max_explore_ms, _perf_pending_size_max,
-		origin_shift.x, origin_shift.z])
+		origin_shift.x, origin_shift.z, displaced])
 	_perf_max_queue_ms = 0.0
 	_perf_max_pending_ms = 0.0
 	_perf_max_unload_ms = 0.0
@@ -496,8 +504,10 @@ func _physics_process(delta: float) -> void:
 	var t2 := Time.get_ticks_usec()
 	_process_pending_zones()
 	var t3 := Time.get_ticks_usec()
-	# Must run every frame (not throttled) to free capacity for new zones
-	_unload_distant_zones(_players)
+	_unload_timer -= delta
+	if _unload_timer <= 0.0:
+		_unload_timer = 0.5
+		_unload_distant_zones(_players)
 	var t4 := Time.get_ticks_usec()
 	_update_zone_lods(_players, delta)
 	_check_biome_change(world_to_zone(host_wp))
@@ -1320,8 +1330,6 @@ var _max_loaded_zones: int = 50
 func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 	if radius < 0:
 		radius = load_radius_zones
-	# If this cap is hit, NO zones get queued — player sees only water.
-	# _max_loaded_zones must always exceed the load area. See .cursor/rules/world-generation.mdc
 	var total_queued := _loaded_zones.size() + _pending_zones.size() + _gen_in_flight.size()
 	for x in range(center.x - radius, center.x + radius + 1):
 		for z in range(center.y - radius, center.y + radius + 1):
@@ -1686,7 +1694,8 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 		zone_root.add_child(collision)
 		call_deferred(&"add_child", zone_root)
 
-	zone_root.position = world_to_scene_pos(Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE))
+	# Local position = world coords; parent (WorldGenerator) global_position handles origin shift
+	zone_root.position = Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE)
 	_loaded_zones[coord] = zone_root
 	_explored_zones[coord] = true
 
@@ -1967,8 +1976,6 @@ func set_render_distance(radius: int) -> void:
 	load_radius_zones = clampi(radius, 1, 5)
 	unload_radius_zones = load_radius_zones + 1
 	var fly_radius := load_radius_zones + 1
-	# INVARIANT: must be >= load area size. NEVER hard-cap with mini().
-	# To limit zones for FPS, reduce load_radius_zones instead.
 	_max_loaded_zones = (2 * fly_radius + 1) ** 2 + 10
 	_resize_water_plane()
 
