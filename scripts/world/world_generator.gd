@@ -1071,14 +1071,17 @@ func get_height_at(x: float, z: float) -> float:
 		var crag := _detail_noise.get_noise_2d(x * 0.12 + 7000.0, z * 0.12 + 7000.0)
 		h += crag * height_scale * 0.08 * elev_t
 
-	# Continental bias — central play area stays above water
-	h += lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
-
-	# Pre-sample lake noise so the minimum-height clamp can be softened near lakes
+	# Pre-sample lake noise so bias and clamp can respect water bodies
 	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _detail_noise else 0.0
 
-	# Keep terrain above water — raised floor so thin ridges don't dip underwater
-	var min_land := lerpf(WATER_LEVEL + 1.0, WATER_LEVEL + 2.5, smoothstep(-0.45, 0.05, lake_n))
+	# Continental bias — lift central play area above water, but fade to zero
+	# in lake/shore regions so the bias doesn't create terrain arches over water
+	var bias := lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
+	bias *= smoothstep(-0.55, -0.15, lake_n)
+	h += bias
+
+	# Keep terrain above water — soft floor that respects lake basins
+	var min_land := lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 2.0, smoothstep(-0.35, 0.05, lake_n))
 	h = maxf(h, min_land)
 
 	# Watershed river/creek carving — accumulation drives depth and width
