@@ -86,6 +86,34 @@ static func _hg_snap_and_normal(wx: float, wz: float) -> Vector2:
 	var ny := tz.cross(tx).normalized().y
 	return Vector2(snapped, ny)
 
+# ─── Grass/flower rejection grid (pre-computed to skip expensive noise per sample)
+const _RG_RES := 16
+const _RG_CELL := ZONE_SIZE / float(_RG_RES)
+const _RG_DENSITY_LOW := 1
+const _RG_DIRT := 2
+const _RG_PATH := 4
+static var _rg_data := PackedByteArray()
+static var _rg_coord := Vector2i(-999999, -999999)
+
+static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: float) -> void:
+	if coord == _rg_coord:
+		return
+	_rg_coord = coord
+	_rg_data.resize(_RG_RES * _RG_RES)
+	for gz in _RG_RES:
+		for gx in _RG_RES:
+			var wx := origin_x + (gx + 0.5) * _RG_CELL
+			var wz := origin_z + (gz + 0.5) * _RG_CELL
+			var idx := gz * _RG_RES + gx
+			var flags := 0
+			if _grass_density_noise(wx, wz) < 0.18:
+				flags |= _RG_DENSITY_LOW
+			if is_dirt_patch(wx, wz):
+				flags |= _RG_DIRT
+			if is_on_path(wx, wz):
+				flags |= _RG_PATH
+			_rg_data[idx] = flags
+
 # ─── Debug toggles (set by DebugPanel to skip spawning categories) ────────────
 static var debug_skip_trees := false
 static var debug_skip_rocks := false
@@ -1183,21 +1211,21 @@ static func populate_zone_phase(
 
 		return false
 
-	# ── Phases 3–6: grass (2 types per frame) ──
-	if phase >= 3 and phase <= 6:
+	# ── Phases 3–10: grass (1 type per frame) ──
+	if phase >= 3 and phase <= 10:
 		if not debug_skip_grass:
-			var gi_start := (phase - 3) * 2
-			_scatter_grass(zone_root, coord, biome, rng, height_func, gi_start, gi_start + 2)
+			var gi := phase - 3
+			_scatter_grass(zone_root, coord, biome, rng, height_func, gi, gi + 1)
 		return false
 
-	# ── Phases 7–8: wildflowers (5 types per frame) ──
-	if phase >= 7 and phase <= 8:
+	# ── Phases 11–12: wildflowers (5 types per frame) ──
+	if phase >= 11 and phase <= 12:
 		if not debug_skip_grass:
-			var fi_start := (phase - 7) * 5
+			var fi_start := (phase - 11) * 5
 			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 5)
 		return false
 
-	# ── Phase 9: blueberry bushes + water plants ──
+	# ── Phase 13: blueberry bushes + water plants ──
 	if not debug_skip_saplings:
 		_scatter_blueberry_bushes(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 
@@ -1215,7 +1243,7 @@ static func populate_zone(
 	height_func: Callable,
 	microbiome: StringName = &"none",
 ) -> void:
-	for p in 10:
+	for p in 14:
 		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
 
 
@@ -1587,6 +1615,8 @@ static func _scatter_flowers(
 	var origin_x: float = coord.x * ZONE_SIZE
 	var origin_z: float = coord.y * ZONE_SIZE
 
+	_ensure_rejection_grid(coord, origin_x, origin_z)
+
 	var structs: Array = []
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree:
@@ -1614,6 +1644,11 @@ static func _scatter_flowers(
 			var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
 			var wx := origin_x + lx
 			var wz := origin_z + lz
+
+			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
+			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
+			if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH) != 0:
+				continue
 
 			var density := _grass_density_noise(wx, wz)
 			if density < 0.22:
@@ -1646,8 +1681,6 @@ static func _scatter_flowers(
 						break
 				if not near_water:
 					continue
-			if is_on_path(wx, wz):
-				continue
 			if _is_near_structure(wx, wz, 4.0, structs):
 				continue
 
@@ -1774,6 +1807,8 @@ static func _scatter_grass(
 	var origin_x: float = coord.x * ZONE_SIZE
 	var origin_z: float = coord.y * ZONE_SIZE
 
+	_ensure_rejection_grid(coord, origin_x, origin_z)
+
 	var structs: Array = []
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree:
@@ -1801,8 +1836,9 @@ static func _scatter_grass(
 			var wx := origin_x + lx
 			var wz := origin_z + lz
 
-			var density := _grass_density_noise(wx, wz)
-			if density < 0.18:
+			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
+			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
+			if _rg_data[rgz * _RG_RES + rgx] != 0:
 				continue
 
 			var sn := _hg_snap_and_normal(wx, wz)
@@ -1824,12 +1860,9 @@ static func _scatter_grass(
 			if absf(_hc - h_l) > 3.0 or absf(_hc - h_r) > 3.0 \
 					or absf(_hc - h_u) > 3.0 or absf(_hc - h_d) > 3.0:
 				continue
-			if is_dirt_patch(wx, wz):
-				continue
-			if is_on_path(wx, wz):
-				continue
 			if _is_near_structure(wx, wz, 4.0, structs):
 				continue
+			var density := _grass_density_noise(wx, wz)
 			var cluster_boost := clampf((density - 0.18) * 1.6, 0.0, 1.0)
 			var scale := lerpf(scale_min, scale_max, cluster_boost)
 			var slope_factor := clampf((sn.y - 0.97) / 0.03, 0.0, 1.0)
