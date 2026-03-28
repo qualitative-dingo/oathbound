@@ -24,6 +24,8 @@ uniform float path_roughness : hint_range(0.0, 1.0) = 0.92;
 group_uniforms riverbank;
 uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 uniform float bank_roughness : hint_range(0.0, 1.0) = 0.95;
+uniform float creek_flow_speed : hint_range(0.0, 2.0) = 0.6;
+uniform vec3 creek_wet_tint : source_color = vec3(0.06, 0.10, 0.08);
 
 group_uniforms rock;
 uniform vec3 rock_color_base : source_color = vec3(0.26, 0.27, 0.30);
@@ -228,6 +230,17 @@ void fragment() {
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
 	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
 
+	// Creek flow effect — wet glistening surface with scrolling caustics
+	float creek_mask = smoothstep(0.45, 0.85, v_river_bank + (bank_noise - 0.5) * 0.2);
+	if (creek_mask > 0.01) {
+		float flow_t = TIME * creek_flow_speed;
+		float caustic1 = vnoise(world_pos.xz * 0.8 + vec2(flow_t * 0.7, flow_t * 1.0));
+		float caustic2 = vnoise(world_pos.xz * 1.5 + vec2(-flow_t * 0.5, flow_t * 0.8) + vec2(200.0, 100.0));
+		float caustic = (caustic1 + caustic2) * 0.5;
+		float shimmer = smoothstep(0.35, 0.65, caustic) * 0.25;
+		albedo = mix(albedo, creek_wet_tint + shimmer, creek_mask * slope_path_fade * 0.7);
+	}
+
 	float ao_mask = smoothstep(0.3, 0.6, n_med) * grass_w * 0.2;
 	albedo *= (1.0 - ao_mask);
 
@@ -245,11 +258,13 @@ void fragment() {
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
 	base_rough = mix(base_rough, bank_roughness, bank_mask * grass_w);
+	// Creek wetness — low roughness for reflective wet-rock look
+	base_rough = mix(base_rough, 0.15, creek_mask * slope_path_fade);
 	// Rock roughness with subtle variation so it doesn't look like plastic
 	float rock_rough_var = vnoise(world_pos.xz * 0.08 + vec2(777.0, 333.0)) * 0.12;
 	base_rough = mix(base_rough, 0.78 + rock_rough_var, cliff_w);
 	ROUGHNESS = mix(base_rough, path_roughness, pm);
-	METALLIC = cliff_w * 0.03;
+	METALLIC = mix(cliff_w * 0.03, 0.12, creek_mask * slope_path_fade);
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
