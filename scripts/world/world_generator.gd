@@ -888,6 +888,7 @@ func _trace_creek_paths() -> void:
 				continue
 
 			# Subdivide coarse grid path into smooth world-space polyline
+			# with noise-driven lateral meandering and organic width variation
 			var points := PackedVector3Array()
 			var widths := PackedFloat32Array()
 			var flow_uvs := PackedFloat32Array()
@@ -898,20 +899,41 @@ func _trace_creek_paths() -> void:
 				var g1 := raw_points[i + 1]
 				var a0 := raw_accums[i]
 				var a1 := raw_accums[i + 1]
+
+				# Flow direction for perpendicular offset
+				var seg_dir := (g1 - g0).normalized()
+				var seg_perp := Vector2(-seg_dir.y, seg_dir.x)
+
 				for s in _CREEK_SUBDIV:
 					var t_val: float = float(s) / float(_CREEK_SUBDIV)
 					var gp := g0.lerp(g1, t_val)
 					var wx: float = -world_radius + gp.x * _WS_CELL
 					var wz: float = -world_radius + gp.y * _WS_CELL
 
-					# Use get_height_at for accurate terrain surface
+					# Lateral meandering — multi-scale noise perpendicular to flow
+					var wander_large := _detail_noise.get_noise_2d(wx * 0.02 + 8000.0, wz * 0.02 + 8000.0) * 12.0
+					var wander_med := _detail_noise.get_noise_2d(wx * 0.06 + 9500.0, wz * 0.06 + 9500.0) * 5.0
+					var wander_small := _detail_noise.get_noise_2d(wx * 0.15 + 11000.0, wz * 0.15 + 11000.0) * 2.0
+					var lateral_offset := wander_large + wander_med + wander_small
+					# Taper meander at path start/end to keep endpoints anchored
+					var path_t := (float(i) + t_val) / float(raw_points.size() - 1)
+					var taper := smoothstep(0.0, 0.15, path_t) * smoothstep(1.0, 0.85, path_t)
+					lateral_offset *= taper
+
+					wx += seg_perp.x * lateral_offset * _WS_CELL * 0.15
+					wz += seg_perp.y * lateral_offset * _WS_CELL * 0.15
+
 					var terrain_h := get_height_at(wx, wz)
 					terrain_h = maxf(terrain_h, WATER_LEVEL + 0.3)
 					var creek_y := terrain_h + 0.02
 
 					var acc := lerpf(a0, a1, t_val)
 					var norm_acc := clampf((acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
-					var w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, norm_acc) * 0.5
+					var base_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, norm_acc) * 0.5
+
+					# Organic width variation — independent noise at different frequency
+					var width_noise := _detail_noise.get_noise_2d(wx * 0.04 + 13000.0, wz * 0.04 + 13000.0)
+					var w := base_w * (0.75 + width_noise * 0.5)
 
 					if not points.is_empty():
 						var prev := points[points.size() - 1]
@@ -930,6 +952,8 @@ func _trace_creek_paths() -> void:
 			var last_acc := raw_accums[raw_accums.size() - 1]
 			var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 			var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
+			var lw_noise := _detail_noise.get_noise_2d(lwx * 0.04 + 13000.0, lwz * 0.04 + 13000.0)
+			last_w *= (0.75 + lw_noise * 0.5)
 			if not points.is_empty():
 				cum_dist += Vector3(lwx, lh + 0.02, lwz).distance_to(points[points.size() - 1])
 			points.append(Vector3(lwx, lh + 0.02, lwz))
