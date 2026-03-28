@@ -1,6 +1,6 @@
 extends Node3D
 
-@export var force_nearest_filter := false
+@export var force_nearest_filter := true
 
 var _env: Environment
 var _tween: Tween

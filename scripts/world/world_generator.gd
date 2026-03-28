@@ -599,7 +599,8 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var continent := _continent_noise.get_noise_2d(wx, wz)
 	var mountain := _mountain_noise.get_noise_2d(wx, wz)
 	var h := continent * height_scale * 0.6
-	h += maxf(mountain, 0.0) * height_scale * 1.5
+	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
+	h += mtn_ramp * height_scale * 1.5
 
 	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
@@ -1113,7 +1114,8 @@ func get_height_at(x: float, z: float) -> float:
 	var detail := _detail_noise.get_noise_2d(x, z)
 
 	var h := continent * height_scale * 0.6
-	h += maxf(mountain, 0.0) * height_scale * 1.5
+	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
+	h += mtn_ramp * height_scale * 1.5
 
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
@@ -1124,7 +1126,7 @@ func get_height_at(x: float, z: float) -> float:
 	var elev_t := clampf((h - 8.0) / 15.0, 0.0, 1.0)
 	if elev_t > 0.0:
 		var crag := _detail_noise.get_noise_2d(x * 0.12 + 7000.0, z * 0.12 + 7000.0)
-		h += crag * height_scale * 0.08 * elev_t
+		h += crag * height_scale * 0.06 * elev_t
 
 	# Pre-sample lake noise so bias and clamp can respect water bodies
 	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _detail_noise else 0.0
