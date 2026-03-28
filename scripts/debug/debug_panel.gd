@@ -25,6 +25,7 @@ var _toggles: Dictionary = {
 	"world_map": true,
 	"fancy_terrain": true,
 	"terrain_visible": true,
+	"ssao": false,
 }
 
 
@@ -134,6 +135,7 @@ func _build_ui() -> void:
 	_add_toggle(left, "World Map", "world_map")
 	_add_toggle(left, "Fancy Terrain Shader", "fancy_terrain")
 	_add_toggle(left, "Terrain Visible", "terrain_visible")
+	_add_toggle(left, "SSAO", "ssao")
 
 	var deselect_btn := _make_button("Disable ALL", Color(0.7, 0.15, 0.15))
 	deselect_btn.pressed.connect(_deselect_all)
@@ -331,6 +333,13 @@ func _apply_toggle(key: String, on: bool) -> void:
 			var wg: Node = wg_nodes[0]
 			if wg.has_method("set_terrain_visible"):
 				wg.set_terrain_visible(on)
+
+	if key == "ssao":
+		for node in get_tree().get_nodes_in_group(&"world_environment"):
+			if node is WorldEnvironment:
+				var env: Environment = (node as WorldEnvironment).environment
+				if env:
+					env.ssao_enabled = on
 
 	# Also show/hide existing instances in the current scene
 	_toggle_existing(key, on)
