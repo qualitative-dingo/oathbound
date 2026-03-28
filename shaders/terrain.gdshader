@@ -136,11 +136,26 @@ void fragment() {
 
 	float slope = 1.0 - abs(world_normal.y);
 
-	// Fix 1: fade vertex-color features on slopes to prevent zigzag mesh artifacts
-	float slope_path_fade = smoothstep(0.10, 0.03, slope);
+	// Large domain-warped noise blobs that push grass up into rock and vice versa
+	vec2 warp_a = vec2(
+		fbm2(world_pos.xz * 0.012 + vec2(430.0, 170.0)),
+		fbm2(world_pos.xz * 0.012 + vec2(810.0, 560.0))
+	) * 60.0;
+	float blob_noise = fbm2((world_pos.xz + warp_a) * 0.015 + vec2(90.0, 260.0));
 
-	// Fix 2: procedural color override on slopes — lower threshold catches moderate slopes too
-	float steep_override = smoothstep(0.20, 0.45, slope);
+	// Multi-scale noise to break up the slope contour into organic patches
+	float slope_noise = (blob_noise - 0.5) * 0.28
+	                   + (vnoise(world_pos.xz * 0.05 + vec2(731.0, 419.0)) - 0.5) * 0.18
+	                   + (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.12
+	                   + (vnoise(world_pos.xz * 0.4 + vec2(200.0, 140.0)) - 0.5) * 0.06;
+
+	float noisy_slope = slope + slope_noise;
+
+	// Fade vertex-color features on slopes to prevent zigzag mesh artifacts
+	float slope_path_fade = smoothstep(0.12, 0.03, noisy_slope);
+
+	// Procedural color override on slopes uses noisy_slope so it doesn't create its own line
+	float steep_override = smoothstep(0.20, 0.45, noisy_slope);
 
 	// Soften triplanar blending on steep terrain to reduce projection seam stripes
 	float blend_power = mix(8.0, 2.0, steep_override);
@@ -148,23 +163,8 @@ void fragment() {
 	blend = pow(blend, vec3(blend_power));
 	blend /= (blend.x + blend.y + blend.z + 0.0001);
 
-	// Multi-scale noise to break up the slope contour into organic patches
-	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.14
-	                   + (vnoise(world_pos.xz * 0.5 + vec2(200.0, 140.0)) - 0.5) * 0.08
-	                   + (vnoise(world_pos.xz * 0.07 + vec2(731.0, 419.0)) - 0.5) * 0.10;
-
-	// Domain-warped large blobs for organic slope transitions
-	vec2 warp = vec2(
-		fbm2(world_pos.xz * 0.018 + vec2(430.0, 170.0)),
-		fbm2(world_pos.xz * 0.018 + vec2(810.0, 560.0))
-	) * 45.0;
-	float patch_noise = fbm2((world_pos.xz + warp) * 0.022 + vec2(90.0, 260.0));
-	slope_noise += (patch_noise - 0.5) * 0.16;
-
-	float noisy_slope = slope + slope_noise;
-
-	// Two-zone system: grass → rock — wide transition for organic blending
-	float grass_w = smoothstep(slope_start + 0.14, slope_start, noisy_slope);
+	// Wide transition for organic grass/rock blending
+	float grass_w = smoothstep(slope_start + 0.30, slope_start - 0.05, noisy_slope);
 	float rock_w  = 1.0 - grass_w;
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
@@ -174,7 +174,7 @@ void fragment() {
 
 	// Dirt edge where grass meets rock (like Valheim's muddy transition)
 	vec3 col_slope = triplanar(tex_slope, world_pos, blend, texture_scale);
-	float edge_band = smoothstep(0.0, 0.08, noisy_slope) * smoothstep(slope_start + 0.18, slope_start + 0.06, noisy_slope);
+	float edge_band = smoothstep(0.0, 0.10, noisy_slope) * smoothstep(slope_start + 0.35, slope_start + 0.10, noisy_slope);
 	vec3 edge_dirt = mix(col_slope * 0.6, col_rock, 0.5);
 
 	// Subtle grass scatter at the very edge of flat areas
