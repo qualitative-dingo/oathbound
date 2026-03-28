@@ -24,6 +24,10 @@ var weather_sun_mult: float = 1.0
 var weather_fog_mult: float = 1.0
 var weather_ambient_mult: float = 1.0
 
+# ── Feature toggles (set by DebugPanel) ─────────────────────────────────
+var volumetric_fog_enabled: bool = false
+var glow_override_enabled: bool = true
+
 # ── Sun arc parameters ──────────────────────────────────────────────────
 var SUN_AXIS := Vector3(-1.0, 0.0, -0.5).normalized()
 const MOON_OFFSET := PI  # moon is opposite the sun
@@ -336,7 +340,11 @@ func _update_environment() -> void:
 	_env.fog_sun_scatter = _sample_float(SUN_SCATTER_KEYS, game_time)
 
 	# Glow
-	_env.glow_intensity = _sample_float(GLOW_INTENSITY_KEYS, game_time)
+	if glow_override_enabled:
+		_env.glow_enabled = true
+		_env.glow_intensity = _sample_float(GLOW_INTENSITY_KEYS, game_time)
+	else:
+		_env.glow_enabled = false
 
 	# Tonemap
 	_env.tonemap_exposure = _sample_float(TONEMAP_EXPOSURE_KEYS, game_time)
@@ -345,29 +353,33 @@ func _update_environment() -> void:
 	_env.adjustment_saturation = _sample_float(SATURATION_KEYS, game_time)
 
 	# Volumetric fog — god rays during day, subtle haze at night for torch/point light glow
-	var vol_density := _sample_float(VOLUMETRIC_DENSITY_KEYS, game_time) * weather_fog_mult
-	if vol_density > 0.0001:
-		if not _env.volumetric_fog_enabled:
-			_env.volumetric_fog_enabled = true
-		_env.volumetric_fog_density = vol_density
-
-		var is_night := game_time < 0.146 or game_time > 0.917
-		if is_night:
-			_env.volumetric_fog_albedo = Color(0.15, 0.18, 0.25)
-			_env.volumetric_fog_emission = Color(0.05, 0.06, 0.1)
-			_env.volumetric_fog_emission_energy = 0.1
-			_env.volumetric_fog_gi_inject = 0.3
-			_env.volumetric_fog_anisotropy = 0.2
-		else:
-			_env.volumetric_fog_albedo = _env.fog_light_color.lerp(Color.WHITE, 0.3)
-			_env.volumetric_fog_emission = _sun.light_color * 0.15
-			_env.volumetric_fog_emission_energy = _sun.light_energy * 0.5
-			_env.volumetric_fog_gi_inject = 0.5
-			_env.volumetric_fog_anisotropy = 0.6
-		_env.volumetric_fog_length = 120.0
-	else:
+	if not volumetric_fog_enabled:
 		if _env.volumetric_fog_enabled:
 			_env.volumetric_fog_enabled = false
+	else:
+		var vol_density := _sample_float(VOLUMETRIC_DENSITY_KEYS, game_time) * weather_fog_mult
+		if vol_density > 0.0001:
+			if not _env.volumetric_fog_enabled:
+				_env.volumetric_fog_enabled = true
+			_env.volumetric_fog_density = vol_density
+
+			var is_night := game_time < 0.146 or game_time > 0.917
+			if is_night:
+				_env.volumetric_fog_albedo = Color(0.15, 0.18, 0.25)
+				_env.volumetric_fog_emission = Color(0.05, 0.06, 0.1)
+				_env.volumetric_fog_emission_energy = 0.1
+				_env.volumetric_fog_gi_inject = 0.3
+				_env.volumetric_fog_anisotropy = 0.2
+			else:
+				_env.volumetric_fog_albedo = _env.fog_light_color.lerp(Color.WHITE, 0.3)
+				_env.volumetric_fog_emission = _sun.light_color * 0.15
+				_env.volumetric_fog_emission_energy = _sun.light_energy * 0.5
+				_env.volumetric_fog_gi_inject = 0.5
+				_env.volumetric_fog_anisotropy = 0.6
+			_env.volumetric_fog_length = 120.0
+		else:
+			if _env.volumetric_fog_enabled:
+				_env.volumetric_fog_enabled = false
 
 
 # ── Gradient sampling helpers ────────────────────────────────────────────

@@ -26,6 +26,8 @@ var _toggles: Dictionary = {
 	"fancy_terrain": true,
 	"terrain_visible": true,
 	"ssao": false,
+	"volumetric_fog": false,
+	"glow": true,
 }
 
 
@@ -136,6 +138,8 @@ func _build_ui() -> void:
 	_add_toggle(left, "Fancy Terrain Shader", "fancy_terrain")
 	_add_toggle(left, "Terrain Visible", "terrain_visible")
 	_add_toggle(left, "SSAO", "ssao")
+	_add_toggle(left, "Volumetric Fog", "volumetric_fog")
+	_add_toggle(left, "Glow", "glow")
 
 	var deselect_btn := _make_button("Disable ALL", Color(0.7, 0.15, 0.15))
 	deselect_btn.pressed.connect(_deselect_all)
@@ -340,6 +344,16 @@ func _apply_toggle(key: String, on: bool) -> void:
 				var env: Environment = (node as WorldEnvironment).environment
 				if env:
 					env.ssao_enabled = on
+
+	if key == "volumetric_fog":
+		var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree().current_scene else null
+		if dnc:
+			dnc.set("volumetric_fog_enabled", on)
+
+	if key == "glow":
+		var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree().current_scene else null
+		if dnc:
+			dnc.set("glow_override_enabled", on)
 
 	# Also show/hide existing instances in the current scene
 	_toggle_existing(key, on)
