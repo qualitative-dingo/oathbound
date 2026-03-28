@@ -1474,7 +1474,10 @@ func _update_zone_lods(players: Array[Node3D], delta: float) -> void:
 
 func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 	var zone_meta_key := &"lod_level"
-	var new_lod: int = 0 if zone_dist <= 1.0 else (1 if zone_dist <= 2.5 else 2)
+	# LOD 0: full detail (≤1.5 zones — covers diagonal neighbors at √2)
+	# LOD 1: medium — canopy visible but leaf shadows off (≤3.0 zones)
+	# LOD 2: far — non-terrain hidden entirely
+	var new_lod: int = 0 if zone_dist <= 1.5 else (1 if zone_dist <= 3.0 else 2)
 	var old_lod: int = zone_node.get_meta(zone_meta_key, -1)
 	if new_lod == old_lod:
 		return
@@ -1499,7 +1502,13 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 				if sub is CollisionShape3D:
 					sub.set_deferred("disabled", new_lod >= 2)
 				elif sub is Node3D and sub.name == "Canopy":
-					sub.visible = new_lod == 0
+					# Canopy stays visible at LOD 0 and LOD 1; only hidden at LOD 2
+					sub.visible = new_lod <= 1
+					# Disable leaf shadows at medium distance for performance
+					if sub.visible:
+						for leaf in sub.get_children():
+							if leaf is GeometryInstance3D:
+								leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if new_lod == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Build a half-resolution ConcavePolygonShape3D for terrain collision.
