@@ -153,12 +153,10 @@ void fragment() {
 	rock_w *= (1.0 - definitely_grass);
 	float grass_w = 1.0 - rock_w;
 
-	// Fade vertex-color features on slopes to prevent zigzag mesh artifacts
-	float slope_path_fade = smoothstep(0.12, 0.03, slope);
-
-	// Triplanar blend softening on steep terrain
-	float steep_override = smoothstep(0.20, 0.45, slope);
-	float blend_power = mix(8.0, 2.0, steep_override);
+	// Derive all visual slope signals from noise-driven rock_w to avoid triangle edges
+	float slope_path_fade = grass_w;
+	float steep_override = rock_w;
+	float blend_power = mix(8.0, 2.0, rock_w);
 	vec3 blend = abs(world_normal);
 	blend = pow(blend, vec3(blend_power));
 	blend /= (blend.x + blend.y + blend.z + 0.0001);
