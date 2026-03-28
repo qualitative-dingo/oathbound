@@ -230,15 +230,18 @@ void fragment() {
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
 	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
 
-	// Creek flow effect — wet glistening surface with rotated caustics to avoid grid squares
+	// Creek flow effect — direction derived from terrain normal (downhill), speed scales with steepness
 	float creek_mask = smoothstep(0.50, 0.90, v_river_bank + (bank_noise - 0.5) * 0.15);
 	if (creek_mask > 0.01) {
-		float flow_t = TIME * creek_flow_speed;
-		// Rotate sample coords by ~26.5 deg and ~63 deg to break axis-aligned grid artifacts
+		vec2 downhill = -world_normal.xz;
+		float steepness = length(downhill);
+		vec2 flow_dir = steepness > 0.001 ? normalize(downhill) : vec2(0.0, 1.0);
+		float speed = creek_flow_speed * (0.5 + steepness * 8.0) * TIME;
+		// Rotated UVs to break grid artifacts, scrolled along downhill direction
 		vec2 uv1 = mat2(vec2(0.894, 0.447), vec2(-0.447, 0.894)) * world_pos.xz;
 		vec2 uv2 = mat2(vec2(0.447, 0.894), vec2(-0.894, 0.447)) * world_pos.xz;
-		float caustic1 = vnoise(uv1 * 1.2 + vec2(flow_t * 0.6, flow_t * 0.9));
-		float caustic2 = vnoise(uv2 * 2.0 + vec2(-flow_t * 0.4, flow_t * 0.7) + vec2(200.0, 100.0));
+		float caustic1 = vnoise(uv1 * 1.2 + flow_dir * speed);
+		float caustic2 = vnoise(uv2 * 2.0 + flow_dir * speed * 0.7 + vec2(200.0, 100.0));
 		float caustic = (caustic1 + caustic2) * 0.5;
 		float shimmer = smoothstep(0.38, 0.62, caustic) * 0.18;
 		vec3 wet_col = mix(albedo * 0.7, creek_wet_tint + shimmer, 0.5);

@@ -92,11 +92,14 @@ void fragment() {
 
 	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * v_brightness;
 	ground = mix(ground, bank_color, bm * (1.0 - rock_w));
-	// Creek flow — rotated caustic shimmer to avoid grid-aligned squares
+	// Creek flow — direction from terrain normal (downhill), speed scales with steepness
 	if (creek_mask > 0.01) {
-		float ft = TIME * 0.6;
+		vec2 downhill = -world_normal.xz;
+		float steepness = length(downhill);
+		vec2 flow_dir = steepness > 0.001 ? normalize(downhill) : vec2(0.0, 1.0);
+		float speed = 0.6 * (0.5 + steepness * 8.0) * TIME;
 		vec2 ruv = mat2(vec2(0.894, 0.447), vec2(-0.447, 0.894)) * wpos.xz;
-		float caustic = vnoise_fast(ruv * 1.2 + vec2(ft * 0.6, ft * 0.9));
+		float caustic = vnoise_fast(ruv * 1.2 + flow_dir * speed);
 		float shimmer = smoothstep(0.38, 0.62, caustic) * 0.15;
 		vec3 wet_col = mix(ground * 0.75, vec3(0.06, 0.10, 0.08) + shimmer, 0.45);
 		ground = mix(ground, wet_col, creek_mask * (1.0 - rock_w) * 0.5);
