@@ -382,6 +382,7 @@ var _perf_max_total_ms := 0.0
 var _perf_pending_size_max := 0
 var _last_player_zones: Array[Vector2i] = []  # throttle _queue_zones_around
 var _unload_timer := 0.0  # throttle _unload_distant_zones
+var _requeue_timer := 0.0  # periodic re-queue to fill gaps from cap-limited passes
 
 
 func _process(_delta: float) -> void:
@@ -475,6 +476,12 @@ func _physics_process(delta: float) -> void:
 		_last_player_zones = cur_zones
 		for pz in cur_zones:
 			_queue_zones_around(pz, effective_radius)
+	else:
+		_requeue_timer -= delta
+		if _requeue_timer <= 0.0:
+			_requeue_timer = 2.0
+			for pz in cur_zones:
+				_queue_zones_around(pz, effective_radius)
 	var t2 := Time.get_ticks_usec()
 	_process_pending_zones()
 	var t3 := Time.get_ticks_usec()
@@ -686,7 +693,7 @@ func _trace_lake_outflows() -> void:
 			var wx: float = -world_radius + float(gx) * _WS_CELL
 			var wz: float = -world_radius + float(gz) * _WS_CELL
 			var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
-			if lake_n > -0.40:
+			if lake_n > -0.50:
 				continue
 			if _ws_accum[gz * _ws_dim + gx] > _WS_RIVER_THRESH:
 				continue
@@ -915,11 +922,11 @@ func get_height_at(x: float, z: float) -> float:
 	# Continental bias — lift central play area above water, but fade to zero
 	# in lake/shore regions so the bias doesn't create terrain arches over water
 	var bias := lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
-	bias *= smoothstep(-0.35, -0.05, lake_n)
+	bias *= smoothstep(-0.45, -0.12, lake_n)
 	h += bias
 
 	# Keep terrain above water — soft floor that respects lake basins
-	var min_land := lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 2.0, smoothstep(-0.15, 0.15, lake_n))
+	var min_land := lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 2.0, smoothstep(-0.28, 0.05, lake_n))
 	h = maxf(h, min_land)
 
 	# Watershed river/creek carving — accumulation drives depth and width
@@ -947,15 +954,15 @@ func get_height_at(x: float, z: float) -> float:
 				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
 				h = lerpf(h, WATER_LEVEL - depth, carve)
 
-	# Noise-driven lakes
+	# Noise-driven lakes (~3x more than original -0.30/-0.55/-0.75 thresholds)
 	if _detail_noise:
-		# Gradual shore (-0.12 to -0.35 transition)
-		if lake_n < -0.12 and lake_n >= -0.35:
-			var shore_t := smoothstep(-0.12, -0.35, lake_n)
+		# Gradual shore
+		if lake_n < -0.20 and lake_n >= -0.42:
+			var shore_t := smoothstep(-0.20, -0.42, lake_n)
 			h = lerpf(h, WATER_LEVEL + 0.05, shore_t)
 		# Full lake basin carve
-		if lake_n < -0.35:
-			var lake_t := smoothstep(-0.35, -0.55, lake_n)
+		if lake_n < -0.42:
+			var lake_t := smoothstep(-0.42, -0.62, lake_n)
 			var lake_depth := lerpf(1.0, 3.5, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
@@ -1112,7 +1119,7 @@ func _spawn_starter_goblins() -> void:
 	print("[WORLD] Spawned %d starter goblins near (%.0f, %.0f)" % [spawned, center_x, center_z])
 
 
-const MAX_LOADED_ZONES := 60
+var _max_loaded_zones: int = 100
 
 func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 	if radius < 0:
@@ -1120,7 +1127,7 @@ func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 	var total_queued := _loaded_zones.size() + _pending_zones.size() + _gen_in_flight.size()
 	for x in range(center.x - radius, center.x + radius + 1):
 		for z in range(center.y - radius, center.y + radius + 1):
-			if total_queued >= MAX_LOADED_ZONES:
+			if total_queued >= _max_loaded_zones:
 				return
 			var coord := Vector2i(x, z)
 			if coord in _loaded_zones or coord in _pending_zones or coord in _gen_in_flight:
@@ -1558,6 +1565,7 @@ func _resize_water_plane() -> void:
 func set_render_distance(radius: int) -> void:
 	load_radius_zones = clampi(radius, 1, 8)
 	unload_radius_zones = load_radius_zones + 1
+	_max_loaded_zones = (2 * load_radius_zones + 1) ** 2 + 20
 	_resize_water_plane()
 
 
@@ -1598,7 +1606,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			# Lake shores also get bank signal so muddy edges appear around lakes
 			if _detail_noise:
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
-				var lake_shore := smoothstep(-0.08, -0.30, lake_n)
+				var lake_shore := smoothstep(-0.15, -0.38, lake_n)
 				river_bank = maxf(river_bank, lake_shore)
 
 			river_bank = clampf(river_bank, 0.0, 1.0)
