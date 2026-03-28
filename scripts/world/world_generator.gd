@@ -1602,10 +1602,11 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			var path_f := _ZonePopulator.get_path_factor(wx, wz)
 
 			# Blue channel = shore/bank proximity (0..1) for muddy shoreline blending
-			# Perturb sample coords with noise to break up the coarse 48m watershed grid
-			var bank_warp := _detail_noise.get_noise_2d(wx * 0.08 + 4000.0, wz * 0.08 + 4000.0) * 12.0 if _detail_noise else 0.0
-			var accum_here := _ws_sample_accum(wx + bank_warp, wz + bank_warp)
-			var river_bank := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, accum_here)
+			# Perturb sample coords with multi-octave noise to break the coarse 48m watershed grid
+			var bw1 := _detail_noise.get_noise_2d(wx * 0.06 + 4000.0, wz * 0.06 + 4000.0) * 18.0 if _detail_noise else 0.0
+			var bw2 := _detail_noise.get_noise_2d(wx * 0.15 + 6000.0, wz * 0.15 + 6000.0) * 8.0 if _detail_noise else 0.0
+			var accum_here := _ws_sample_accum(wx + bw1 + bw2, wz + bw1 - bw2)
+			var river_bank := smoothstep(_WS_RIVER_THRESH * 0.7, _WS_RIVER_THRESH * 1.3, accum_here)
 
 			# Lake shores also get bank signal so muddy edges appear around lakes
 			if _detail_noise:

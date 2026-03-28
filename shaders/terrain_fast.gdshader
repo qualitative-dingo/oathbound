@@ -57,7 +57,7 @@ void fragment() {
 
 	float pm = smoothstep(0.2, 0.7, v_path_mask);
 	float bm = smoothstep(0.1, 0.6, v_river_bank);
-	float creek_mask = smoothstep(0.45, 0.85, v_river_bank);
+	float creek_mask = smoothstep(0.50, 0.90, v_river_bank);
 
 	vec3 grass_col = vec3(0.10, 0.28, 0.07) * tint_color;
 
@@ -92,16 +92,18 @@ void fragment() {
 
 	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * v_brightness;
 	ground = mix(ground, bank_color, bm * (1.0 - rock_w));
-	// Creek flow — scrolling caustic shimmer on wet areas
+	// Creek flow — rotated caustic shimmer to avoid grid-aligned squares
 	if (creek_mask > 0.01) {
 		float ft = TIME * 0.6;
-		float caustic = vnoise_fast(wpos.xz * 0.8 + vec2(ft * 0.7, ft));
-		float shimmer = smoothstep(0.35, 0.65, caustic) * 0.2;
-		ground = mix(ground, vec3(0.06, 0.10, 0.08) + shimmer, creek_mask * (1.0 - rock_w) * 0.6);
+		vec2 ruv = mat2(vec2(0.894, 0.447), vec2(-0.447, 0.894)) * wpos.xz;
+		float caustic = vnoise_fast(ruv * 1.2 + vec2(ft * 0.6, ft * 0.9));
+		float shimmer = smoothstep(0.38, 0.62, caustic) * 0.15;
+		vec3 wet_col = mix(ground * 0.75, vec3(0.06, 0.10, 0.08) + shimmer, 0.45);
+		ground = mix(ground, wet_col, creek_mask * (1.0 - rock_w) * 0.5);
 	}
 	ALBEDO = mix(ground, path_color, pm * (1.0 - rock_w));
 	float base_rough = mix(mix(0.85, 0.85, rock_w), 0.7, pm * (1.0 - rock_w));
-	base_rough = mix(base_rough, 0.18, creek_mask * (1.0 - rock_w));
+	base_rough = mix(base_rough, 0.50, creek_mask * (1.0 - rock_w));
 	ROUGHNESS = base_rough;
-	METALLIC = creek_mask * (1.0 - rock_w) * 0.1;
+	METALLIC = creek_mask * (1.0 - rock_w) * 0.04;
 }

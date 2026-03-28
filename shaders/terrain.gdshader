@@ -230,15 +230,19 @@ void fragment() {
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
 	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
 
-	// Creek flow effect — wet glistening surface with scrolling caustics
-	float creek_mask = smoothstep(0.45, 0.85, v_river_bank + (bank_noise - 0.5) * 0.2);
+	// Creek flow effect — wet glistening surface with rotated caustics to avoid grid squares
+	float creek_mask = smoothstep(0.50, 0.90, v_river_bank + (bank_noise - 0.5) * 0.15);
 	if (creek_mask > 0.01) {
 		float flow_t = TIME * creek_flow_speed;
-		float caustic1 = vnoise(world_pos.xz * 0.8 + vec2(flow_t * 0.7, flow_t * 1.0));
-		float caustic2 = vnoise(world_pos.xz * 1.5 + vec2(-flow_t * 0.5, flow_t * 0.8) + vec2(200.0, 100.0));
+		// Rotate sample coords by ~26.5 deg and ~63 deg to break axis-aligned grid artifacts
+		vec2 uv1 = mat2(vec2(0.894, 0.447), vec2(-0.447, 0.894)) * world_pos.xz;
+		vec2 uv2 = mat2(vec2(0.447, 0.894), vec2(-0.894, 0.447)) * world_pos.xz;
+		float caustic1 = vnoise(uv1 * 1.2 + vec2(flow_t * 0.6, flow_t * 0.9));
+		float caustic2 = vnoise(uv2 * 2.0 + vec2(-flow_t * 0.4, flow_t * 0.7) + vec2(200.0, 100.0));
 		float caustic = (caustic1 + caustic2) * 0.5;
-		float shimmer = smoothstep(0.35, 0.65, caustic) * 0.25;
-		albedo = mix(albedo, creek_wet_tint + shimmer, creek_mask * slope_path_fade * 0.7);
+		float shimmer = smoothstep(0.38, 0.62, caustic) * 0.18;
+		vec3 wet_col = mix(albedo * 0.7, creek_wet_tint + shimmer, 0.5);
+		albedo = mix(albedo, wet_col, creek_mask * slope_path_fade * 0.6);
 	}
 
 	float ao_mask = smoothstep(0.3, 0.6, n_med) * grass_w * 0.2;
@@ -258,13 +262,13 @@ void fragment() {
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
 	base_rough = mix(base_rough, bank_roughness, bank_mask * grass_w);
-	// Creek wetness — low roughness for reflective wet-rock look
-	base_rough = mix(base_rough, 0.15, creek_mask * slope_path_fade);
+	// Creek wetness — slightly reduced roughness for a damp look (not mirror-like)
+	base_rough = mix(base_rough, 0.45, creek_mask * slope_path_fade);
 	// Rock roughness with subtle variation so it doesn't look like plastic
 	float rock_rough_var = vnoise(world_pos.xz * 0.08 + vec2(777.0, 333.0)) * 0.12;
 	base_rough = mix(base_rough, 0.78 + rock_rough_var, cliff_w);
 	ROUGHNESS = mix(base_rough, path_roughness, pm);
-	METALLIC = mix(cliff_w * 0.03, 0.12, creek_mask * slope_path_fade);
+	METALLIC = mix(cliff_w * 0.03, 0.05, creek_mask * slope_path_fade);
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
