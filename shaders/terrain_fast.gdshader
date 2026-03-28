@@ -46,9 +46,13 @@ void fragment() {
 	vec3 wpos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float slope = 1.0 - abs(world_normal.y);
-	float slope_noise = (vnoise_fast(wpos.xz * 0.12 + vec2(53.0, 97.0)) - 0.5) * 0.08;
-	// Two-zone: grass → rock — tight transition
-	float rock_w = smoothstep(slope_start, slope_start + 0.04, slope + slope_noise);
+	float slope_noise = (vnoise_fast(wpos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.14
+	                   + (vnoise_fast(wpos.xz * 0.07 + vec2(731.0, 419.0)) - 0.5) * 0.10;
+	float warp_n = vnoise_fast(wpos.xz * 0.018 + vec2(430.0, 170.0));
+	float patch_n = vnoise_fast(wpos.xz * 0.022 + vec2(90.0, 260.0) + vec2(warp_n) * 45.0);
+	slope_noise += (patch_n - 0.5) * 0.16;
+	// Two-zone: grass → rock — wide transition for organic blending
+	float rock_w = smoothstep(slope_start, slope_start + 0.14, slope + slope_noise);
 
 	float pm = smoothstep(0.2, 0.7, v_path_mask);
 	float bm = smoothstep(0.1, 0.6, v_river_bank);

@@ -147,21 +147,22 @@ void fragment() {
 	blend /= (blend.x + blend.y + blend.z + 0.0001);
 
 	// Multi-scale noise to break up the slope contour into organic patches
-	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.08
-	                   + (vnoise(world_pos.xz * 0.6 + vec2(200.0, 140.0)) - 0.5) * 0.04;
+	float slope_noise = (vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) - 0.5) * 0.14
+	                   + (vnoise(world_pos.xz * 0.5 + vec2(200.0, 140.0)) - 0.5) * 0.08
+	                   + (vnoise(world_pos.xz * 0.07 + vec2(731.0, 419.0)) - 0.5) * 0.10;
 
 	// Domain-warped large blobs for organic slope transitions
 	vec2 warp = vec2(
-		fbm2(world_pos.xz * 0.025 + vec2(430.0, 170.0)),
-		fbm2(world_pos.xz * 0.025 + vec2(810.0, 560.0))
-	) * 25.0;
-	float patch_noise = fbm2((world_pos.xz + warp) * 0.03 + vec2(90.0, 260.0));
-	slope_noise += (patch_noise - 0.5) * 0.10;
+		fbm2(world_pos.xz * 0.018 + vec2(430.0, 170.0)),
+		fbm2(world_pos.xz * 0.018 + vec2(810.0, 560.0))
+	) * 45.0;
+	float patch_noise = fbm2((world_pos.xz + warp) * 0.022 + vec2(90.0, 260.0));
+	slope_noise += (patch_noise - 0.5) * 0.16;
 
 	float noisy_slope = slope + slope_noise;
 
-	// Two-zone system: grass → rock — tight transition so grass clings to stone
-	float grass_w = smoothstep(slope_start + 0.04, slope_start, noisy_slope);
+	// Two-zone system: grass → rock — wide transition for organic blending
+	float grass_w = smoothstep(slope_start + 0.14, slope_start, noisy_slope);
 	float rock_w  = 1.0 - grass_w;
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
@@ -169,9 +170,9 @@ void fragment() {
 	// Valheim-style patchy rock — used for ALL non-grass terrain
 	vec3 col_rock = rock_color(world_pos, world_normal, steep_override);
 
-	// Thin dirt edge where grass meets rock (like Valheim's muddy transition)
+	// Dirt edge where grass meets rock (like Valheim's muddy transition)
 	vec3 col_slope = triplanar(tex_slope, world_pos, blend, texture_scale);
-	float edge_band = smoothstep(0.0, 0.06, noisy_slope) * smoothstep(0.16, 0.08, noisy_slope);
+	float edge_band = smoothstep(0.0, 0.08, noisy_slope) * smoothstep(slope_start + 0.18, slope_start + 0.06, noisy_slope);
 	vec3 edge_dirt = mix(col_slope * 0.6, col_rock, 0.5);
 
 	// Subtle grass scatter at the very edge of flat areas

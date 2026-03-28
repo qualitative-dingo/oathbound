@@ -71,6 +71,22 @@ const _D8DIST := [1.0, 1.414, 1.0, 1.414, 1.0, 1.414, 1.0, 1.414]
 var _ws_dim: int = 0
 var _ws_accum: PackedFloat32Array
 var _ws_heights: PackedFloat32Array
+var _ws_flow: PackedInt32Array
+
+# ─── Elevated Creek Paths ─────────────────────────────────────────────────────
+# Creek paths for zones above WATER_LEVEL.  Keyed by zone Vector2i.
+# Each value is an Array of Dictionaries:
+#   { "points": PackedVector3Array,    -- world XYZ centerline
+#     "widths": PackedFloat32Array,    -- half-width at each point
+#     "uvs":    PackedFloat32Array }   -- cumulative UV distance for flow scroll
+const _CREEK_ACCUM_THRESH := 2.5
+const _CREEK_MIN_ELEV := 1.5          # min terrain height above WATER_LEVEL
+const _CREEK_MIN_WIDTH := 0.6
+const _CREEK_MAX_WIDTH := 3.5
+const _CREEK_DEPTH := 0.4             # how deep the channel is carved
+const _CREEK_SUBDIV := 6              # interpolation points between grid cells
+var _creek_segments: Dictionary = {}   # Vector2i -> Array[Dictionary]
+var _creek_shader_mat: ShaderMaterial
 
 # ─── Terrain Modifications (hoe / leveling) ──────────────────────────────────
 # Keyed by Vector2i grid coords (world pos quantized to TERRAIN_MOD_STEP).
@@ -334,6 +350,7 @@ func _ready() -> void:
 	_compute_watershed()
 	_init_biome_materials()
 	_init_water_material()
+	_init_creek_material()
 	set_render_distance(SaveManager.render_distance)
 	_generate_spawn_area()
 	_create_global_water()
@@ -662,8 +679,14 @@ func _compute_watershed() -> void:
 			if in_deg[nidx] == 0:
 				queue.append(nidx)
 
-	# Step 5 — trace winding outflow streams from noise-driven lakes
+	# Step 5 — store flow directions for creek path tracing
+	_ws_flow = flow
+
+	# Step 6 — trace winding outflow streams from noise-driven lakes
 	_trace_lake_outflows()
+
+	# Step 7 — trace elevated creek paths for visual flowing-water strips
+	_trace_creek_paths()
 
 
 func _trace_lake_outflows() -> void:
@@ -773,6 +796,168 @@ func _ws_sample_accum(wx: float, wz: float) -> float:
 	var c: float = _ws_accum[(iz + 1) * _ws_dim + ix]
 	var d: float = _ws_accum[(iz + 1) * _ws_dim + ix + 1]
 	return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fz)
+
+
+func _ws_sample_flow_dir(wx: float, wz: float) -> Vector2:
+	if _ws_flow.is_empty():
+		return Vector2.ZERO
+	var gx_f: float = (wx + world_radius) / _WS_CELL
+	var gz_f: float = (wz + world_radius) / _WS_CELL
+	var gx: int = clampi(int(round(gx_f)), 0, _ws_dim - 1)
+	var gz: int = clampi(int(round(gz_f)), 0, _ws_dim - 1)
+	var d_idx: int = _ws_flow[gz * _ws_dim + gx]
+	if d_idx < 0:
+		return Vector2(0, 1)
+	return Vector2(float(_D8X[d_idx]), float(_D8Z[d_idx])).normalized()
+
+
+func _trace_creek_paths() -> void:
+	_creek_segments.clear()
+	if _ws_accum.is_empty() or _ws_flow.is_empty():
+		return
+
+	var visited := {}
+
+	for gz in range(1, _ws_dim - 1):
+		for gx in range(1, _ws_dim - 1):
+			var idx: int = gz * _ws_dim + gx
+			var accum: float = _ws_accum[idx]
+			if accum < _CREEK_ACCUM_THRESH:
+				continue
+			var h: float = _ws_heights[idx]
+			if h < WATER_LEVEL + _CREEK_MIN_ELEV:
+				continue
+			if visited.has(idx):
+				continue
+
+			# Trace downstream from this cell
+			var raw_points: Array[Vector2] = []
+			var raw_accums: Array[float] = []
+			var cgx := gx
+			var cgz := gz
+			for _step in 500:
+				var cidx := cgz * _ws_dim + cgx
+				if visited.has(cidx):
+					raw_points.append(Vector2(float(cgx), float(cgz)))
+					raw_accums.append(_ws_accum[cidx])
+					break
+				visited[cidx] = true
+
+				raw_points.append(Vector2(float(cgx), float(cgz)))
+				raw_accums.append(_ws_accum[cidx])
+
+				var ch: float = _ws_heights[cidx]
+				if ch < WATER_LEVEL + 0.5:
+					break
+
+				var fd: int = _ws_flow[cidx]
+				if fd < 0:
+					break
+				var nx: int = cgx + _D8X[fd]
+				var nz: int = cgz + _D8Z[fd]
+				if nx < 0 or nx >= _ws_dim or nz < 0 or nz >= _ws_dim:
+					break
+				cgx = nx
+				cgz = nz
+
+			if raw_points.size() < 2:
+				continue
+
+			# Subdivide coarse grid path into smooth world-space polyline
+			var points := PackedVector3Array()
+			var widths := PackedFloat32Array()
+			var uvs := PackedFloat32Array()
+			var cum_dist := 0.0
+
+			for i in raw_points.size() - 1:
+				var g0 := raw_points[i]
+				var g1 := raw_points[i + 1]
+				var a0 := raw_accums[i]
+				var a1 := raw_accums[i + 1]
+				for s in _CREEK_SUBDIV:
+					var t: float = float(s) / float(_CREEK_SUBDIV)
+					var gp := g0.lerp(g1, t)
+					var wx: float = -world_radius + gp.x * _WS_CELL
+					var wz: float = -world_radius + gp.y * _WS_CELL
+
+					# Sample base height (pre-river-carve) for creek surface level
+					var terrain_h := _get_base_height(wx, wz)
+					# Add detail noise for natural variation
+					if _detail_noise:
+						terrain_h += _detail_noise.get_noise_2d(wx, wz) * height_scale * 0.15
+					terrain_h = maxf(terrain_h, WATER_LEVEL + 0.3)
+					var creek_y := terrain_h - _CREEK_DEPTH * 0.5
+
+					var acc := lerpf(a0, a1, t)
+					var norm_acc := clampf((acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
+					var w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, norm_acc) * 0.5
+
+					if not points.is_empty():
+						var prev := points[points.size() - 1]
+						cum_dist += Vector3(wx, creek_y, wz).distance_to(prev)
+
+					points.append(Vector3(wx, creek_y, wz))
+					widths.append(w)
+					uvs.append(cum_dist)
+
+			# Final point
+			var last_g := raw_points[raw_points.size() - 1]
+			var lwx: float = -world_radius + last_g.x * _WS_CELL
+			var lwz: float = -world_radius + last_g.y * _WS_CELL
+			var lh := _get_base_height(lwx, lwz)
+			if _detail_noise:
+				lh += _detail_noise.get_noise_2d(lwx, lwz) * height_scale * 0.15
+			lh = maxf(lh, WATER_LEVEL + 0.3)
+			var last_acc := raw_accums[raw_accums.size() - 1]
+			var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
+			var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
+			if not points.is_empty():
+				cum_dist += Vector3(lwx, lh - _CREEK_DEPTH * 0.5, lwz).distance_to(points[points.size() - 1])
+			points.append(Vector3(lwx, lh - _CREEK_DEPTH * 0.5, lwz))
+			widths.append(last_w)
+			uvs.append(cum_dist)
+
+			if points.size() < 2:
+				continue
+
+			# Bucket segments by zone
+			_bucket_creek_by_zone(points, widths, uvs)
+
+
+func _bucket_creek_by_zone(points: PackedVector3Array, widths: PackedFloat32Array, uvs: PackedFloat32Array) -> void:
+	# Split the polyline by zone boundaries
+	var current_zone := Vector2i(floori(points[0].x / ZONE_SIZE), floori(points[0].z / ZONE_SIZE))
+	var seg_start := 0
+
+	for i in range(1, points.size()):
+		var zone := Vector2i(floori(points[i].x / ZONE_SIZE), floori(points[i].z / ZONE_SIZE))
+		if zone != current_zone:
+			if i - seg_start >= 2:
+				# Include one overlap point for continuity
+				var end_idx := mini(i + 1, points.size())
+				_store_creek_segment(current_zone, points, widths, uvs, seg_start, end_idx)
+			current_zone = zone
+			seg_start = maxi(i - 1, 0)
+
+	if points.size() - seg_start >= 2:
+		_store_creek_segment(current_zone, points, widths, uvs, seg_start, points.size())
+
+
+func _store_creek_segment(zone: Vector2i, points: PackedVector3Array, widths: PackedFloat32Array, uvs: PackedFloat32Array, from: int, to: int) -> void:
+	var seg_pts := PackedVector3Array()
+	var seg_w := PackedFloat32Array()
+	var seg_uv := PackedFloat32Array()
+	for i in range(from, to):
+		seg_pts.append(points[i])
+		seg_w.append(widths[i])
+		seg_uv.append(uvs[i])
+	if not _creek_segments.has(zone):
+		_creek_segments[zone] = []
+	(_creek_segments[zone] as Array).append({
+		"points": seg_pts,
+		"widths": seg_w,
+		"uvs": seg_uv,
+	})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -896,23 +1081,30 @@ func get_height_at(x: float, z: float) -> float:
 	var min_land := lerpf(WATER_LEVEL + 1.0, WATER_LEVEL + 2.5, smoothstep(-0.45, 0.05, lake_n))
 	h = maxf(h, min_land)
 
-	# Watershed river carving — accumulation drives depth and width
+	# Watershed river/creek carving — accumulation drives depth and width
 	var accum := _ws_sample_accum(x, z)
-	if accum > _WS_RIVER_THRESH * 0.5:
+	if accum > _CREEK_ACCUM_THRESH * 0.5:
 		var widen_n := _detail_noise.get_noise_2d(x * 0.025 + 3000.0, z * 0.025 + 3000.0)
 		var effective_accum := accum + widen_n * _WS_RIVER_THRESH * 0.35
 
-		# Bank slope toward water level
-		var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum)
-		if bank_t > 0.0:
-			h = lerpf(h, WATER_LEVEL + 0.15, bank_t)
+		if h > WATER_LEVEL + _CREEK_MIN_ELEV and effective_accum < _WS_RIVER_FULL * 0.4:
+			# Elevated creek channel — shallow trench at local elevation
+			var creek_t := smoothstep(_CREEK_ACCUM_THRESH * 0.5, _CREEK_ACCUM_THRESH * 1.5, effective_accum)
+			if creek_t > 0.0:
+				var norm_acc := clampf((effective_accum - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
+				var channel_w_factor := lerpf(0.3, 1.0, norm_acc)
+				h -= _CREEK_DEPTH * creek_t * channel_w_factor
+		else:
+			# Standard sea-level river carving
+			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum)
+			if bank_t > 0.0:
+				h = lerpf(h, WATER_LEVEL + 0.15, bank_t)
 
-		# Channel carving below water for the riverbed (shallower rivers)
-		if effective_accum > _WS_RIVER_THRESH:
-			var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, effective_accum)
-			var depth := lerpf(1.5, 5.0, t)
-			var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
-			h = lerpf(h, WATER_LEVEL - depth, carve)
+			if effective_accum > _WS_RIVER_THRESH:
+				var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, effective_accum)
+				var depth := lerpf(1.5, 5.0, t)
+				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
+				h = lerpf(h, WATER_LEVEL - depth, carve)
 
 	# Noise-driven lakes — tighter thresholds so lakes are rarer and smaller
 	if _detail_noise:
@@ -1424,6 +1616,9 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 	_loaded_zones[coord] = zone_root
 	_explored_zones[coord] = true
 
+	# Build creek/river strip meshes for this zone
+	_build_creek_meshes_for_zone(zone_root, coord)
+
 	# Queue object spawning for the NEXT frame to keep this frame light
 	var micro := _determine_microbiome(coord)
 	_populate_backlog.append({
@@ -1501,6 +1696,171 @@ func _create_global_water() -> void:
 	_global_water_plane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_global_water_plane)
 	_global_water_plane.global_position.y = WATER_LEVEL - 0.15
+
+
+func _init_creek_material() -> void:
+	var shader := _load_shader("res://shaders/creek.gdshader")
+	if not shader:
+		return
+	_creek_shader_mat = ShaderMaterial.new()
+	_creek_shader_mat.shader = shader
+
+
+func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
+	if not _creek_segments.has(coord):
+		return
+	var segments: Array = _creek_segments[coord]
+	if segments.is_empty():
+		return
+
+	var zone_origin := Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE)
+
+	for seg in segments:
+		var points: PackedVector3Array = seg["points"]
+		var half_widths: PackedFloat32Array = seg["widths"]
+		var flow_uvs: PackedFloat32Array = seg["uvs"]
+
+		if points.size() < 2:
+			continue
+
+		var verts := PackedVector3Array()
+		var normals := PackedVector3Array()
+		var uvs := PackedVector2Array()
+		var indices := PackedInt32Array()
+
+		# Normalize UV.y to a reasonable tile scale
+		var uv_scale := 0.05
+
+		for i in points.size():
+			var p := points[i]
+			var w := half_widths[i]
+			var uv_y := flow_uvs[i] * uv_scale
+
+			# Flow direction from consecutive points
+			var flow_dir: Vector2
+			if i < points.size() - 1:
+				var next := points[i + 1]
+				flow_dir = Vector2(next.x - p.x, next.z - p.z).normalized()
+			elif i > 0:
+				var prev := points[i - 1]
+				flow_dir = Vector2(p.x - prev.x, p.z - prev.z).normalized()
+			else:
+				flow_dir = Vector2(0, 1)
+
+			# Perpendicular for strip width
+			var perp := Vector2(-flow_dir.y, flow_dir.x)
+
+			# Convert to zone-local position
+			var local_p := p - zone_origin
+			var left := Vector3(local_p.x - perp.x * w, local_p.y, local_p.z - perp.y * w)
+			var right := Vector3(local_p.x + perp.x * w, local_p.y, local_p.z + perp.y * w)
+
+			verts.append(left)
+			verts.append(right)
+			normals.append(Vector3.UP)
+			normals.append(Vector3.UP)
+			uvs.append(Vector2(0.0, uv_y))
+			uvs.append(Vector2(1.0, uv_y))
+
+			if i > 0:
+				var base := (i - 1) * 2
+				indices.append(base)
+				indices.append(base + 1)
+				indices.append(base + 2)
+				indices.append(base + 1)
+				indices.append(base + 3)
+				indices.append(base + 2)
+
+		if verts.size() < 4:
+			continue
+
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_NORMAL] = normals
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
+		arrays[Mesh.ARRAY_INDEX] = indices
+
+		var arr_mesh := ArrayMesh.new()
+		arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		if _creek_shader_mat:
+			arr_mesh.surface_set_material(0, _creek_shader_mat)
+		else:
+			var fallback := StandardMaterial3D.new()
+			fallback.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			fallback.albedo_color = Color(0.1, 0.2, 0.15, 0.5)
+			fallback.cull_mode = BaseMaterial3D.CULL_DISABLED
+			arr_mesh.surface_set_material(0, fallback)
+
+		var mi := MeshInstance3D.new()
+		mi.name = "Creek"
+		mi.mesh = arr_mesh
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		zone_root.add_child(mi)
+
+		# Waterfall particles where elevation drops steeply
+		_spawn_waterfall_particles(zone_root, points, zone_origin)
+
+
+func _spawn_waterfall_particles(zone_root: Node3D, points: PackedVector3Array, zone_origin: Vector3) -> void:
+	for i in range(1, points.size()):
+		var prev := points[i - 1]
+		var curr := points[i]
+		var dy := prev.y - curr.y
+		var dx := Vector2(curr.x - prev.x, curr.z - prev.z).length()
+		if dx < 0.01:
+			continue
+		var slope := dy / dx
+		if slope < 0.15 or dy < 0.8:
+			continue
+
+		# Steep drop — spawn waterfall particles
+		var mid := (prev + curr) * 0.5
+		var local := mid - zone_origin
+
+		var particles := GPUParticles3D.new()
+		particles.name = "Waterfall"
+		particles.amount = 16
+		particles.lifetime = 0.7
+		particles.explosiveness = 0.1
+		particles.randomness = 0.4
+		particles.visibility_aabb = AABB(Vector3(-2, -3, -2), Vector3(4, 6, 4))
+
+		var mat := ParticleProcessMaterial.new()
+		mat.direction = Vector3(0, -1, 0)
+		mat.spread = 25.0
+		mat.initial_velocity_min = 1.5
+		mat.initial_velocity_max = 3.0
+		mat.gravity = Vector3(0, -5.0, 0)
+		mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+		mat.emission_box_extents = Vector3(0.5, 0.1, 0.5)
+		mat.scale_min = 0.06
+		mat.scale_max = 0.14
+		mat.damping_min = 1.0
+		mat.damping_max = 2.0
+		mat.color = Color(0.85, 0.9, 0.88, 0.7)
+		var alpha_curve := CurveTexture.new()
+		var curve := Curve.new()
+		curve.add_point(Vector2(0.0, 0.8))
+		curve.add_point(Vector2(0.5, 0.6))
+		curve.add_point(Vector2(1.0, 0.0))
+		alpha_curve.curve = curve
+		mat.alpha_curve = alpha_curve
+		particles.process_material = mat
+
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.12, 0.12)
+		var draw_mat := StandardMaterial3D.new()
+		draw_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		draw_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		draw_mat.albedo_color = Color(0.9, 0.95, 0.92, 0.75)
+		draw_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		draw_mat.vertex_color_use_as_albedo = true
+		quad.material = draw_mat
+		particles.draw_pass_1 = quad
+
+		particles.position = local
+		zone_root.add_child(particles)
 
 
 func _water_plane_size() -> Vector2:
