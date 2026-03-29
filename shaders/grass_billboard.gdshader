@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert_wrap;
+render_mode blend_mix, depth_draw_opaque, cull_disabled, diffuse_lambert_wrap;
 
 uniform sampler2D albedo_texture : source_color, filter_nearest_mipmap;
 uniform vec4 albedo_color : source_color = vec4(0.25, 0.55, 0.15, 1.0);
@@ -41,34 +41,6 @@ void vertex() {
 
 	VERTEX.x += (wave_x + flutter_x * wm) * sway;
 	VERTEX.z += (wave_z + flutter_z * wm) * sway * 0.7;
-
-	// Cylindrical billboard (Y-up): one quad, faces camera on XZ, cull_back removes the far side.
-	vec3 pivot = MODEL_MATRIX[3].xyz;
-	float sx = length(MODEL_MATRIX[0].xyz);
-	float sy = length(MODEL_MATRIX[1].xyz);
-	float sz = length(MODEL_MATRIX[2].xyz);
-
-	vec3 to_cam = CAMERA_POSITION_WORLD - pivot;
-	to_cam.y = 0.0;
-	float tc_len = length(to_cam);
-	if (tc_len > 1e-5) {
-		to_cam /= tc_len;
-	} else {
-		to_cam = vec3(0.0, 0.0, 1.0);
-	}
-	vec3 right = cross(vec3(0.0, 1.0, 0.0), to_cam);
-	if (dot(right, right) < 1e-8) {
-		right = vec3(1.0, 0.0, 0.0);
-	} else {
-		right = normalize(right);
-	}
-	vec3 forward = normalize(cross(right, vec3(0.0, 1.0, 0.0)));
-
-	vec3 vl = VERTEX;
-	vec3 world_v = pivot + right * (vl.x * sx) + vec3(0.0, 1.0, 0.0) * (vl.y * sy) + forward * (vl.z * sz);
-
-	VERTEX = (inverse(MODEL_MATRIX) * vec4(world_v, 1.0)).xyz;
-	world_pos = world_v;
 }
 
 void fragment() {
