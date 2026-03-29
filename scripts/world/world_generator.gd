@@ -397,6 +397,51 @@ var _requeue_timer := 0.0  # periodic re-queue to fill gaps from cap-limited pas
 var _any_flying := false
 
 
+## Walks loaded zones for multimesh vegetation stats (grass / flowers / reeds).
+## g_vis_* / fl_vis_* / r_vis_* = instance sums for MMIs whose visible flag is true (LOD).
+func _vegetation_perf_snapshot() -> String:
+	var grass_mmi := 0
+	var grass_inst := 0
+	var grass_vis_inst := 0
+	var flower_mmi := 0
+	var flower_inst := 0
+	var flower_vis_inst := 0
+	var reed_mmi := 0
+	var reed_inst := 0
+	var reed_vis_inst := 0
+	for coord in _loaded_zones:
+		var zn: Node3D = _loaded_zones[coord]
+		if not is_instance_valid(zn):
+			continue
+		for child in zn.get_children():
+			if not child is MultiMeshInstance3D:
+				continue
+			var mmi := child as MultiMeshInstance3D
+			var mm := mmi.multimesh
+			var ic := mm.instance_count if mm else 0
+			var vis := mmi.visible
+			var n: String = mmi.name
+			if n.begins_with("Grass_"):
+				grass_mmi += 1
+				grass_inst += ic
+				if vis:
+					grass_vis_inst += ic
+			elif n.begins_with("Flower_"):
+				flower_mmi += 1
+				flower_inst += ic
+				if vis:
+					flower_vis_inst += ic
+			elif n == "Reeds":
+				reed_mmi += 1
+				reed_inst += ic
+				if vis:
+					reed_vis_inst += ic
+	return "g_mmi=%d g_inst=%d g_vis=%d fl_mmi=%d fl_inst=%d fl_vis=%d reed_mmi=%d r_inst=%d r_vis=%d" % [
+		grass_mmi, grass_inst, grass_vis_inst, flower_mmi, flower_inst, flower_vis_inst,
+		reed_mmi, reed_inst, reed_vis_inst,
+	]
+
+
 func _process(_delta: float) -> void:
 	if not _diag_pending:
 		return
@@ -408,19 +453,24 @@ func _process(_delta: float) -> void:
 	var total_nodes := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
 	var objects := Performance.get_monitor(Performance.OBJECT_COUNT)
 	var draw_calls := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	var prims := int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+	var p3d_active := int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS))
+	var p3d_pairs := int(Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS))
 	var vram_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_VIDEO_MEM_USED) / (1024.0 * 1024.0)
 	var buf_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_BUFFER_MEM_USED) / (1024.0 * 1024.0)
 	var tex_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TEXTURE_MEM_USED) / (1024.0 * 1024.0)
 	var process_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	var physics_ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
-	print("[PERF DIAG] FPS=%d nodes=%d objects=%d draws=%d vram=%.1fMB buf=%.1fMB tex=%.1fMB proc=%.1fms phys=%.1fms zones=%d enemies=%d interact=%d loot=%d explored=%d sub=%d tcache=%d bg=%d mesh_q=%d pop_q=%d %s" % [
+	print("[PERF DIAG] FPS=%d nodes=%d objects=%d draws=%d prims=%d p3d=%d p3dp=%d vram=%.1fMB buf=%.1fMB tex=%.1fMB proc=%.1fms phys=%.1fms zones=%d enemies=%d interact=%d loot=%d explored=%d sub=%d tcache=%d bg=%d mesh_q=%d pop_q=%d %s" % [
 		Engine.get_frames_per_second(), int(total_nodes), int(objects),
-		int(draw_calls), vram_mb, buf_mb, tex_mb, process_ms, physics_ms,
+		int(draw_calls), prims, p3d_active, p3d_pairs,
+		vram_mb, buf_mb, tex_mb, process_ms, physics_ms,
 		_loaded_zones.size(), _diag_n_enemies, _diag_n_interactables, _diag_n_loot,
 		_explored_zones.size(), _explored_sub_chunks.size(),
 		_terrain_mesh_cache.size(), _gen_in_flight.size(),
 		_finalize_backlog.size(), _populate_backlog.size(),
 		_ZonePool.get_pool_stats()])
+	print("[PERF VEG] %s" % _vegetation_perf_snapshot())
 	var displaced := 0
 	for coord in _loaded_zones:
 		var zn: Node3D = _loaded_zones[coord]
