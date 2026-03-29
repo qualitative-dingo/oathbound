@@ -26,6 +26,8 @@ var weather_ambient_mult: float = 1.0
 
 # ── Feature toggles (set by DebugPanel) ─────────────────────────────────
 var glow_override_enabled: bool = true
+## When true, skip fog/glow/tonemap/adjustment writes so the panel can isolate grain/banding.
+var debug_post_fx_bypass: bool = false
 
 # ── Sun arc parameters ──────────────────────────────────────────────────
 var SUN_AXIS := Vector3(-1.0, 0.0, -0.5).normalized()
@@ -338,6 +340,14 @@ func _update_environment() -> void:
 
 	if _env.volumetric_fog_enabled:
 		_env.volumetric_fog_enabled = false
+
+	if debug_post_fx_bypass:
+		_env.fog_enabled = false
+		_env.glow_enabled = false
+		_env.adjustment_enabled = false
+		_env.adjustment_contrast = 1.0
+		_env.adjustment_saturation = 1.0
+		_env.tonemap_exposure = 1.0
 
 
 # ── Gradient sampling helpers ────────────────────────────────────────────

@@ -30,6 +30,9 @@ var _toggles: Dictionary = {
 	"nearest_filter": false,
 }
 
+## True while "Disable ALL post & filters" is active (WorldEnvironment + DayNightCycle bypass).
+var _post_fx_strip_active: bool = false
+
 
 func _init() -> void:
 	layer = 110
@@ -99,6 +102,39 @@ func _build_ui() -> void:
 
 	var sep := HSeparator.new()
 	outer.add_child(sep)
+
+	var post_title := Label.new()
+	post_title.text = "Post / screen FX (grain & banding)"
+	post_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	post_title.add_theme_font_size_override("font_size", 15)
+	post_title.add_theme_color_override("font_color", Color(0.75, 0.65, 0.9))
+	outer.add_child(post_title)
+
+	var post_hint := Label.new()
+	post_hint.text = "Turns off SSAO, glow, fog, color grading, and DNC tonemap — leaves spawns & terrain as-is."
+	post_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	post_hint.add_theme_font_size_override("font_size", 11)
+	post_hint.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+	post_hint.autowrap_mode = TextServer.AUTOWRAP_WORD
+	outer.add_child(post_hint)
+
+	var post_row := HBoxContainer.new()
+	post_row.add_theme_constant_override("separation", 12)
+	post_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var post_off := _make_button("Disable ALL post & filters", Color(0.35, 0.2, 0.45))
+	post_off.pressed.connect(func() -> void:
+		_set_post_fx_strip(true)
+	)
+	var post_on := _make_button("Restore post & filters", Color(0.2, 0.38, 0.28))
+	post_on.pressed.connect(func() -> void:
+		_set_post_fx_strip(false)
+	)
+	post_row.add_child(post_off)
+	post_row.add_child(post_on)
+	outer.add_child(post_row)
+
+	var post_sep := HSeparator.new()
+	outer.add_child(post_sep)
 
 	# --- Two-column layout: toggles on left, actions on right ---
 	var columns := HBoxContainer.new()
@@ -360,6 +396,24 @@ func _apply_toggle(key: String, on: bool) -> void:
 	# Also show/hide existing instances in the current scene
 	_toggle_existing(key, on)
 
+	if _post_fx_strip_active:
+		_enforce_post_fx_strip_env()
+
+
+func _enforce_post_fx_strip_env() -> void:
+	var tree := get_tree()
+	for node in tree.get_nodes_in_group(&"world_environment"):
+		if node is WorldEnvironment:
+			var env: Environment = (node as WorldEnvironment).environment
+			if env:
+				env.ssao_enabled = false
+				env.glow_enabled = false
+				env.fog_enabled = false
+				env.adjustment_enabled = false
+	var dnc: Node = tree.current_scene.get_node_or_null("DayNightCycle") if tree.current_scene else null
+	if dnc:
+		dnc.set("glow_override_enabled", false)
+
 
 func _toggle_existing(key: String, on: bool) -> void:
 	var tree := get_tree()
@@ -496,6 +550,34 @@ func _find_world_generator() -> Node:
 
 
 # ─── UI Helpers ─────────────────────────────────────────────────────────────────
+
+func _set_post_fx_strip(active: bool) -> void:
+	_post_fx_strip_active = active
+	print("[DEBUG] post-FX strip = %s" % active)
+	var tree := get_tree()
+	var dnc: Node = tree.current_scene.get_node_or_null("DayNightCycle") if tree.current_scene else null
+	if dnc:
+		dnc.set("debug_post_fx_bypass", active)
+		if active:
+			dnc.set("glow_override_enabled", false)
+		else:
+			dnc.set("glow_override_enabled", _toggles["glow"])
+	for node in tree.get_nodes_in_group(&"world_environment"):
+		if node is WorldEnvironment:
+			var env: Environment = (node as WorldEnvironment).environment
+			if not env:
+				continue
+			if active:
+				env.ssao_enabled = false
+				env.glow_enabled = false
+				env.fog_enabled = false
+				env.adjustment_enabled = false
+			else:
+				env.fog_enabled = true
+				env.adjustment_enabled = true
+				_apply_toggle("ssao", _toggles["ssao"])
+				_apply_toggle("glow", _toggles["glow"])
+
 
 func _deselect_all() -> void:
 	print("[DEBUG] === DISABLE ALL TOGGLES ===")
