@@ -1883,8 +1883,8 @@ static func _scatter_grass(
 	if tree:
 		structs = tree.get_nodes_in_group(&"structures")
 
-	const GRASS_ATLAS_NAME := &"Grass_atlas"
-	var mmi: MultiMeshInstance3D = zone_root.get_node_or_null(GRASS_ATLAS_NAME) as MultiMeshInstance3D
+	const GRASS_ATLAS_NAME := "Grass_atlas"
+	var mmi: MultiMeshInstance3D = zone_root.get_node_or_null(NodePath(GRASS_ATLAS_NAME)) as MultiMeshInstance3D
 	if not mmi:
 		mmi = _ZonePool.get_grass_mmi() as MultiMeshInstance3D
 		if not mmi:
