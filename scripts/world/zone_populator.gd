@@ -1903,7 +1903,6 @@ static func _scatter_grass(
 	mm.mesh = _grass_quad_mesh
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_custom_data = true
-	mm.custom_data_format = MultiMesh.CUSTOM_DATA_FLOAT_4
 
 	for gi in range(type_start, type_end):
 		var cfg: Array = grass_types[gi]
