@@ -197,6 +197,12 @@ static var _grass_quad_mesh: ArrayMesh
 static var _leaf_unit_quad: QuadMesh
 static var _grass_textures: Array[ImageTexture] = []
 static var _flower_textures: Array[ImageTexture] = []
+## Set from WorldGenerator._ready — multiplies grass blade attempts per type (atlas batching makes higher values feasible).
+static var grass_density_multiplier: float = 1.0
+## MultiMeshInstance3D visibility_range_end for grass (meters).
+static var grass_visibility_range_end: float = 72.0
+static var _grass_atlas_tex: ImageTexture
+static var _mat_grass_atlas: ShaderMaterial
 
 static var _water_plants_ready := false
 static var _lily_pad_mesh: ArrayMesh
@@ -345,7 +351,8 @@ static func _ensure_textures() -> void:
 	# ── Grass billboard shader + procedural textures ──
 	if ResourceLoader.exists("res://shaders/grass_billboard.gdshader"):
 		_grass_shader = load("res://shaders/grass_billboard.gdshader") as Shader
-	_grass_quad_mesh = _create_grass_cross(1.0, 1.0)
+	_grass_quad_mesh = _create_grass_quad(1.0, 1.0)
+	_build_grass_atlas_if_needed()
 	_leaf_unit_quad = QuadMesh.new()
 	_leaf_unit_quad.size = Vector2(1.0, 1.0)
 	_grass_textures.clear()
@@ -1247,28 +1254,30 @@ static func populate_zone(
 		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
 
 
-# Two intersecting planes (cross) so grass is never edge-on to camera
-static func _create_grass_cross(w: float, h: float) -> ArrayMesh:
+# Single vertical quad; vertex shader billboards around Y (see grass_billboard.gdshader).
+static func _create_grass_quad(w: float, h: float) -> ArrayMesh:
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var normals := PackedVector3Array()
 	var indices := PackedInt32Array()
 	var half_w := w * 0.5
-	for plane_i in 2:
-		var angle := plane_i * PI * 0.5
-		var dx := cos(angle) * half_w
-		var dz := sin(angle) * half_w
-		var bi := verts.size()
-		verts.append(Vector3(-dx, 0.0, -dz))
-		verts.append(Vector3(dx, 0.0, dz))
-		verts.append(Vector3(dx, h, dz))
-		verts.append(Vector3(-dx, h, -dz))
-		uvs.append(Vector2(0, 1)); uvs.append(Vector2(1, 1))
-		uvs.append(Vector2(1, 0)); uvs.append(Vector2(0, 0))
-		for _n in 4:
-			normals.append(Vector3(0, 1, 0))
-		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
-		indices.append(bi); indices.append(bi + 2); indices.append(bi + 3)
+	var bi := 0
+	verts.append(Vector3(-half_w, 0.0, 0.0))
+	verts.append(Vector3(half_w, 0.0, 0.0))
+	verts.append(Vector3(half_w, h, 0.0))
+	verts.append(Vector3(-half_w, h, 0.0))
+	uvs.append(Vector2(0, 1))
+	uvs.append(Vector2(1, 1))
+	uvs.append(Vector2(1, 0))
+	uvs.append(Vector2(0, 0))
+	for _n in 4:
+		normals.append(Vector3(0, 1, 0))
+	indices.append(bi)
+	indices.append(bi + 1)
+	indices.append(bi + 2)
+	indices.append(bi)
+	indices.append(bi + 2)
+	indices.append(bi + 3)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -1278,6 +1287,57 @@ static func _create_grass_cross(w: float, h: float) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+
+static func _build_grass_atlas_if_needed() -> void:
+	if _grass_atlas_tex:
+		return
+	if _grass_textures.is_empty():
+		return
+	# Same 8 texture indices as _get_grass_types()
+	var src_indices: Array[int] = [0, 1, 2, 4, 10, 12, 16, 18]
+	var max_w := 0
+	var max_h := 0
+	var images: Array[Image] = []
+	for si in src_indices:
+		if si >= _grass_textures.size():
+			return
+		var tex: ImageTexture = _grass_textures[si]
+		var img: Image = tex.get_image()
+		if not img:
+			return
+		images.append(img)
+		max_w = maxi(max_w, img.get_width())
+		max_h = maxi(max_h, img.get_height())
+	if max_w < 1 or max_h < 1:
+		return
+	var atlas_w := max_w * 8
+	var atlas_img := Image.create(atlas_w, max_h, true, Image.FORMAT_RGBA8)
+	atlas_img.fill(Color(0, 0, 0, 0))
+	for i in 8:
+		var im: Image = images[i]
+		var ox := i * max_w + (max_w - im.get_width()) / 2
+		var oy := (max_h - im.get_height()) / 2
+		atlas_img.blit_rect(im, Rect2i(0, 0, im.get_width(), im.get_height()), Vector2i(ox, oy))
+	_grass_atlas_tex = ImageTexture.create_from_image(atlas_img)
+
+
+static func _ensure_grass_atlas_material() -> ShaderMaterial:
+	_build_grass_atlas_if_needed()
+	if _mat_grass_atlas:
+		return _mat_grass_atlas
+	if not _grass_shader or not _grass_atlas_tex:
+		return null
+	_mat_grass_atlas = ShaderMaterial.new()
+	_mat_grass_atlas.shader = _grass_shader
+	_mat_grass_atlas.set_shader_parameter("use_texture_atlas", true)
+	_mat_grass_atlas.set_shader_parameter("albedo_atlas", _grass_atlas_tex)
+	_mat_grass_atlas.set_shader_parameter("atlas_columns", 8.0)
+	_mat_grass_atlas.set_shader_parameter("alpha_cutoff", 0.4)
+	_mat_grass_atlas.set_shader_parameter("wind_strength", 0.5)
+	_mat_grass_atlas.set_shader_parameter("wind_speed", 1.5)
+	_mat_grass_atlas.set_shader_parameter("wind_turbulence", 0.8)
+	return _mat_grass_atlas
 
 
 # ── Procedural grass texture generators (same technique as tree leaves) ────────
@@ -1582,12 +1642,15 @@ static func _make_flower_mat(tex: ImageTexture, color: Color) -> ShaderMaterial:
 		return _cached_flower_mats[cache_key]
 	var mat := ShaderMaterial.new()
 	mat.shader = _grass_shader
+	mat.set_shader_parameter("use_texture_atlas", false)
 	mat.set_shader_parameter("albedo_texture", tex)
 	mat.set_shader_parameter("albedo_color", color)
 	mat.set_shader_parameter("alpha_cutoff", 0.35)
 	mat.set_shader_parameter("wind_strength", 0.35)
 	mat.set_shader_parameter("wind_speed", 1.2)
 	mat.set_shader_parameter("wind_turbulence", 0.5)
+	if _grass_atlas_tex:
+		mat.set_shader_parameter("albedo_atlas", _grass_atlas_tex)
 	_cached_flower_mats[cache_key] = mat
 	return mat
 
@@ -1685,11 +1748,10 @@ static func _scatter_flowers(
 				continue
 
 			var scale := rng.randf_range(scale_min, scale_max)
-			var rot := rng.randf_range(0.0, TAU)
 			var sx := quad_w * scale
 			var sy := quad_h * scale
 			var sz := quad_w * scale
-			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+			var basis := Basis.IDENTITY.scaled(Vector3(sx, sy, sz))
 			transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
 
 		if transforms.is_empty():
@@ -1722,12 +1784,15 @@ static func _make_grass_mat(tex: ImageTexture, color: Color) -> ShaderMaterial:
 
 	var mat := ShaderMaterial.new()
 	mat.shader = _grass_shader
+	mat.set_shader_parameter("use_texture_atlas", false)
 	mat.set_shader_parameter("albedo_texture", tex)
 	mat.set_shader_parameter("albedo_color", color)
 	mat.set_shader_parameter("alpha_cutoff", 0.4)
 	mat.set_shader_parameter("wind_strength", 0.5)
 	mat.set_shader_parameter("wind_speed", 1.5)
 	mat.set_shader_parameter("wind_turbulence", 0.8)
+	if _grass_atlas_tex:
+		mat.set_shader_parameter("albedo_atlas", _grass_atlas_tex)
 	_cached_grass_mats[cache_key] = mat
 	return mat
 
@@ -1798,6 +1863,10 @@ static func _scatter_grass(
 	if biome != &"hearthlands":
 		return
 
+	var atlas_mat := _ensure_grass_atlas_material()
+	if not atlas_mat:
+		return
+
 	_ensure_height_grid(coord, height_func)
 
 	var grass_types := _get_grass_types()
@@ -1814,22 +1883,43 @@ static func _scatter_grass(
 	if tree:
 		structs = tree.get_nodes_in_group(&"structures")
 
+	const GRASS_ATLAS_NAME := &"Grass_atlas"
+	var mmi: MultiMeshInstance3D = zone_root.get_node_or_null(GRASS_ATLAS_NAME) as MultiMeshInstance3D
+	if not mmi:
+		mmi = _ZonePool.get_grass_mmi() as MultiMeshInstance3D
+		if not mmi:
+			mmi = MultiMeshInstance3D.new()
+		mmi.name = "Grass_atlas"
+		mmi.material_override = atlas_mat
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = grass_visibility_range_end
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+		zone_root.add_child(mmi)
+
+	var mm: MultiMesh = mmi.multimesh
+	if not mm:
+		mm = MultiMesh.new()
+		mmi.multimesh = mm
+	mm.mesh = _grass_quad_mesh
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.custom_data_format = MultiMesh.CUSTOM_DATA_FLOAT_4
+
 	for gi in range(type_start, type_end):
 		var cfg: Array = grass_types[gi]
-		var tex: ImageTexture = cfg[0]
+		var _tex: ImageTexture = cfg[0]
 		var color: Color = cfg[1]
-		var count: int = cfg[2]
+		var count: int = maxi(1, int(ceil(float(cfg[2]) * grass_density_multiplier)))
 		var scale_min: float = cfg[3]
 		var scale_max: float = cfg[4]
 		var quad_w: float = cfg[5]
 		var quad_h: float = cfg[6]
 
-		if not tex:
-			continue
-
-		var mat := _make_grass_mat(tex, Color(color, 1.0))
+		if gi == 0:
+			mm.instance_count = 0
 
 		var transforms: Array[Transform3D] = []
+		var customs: Array[Color] = []
 		for _i in count:
 			var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
 			var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
@@ -1868,41 +1958,25 @@ static func _scatter_grass(
 			var slope_factor := clampf((sn.y - 0.97) / 0.03, 0.0, 1.0)
 			scale *= lerpf(0.3, 1.0, slope_factor)
 			scale *= rng.randf_range(0.85, 1.15)
-			var rot := rng.randf_range(0.0, TAU)
 
 			var sx := quad_w * scale
 			var sy := quad_h * scale
 			var sz := quad_w * scale
-			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+			var basis := Basis.IDENTITY.scaled(Vector3(sx, sy, sz))
 			transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+			var enc := float(gi) / 8.0 + 0.01
+			customs.append(Color(enc, color.r, color.g, color.b))
 
 		if transforms.is_empty():
 			continue
 
-		var mmi := _ZonePool.get_grass_mmi() as MultiMeshInstance3D
-		if not mmi:
-			mmi = MultiMeshInstance3D.new()
-
-		var mm: MultiMesh = mmi.multimesh
-		if mm:
-			mm.instance_count = 0
-			mm.instance_count = transforms.size()
-		else:
-			mm = MultiMesh.new()
-			mm.mesh = _grass_quad_mesh
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.use_colors = false
-			mm.instance_count = transforms.size()
-			mmi.multimesh = mm
-		for idx in transforms.size():
-			mm.set_instance_transform(idx, transforms[idx])
-
-		mmi.name = "Grass_%d" % gi
-		mmi.material_override = mat
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.visibility_range_end = 96.0
-		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-		zone_root.add_child(mmi)
+		var old_n := mm.instance_count
+		var add_n := transforms.size()
+		mm.instance_count = old_n + add_n
+		for idx in add_n:
+			var dst := old_n + idx
+			mm.set_instance_transform(dst, transforms[idx])
+			mm.set_instance_custom_data(dst, customs[idx])
 
 
 static func _scatter_blueberry_bushes(
@@ -3989,6 +4063,7 @@ static func _ensure_water_plants() -> void:
 	if _grass_shader:
 		_reed_mat = ShaderMaterial.new()
 		_reed_mat.shader = _grass_shader
+		_reed_mat.set_shader_parameter("use_texture_atlas", false)
 		var reed_tex := _gen_reed_texture()
 		_reed_mat.set_shader_parameter("albedo_texture", reed_tex)
 		_reed_mat.set_shader_parameter("albedo_color", Color(1.0, 1.0, 1.0))
@@ -3996,6 +4071,8 @@ static func _ensure_water_plants() -> void:
 		_reed_mat.set_shader_parameter("wind_strength", 0.3)
 		_reed_mat.set_shader_parameter("wind_speed", 1.2)
 		_reed_mat.set_shader_parameter("wind_turbulence", 0.6)
+		if _grass_atlas_tex:
+			_reed_mat.set_shader_parameter("albedo_atlas", _grass_atlas_tex)
 
 
 static func _gen_lily_pad_mesh() -> ArrayMesh:
@@ -4522,8 +4599,7 @@ static func _scatter_water_plants(
 				continue
 			var ground_y := maxf(mesh_h, _WATER_LEVEL - 0.15)
 			var sc := rng.randf_range(1.5, 2.8)
-			var rot := rng.randf_range(0.0, TAU)
-			var basis := Basis(Vector3.UP, rot).scaled(Vector3(0.6 * sc, 1.2 * sc, 0.6 * sc))
+			var basis := Basis.IDENTITY.scaled(Vector3(0.6 * sc, 1.2 * sc, 0.6 * sc))
 			transforms.append(Transform3D(basis, Vector3(cx + ox, ground_y, cz + oz)))
 
 	if transforms.is_empty():

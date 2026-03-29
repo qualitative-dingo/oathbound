@@ -862,7 +862,9 @@ func clear_grass_multimesh_at(pos: Vector3, r2: float) -> void:
 			var mm := mmi.multimesh
 			if not mm or mm.instance_count == 0:
 				continue
-			var kept: Array[Transform3D] = []
+			var kept_t: Array[Transform3D] = []
+			var kept_cd: Array[Color] = []
+			var use_cd := mm.use_custom_data
 			for i in mm.instance_count:
 				var t := mm.get_instance_transform(i)
 				var wx := zone_origin.x + t.origin.x
@@ -870,15 +872,19 @@ func clear_grass_multimesh_at(pos: Vector3, r2: float) -> void:
 				var dx := wx - pos.x
 				var dz := wz - pos.z
 				if dx * dx + dz * dz >= r2:
-					kept.append(t)
-			if kept.size() == mm.instance_count:
+					kept_t.append(t)
+					if use_cd:
+						kept_cd.append(mm.get_instance_custom_data(i))
+			if kept_t.size() == mm.instance_count:
 				continue
-			if kept.is_empty():
+			if kept_t.is_empty():
 				mmi.queue_free()
 			else:
-				mm.instance_count = kept.size()
-				for idx in kept.size():
-					mm.set_instance_transform(idx, kept[idx])
+				mm.instance_count = kept_t.size()
+				for idx in kept_t.size():
+					mm.set_instance_transform(idx, kept_t[idx])
+					if use_cd:
+						mm.set_instance_custom_data(idx, kept_cd[idx])
 
 
 func cancel_build_mode() -> void:

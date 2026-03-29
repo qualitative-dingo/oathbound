@@ -44,6 +44,19 @@ const MESH_RESOLUTION := 48
 @export var base_frequency: float = 0.003
 @export var detail_frequency: float = 0.02
 
+@export_group("Vegetation LOD")
+## Grass and wildflowers render only in zones within this distance (grid units) of the nearest player.
+## 1.0 = player zone + 4 cardinals (~5 zones); diagonals are ~1.41 and are culled. Raise to 1.5 to include diagonals.
+@export var grass_flower_visibility_max_dist: float = 1.01
+## How often all zone LODs refresh (seconds). Lower = faster response when moving; slightly more CPU.
+@export var zone_lod_refresh_interval: float = 0.15
+
+@export_group("Grass")
+## Multiplies grass blade attempts per type (atlas + LOD make higher values feasible). 1.0 = original table counts.
+@export var grass_density_multiplier: float = 3.0
+## Grass MultiMeshInstance3D visibility_range_end (meters).
+@export var grass_visibility_range_end: float = 72.0
+
 const WATER_LEVEL := 0.0
 
 # ─── Noise Layers ──────────────────────────────────────────────────────────────
@@ -336,6 +349,8 @@ func get_sub_chunk_explore_fraction(zone_x: int, zone_z: int) -> float:
 func _ready() -> void:
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
 	Engine.max_fps = 60
+	_ZonePopulator.grass_density_multiplier = grass_density_multiplier
+	_ZonePopulator.grass_visibility_range_end = grass_visibility_range_end
 	_ZonePool.flush_all()
 	_finalize_backlog.clear()
 	_populate_backlog.clear()
@@ -1471,16 +1486,17 @@ func _process_pending_zones() -> void:
 			var phase: int = pitem.get("phase", 0)
 			var biome: StringName = pitem["biome"]
 			var micro: StringName = pitem["micro"]
+			var min_dist := 999.0
+			for p in _players:
+				var pz := world_to_zone(get_world_position(p))
+				var d := float((pcoord - pz).length())
+				if d < min_dist:
+					min_dist = d
 			var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
+			if is_instance_valid(zone_root):
+				_update_zone_lod(zone_root, min_dist)
 			if done:
 				_populate_backlog.pop_front()
-				var min_dist := 999.0
-				for p in _players:
-					var pz := world_to_zone(get_world_position(p))
-					var d := float((pcoord - pz).length())
-					if d < min_dist:
-						min_dist = d
-				_update_zone_lod(zone_root, min_dist)
 				zone_loaded.emit(pcoord)
 			else:
 				pitem["phase"] = phase + 1
@@ -1576,13 +1592,12 @@ func _unload_distant_zones(players: Array[Node3D]) -> void:
 
 
 var _lod_timer := 0.0
-const _LOD_INTERVAL := 0.5
 
 func _update_zone_lods(players: Array[Node3D], delta: float) -> void:
 	_lod_timer -= delta
 	if _lod_timer > 0.0:
 		return
-	_lod_timer = _LOD_INTERVAL
+	_lod_timer = maxf(0.05, zone_lod_refresh_interval)
 	var nearest_pz := world_to_zone(get_world_position(players[0])) if not players.is_empty() else Vector2i.ZERO
 	for coord in _loaded_zones:
 		var min_dist := 999.0
@@ -1596,6 +1611,16 @@ func _update_zone_lods(players: Array[Node3D], delta: float) -> void:
 			_update_zone_lod(zone_node, min_dist)
 
 
+func _min_dist_to_any_player_zone(zone_coord: Vector2i) -> float:
+	var best := 999.0
+	for p in _players:
+		var pz := world_to_zone(get_world_position(p))
+		var d := float((zone_coord - pz).length())
+		if d < best:
+			best = d
+	return best
+
+
 func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 	var zone_meta_key := &"lod_level"
 	# LOD 0: full detail (≤1.5 zones — covers diagonal neighbors at √2)
@@ -1603,9 +1628,10 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 	# LOD 2: far — non-terrain hidden entirely
 	var new_lod: int = 0 if zone_dist <= 1.5 else (1 if zone_dist <= 3.0 else 2)
 	var old_lod: int = zone_node.get_meta(zone_meta_key, -1)
-	if new_lod == old_lod:
-		return
-	zone_node.set_meta(zone_meta_key, new_lod)
+	# Grass/flower visibility uses a separate, tighter radius than trees; always refresh when called.
+	if new_lod != old_lod:
+		zone_node.set_meta(zone_meta_key, new_lod)
+	var grass_on: bool = zone_dist <= grass_flower_visibility_max_dist
 	for child in zone_node.get_children():
 		if not is_instance_valid(child):
 			continue
@@ -1615,11 +1641,11 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 			continue
 		if cname == "TerrainMesh":
 			continue
-		var is_grass := cname.begins_with("Grass_") or cname.begins_with("Flower_")
-		var is_vegetation := is_grass or cname == "Reeds" or cname.begins_with("BlueberryBush")
-		if is_grass:
-			child.visible = new_lod == 0
-		elif is_vegetation:
+		var is_grassflower := cname.begins_with("Grass_") or cname.begins_with("Flower_")
+		var is_other_veg := cname == "Reeds" or cname.begins_with("BlueberryBush")
+		if is_grassflower:
+			child.visible = grass_on
+		elif is_other_veg:
 			child.visible = new_lod <= 1
 		else:
 			child.visible = new_lod <= 1
