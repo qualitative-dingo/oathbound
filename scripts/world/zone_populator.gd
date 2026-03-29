@@ -345,7 +345,7 @@ static func _ensure_textures() -> void:
 	# ── Grass billboard shader + procedural textures ──
 	if ResourceLoader.exists("res://shaders/grass_billboard.gdshader"):
 		_grass_shader = load("res://shaders/grass_billboard.gdshader") as Shader
-	_grass_quad_mesh = _create_grass_cross(1.0, 1.0)
+	_grass_quad_mesh = _create_grass_quad(1.0, 1.0)
 	_leaf_unit_quad = QuadMesh.new()
 	_leaf_unit_quad.size = Vector2(1.0, 1.0)
 	_grass_textures.clear()
@@ -1247,28 +1247,30 @@ static func populate_zone(
 		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
 
 
-# Two intersecting planes (cross) so grass is never edge-on to camera
-static func _create_grass_cross(w: float, h: float) -> ArrayMesh:
+# Single vertical quad; shader billboards around Y so it faces the camera (half tris vs old cross).
+static func _create_grass_quad(w: float, h: float) -> ArrayMesh:
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var normals := PackedVector3Array()
 	var indices := PackedInt32Array()
 	var half_w := w * 0.5
-	for plane_i in 2:
-		var angle := plane_i * PI * 0.5
-		var dx := cos(angle) * half_w
-		var dz := sin(angle) * half_w
-		var bi := verts.size()
-		verts.append(Vector3(-dx, 0.0, -dz))
-		verts.append(Vector3(dx, 0.0, dz))
-		verts.append(Vector3(dx, h, dz))
-		verts.append(Vector3(-dx, h, -dz))
-		uvs.append(Vector2(0, 1)); uvs.append(Vector2(1, 1))
-		uvs.append(Vector2(1, 0)); uvs.append(Vector2(0, 0))
-		for _n in 4:
-			normals.append(Vector3(0, 1, 0))
-		indices.append(bi); indices.append(bi + 1); indices.append(bi + 2)
-		indices.append(bi); indices.append(bi + 2); indices.append(bi + 3)
+	var bi := 0
+	verts.append(Vector3(-half_w, 0.0, 0.0))
+	verts.append(Vector3(half_w, 0.0, 0.0))
+	verts.append(Vector3(half_w, h, 0.0))
+	verts.append(Vector3(-half_w, h, 0.0))
+	uvs.append(Vector2(0, 1))
+	uvs.append(Vector2(1, 1))
+	uvs.append(Vector2(1, 0))
+	uvs.append(Vector2(0, 0))
+	for _n in 4:
+		normals.append(Vector3(0, 1, 0))
+	indices.append(bi)
+	indices.append(bi + 1)
+	indices.append(bi + 2)
+	indices.append(bi)
+	indices.append(bi + 2)
+	indices.append(bi + 3)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
