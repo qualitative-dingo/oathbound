@@ -20,7 +20,7 @@ static var _blueberry_bushes: Array[StaticBody3D] = []
 const MAX_TREES := 30
 const MAX_ROCKS := 10
 const MAX_BLUEBERRY := 30
-const MAX_GRASS := 64  # 8 grass types per zone * 8 zones worth of buffer
+const MAX_GRASS := 16
 const MAX_ZONE_ROOTS := 5
 
 static var _stats_recycled := 0

@@ -44,19 +44,6 @@ const MESH_RESOLUTION := 48
 @export var base_frequency: float = 0.003
 @export var detail_frequency: float = 0.02
 
-@export_group("Vegetation LOD")
-## Grass and wildflowers render only in zones within this distance (grid units) of the nearest player.
-## 1.0 = player zone + 4 cardinals (~5 zones); diagonals are ~1.41 and are culled. Raise to 1.5 to include diagonals.
-@export var grass_flower_visibility_max_dist: float = 1.01
-## How often all zone LODs refresh (seconds). Lower = faster response when moving; slightly more CPU.
-@export var zone_lod_refresh_interval: float = 0.15
-
-@export_group("Grass")
-## Multiplies grass blade attempts per type (atlas + LOD make higher values feasible). 1.0 = original table counts.
-@export var grass_density_multiplier: float = 3.0
-## Grass MultiMeshInstance3D visibility_range_end (meters).
-@export var grass_visibility_range_end: float = 72.0
-
 const WATER_LEVEL := 0.0
 
 # ─── Noise Layers ──────────────────────────────────────────────────────────────
@@ -349,10 +336,8 @@ func get_sub_chunk_explore_fraction(zone_x: int, zone_z: int) -> float:
 func _ready() -> void:
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
 	Engine.max_fps = 60
-	_ZonePopulator.grass_density_multiplier = grass_density_multiplier
-	_ZonePopulator.grass_visibility_range_end = grass_visibility_range_end
 	_ZonePool.flush_all()
-	_ZonePopulator.reset_all_caches()
+	_ZonePopulator.reset_texture_cache()
 	_finalize_backlog.clear()
 	_populate_backlog.clear()
 	_gen_ready_queue.clear()
@@ -413,51 +398,6 @@ var _requeue_timer := 0.0  # periodic re-queue to fill gaps from cap-limited pas
 var _any_flying := false
 
 
-## Walks loaded zones for multimesh vegetation stats (grass / flowers / reeds).
-## g_vis_* / fl_vis_* / r_vis_* = instance sums for MMIs whose visible flag is true (LOD).
-func _vegetation_perf_snapshot() -> String:
-	var grass_mmi := 0
-	var grass_inst := 0
-	var grass_vis_inst := 0
-	var flower_mmi := 0
-	var flower_inst := 0
-	var flower_vis_inst := 0
-	var reed_mmi := 0
-	var reed_inst := 0
-	var reed_vis_inst := 0
-	for coord in _loaded_zones:
-		var zn: Node3D = _loaded_zones[coord]
-		if not is_instance_valid(zn):
-			continue
-		for child in zn.get_children():
-			if not child is MultiMeshInstance3D:
-				continue
-			var mmi := child as MultiMeshInstance3D
-			var mm := mmi.multimesh
-			var ic := mm.instance_count if mm else 0
-			var vis := mmi.visible
-			var n: String = mmi.name
-			if n.begins_with("Grass_"):
-				grass_mmi += 1
-				grass_inst += ic
-				if vis:
-					grass_vis_inst += ic
-			elif n.begins_with("Flower_"):
-				flower_mmi += 1
-				flower_inst += ic
-				if vis:
-					flower_vis_inst += ic
-			elif n == "Reeds":
-				reed_mmi += 1
-				reed_inst += ic
-				if vis:
-					reed_vis_inst += ic
-	return "g_mmi=%d g_inst=%d g_vis=%d fl_mmi=%d fl_inst=%d fl_vis=%d reed_mmi=%d r_inst=%d r_vis=%d" % [
-		grass_mmi, grass_inst, grass_vis_inst, flower_mmi, flower_inst, flower_vis_inst,
-		reed_mmi, reed_inst, reed_vis_inst,
-	]
-
-
 func _process(_delta: float) -> void:
 	if not _diag_pending:
 		return
@@ -469,24 +409,19 @@ func _process(_delta: float) -> void:
 	var total_nodes := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
 	var objects := Performance.get_monitor(Performance.OBJECT_COUNT)
 	var draw_calls := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
-	var prims := int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
-	var p3d_active := int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS))
-	var p3d_pairs := int(Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS))
 	var vram_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_VIDEO_MEM_USED) / (1024.0 * 1024.0)
 	var buf_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_BUFFER_MEM_USED) / (1024.0 * 1024.0)
 	var tex_mb := RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TEXTURE_MEM_USED) / (1024.0 * 1024.0)
 	var process_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
 	var physics_ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
-	print("[PERF DIAG] FPS=%d nodes=%d objects=%d draws=%d prims=%d p3d=%d p3dp=%d vram=%.1fMB buf=%.1fMB tex=%.1fMB proc=%.1fms phys=%.1fms zones=%d enemies=%d interact=%d loot=%d explored=%d sub=%d tcache=%d bg=%d mesh_q=%d pop_q=%d %s" % [
+	print("[PERF DIAG] FPS=%d nodes=%d objects=%d draws=%d vram=%.1fMB buf=%.1fMB tex=%.1fMB proc=%.1fms phys=%.1fms zones=%d enemies=%d interact=%d loot=%d explored=%d sub=%d tcache=%d bg=%d mesh_q=%d pop_q=%d %s" % [
 		Engine.get_frames_per_second(), int(total_nodes), int(objects),
-		int(draw_calls), prims, p3d_active, p3d_pairs,
-		vram_mb, buf_mb, tex_mb, process_ms, physics_ms,
+		int(draw_calls), vram_mb, buf_mb, tex_mb, process_ms, physics_ms,
 		_loaded_zones.size(), _diag_n_enemies, _diag_n_interactables, _diag_n_loot,
 		_explored_zones.size(), _explored_sub_chunks.size(),
 		_terrain_mesh_cache.size(), _gen_in_flight.size(),
 		_finalize_backlog.size(), _populate_backlog.size(),
 		_ZonePool.get_pool_stats()])
-	print("[PERF VEG] %s" % _vegetation_perf_snapshot())
 	var displaced := 0
 	for coord in _loaded_zones:
 		var zn: Node3D = _loaded_zones[coord]
@@ -1324,6 +1259,7 @@ func _generate_spawn_area() -> void:
 	_spawn_debug_portals()
 	_spawn_village_cave_entrance()
 	_spawn_starter_goblins()
+	_spawn_majestic_egg()
 	_dismiss_loading_screen.call_deferred()
 
 
@@ -1395,6 +1331,175 @@ func _spawn_starter_goblins() -> void:
 		zone_root.add_child(goblin)
 		spawned += 1
 	print("[WORLD] Spawned %d starter goblins near (%.0f, %.0f)" % [spawned, center_x, center_z])
+
+
+func _spawn_majestic_egg() -> void:
+	var spawn_zone := world_to_zone(Vector3.ZERO)
+	var zone_root: Node3D = _loaded_zones.get(spawn_zone, null)
+	if not zone_root:
+		return
+	var zone_ox: float = spawn_zone.x * ZONE_SIZE
+	var zone_oz: float = spawn_zone.y * ZONE_SIZE
+	var egg_wx := 6.0
+	var egg_wz := 6.0
+	var egg_h := get_height_at(egg_wx, egg_wz)
+
+	var egg := Node3D.new()
+	egg.name = "MajesticEgg"
+
+	# --- Egg mesh (elongated sphere) ---
+	var mi := MeshInstance3D.new()
+	mi.name = "EggMesh"
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.22
+	sphere.height = 0.5
+	sphere.radial_segments = 32
+	sphere.rings = 16
+	mi.mesh = sphere
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.93, 0.90, 0.82)
+	mat.metallic = 0.45
+	mat.roughness = 0.12
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.96, 0.87)
+	mat.emission_energy_multiplier = 0.6
+	mat.rim_enabled = true
+	mat.rim = 0.4
+	mat.rim_tint = 0.3
+	mi.material_override = mat
+	egg.add_child(mi)
+
+	# --- Warm glow ---
+	var light := OmniLight3D.new()
+	light.name = "EggGlow"
+	light.light_energy = 2.5
+	light.light_color = Color(1.0, 0.93, 0.76)
+	light.omni_range = 10.0
+	light.omni_attenuation = 1.8
+	light.position.y = 0.3
+	egg.add_child(light)
+
+	# --- Golden sparkle particles ---
+	var sparkles := GPUParticles3D.new()
+	sparkles.name = "EggSparkles"
+	sparkles.amount = 24
+	sparkles.lifetime = 1.5
+	sparkles.explosiveness = 0.0
+	sparkles.randomness = 0.6
+	sparkles.visibility_aabb = AABB(Vector3(-2, -1, -2), Vector3(4, 3, 4))
+	var spark_mat := ParticleProcessMaterial.new()
+	spark_mat.direction = Vector3(0, 1, 0)
+	spark_mat.spread = 180.0
+	spark_mat.initial_velocity_min = 0.3
+	spark_mat.initial_velocity_max = 0.8
+	spark_mat.gravity = Vector3(0, -0.5, 0)
+	spark_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	spark_mat.emission_sphere_radius = 0.4
+	spark_mat.scale_min = 0.02
+	spark_mat.scale_max = 0.06
+	spark_mat.damping_min = 1.0
+	spark_mat.damping_max = 2.0
+	spark_mat.color = Color(1.0, 0.92, 0.55, 0.9)
+	var spark_alpha := CurveTexture.new()
+	var sc := Curve.new()
+	sc.add_point(Vector2(0.0, 0.0))
+	sc.add_point(Vector2(0.3, 1.0))
+	sc.add_point(Vector2(1.0, 0.0))
+	spark_alpha.curve = sc
+	spark_mat.alpha_curve = spark_alpha
+	sparkles.process_material = spark_mat
+	var spark_draw := QuadMesh.new()
+	spark_draw.size = Vector2(0.05, 0.05)
+	sparkles.draw_pass_1 = spark_draw
+	egg.add_child(sparkles)
+
+	# --- Hawk spawn timer ---
+	var timer := Timer.new()
+	timer.name = "HawkTimer"
+	timer.wait_time = 3.0
+	timer.autostart = true
+	egg.add_child(timer)
+
+	var lx := egg_wx - zone_ox
+	var lz := egg_wz - zone_oz
+	egg.position = Vector3(lx, egg_h + 0.25, lz)
+	zone_root.add_child(egg)
+
+	timer.timeout.connect(_on_egg_spawn_hawk.bind(egg, zone_root, Vector3(lx, egg_h, lz)))
+	print("[WORLD] Majestic Egg placed at world (%.0f, %.1f, %.0f)" % [egg_wx, egg_h, egg_wz])
+
+
+const _MAX_SAD_HAWKS := 20
+const _HAWK_MODEL_PATH := "res://models/creatures/Hawk/hawk.gltf"
+
+func _on_egg_spawn_hawk(egg: Node3D, zone_root: Node3D, egg_local_pos: Vector3) -> void:
+	if not is_instance_valid(egg) or not is_instance_valid(zone_root):
+		return
+
+	var hawk_count := 0
+	for child in zone_root.get_children():
+		if child.name.begins_with("SadHawk_"):
+			hawk_count += 1
+	if hawk_count >= _MAX_SAD_HAWKS:
+		return
+
+	if not ResourceLoader.exists(_HAWK_MODEL_PATH):
+		return
+	var scene: PackedScene = load(_HAWK_MODEL_PATH)
+	if not scene:
+		return
+
+	var hawk := SadHawk.new()
+	hawk.name = "SadHawk_%d" % hawk_count
+
+	var model := scene.instantiate()
+	model.name = "HawkModel"
+	model.scale = Vector3(2.5, 2.5, 2.5)
+	hawk.add_child(model)
+
+	# --- Tear particles (small blue droplets) ---
+	var tears := GPUParticles3D.new()
+	tears.name = "Tears"
+	tears.amount = 6
+	tears.lifetime = 0.8
+	tears.explosiveness = 0.3
+	tears.randomness = 0.5
+	tears.visibility_aabb = AABB(Vector3(-0.5, -1, -0.5), Vector3(1, 1.5, 1))
+	var tear_mat := ParticleProcessMaterial.new()
+	tear_mat.direction = Vector3(0, -1, 0)
+	tear_mat.spread = 15.0
+	tear_mat.initial_velocity_min = 0.5
+	tear_mat.initial_velocity_max = 1.0
+	tear_mat.gravity = Vector3(0, -4.0, 0)
+	tear_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	tear_mat.emission_box_extents = Vector3(0.15, 0.02, 0.05)
+	tear_mat.scale_min = 0.02
+	tear_mat.scale_max = 0.04
+	tear_mat.damping_min = 0.5
+	tear_mat.damping_max = 1.0
+	tear_mat.color = Color(0.5, 0.7, 1.0, 0.85)
+	var tear_alpha := CurveTexture.new()
+	var tc := Curve.new()
+	tc.add_point(Vector2(0.0, 1.0))
+	tc.add_point(Vector2(0.7, 0.8))
+	tc.add_point(Vector2(1.0, 0.0))
+	tear_alpha.curve = tc
+	tear_mat.alpha_curve = tear_alpha
+	tears.process_material = tear_mat
+	var tear_draw := SphereMesh.new()
+	tear_draw.radius = 0.02
+	tear_draw.height = 0.035
+	tears.draw_pass_1 = tear_draw
+	tears.position.y = 0.4
+	hawk.add_child(tears)
+
+	var rng_radius := randf_range(1.5, 3.5)
+	var rng_speed := randf_range(0.5, 1.2)
+	var start_angle := randf_range(0.0, TAU)
+	hawk.position = egg_local_pos + Vector3(cos(start_angle) * rng_radius, 0.0, sin(start_angle) * rng_radius)
+	zone_root.add_child(hawk)
+
+	hawk.setup(egg_local_pos, rng_radius, rng_speed)
 
 
 var _max_loaded_zones: int = 50
@@ -1491,17 +1596,16 @@ func _process_pending_zones() -> void:
 			var phase: int = pitem.get("phase", 0)
 			var biome: StringName = pitem["biome"]
 			var micro: StringName = pitem["micro"]
-			var min_dist := 999.0
-			for p in _players:
-				var pz := world_to_zone(get_world_position(p))
-				var d := float((pcoord - pz).length())
-				if d < min_dist:
-					min_dist = d
 			var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
-			if is_instance_valid(zone_root):
-				_update_zone_lod(zone_root, min_dist)
 			if done:
 				_populate_backlog.pop_front()
+				var min_dist := 999.0
+				for p in _players:
+					var pz := world_to_zone(get_world_position(p))
+					var d := float((pcoord - pz).length())
+					if d < min_dist:
+						min_dist = d
+				_update_zone_lod(zone_root, min_dist)
 				zone_loaded.emit(pcoord)
 			else:
 				pitem["phase"] = phase + 1
@@ -1611,12 +1715,13 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 
 
 var _lod_timer := 0.0
+const _LOD_INTERVAL := 0.5
 
 func _update_zone_lods(players: Array[Node3D], delta: float) -> void:
 	_lod_timer -= delta
 	if _lod_timer > 0.0:
 		return
-	_lod_timer = maxf(0.05, zone_lod_refresh_interval)
+	_lod_timer = _LOD_INTERVAL
 	var nearest_pz := world_to_zone(get_world_position(players[0])) if not players.is_empty() else Vector2i.ZERO
 	for coord in _loaded_zones:
 		var min_dist := 999.0
@@ -1630,16 +1735,6 @@ func _update_zone_lods(players: Array[Node3D], delta: float) -> void:
 			_update_zone_lod(zone_node, min_dist)
 
 
-func _min_dist_to_any_player_zone(zone_coord: Vector2i) -> float:
-	var best := 999.0
-	for p in _players:
-		var pz := world_to_zone(get_world_position(p))
-		var d := float((zone_coord - pz).length())
-		if d < best:
-			best = d
-	return best
-
-
 func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 	var zone_meta_key := &"lod_level"
 	# LOD 0: full detail (≤1.5 zones — covers diagonal neighbors at √2)
@@ -1647,10 +1742,9 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 	# LOD 2: far — non-terrain hidden entirely
 	var new_lod: int = 0 if zone_dist <= 1.5 else (1 if zone_dist <= 3.0 else 2)
 	var old_lod: int = zone_node.get_meta(zone_meta_key, -1)
-	# Grass/flower visibility uses a separate, tighter radius than trees; always refresh when called.
-	if new_lod != old_lod:
-		zone_node.set_meta(zone_meta_key, new_lod)
-	var grass_on: bool = zone_dist <= grass_flower_visibility_max_dist
+	if new_lod == old_lod:
+		return
+	zone_node.set_meta(zone_meta_key, new_lod)
 	for child in zone_node.get_children():
 		if not is_instance_valid(child):
 			continue
@@ -1660,11 +1754,11 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 			continue
 		if cname == "TerrainMesh":
 			continue
-		var is_grassflower := cname.begins_with("Grass_") or cname.begins_with("Flower_")
-		var is_other_veg := cname == "Reeds" or cname.begins_with("BlueberryBush")
-		if is_grassflower:
-			child.visible = grass_on
-		elif is_other_veg:
+		var is_grass := cname.begins_with("Grass_") or cname.begins_with("Flower_")
+		var is_vegetation := is_grass or cname == "Reeds" or cname.begins_with("BlueberryBush")
+		if is_grass:
+			child.visible = new_lod == 0
+		elif is_vegetation:
 			child.visible = new_lod <= 1
 		else:
 			child.visible = new_lod <= 1
