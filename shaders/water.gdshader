@@ -7,9 +7,9 @@ uniform float wave_height : hint_range(0.0, 2.0)   = 0.06;
 uniform float wave_frequency : hint_range(0.5, 8.0) = 1.2;
 
 group_uniforms colors;
-uniform vec4 shallow_color : source_color = vec4(0.08, 0.15, 0.18, 0.35);
-uniform vec4 deep_color    : source_color = vec4(0.04, 0.09, 0.14, 0.85);
-uniform vec4 foam_color    : source_color = vec4(0.82, 0.88, 0.90, 0.85);
+uniform vec4 shallow_color : source_color = vec4(0.10, 0.16, 0.13, 0.35);
+uniform vec4 deep_color    : source_color = vec4(0.05, 0.10, 0.08, 0.85);
+uniform vec4 foam_color    : source_color = vec4(0.80, 0.85, 0.82, 0.85);
 
 group_uniforms depth;
 uniform float depth_distance : hint_range(0.1, 20.0)  = 3.0;
@@ -18,7 +18,7 @@ uniform float foam_width : hint_range(0.01, 2.0)      = 0.12;
 group_uniforms surface;
 uniform float fresnel_power : hint_range(1.0, 8.0)  = 2.5;
 uniform float flow_speed : hint_range(0.0, 0.2) = 0.04;
-uniform vec4 sky_tint : source_color = vec4(0.28, 0.36, 0.40, 1.0);
+uniform vec4 sky_tint : source_color = vec4(0.30, 0.38, 0.35, 1.0);
 uniform float normal_strength : hint_range(0.0, 0.1) = 0.035;
 
 uniform sampler2D DEPTH_TEXTURE : hint_depth_texture, filter_linear;
