@@ -1719,20 +1719,22 @@ static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, c
 	var structs: Array = cached_structures
 	if structs.is_empty():
 		structs = _get_structures_cached()
-	for s: Node3D in structs:
+	for i in structs.size():
+		var s = structs[i]
 		if not is_instance_valid(s):
 			continue
-		var sp := s.global_position
-		# sp is scene-space; wx/wz are world-space. Convert sp to world-space.
+		var sp: Vector3 = (s as Node3D).global_position
 		var dx := (sp.x + origin_shift.x) - wx
 		var dz := (sp.z + origin_shift.z) - wz
 		var dist_sq := dx * dx + dz * dz
 		var r_sq := min_dist_sq
-		if s.has_meta("footprint_radius"):
-			var r: float = float(s.get_meta("footprint_radius"))
+		if (s as Node3D).has_meta("footprint_radius"):
+			var r: float = float((s as Node3D).get_meta("footprint_radius"))
 			r_sq = maxf(r_sq, r * r)
 		else:
-			for child in s.get_children():
+			for child in (s as Node3D).get_children():
+				if not is_instance_valid(child):
+					continue
 				if child is CollisionShape3D and child.shape is BoxShape3D:
 					var sz: Vector3 = (child.shape as BoxShape3D).size
 					var half := maxf(sz.x, sz.z) * 0.5 + 1.5
