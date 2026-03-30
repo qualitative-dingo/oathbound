@@ -15,6 +15,7 @@ var _toggles: Dictionary = {
 	"rocks": true,
 	"blueberries": true,
 	"grass": true,
+	"flowers": true,
 	"creatures": true,
 	"villages": true,
 	"stones": true,
@@ -61,9 +62,16 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_right", 60)
 	bg.add_child(margin)
 
+	# Make the panel scrollable
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
 	var outer := VBoxContainer.new()
 	outer.add_theme_constant_override("separation", 12)
-	margin.add_child(outer)
+	outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(outer)
 
 	var title := Label.new()
 	title.text = "DEBUG PANEL"
@@ -163,6 +171,7 @@ func _build_ui() -> void:
 	_add_toggle(left, "Rocks (harvestable)", "rocks")
 	_add_toggle(left, "Blueberry Bushes", "blueberries")
 	_add_toggle(left, "Grass", "grass")
+	_add_toggle(left, "Flowers", "flowers")
 	_add_toggle(left, "Creatures", "creatures")
 	_add_toggle(left, "Villages / Structures", "villages")
 	_add_toggle(left, "Ground Stones", "stones")
@@ -338,6 +347,8 @@ func _apply_toggle(key: String, on: bool) -> void:
 				pop_cls.set("debug_skip_saplings", not on)
 			"grass":
 				pop_cls.set("debug_skip_grass", not on)
+			"flowers":
+				pop_cls.set("debug_skip_flowers", not on)
 			"creatures":
 				pop_cls.set("debug_skip_creatures", not on)
 			"villages":

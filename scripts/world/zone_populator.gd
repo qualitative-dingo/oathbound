@@ -119,6 +119,7 @@ static var debug_skip_trees := false
 static var debug_skip_rocks := false
 static var debug_skip_saplings := false
 static var debug_skip_grass := false
+static var debug_skip_flowers := false
 static var debug_skip_creatures := false
 static var debug_skip_villages := false
 static var debug_skip_stones := false
@@ -1233,7 +1234,7 @@ static func populate_zone_phase(
 
 	# ── Phases 4–5: wildflowers (5 types per frame) ──
 	if phase >= 4 and phase <= 5:
-		if not debug_skip_grass:
+		if not debug_skip_flowers:
 			var fi_start := (phase - 4) * 5
 			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 5)
 		return false
