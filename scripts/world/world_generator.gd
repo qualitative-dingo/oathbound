@@ -54,6 +54,8 @@ var _continent_noise: FastNoiseLite
 var _mountain_noise: FastNoiseLite
 var _detail_noise: FastNoiseLite
 var _ridge_noise: FastNoiseLite
+var _mtn_path_noise: FastNoiseLite  # For walkable mountain paths
+var _valley_pool_noise: FastNoiseLite  # For water pools in mountain valleys
 var _color_noise: FastNoiseLite
 var _microbiome_noise: FastNoiseLite
 var _microbiome_secondary: FastNoiseLite
@@ -604,6 +606,23 @@ func _init_noise_layers() -> void:
 	_ridge_noise.fractal_lacunarity = 2.0
 	_ridge_noise.fractal_gain = 0.5
 
+	# Mountain path noise - creates winding paths up mountains
+	_mtn_path_noise = FastNoiseLite.new()
+	_mtn_path_noise.seed = _seed_hash + 4000
+	_mtn_path_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_mtn_path_noise.frequency = 0.012
+	_mtn_path_noise.fractal_octaves = 2
+	_mtn_path_noise.fractal_lacunarity = 2.0
+	_mtn_path_noise.fractal_gain = 0.5
+
+	# Valley pool noise - creates water in mountain valleys
+	_valley_pool_noise = FastNoiseLite.new()
+	_valley_pool_noise.seed = _seed_hash + 4500
+	_valley_pool_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_valley_pool_noise.frequency = 0.025
+	_valley_pool_noise.fractal_octaves = 2
+	_valley_pool_noise.fractal_lacunarity = 2.0
+	_valley_pool_noise.fractal_gain = 0.5
 
 	_color_noise = FastNoiseLite.new()
 	_color_noise.seed = _seed_hash + 9000
@@ -638,18 +657,16 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var mountain := _mountain_noise.get_noise_2d(wx, wz)
 	var h := continent * height_scale * 0.6
 	
-	# Mountain peaks with varying heights (up to 10x taller than before)
+	# Mountain peaks - 5x taller than before (multiplier up to 22.5 from 4.5)
 	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
-	# Peak intensity varies per location - some mountains much taller than others
 	var peak_intensity := _detail_noise.get_noise_2d(wx * 0.015 + 9000.0, wz * 0.015 + 9000.0)
-	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)  # Range ~0.0 to 1.0
-	var mtn_multiplier := lerpf(0.8, 4.5, peak_intensity)  # Low hills to dramatic peaks
+	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
+	var mtn_multiplier := lerpf(1.0, 22.5, peak_intensity)  # 5x taller peaks
 	h += mtn_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	# Ridge contribution scales with peak intensity for dramatic ridgelines
-	var ridge_mult := lerpf(0.15, 0.6, peak_intensity)
+	var ridge_mult := lerpf(0.2, 3.0, peak_intensity)  # Scaled ridges for tall mountains
 	h += ridge * height_scale * ridge_mult - height_scale * 0.04
 
 	# Continental bias — central play area stays above water
@@ -1135,8 +1152,8 @@ func _determine_microbiome(zone: Vector2i) -> StringName:
 	# River areas: near rivers/streams
 	if accum > _WS_RIVER_THRESH * 0.6:
 		micro = &"riverside"
-	# Hilly terrain: elevated areas (raised threshold for taller mountains)
-	elif height > 15.0:
+	# Hilly terrain: elevated areas (raised threshold for 5x taller mountains)
+	elif height > 40.0:
 		micro = &"hills"
 	# Use the two noise layers to partition the rest
 	elif n1 > 0.15:
@@ -1164,6 +1181,48 @@ func _determine_microbiome(zone: Vector2i) -> StringName:
 func _terrain_mod_key(x: float, z: float) -> Vector2i:
 	return Vector2i(roundi(x / TERRAIN_MOD_STEP), roundi(z / TERRAIN_MOD_STEP))
 
+
+func _sample_terrain_gradient(x: float, z: float, center_h: float) -> float:
+	var sample_dist := 4.0
+	var h_px := _get_raw_height_no_paths(x + sample_dist, z)
+	var h_nx := _get_raw_height_no_paths(x - sample_dist, z)
+	var h_pz := _get_raw_height_no_paths(x, z + sample_dist)
+	var h_nz := _get_raw_height_no_paths(x, z - sample_dist)
+	var dx := (h_px - h_nx) / (sample_dist * 2.0)
+	var dz := (h_pz - h_nz) / (sample_dist * 2.0)
+	return sqrt(dx * dx + dz * dz)
+
+
+func _sample_terrain_concavity(x: float, z: float, mountain_val: float) -> float:
+	var sample_dist := 8.0
+	var h_c := mountain_val
+	var h_px := _mountain_noise.get_noise_2d(x + sample_dist, z)
+	var h_nx := _mountain_noise.get_noise_2d(x - sample_dist, z)
+	var h_pz := _mountain_noise.get_noise_2d(x, z + sample_dist)
+	var h_nz := _mountain_noise.get_noise_2d(x, z - sample_dist)
+	var avg_neighbors := (h_px + h_nx + h_pz + h_nz) * 0.25
+	return avg_neighbors - h_c
+
+
+func _get_raw_height_no_paths(x: float, z: float) -> float:
+	var dist := Vector2(x, z).length()
+	if dist > world_radius * 0.9:
+		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
+	var continent := _continent_noise.get_noise_2d(x, z)
+	var mountain := _mountain_noise.get_noise_2d(x, z)
+	var h := continent * height_scale * 0.6
+	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
+	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
+	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
+	var mtn_multiplier := lerpf(1.0, 22.5, peak_intensity)
+	h += mtn_ramp * height_scale * mtn_multiplier
+	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
+	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
+	var ridge_mult := lerpf(0.2, 3.0, peak_intensity)
+	h += ridge * height_scale * ridge_mult - height_scale * 0.04
+	return h
+
+
 func get_height_at(x: float, z: float) -> float:
 	var mod_key := _terrain_mod_key(x, z)
 	if _terrain_mods.has(mod_key):
@@ -1180,27 +1239,51 @@ func get_height_at(x: float, z: float) -> float:
 
 	var h := continent * height_scale * 0.6
 	
-	# Mountain peaks with varying heights (up to 10x taller than before)
+	# Mountain peaks - 5x taller than before (multiplier up to 22.5 from 4.5)
 	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
-	# Peak intensity varies per location - some mountains much taller than others
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
-	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)  # Range ~0.0 to 1.0
-	var mtn_multiplier := lerpf(0.8, 4.5, peak_intensity)  # Low hills to dramatic peaks
+	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
+	var mtn_multiplier := lerpf(1.0, 22.5, peak_intensity)  # 5x taller peaks
 	h += mtn_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	# Ridge contribution scales with peak intensity for dramatic ridgelines
-	var ridge_mult := lerpf(0.15, 0.6, peak_intensity)
+	var ridge_mult := lerpf(0.2, 3.0, peak_intensity)  # Scaled ridges for tall mountains
 	h += ridge * height_scale * ridge_mult - height_scale * 0.04
 
 	h += detail * height_scale * 0.15
 
 	# Crag details on taller peaks - threshold raised for new mountain heights
-	var elev_t := clampf((h - 40.0) / 60.0, 0.0, 1.0)
+	var elev_t := clampf((h - 80.0) / 200.0, 0.0, 1.0)  # Adjusted for 5x taller mountains
 	if elev_t > 0.0:
 		var crag := _detail_noise.get_noise_2d(x * 0.12 + 7000.0, z * 0.12 + 7000.0)
-		h += crag * height_scale * 0.08 * elev_t
+		h += crag * height_scale * 0.12 * elev_t
+
+	# Mountain paths - carve walkable switchback trails on steep mountainsides
+	if _mtn_path_noise and mountain > 0.15 and h > 25.0:
+		var path_raw := _mtn_path_noise.get_noise_2d(x, z)
+		var path_raw2 := _mtn_path_noise.get_noise_2d(x * 0.7 + 2000.0, z * 0.7 + 2000.0)
+		var path_combined := path_raw * 0.6 + path_raw2 * 0.4
+		var path_t := 1.0 - absf(path_combined)
+		path_t = smoothstep(0.85, 0.98, path_t)  # Sharp band for distinct paths
+		if path_t > 0.0:
+			var path_width_var := _detail_noise.get_noise_2d(x * 0.08 + 5000.0, z * 0.08 + 5000.0)
+			var path_flatten := lerpf(0.3, 0.6, 0.5 + path_width_var * 0.5)
+			var mtn_factor := smoothstep(0.15, 0.5, mountain)  # Stronger on steeper terrain
+			var path_carve := path_t * path_flatten * mtn_factor
+			var local_gradient := _sample_terrain_gradient(x, z, h)
+			h -= path_carve * local_gradient * height_scale * 0.8
+
+	# Mountain valley pools - water in depressions between peaks
+	if _valley_pool_noise and mountain > 0.1 and h > 20.0:
+		var valley_n := _valley_pool_noise.get_noise_2d(x, z)
+		var valley_concavity := _sample_terrain_concavity(x, z, mountain)
+		if valley_concavity > 0.3 and valley_n < -0.25:
+			var pool_t := smoothstep(-0.25, -0.5, valley_n) * smoothstep(0.3, 0.6, valley_concavity)
+			if pool_t > 0.0:
+				var pool_floor := lerpf(h, h - 8.0, pool_t)
+				pool_floor = maxf(pool_floor, WATER_LEVEL - 2.0)
+				h = lerpf(h, pool_floor, pool_t * 0.7)
 
 	# Pre-sample lake noise so bias and clamp can respect water bodies
 	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _detail_noise else 0.0
