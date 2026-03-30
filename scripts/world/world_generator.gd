@@ -1544,10 +1544,11 @@ func _process_pending_zones() -> void:
 
 	# 0. Enable at most 1 collision shape per frame to avoid physics rebuild spikes.
 	#    Skip if we're already over budget from previous frame carry-over.
-	if not _deferred_collisions.is_empty():
-		var col_shape: CollisionShape3D = _deferred_collisions.pop_front()
+	while not _deferred_collisions.is_empty():
+		var col_shape = _deferred_collisions.pop_front()  # Untyped to avoid crash on freed instance
 		if is_instance_valid(col_shape):
 			col_shape.disabled = false
+			break  # Only enable one valid shape per frame
 
 	# 0.5. Apply completed terrain rebuilds (from terraform / hoe) immediately
 	_apply_rebuild_results()
