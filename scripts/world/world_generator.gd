@@ -1426,7 +1426,8 @@ func _process_pending_zones() -> void:
 	_apply_rebuild_results()
 
 	# 1. Collect completed background builds — cap per frame to prevent burst spikes
-	const _MAX_READY_PER_FRAME := 4
+	# PERF: Reduced from 4 to 2 to spread work across more frames
+	const _MAX_READY_PER_FRAME := 2
 	_gen_mutex.lock()
 	var ready: Array = _gen_ready_queue.duplicate()
 	_gen_ready_queue.clear()
@@ -1485,7 +1486,8 @@ func _process_pending_zones() -> void:
 			break
 
 	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
-	var max_finalize := 6 if _any_flying else 3
+	# PERF: Reduced from 3-6 to 1-2 to spread work across more frames
+	var max_finalize := 2 if _any_flying else 1
 	var finalized := 0
 	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
 		while not _finalize_backlog.is_empty() and finalized < max_finalize:
