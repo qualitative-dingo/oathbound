@@ -657,11 +657,13 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var mountain := _mountain_noise.get_noise_2d(wx, wz)
 	var h := continent * height_scale * 0.35
 
-	var mtn_ramp := mountain * smoothstep(0.2, 0.45, mountain)
+	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
+	h += foothills * height_scale * 1.5
+	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(wx * 0.015 + 9000.0, wz * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 11.25, peak_intensity)
-	h += mtn_ramp * height_scale * mtn_multiplier
+	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity)
+	h += peak_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
@@ -1191,15 +1193,15 @@ func _sample_terrain_gradient(x: float, z: float, center_h: float) -> float:
 	return sqrt(dx * dx + dz * dz)
 
 
-func _sample_terrain_concavity(x: float, z: float, mountain_val: float) -> float:
-	var sample_dist := 8.0
-	var h_c := mountain_val
-	var h_px := _mountain_noise.get_noise_2d(x + sample_dist, z)
-	var h_nx := _mountain_noise.get_noise_2d(x - sample_dist, z)
-	var h_pz := _mountain_noise.get_noise_2d(x, z + sample_dist)
-	var h_nz := _mountain_noise.get_noise_2d(x, z - sample_dist)
+func _sample_terrain_concavity(x: float, z: float, _mountain_val: float) -> float:
+	var sample_dist := 12.0
+	var h_c := _get_raw_height_no_paths(x, z)
+	var h_px := _get_raw_height_no_paths(x + sample_dist, z)
+	var h_nx := _get_raw_height_no_paths(x - sample_dist, z)
+	var h_pz := _get_raw_height_no_paths(x, z + sample_dist)
+	var h_nz := _get_raw_height_no_paths(x, z - sample_dist)
 	var avg_neighbors := (h_px + h_nx + h_pz + h_nz) * 0.25
-	return avg_neighbors - h_c
+	return (avg_neighbors - h_c) / maxf(h_c, 1.0)
 
 
 func _get_raw_height_no_paths(x: float, z: float) -> float:
@@ -1209,11 +1211,13 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 	var continent := _continent_noise.get_noise_2d(x, z)
 	var mountain := _mountain_noise.get_noise_2d(x, z)
 	var h := continent * height_scale * 0.35
-	var mtn_ramp := mountain * smoothstep(0.2, 0.45, mountain)
+	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
+	h += foothills * height_scale * 1.5
+	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 11.25, peak_intensity)
-	h += mtn_ramp * height_scale * mtn_multiplier
+	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity)
+	h += peak_ramp * height_scale * mtn_multiplier
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
 	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
@@ -1237,11 +1241,13 @@ func get_height_at(x: float, z: float) -> float:
 
 	var h := continent * height_scale * 0.35
 
-	var mtn_ramp := mountain * smoothstep(0.2, 0.45, mountain)
+	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
+	h += foothills * height_scale * 1.5
+	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 11.25, peak_intensity)
-	h += mtn_ramp * height_scale * mtn_multiplier
+	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity)
+	h += peak_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
@@ -1270,8 +1276,8 @@ func get_height_at(x: float, z: float) -> float:
 			var local_gradient := _sample_terrain_gradient(x, z, h)
 			h -= path_carve * local_gradient * height_scale * 0.8
 
-	# Mountain valley pools - water in depressions between peaks
-	if _valley_pool_noise and mountain > 0.2 and h > 12.0:
+	# Valley pools - water in terrain depressions
+	if _valley_pool_noise and h > 3.0:
 		var valley_n := _valley_pool_noise.get_noise_2d(x, z)
 		var valley_concavity := _sample_terrain_concavity(x, z, mountain)
 		if valley_concavity > 0.3 and valley_n < -0.25:
