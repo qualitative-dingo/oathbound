@@ -1545,7 +1545,7 @@ func add_torch_light(structure: Node3D, offset: Vector3) -> void:
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
 	light.light_energy = 9.0
-	light.omni_range = 157.5
+	light.omni_range = 787.5
 	light.shadow_enabled = true
 	light.position = offset
 	structure.add_child(light)
@@ -1603,7 +1603,7 @@ func build_wall_torch_visual(structure: StaticBody3D) -> void:
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
 	light.light_energy = 10.5
-	light.omni_range = 180.0
+	light.omni_range = 900.0
 	light.shadow_enabled = true
 	light.position = Vector3(0.0, 2.15, 0.12)
 	structure.add_child(light)
@@ -2218,7 +2218,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	light.name = "FireLight"
 	light.light_color = Color(1.0, 0.55, 0.15)
 	light.light_energy = 5.0
-	light.omni_range = 54.0
+	light.omni_range = 270.0
 	light.omni_attenuation = 1.4
 	light.shadow_enabled = true
 	light.light_volumetric_fog_energy = 0.8
@@ -2229,7 +2229,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	var fill := OmniLight3D.new()
 	fill.light_color = Color(1.0, 0.3, 0.05)
 	fill.light_energy = 2.0
-	fill.omni_range = 24.0
+	fill.omni_range = 120.0
 	fill.omni_attenuation = 1.8
 	fill.shadow_enabled = false
 	fill.light_volumetric_fog_energy = 0.5

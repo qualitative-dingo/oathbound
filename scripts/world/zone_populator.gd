@@ -41,6 +41,16 @@ static func _get_structures_cached() -> Array:
 		_structures_cache_frame = current_frame
 	return _cached_structures
 
+
+static func _get_world_generator() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if not tree:
+		return null
+	var nodes := tree.get_nodes_in_group(&"world_generator")
+	if nodes.is_empty():
+		return null
+	return nodes[0]
+
 # ─── Zone height grid (pre-computed to avoid per-blade noise calls) ───────────
 const _HG_RES := 48
 const _HG_PAD := 2        # extra cells on each side for slope/cliff checks near zone edges

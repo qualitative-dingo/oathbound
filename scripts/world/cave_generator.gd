@@ -65,7 +65,7 @@ static func create_entrance_marker(facing_dir: Vector3) -> StaticBody3D:
 	entrance_light.name = "EntranceLight"
 	entrance_light.light_color = Color(0.9, 0.75, 0.5)
 	entrance_light.light_energy = 0.8
-	entrance_light.omni_range = 7.0
+	entrance_light.omni_range = 35.0
 	entrance_light.shadow_enabled = true
 	entrance_light.position = Vector3(0.0, TUNNEL_HEIGHT * 0.7, 0.0)
 	marker.add_child(entrance_light)
@@ -328,7 +328,7 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 		var dim := OmniLight3D.new()
 		dim.light_color = Color(0.25, 0.25, 0.35)
 		dim.light_energy = 0.15
-		dim.omni_range = 35.0
+		dim.omni_range = 175.0
 		dim.shadow_enabled = false
 		dim.position = lp
 		cave_root.add_child(dim)
@@ -364,7 +364,7 @@ static func _build_exit_marker(cave_root: Node3D) -> void:
 	var exit_light := OmniLight3D.new()
 	exit_light.light_color = Color(0.8, 0.7, 0.5)
 	exit_light.light_energy = 1.5
-	exit_light.omni_range = 10.0
+	exit_light.omni_range = 50.0
 	exit_marker.position = Vector3(0.0, 0.0, 2.0)
 	exit_marker.add_child(exit_light)
 	cave_root.add_child(exit_marker)
@@ -381,7 +381,7 @@ static func _add_wall_torch(parent: Node3D, pos: Vector3, height: float) -> void
 	var flame := OmniLight3D.new()
 	flame.light_color = Color(1.0, 0.75, 0.4)
 	flame.light_energy = 3.0
-	flame.omni_range = 16.0
+	flame.omni_range = 80.0
 	flame.shadow_enabled = true
 	flame.position.y = height + 0.1
 	torch.add_child(flame)

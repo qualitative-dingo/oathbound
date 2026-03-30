@@ -50,6 +50,8 @@ void vertex() {
 }
 
 void fragment() {
+	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+
 	// Slope-scaled speed for consistent vertex/fragment animation
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
@@ -62,45 +64,70 @@ void fragment() {
 	float n2 = vnoise(flow_uv * ripple_scale * 4.5 + vec2(50.0, 30.0));
 	float combined = n1 * 0.6 + n2 * 0.4;
 
-	// Edge foam based on UV.x distance from banks (0 and 1)
-	float edge_dist = min(v_uv.x, 1.0 - v_uv.x);
-	float foam_mask = 1.0 - smoothstep(0.0, foam_width, edge_dist);
-	foam_mask *= 0.5 + vnoise(flow_uv * 6.0 + vec2(TIME * 0.3, 0.0)) * 0.5;
-	foam_mask = smoothstep(0.2, 0.7, foam_mask);
-
-	// Depth sampling for terrain intersection
+	// ── Depth sampling for terrain intersection ──
 	float depth_raw = texture(DEPTH_TEXTURE, SCREEN_UV).r;
 	vec4 ndc = vec4(SCREEN_UV * 2.0 - 1.0, depth_raw, 1.0);
-	vec4 world_depth = INV_PROJECTION_MATRIX * ndc;
-	world_depth /= world_depth.w;
-	float depth_diff = -world_depth.z - (-VERTEX.z);
+	vec4 world_depth_vec = INV_PROJECTION_MATRIX * ndc;
+	world_depth_vec /= world_depth_vec.w;
+	float depth_diff = -world_depth_vec.z - (-VERTEX.z);
 
-	// Fade out where creek meets terrain edges
-	float shore_fade = smoothstep(0.0, edge_fade, depth_diff);
+	// ── Perturbed depth edge — organic, noisy shoreline (ported from water.gdshader) ──
+	float edge_noise = vnoise(world_pos.xz * 1.2) * 0.45
+	                 + vnoise(world_pos.xz * 2.7 + vec2(33.0, 77.0)) * 0.30
+	                 + vnoise(world_pos.xz * 6.1 + vec2(-19.0, 41.0)) * 0.15;
+	float perturbed_depth = depth_diff + (edge_noise - 0.45) * 0.35;
 
-	// Width-based color darkening (deeper in center)
+	// Hard cutoff: suppress water where terrain is clearly above
+	float hard_mask = smoothstep(-0.02, 0.12, depth_diff);
+
+	// Shore alpha fade using perturbed depth for organic edge
+	float shore_alpha = smoothstep(0.0, 0.5, perturbed_depth) * hard_mask;
+
+	// ── UV-based bank foam (mesh edges) ──
+	float edge_dist = min(v_uv.x, 1.0 - v_uv.x);
+	float uv_foam = 1.0 - smoothstep(0.0, foam_width, edge_dist);
+	uv_foam *= 0.5 + vnoise(flow_uv * 6.0 + vec2(TIME * 0.3, 0.0)) * 0.5;
+	uv_foam = smoothstep(0.2, 0.7, uv_foam);
+
+	// ── Depth-based terrain foam (any terrain intersection) ──
+	float foam_noise = vnoise(world_pos.xz * 1.8 + vec2(TIME * 0.25, TIME * 0.18));
+	float foam_noise2 = vnoise(world_pos.xz * 3.5 - vec2(TIME * 0.18, TIME * 0.35));
+	float foam_noise3 = vnoise(world_pos.xz * 0.9 + vec2(TIME * 0.08, -TIME * 0.12));
+	float foam_perturbed = depth_diff + (foam_noise3 - 0.5) * 0.06;
+	float depth_foam = 1.0 - smoothstep(0.02, depth_foam_width, foam_perturbed);
+	depth_foam *= step(-0.04, foam_perturbed);
+	float depth_foam_detail = depth_foam * (0.3 + foam_noise * 0.35 + foam_noise2 * 0.25);
+	depth_foam_detail = smoothstep(0.15, 0.55, depth_foam_detail);
+
+	// Combine UV foam and depth foam
+	float total_foam = clamp(max(uv_foam, depth_foam_detail), 0.0, 1.0);
+
+	// ── Water color with center darkening ──
 	float center = 1.0 - abs(v_uv.x * 2.0 - 1.0);
 	vec4 col = mix(water_color, deep_tint, center * 0.4);
 	col.rgb += combined * 0.06;
 
-	// Apply foam
-	col = mix(col, foam_color, foam_mask);
+	// Apply foam to color
+	vec4 final_col = mix(col, foam_color, total_foam);
 
-	// Fresnel for subtle reflection
-	vec3 world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// ── Fresnel for subtle reflection ──
 	vec3 view_dir = normalize(CAMERA_POSITION_WORLD - world_pos);
 	float fresnel = pow(1.0 - max(dot(NORMAL, view_dir), 0.0), 2.5);
 	fresnel = clamp(fresnel, 0.0, 0.5);
-	col.rgb = mix(col.rgb, vec3(0.25, 0.35, 0.50), fresnel * 0.3);
-	col.a = mix(col.a, 0.85, fresnel * 0.4);
+	final_col.rgb = mix(final_col.rgb, sky_tint.rgb, fresnel * 0.3);
+	final_col.a = mix(final_col.a, 0.85, fresnel * 0.4);
 
-	ALBEDO = col.rgb;
-	ALPHA = col.a * shore_fade;
-	ROUGHNESS = mix(0.1, 0.4, foam_mask);
-	METALLIC = 0.05;
-	SPECULAR = 0.4;
+	ALBEDO = final_col.rgb;
 
-	// Surface normal perturbation for ripples
+	// ── Alpha: max of water alpha and foam alpha for stronger shoreline visibility ──
+	float foam_shore_fade = smoothstep(0.0, 0.2, perturbed_depth);
+	ALPHA = max(final_col.a * shore_alpha, total_foam * foam_shore_fade * 0.85);
+
+	ROUGHNESS = mix(0.1, 0.4, total_foam);
+	METALLIC = mix(0.05, 0.0, total_foam);
+	SPECULAR = mix(0.4, 0.15, total_foam);
+
+	// ── Surface normal perturbation for ripples ──
 	float ns = ripple_strength * 2.0;
 	float nx = sin(flow_uv.y * 8.0 + flow_uv.x * 3.0 + TIME * 1.2) * ns
 	         + sin(flow_uv.y * 15.0 - flow_uv.x * 5.0 + TIME * 0.8) * ns * 0.5;

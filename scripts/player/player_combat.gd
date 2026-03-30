@@ -320,7 +320,7 @@ func spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float,
 		light.name = "AuraLight"
 		light.light_color = aura_color
 		light.light_energy = 8.0
-		light.omni_range = 8.0
+		light.omni_range = 40.0
 		light.omni_attenuation = 1.2
 		light.shadow_enabled = false
 		arrow.add_child(light)

@@ -3073,7 +3073,7 @@ func _spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float
 		light.name = "AuraLight"
 		light.light_color = aura_col
 		light.light_energy = 5.0
-		light.omni_range = 4.0
+		light.omni_range = 20.0
 		light.omni_attenuation = 1.5
 		light.shadow_enabled = false
 		arrow.add_child(light)
@@ -5501,7 +5501,7 @@ func _update_torch_light() -> void:
 		_torch_light.name = "PlayerTorchLight"
 		_torch_light.light_color = Color(1.0, 0.65, 0.25)
 		_torch_light.light_energy = 4.0
-		_torch_light.omni_range = 144.0
+		_torch_light.omni_range = 720.0
 		_torch_light.omni_attenuation = 1.2
 		_torch_light.shadow_enabled = true
 		_torch_light.light_volumetric_fog_energy = 1.0
@@ -7562,7 +7562,7 @@ func _add_torch_light(structure: Node3D, offset: Vector3) -> void:
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
 	light.light_energy = 2.0
-	light.omni_range = 21.0
+	light.omni_range = 105.0
 	light.shadow_enabled = true
 	light.light_volumetric_fog_energy = 1.0
 	light.position = offset
@@ -7621,7 +7621,7 @@ func _build_wall_torch_visual(structure: StaticBody3D) -> void:
 	light.name = "TorchLight"
 	light.light_color = Color(1.0, 0.6, 0.2)
 	light.light_energy = 2.5
-	light.omni_range = 24.0
+	light.omni_range = 120.0
 	light.shadow_enabled = true
 	light.position = Vector3(0.0, 2.15, 0.12)
 	structure.add_child(light)

@@ -585,7 +585,7 @@ static func _add_chest_rarity_sheen(chest: Node3D, contents: Array, sz: Vector3)
 	light.name = "RaritySheen"
 	light.light_color = col
 	light.light_energy = 0.6 + stars * 0.25
-	light.omni_range = 2.5 + stars * 0.5
+	light.omni_range = 12.5 + stars * 2.5
 	light.omni_attenuation = 1.5
 	light.shadow_enabled = false
 	light.position.y = sz.y + 0.3

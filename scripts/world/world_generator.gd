@@ -1096,6 +1096,12 @@ func get_microbiome_at_zone(coord: Vector2i) -> StringName:
 	return _determine_microbiome(coord)
 
 
+func get_creek_segments_for_zone(coord: Vector2i) -> Array:
+	if _creek_segments.has(coord):
+		return _creek_segments[coord]
+	return []
+
+
 func _determine_microbiome(zone: Vector2i) -> StringName:
 	if _zone_microbiome_cache.has(zone):
 		return _zone_microbiome_cache[zone]
