@@ -433,12 +433,46 @@ func _process(_delta: float) -> void:
 		_perf_max_total_ms, _perf_max_queue_ms, _perf_max_pending_ms,
 		_perf_max_unload_ms, _perf_max_explore_ms, _perf_pending_size_max,
 		origin_shift.x, origin_shift.z, displaced])
+	# Vegetation debug: count grass/flower MMIs and instances per zone
+	var veg_snap := _vegetation_perf_snapshot()
+	print("[PERF VEG] g_mmi=%d g_inst=%d fl_mmi=%d fl_inst=%d trees=%d" % [
+		veg_snap["g_mmi"], veg_snap["g_inst"], veg_snap["fl_mmi"], veg_snap["fl_inst"], veg_snap["trees"]])
 	_perf_max_queue_ms = 0.0
 	_perf_max_pending_ms = 0.0
 	_perf_max_unload_ms = 0.0
 	_perf_max_explore_ms = 0.0
 	_perf_max_total_ms = 0.0
 	_perf_pending_size_max = 0
+
+
+func _vegetation_perf_snapshot() -> Dictionary:
+	var g_mmi := 0
+	var g_inst := 0
+	var fl_mmi := 0
+	var fl_inst := 0
+	var trees := 0
+	for coord in _loaded_zones:
+		var zone_node: Node3D = _loaded_zones[coord]
+		if not is_instance_valid(zone_node):
+			continue
+		for child in zone_node.get_children():
+			if not is_instance_valid(child):
+				continue
+			var cname: String = child.name
+			if cname.begins_with("Grass_") and child is MultiMeshInstance3D:
+				g_mmi += 1
+				var mmi := child as MultiMeshInstance3D
+				if mmi.multimesh:
+					g_inst += mmi.multimesh.instance_count
+			elif cname.begins_with("Flower_") and child is MultiMeshInstance3D:
+				fl_mmi += 1
+				var mmi := child as MultiMeshInstance3D
+				if mmi.multimesh:
+					fl_inst += mmi.multimesh.instance_count
+			elif child is StaticBody3D and child.has_meta("tree_name"):
+				trees += 1
+	return {"g_mmi": g_mmi, "g_inst": g_inst, "fl_mmi": fl_mmi, "fl_inst": fl_inst, "trees": trees}
+
 
 func _physics_process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
