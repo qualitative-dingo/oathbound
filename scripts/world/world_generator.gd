@@ -1594,6 +1594,28 @@ func _evict_terrain_cache() -> void:
 
 const _MAX_UNLOADS_PER_FRAME := 4
 
+
+func _clear_zone_collisions_from_queues(zone_node: Node) -> void:
+	# Remove collision shapes belonging to this zone from deferred queues
+	# This prevents "freed instance" crash when accessing shapes from unloaded zones
+	for i in range(_deferred_collisions.size() - 1, -1, -1):
+		var shape = _deferred_collisions[i]
+		if not is_instance_valid(shape):
+			_deferred_collisions.remove_at(i)
+		elif is_instance_valid(shape.get_parent()):
+			var parent = shape.get_parent()
+			if parent == zone_node or (is_instance_valid(parent.get_parent()) and parent.get_parent() == zone_node):
+				_deferred_collisions.remove_at(i)
+	for i in range(_deferred_disable_collisions.size() - 1, -1, -1):
+		var shape = _deferred_disable_collisions[i]
+		if not is_instance_valid(shape):
+			_deferred_disable_collisions.remove_at(i)
+		elif is_instance_valid(shape.get_parent()):
+			var parent = shape.get_parent()
+			if parent == zone_node or (is_instance_valid(parent.get_parent()) and parent.get_parent() == zone_node):
+				_deferred_disable_collisions.remove_at(i)
+
+
 func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = false) -> void:
 	var any_flying := false
 	for p in players:
@@ -1630,6 +1652,8 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 		if unloaded >= max_unloads:
 			break
 		var zone_node: Node = _loaded_zones[coord]
+		# Clear collision shapes from deferred queues BEFORE freeing to prevent crash
+		_clear_zone_collisions_from_queues(zone_node)
 		if zone_node is StaticBody3D:
 			_ZonePool.recycle_zone(zone_node as StaticBody3D)
 		else:

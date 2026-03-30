@@ -1912,13 +1912,14 @@ static var _grass_types_table: Array = []
 ## Using GRASS_ATLAS_COLUMNS types for variety while keeping draw calls minimal
 static func _get_grass_types() -> Array:
 	if _grass_types_table.is_empty():
-		# Lush grass: 750 per type * 4 types = 3000 total per zone
-		# This is 10x the reduced amount, back to original lush density
+		# PERF: Reduced from 750 to 150 per type (3000 to 600 total per zone)
+		# 3000 grass placement attempts per zone caused massive FPS drops
+		# 600 still looks lush but doesn't tank performance
 		_grass_types_table = [
-			[0, 750, 0.9, 1.7, 1.8, 1.2],   # Atlas slot 0 - tall grass
-			[1, 750, 0.8, 1.4, 1.5, 1.0],   # Atlas slot 1 - medium grass
-			[2, 750, 0.7, 1.2, 1.4, 0.9],   # Atlas slot 2 - short grass
-			[3, 750, 0.6, 1.0, 1.2, 0.8],   # Atlas slot 3 - tiny grass
+			[0, 150, 0.9, 1.7, 1.8, 1.2],   # Atlas slot 0 - tall grass
+			[1, 150, 0.8, 1.4, 1.5, 1.0],   # Atlas slot 1 - medium grass
+			[2, 150, 0.7, 1.2, 1.4, 0.9],   # Atlas slot 2 - short grass
+			[3, 150, 0.6, 1.0, 1.2, 0.8],   # Atlas slot 3 - tiny grass
 		]
 	return _grass_types_table
 
