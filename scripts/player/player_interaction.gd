@@ -423,7 +423,9 @@ func update_interact_prompt() -> void:
 		var d := pp.distance_to(bush_center)
 		if d < 3.0 and d < closest_dist:
 			closest_dist = d
-			closest_name = "Harvest Blueberries"
+			var drop_id: StringName = bb3d.get_meta("drop_id", &"blueberry")
+			var berry_name := ItemDatabase.get_display_name(drop_id) if drop_id != &"" else "Berries"
+			closest_name = "Harvest %s" % berry_name
 
 	var nearest_world_name := ""
 	var cam: Camera3D = pc._spring_arm.get_child(0) if pc._spring_arm.get_child_count() > 0 else null
@@ -641,14 +643,10 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 	bush.set_meta("berry_harvest", false)
 	bush.remove_from_group(&"berry_bushes")
 
-	# Strip all berry meshes (SphereMesh children) — leaves and trunk stay
-	var berry_nodes: Array[MeshInstance3D] = []
-	for child in bush.get_children():
-		if child is MeshInstance3D and child.mesh is SphereMesh:
-			berry_nodes.append(child as MeshInstance3D)
-	for berry in berry_nodes:
-		bush.remove_child(berry)
-		berry.queue_free()
+	# Hide the batched berry MultiMesh (BerryMM) - leaves and trunk stay visible
+	var berry_mm := bush.get_node_or_null("BerryMM") as MultiMeshInstance3D
+	if berry_mm:
+		berry_mm.visible = false
 
 	# Slight shake animation on the foliage
 	var leaf_mm := bush.get_node_or_null("LeafMM") as Node3D
@@ -660,7 +658,7 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 		tw.tween_property(leaf_mm, "position", base_pos + Vector3(0.02, 0.01, -0.02), 0.05)
 		tw.tween_property(leaf_mm, "position", base_pos, 0.07)
 
-	# Respawn berries after 90 seconds
+	# Respawn berries after 8-24 hours (28800-86400 seconds)
 	var stree := bush.get_tree()
 	if stree:
 		var respawn_secs := randf_range(28800.0, 86400.0)
@@ -669,33 +667,10 @@ func _harvest_berry_bush(bush: Node3D) -> void:
 				return
 			bush.set_meta("berry_harvest", true)
 			bush.add_to_group(&"berry_bushes")
-			# Re-create berry meshes
-			var re_rng := RandomNumberGenerator.new()
-			re_rng.randomize()
-			var crown_y: float = float(bush.get_meta("trunk_h", 1.0)) * 0.35
-			var crown_r: float = 1.32 * float(bush.get_meta("trunk_h", 1.0)) / 1.8
-			var crown_h: float = float(bush.get_meta("trunk_h", 1.0)) * 0.92
-			var bb_mat: StandardMaterial3D = null
-			if ZonePopulator._blueberry_mat:
-				bb_mat = ZonePopulator._blueberry_mat
-			else:
-				bb_mat = StandardMaterial3D.new()
-				bb_mat.albedo_color = Color(0.12, 0.08, 0.45)
-			for _bi in re_rng.randi_range(24, 42):
-				var b_angle := re_rng.randf_range(0.0, TAU)
-				var b_out := re_rng.randf_range(0.1, crown_r * 0.8)
-				var b_y := crown_y + re_rng.randf_range(-crown_h * 0.2, crown_h * 0.5)
-				var bmi := MeshInstance3D.new()
-				var bsp := SphereMesh.new()
-				bsp.radius = re_rng.randf_range(0.067, 0.118)
-				bsp.height = bsp.radius * 2.0
-				bsp.radial_segments = 4
-				bsp.rings = 2
-				bmi.mesh = bsp
-				bmi.set_surface_override_material(0, bb_mat)
-				bmi.position = Vector3(cos(b_angle) * b_out, b_y, sin(b_angle) * b_out)
-				bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				bush.add_child(bmi)
+			# Show the batched berry MultiMesh again
+			var respawn_berry_mm := bush.get_node_or_null("BerryMM") as MultiMeshInstance3D
+			if respawn_berry_mm:
+				respawn_berry_mm.visible = true
 		)
 
 

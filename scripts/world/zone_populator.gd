@@ -507,13 +507,12 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 
 	var root := StaticBody3D.new()
 	root.name = "BlueberryBush"
-	root.collision_layer = 1 | 4
+	root.collision_layer = 4  # Layer 4 only = raycast detection, no physics blocking
 	root.collision_mask = 0
 	root.add_to_group(&"interactables")
 	root.add_to_group(&"berry_bushes")
 
-	# Small bushes: collision always enabled (no LOD toggle needed)
-	# They're cheap and don't cause physics churn when not toggled
+	# Small bushes: collision for raycast only (player can walk through)
 	var col := CollisionShape3D.new()
 	var shape := CylinderShape3D.new()
 	shape.radius = 0.7 * sf
@@ -708,12 +707,16 @@ static func _create_lingonberry_bush(rng: RandomNumberGenerator) -> StaticBody3D
 	root.set_meta("skip_collision_lod", true)  # Tell LOD system to not toggle this
 
 	root.add_to_group(&"interactables")
+	root.add_to_group(&"berry_bushes")
 	root.set_meta("harvestable", true)
 	root.set_meta("hp", rng.randf_range(8.0, 12.0))
 	root.set_meta("drop_id", &"lingonberry")
 	root.set_meta("drop_min", 2)
 	root.set_meta("drop_max", 5)
 	root.set_meta("harvest_type", &"bush")
+	root.set_meta("tree_name", "Lingonberry Bush")
+	root.set_meta("trunk_h", 0.35 * sf)  # For respawn calculations
+	root.set_meta("berry_harvest", true)
 	return root
 
 
@@ -1873,12 +1876,13 @@ static var _grass_types_table: Array = []
 ## Using GRASS_ATLAS_COLUMNS types for variety while keeping draw calls minimal
 static func _get_grass_types() -> Array:
 	if _grass_types_table.is_empty():
-		# Each type gets ~75 instances (300 total / 4 types) for balanced density
+		# Lush grass: 750 per type * 4 types = 3000 total per zone
+		# This is 10x the reduced amount, back to original lush density
 		_grass_types_table = [
-			[0, 75, 0.9, 1.7, 1.8, 1.2],   # Atlas slot 0 - tall grass
-			[1, 75, 0.8, 1.4, 1.5, 1.0],   # Atlas slot 1 - medium grass
-			[2, 75, 0.7, 1.2, 1.4, 0.9],   # Atlas slot 2 - short grass
-			[3, 75, 0.6, 1.0, 1.2, 0.8],   # Atlas slot 3 - tiny grass
+			[0, 750, 0.9, 1.7, 1.8, 1.2],   # Atlas slot 0 - tall grass
+			[1, 750, 0.8, 1.4, 1.5, 1.0],   # Atlas slot 1 - medium grass
+			[2, 750, 0.7, 1.2, 1.4, 0.9],   # Atlas slot 2 - short grass
+			[3, 750, 0.6, 1.0, 1.2, 0.8],   # Atlas slot 3 - tiny grass
 		]
 	return _grass_types_table
 
@@ -2063,24 +2067,24 @@ static func _get_microbiome_counts(biome: StringName, micro: StringName) -> Pack
 	if biome == &"hearthlands" and micro != &"none":
 		# [trees, rocks, bushes, enemies]
 		match micro:
-			# PERF: Reduced tree counts by 50% to speed up population phases
+			# Restored to full tree counts (2x the reduced amount)
 			&"meadow":
-				return PackedInt32Array([3, 2, 4, 1])
+				return PackedInt32Array([6, 2, 4, 1])
 			&"forest":
-				return PackedInt32Array([14, 1, 2, 2])
+				return PackedInt32Array([28, 1, 2, 2])
 			&"birch_forest":
-				return PackedInt32Array([14, 1, 2, 1])
+				return PackedInt32Array([28, 1, 2, 1])
 			&"hills":
-				return PackedInt32Array([2, 3, 1, 2])
+				return PackedInt32Array([4, 3, 1, 2])
 			&"riverside":
-				return PackedInt32Array([5, 4, 5, 1])
-		return PackedInt32Array([6, 2, 3, 1])
+				return PackedInt32Array([10, 4, 5, 1])
+		return PackedInt32Array([12, 2, 3, 1])
 	return _get_biome_counts(biome)
 
 
 static func _get_biome_counts(biome: StringName) -> PackedInt32Array:
 	if biome == &"hearthlands":
-		return PackedInt32Array([6, 2, 3, 1])
+		return PackedInt32Array([12, 2, 3, 1])
 	return PackedInt32Array([0, 0, 0, 0])
 
 
