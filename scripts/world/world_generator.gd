@@ -655,21 +655,19 @@ func _get_base_height(wx: float, wz: float) -> float:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
 	var continent := _continent_noise.get_noise_2d(wx, wz)
 	var mountain := _mountain_noise.get_noise_2d(wx, wz)
-	var h := continent * height_scale * 0.6
-	
-	# Mountain peaks - 5x taller than before (multiplier up to 22.5 from 4.5)
-	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
+	var h := continent * height_scale * 0.35
+
+	var mtn_ramp := mountain * smoothstep(0.2, 0.45, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(wx * 0.015 + 9000.0, wz * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(1.0, 22.5, peak_intensity)  # 5x taller peaks
+	var mtn_multiplier := lerpf(0.5, 11.25, peak_intensity)
 	h += mtn_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	var ridge_mult := lerpf(0.2, 3.0, peak_intensity)  # Scaled ridges for tall mountains
-	h += ridge * height_scale * ridge_mult - height_scale * 0.04
+	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
+	h += ridge * height_scale * ridge_mult - height_scale * 0.02
 
-	# Continental bias — central play area stays above water
 	h += lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
 
 	var center_dist := Vector2(wx, wz).length()
@@ -1152,8 +1150,8 @@ func _determine_microbiome(zone: Vector2i) -> StringName:
 	# River areas: near rivers/streams
 	if accum > _WS_RIVER_THRESH * 0.6:
 		micro = &"riverside"
-	# Hilly terrain: elevated areas (raised threshold for 5x taller mountains)
-	elif height > 40.0:
+	# Hilly terrain: elevated areas
+	elif height > 12.0:
 		micro = &"hills"
 	# Use the two noise layers to partition the rest
 	elif n1 > 0.15:
@@ -1210,16 +1208,16 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
 	var continent := _continent_noise.get_noise_2d(x, z)
 	var mountain := _mountain_noise.get_noise_2d(x, z)
-	var h := continent * height_scale * 0.6
-	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
+	var h := continent * height_scale * 0.35
+	var mtn_ramp := mountain * smoothstep(0.2, 0.45, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(1.0, 22.5, peak_intensity)
+	var mtn_multiplier := lerpf(0.5, 11.25, peak_intensity)
 	h += mtn_ramp * height_scale * mtn_multiplier
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	var ridge_mult := lerpf(0.2, 3.0, peak_intensity)
-	h += ridge * height_scale * ridge_mult - height_scale * 0.04
+	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
+	h += ridge * height_scale * ridge_mult - height_scale * 0.02
 	return h
 
 
@@ -1237,30 +1235,28 @@ func get_height_at(x: float, z: float) -> float:
 	var mountain := _mountain_noise.get_noise_2d(x, z)
 	var detail := _detail_noise.get_noise_2d(x, z)
 
-	var h := continent * height_scale * 0.6
-	
-	# Mountain peaks - 5x taller than before (multiplier up to 22.5 from 4.5)
-	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
+	var h := continent * height_scale * 0.35
+
+	var mtn_ramp := mountain * smoothstep(0.2, 0.45, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(1.0, 22.5, peak_intensity)  # 5x taller peaks
+	var mtn_multiplier := lerpf(0.5, 11.25, peak_intensity)
 	h += mtn_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	var ridge_mult := lerpf(0.2, 3.0, peak_intensity)  # Scaled ridges for tall mountains
-	h += ridge * height_scale * ridge_mult - height_scale * 0.04
+	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
+	h += ridge * height_scale * ridge_mult - height_scale * 0.02
 
 	h += detail * height_scale * 0.15
 
-	# Crag details on taller peaks - threshold raised for new mountain heights
-	var elev_t := clampf((h - 80.0) / 200.0, 0.0, 1.0)  # Adjusted for 5x taller mountains
+	var elev_t := clampf((h - 40.0) / 100.0, 0.0, 1.0)
 	if elev_t > 0.0:
 		var crag := _detail_noise.get_noise_2d(x * 0.12 + 7000.0, z * 0.12 + 7000.0)
 		h += crag * height_scale * 0.12 * elev_t
 
 	# Mountain paths - carve walkable switchback trails on steep mountainsides
-	if _mtn_path_noise and mountain > 0.15 and h > 25.0:
+	if _mtn_path_noise and mountain > 0.25 and h > 15.0:
 		var path_raw := _mtn_path_noise.get_noise_2d(x, z)
 		var path_raw2 := _mtn_path_noise.get_noise_2d(x * 0.7 + 2000.0, z * 0.7 + 2000.0)
 		var path_combined := path_raw * 0.6 + path_raw2 * 0.4
@@ -1269,19 +1265,19 @@ func get_height_at(x: float, z: float) -> float:
 		if path_t > 0.0:
 			var path_width_var := _detail_noise.get_noise_2d(x * 0.08 + 5000.0, z * 0.08 + 5000.0)
 			var path_flatten := lerpf(0.3, 0.6, 0.5 + path_width_var * 0.5)
-			var mtn_factor := smoothstep(0.15, 0.5, mountain)  # Stronger on steeper terrain
+			var mtn_factor := smoothstep(0.25, 0.5, mountain)
 			var path_carve := path_t * path_flatten * mtn_factor
 			var local_gradient := _sample_terrain_gradient(x, z, h)
 			h -= path_carve * local_gradient * height_scale * 0.8
 
 	# Mountain valley pools - water in depressions between peaks
-	if _valley_pool_noise and mountain > 0.1 and h > 20.0:
+	if _valley_pool_noise and mountain > 0.2 and h > 12.0:
 		var valley_n := _valley_pool_noise.get_noise_2d(x, z)
 		var valley_concavity := _sample_terrain_concavity(x, z, mountain)
 		if valley_concavity > 0.3 and valley_n < -0.25:
 			var pool_t := smoothstep(-0.25, -0.5, valley_n) * smoothstep(0.3, 0.6, valley_concavity)
 			if pool_t > 0.0:
-				var pool_floor := lerpf(h, h - 8.0, pool_t)
+				var pool_floor := lerpf(h, h - 4.0, pool_t)
 				pool_floor = maxf(pool_floor, WATER_LEVEL - 2.0)
 				h = lerpf(h, pool_floor, pool_t * 0.7)
 

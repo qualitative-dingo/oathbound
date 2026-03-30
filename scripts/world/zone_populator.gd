@@ -20,8 +20,8 @@ const _ZonePool := preload("res://scripts/world/zone_pool.gd")
 const ZONE_SIZE := 64.0
 const _MIN_LAND_Y := 0.5
 const _WATER_LEVEL := 0.0
-const _TREE_LINE_START := 45.0
-const _TREE_LINE_END := 75.0
+const _TREE_LINE_START := 22.0
+const _TREE_LINE_END := 37.0
 
 # ─── Floating origin offset (set by WorldGenerator on each origin shift) ──────
 static var origin_shift := Vector3.ZERO
@@ -1277,8 +1277,8 @@ static func populate_zone_phase(
 				var ground_y := _hg_snap_height(wx, wz)
 				if ground_y < _MIN_LAND_Y:
 					continue
-				if ground_y > 8.0:
-					var skip_chance := smoothstep(8.0, 20.0, ground_y)
+				if ground_y > 5.0:
+					var skip_chance := smoothstep(5.0, 12.0, ground_y)
 					if rng.randf() < skip_chance:
 						continue
 				var enemy := _create_enemy(biome, rng)
@@ -1658,7 +1658,7 @@ static func _scatter_flowers(
 
 			var sn := _hg_snap_and_normal(wx, wz)
 			var ground_y := sn.x
-			if ground_y < _MIN_LAND_Y or ground_y > 45.0:
+			if ground_y < _MIN_LAND_Y or ground_y > 22.0:
 				continue
 			if sn.y < 0.95:
 				continue
@@ -1768,7 +1768,7 @@ static func _scatter_blueberry_bushes(
 		var wz := origin_z + lz
 		var sn := _hg_snap_and_normal(wx, wz)
 		var ground_y := sn.x
-		if ground_y < _MIN_LAND_Y or ground_y > 40.0:
+		if ground_y < _MIN_LAND_Y or ground_y > 20.0:
 			continue
 		if sn.y < 0.85:
 			continue
@@ -3657,7 +3657,7 @@ static func _try_spawn_cave(
 	var cx := origin_x + ZONE_SIZE * 0.5
 	var cz := origin_z + ZONE_SIZE * 0.5
 	var center_h := float(height_func.call(cx, cz))
-	if center_h < 5.0:
+	if center_h < 3.0:
 		return  # not hilly enough
 
 	# Find the highest point in a small grid to locate the hill peak
