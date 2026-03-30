@@ -1847,7 +1847,9 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 				col.disabled = true
 				_deferred_collisions.append(col)
 				zone_root.add_child(col)
-		call_deferred(&"add_child", zone_root)
+		# Only add if not already parented (pool should orphan, but be safe)
+		if not zone_root.get_parent():
+			call_deferred(&"add_child", zone_root)
 	else:
 		zone_root = StaticBody3D.new()
 		zone_root.name = "Zone_%d_%d" % [coord.x, coord.y]
@@ -1867,7 +1869,9 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 			_deferred_collisions.append(collision)
 		zone_root.add_child(mesh_instance)
 		zone_root.add_child(collision)
-		call_deferred(&"add_child", zone_root)
+		# Only add if not already parented
+		if not zone_root.get_parent():
+			call_deferred(&"add_child", zone_root)
 
 	# Local position = world coords; parent (WorldGenerator) global_position handles origin shift
 	zone_root.position = Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE)

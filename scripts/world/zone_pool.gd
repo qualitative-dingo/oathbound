@@ -31,6 +31,9 @@ static func get_zone_root() -> StaticBody3D:
 	if not _zone_roots.is_empty():
 		var root := _zone_roots.pop_back() as StaticBody3D
 		if is_instance_valid(root):
+			# Safety: ensure node is orphaned before reuse
+			if root.get_parent():
+				root.get_parent().remove_child(root)
 			# Safety: clean up any stale children (should only have TerrainMesh/TerrainCol)
 			for child in root.get_children():
 				var cname: String = child.name if is_instance_valid(child) else ""

@@ -32,7 +32,12 @@ static func _get_structures_cached() -> Array:
 	var current_frame := Engine.get_frames_drawn()
 	if current_frame != _structures_cache_frame:
 		var tree := Engine.get_main_loop() as SceneTree
-		_cached_structures = tree.get_nodes_in_group(&"structures") if tree else []
+		var raw := tree.get_nodes_in_group(&"structures") if tree else []
+		# Filter out any freed instances to prevent crashes
+		_cached_structures = []
+		for node in raw:
+			if is_instance_valid(node):
+				_cached_structures.append(node)
 		_structures_cache_frame = current_frame
 	return _cached_structures
 
@@ -1687,6 +1692,8 @@ static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, c
 	if structs.is_empty():
 		structs = _get_structures_cached()
 	for s: Node3D in structs:
+		if not is_instance_valid(s):
+			continue
 		var sp := s.global_position
 		# sp is scene-space; wx/wz are world-space. Convert sp to world-space.
 		var dx := (sp.x + origin_shift.x) - wx
