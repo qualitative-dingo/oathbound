@@ -1549,12 +1549,11 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 		_zone_biome_cache.erase(coord)
 		_zone_microbiome_cache.erase(coord)
 		_zone_water_cache.erase(coord)
-		# Remove any pending population entries for this zone to prevent re-population
+		# Remove ALL pending population entries for this zone to prevent re-population
 		# when the zone_root is reused from the pool for a different zone
 		for i in range(_populate_backlog.size() - 1, -1, -1):
 			if _populate_backlog[i]["coord"] == coord:
 				_populate_backlog.remove_at(i)
-				break  # Only one entry per coord should exist
 		unloaded += 1
 		zone_unloaded.emit(coord)
 
@@ -1741,6 +1740,10 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 
 	# Queue object spawning for the NEXT frame to keep this frame light
 	var micro := _determine_microbiome(coord)
+	# Clear any stale backlog entries for this coord before adding new one
+	for i in range(_populate_backlog.size() - 1, -1, -1):
+		if _populate_backlog[i]["coord"] == coord:
+			_populate_backlog.remove_at(i)
 	_populate_backlog.append({
 		"coord": coord,
 		"zone_root": zone_root,
