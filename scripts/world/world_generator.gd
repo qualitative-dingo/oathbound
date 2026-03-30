@@ -1414,7 +1414,7 @@ func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 
 var _finalize_backlog: Array = []   # zones ready for mesh setup
 var _populate_backlog: Array = []   # zones with mesh ready, waiting for object spawning
-var _deferred_collisions: Array[CollisionShape3D] = []  # collision shapes to enable next frame
+var _deferred_collisions: Array = []  # collision shapes to enable next frame (untyped to handle freed instances)
 var _deferred_disable_collisions: Array = []  # collision shapes to disable next frame (untyped to handle freed)
 
 func _is_in_load_range(coord: Vector2i) -> bool:
@@ -1426,7 +1426,7 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 
 
 const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
-const _MAX_COLLISION_TOGGLES_PER_FRAME := 2  # Cap total collision toggles (1 enable + 1 disable max) to avoid physics spikes
+const _MAX_COLLISION_TOGGLES_PER_FRAME := 8  # Cap total collision toggles to avoid physics spikes (was 2, increased for faster loading)
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
@@ -1480,13 +1480,14 @@ func _process_pending_zones() -> void:
 
 	_evict_terrain_cache()
 
-	# 2. Populate zone objects — batch vegetation phases (3-6) for faster grass loading
-	#    Phases 0-2 have collision objects (trees, rocks, creatures) - process one at a time
-	#    Phases 3-6 are vegetation-only (grass, flowers) with NO collision - safe to batch
+	# 2. Populate zone objects — batch ALL vegetation phases (3-6) together for fast grass loading
+	#    Phases 0-2 have collision objects (trees, rocks, creatures) - one per frame, budget-checked
+	#    Phases 3-6 are vegetation-only (grass, flowers) with NO collision - process ALL in one go
+	#    Also allow multiple zones' vegetation to be processed per frame for faster loading
+	var veg_zones_this_frame := 0
+	const _MAX_VEG_ZONES_PER_FRAME := 4  # Process up to 4 zones' vegetation per frame
 	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
 		while not _populate_backlog.is_empty():
-			if Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
-				break
 			var pitem: Dictionary = _populate_backlog[0]
 			var pcoord: Vector2i = pitem["coord"]
 			var zone_root = pitem["zone_root"]  # untyped — may be freed between frames
@@ -1495,6 +1496,11 @@ func _process_pending_zones() -> void:
 				_populate_backlog.pop_front()
 				continue
 			var phase: int = pitem.get("phase", 0)
+			
+			# Budget check ONLY for collision phases (0-2) - vegetation phases run to completion
+			if phase < 3 and Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
+				break
+			
 			var biome: StringName = pitem["biome"]
 			var micro: StringName = pitem["micro"]
 			var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
@@ -1508,14 +1514,18 @@ func _process_pending_zones() -> void:
 						min_dist = d
 				_update_zone_lod(zone_root, min_dist)
 				zone_loaded.emit(pcoord)
-				break  # Done with this zone
+				veg_zones_this_frame += 1
+				# Allow multiple zones' vegetation per frame (up to cap)
+				if veg_zones_this_frame >= _MAX_VEG_ZONES_PER_FRAME:
+					break
+				continue  # Try to process next zone's vegetation too
 			else:
 				var next_phase := phase + 1
 				pitem["phase"] = next_phase
-				# Vegetation phases (3-6) have no collision - process next immediately
+				# Vegetation phases (3-6) have no collision - process next immediately without budget check
 				if next_phase >= 3 and next_phase <= 6:
-					continue  # Don't break, process next phase in same frame
-			break  # Break after collision phases (0-2) or if not vegetation
+					continue  # Loop back and process next vegetation phase in same frame
+			break  # Break after collision phases (0-2)
 
 	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
 	# PERF: Reduced from 3-6 to 1-2 to spread work across more frames
