@@ -2017,26 +2017,59 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 		var uv_scale := 0.05
 
+		# Pre-compute smoothed tangent directions to prevent corner kinking
+		var tangents := PackedVector2Array()
+		for i in points.size():
+			var p := points[i]
+			var dir_fwd := Vector2.ZERO
+			var dir_back := Vector2.ZERO
+
+			if i < points.size() - 1:
+				var nxt := points[i + 1]
+				dir_fwd = Vector2(nxt.x - p.x, nxt.z - p.z)
+				if dir_fwd.length_squared() > 0.0001:
+					dir_fwd = dir_fwd.normalized()
+			if i > 0:
+				var prv := points[i - 1]
+				dir_back = Vector2(p.x - prv.x, p.z - prv.z)
+				if dir_back.length_squared() > 0.0001:
+					dir_back = dir_back.normalized()
+
+			var flow_dir: Vector2
+			if dir_fwd.length_squared() > 0.0001 and dir_back.length_squared() > 0.0001:
+				flow_dir = (dir_fwd + dir_back).normalized()
+			elif dir_fwd.length_squared() > 0.0001:
+				flow_dir = dir_fwd
+			elif dir_back.length_squared() > 0.0001:
+				flow_dir = dir_back
+			else:
+				flow_dir = Vector2(0, 1)
+			tangents.append(flow_dir)
+
 		for i in points.size():
 			var p := points[i]
 			var w := half_widths[i]
 			var uv_y := flow_uvs[i] * uv_scale
 
-			var flow_dir: Vector2
-			if i < points.size() - 1:
-				var nxt := points[i + 1]
-				flow_dir = Vector2(nxt.x - p.x, nxt.z - p.z).normalized()
-			elif i > 0:
-				var prv := points[i - 1]
-				flow_dir = Vector2(p.x - prv.x, p.z - prv.z).normalized()
-			else:
-				flow_dir = Vector2(0, 1)
-
+			var flow_dir := tangents[i]
 			var perp := Vector2(-flow_dir.y, flow_dir.x)
 
 			var local_p := p - zone_origin
 			var left := Vector3(local_p.x - perp.x * w, local_p.y, local_p.z - perp.y * w)
 			var right := Vector3(local_p.x + perp.x * w, local_p.y, local_p.z + perp.y * w)
+
+			# Compute proper surface normal from tangent and width direction
+			var tangent_3d := Vector3(flow_dir.x, 0.0, flow_dir.y)
+			var width_dir := Vector3(perp.x, 0.0, perp.y)
+			# Account for slope in tangent
+			if i < points.size() - 1:
+				tangent_3d.y = (points[i + 1].y - p.y) / maxf(Vector2(points[i + 1].x - p.x, points[i + 1].z - p.z).length(), 0.01)
+			elif i > 0:
+				tangent_3d.y = (p.y - points[i - 1].y) / maxf(Vector2(p.x - points[i - 1].x, p.z - points[i - 1].z).length(), 0.01)
+			tangent_3d = tangent_3d.normalized()
+			var surface_normal := width_dir.cross(tangent_3d).normalized()
+			if surface_normal.y < 0:
+				surface_normal = -surface_normal
 
 			# R channel = slope factor (0 = flat, 1 = steep 45deg+)
 			var slope_factor := clampf(slopes[i] / 1.0, 0.0, 1.0)
@@ -2044,8 +2077,8 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 			verts.append(left)
 			verts.append(right)
-			norms.append(Vector3.UP)
-			norms.append(Vector3.UP)
+			norms.append(surface_normal)
+			norms.append(surface_normal)
 			mesh_uvs.append(Vector2(0.0, uv_y))
 			mesh_uvs.append(Vector2(1.0, uv_y))
 			colors.append(col)

@@ -20,6 +20,8 @@ const _ZonePool := preload("res://scripts/world/zone_pool.gd")
 const ZONE_SIZE := 64.0
 const _MIN_LAND_Y := 0.5
 const _WATER_LEVEL := 0.0
+const _TREE_LINE_START := 45.0
+const _TREE_LINE_END := 75.0
 
 # ─── Floating origin offset (set by WorldGenerator on each origin shift) ──────
 static var origin_shift := Vector3.ZERO
@@ -1110,7 +1112,7 @@ static func populate_zone_phase(
 		var scatter_n := int(tree_n * 0.4)
 
 		var _placed_trees: Array[Vector2] = []
-		var _min_tree_dist := 5.0
+		var _min_tree_dist := 3.5
 
 		if not debug_skip_trees:
 			for i in scatter_n:
@@ -1122,6 +1124,12 @@ static func populate_zone_phase(
 				var ground_y := sn.x
 				if ground_y < _MIN_LAND_Y:
 					continue
+				if ground_y > _TREE_LINE_END:
+					continue
+				if ground_y > _TREE_LINE_START:
+					var tree_line_chance := 1.0 - (ground_y - _TREE_LINE_START) / (_TREE_LINE_END - _TREE_LINE_START)
+					if rng.randf() > tree_line_chance:
+						continue
 				if sn.y < 0.82:
 					continue
 				if _hg_is_steep_edge(wx, wz, ground_y):
@@ -1150,7 +1158,7 @@ static func populate_zone_phase(
 		var cluster_budget := tree_n - int(tree_n * 0.4)
 
 		var _cluster_placed: Array[Vector2] = []
-		var _min_cluster_dist := 4.5
+		var _min_cluster_dist := 3.0
 
 		if not debug_skip_trees:
 			var cluster_count := rng.randi_range(1, 3)
@@ -1175,6 +1183,12 @@ static func populate_zone_phase(
 					var ground_y := sn.x
 					if ground_y < _MIN_LAND_Y:
 						continue
+					if ground_y > _TREE_LINE_END:
+						continue
+					if ground_y > _TREE_LINE_START:
+						var tree_line_chance := 1.0 - (ground_y - _TREE_LINE_START) / (_TREE_LINE_END - _TREE_LINE_START)
+						if rng.randf() > tree_line_chance:
+							continue
 					if sn.y < 0.82:
 						continue
 					if _hg_is_steep_edge(wx, wz, ground_y):
@@ -1244,6 +1258,9 @@ static func populate_zone_phase(
 				var stone := _create_ground_stone(rng)
 				zone_root.add_child(stone)
 				stone.position = Vector3(lx, ground_y + 0.1, lz)
+
+		if not debug_skip_rocks:
+			_scatter_creek_rocks(zone_root, coord, rng, height_func)
 
 		return false
 
@@ -1325,11 +1342,12 @@ static func populate_zone_phase(
 			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 5)
 		return false
 
-	# ── Phase 6: blueberry bushes + water plants ──
+	# ── Phase 6: blueberry bushes + water plants + creek vegetation ──
 	if not debug_skip_saplings:
 		_scatter_blueberry_bushes(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 
 	_scatter_water_plants(zone_root, coord, biome, rng, height_func)
+	_scatter_creek_vegetation(zone_root, coord, rng, height_func)
 
 	return true
 
@@ -1788,26 +1806,24 @@ static func _scatter_blueberry_bushes(
 static func _get_microbiome_counts(biome: StringName, micro: StringName) -> PackedInt32Array:
 	if biome == &"hearthlands" and micro != &"none":
 		# [trees, rocks, bushes, enemies]
-		# PERF: Reduced tree counts to prevent massive CPU spikes during initial loading
-		# Each unpooled tree requires full procedural generation (expensive)
 		match micro:
 			&"meadow":
-				return PackedInt32Array([4, 2, 4, 1])  # was 6
+				return PackedInt32Array([12, 2, 4, 1])
 			&"forest":
-				return PackedInt32Array([16, 1, 2, 2])  # was 28 - major reduction
+				return PackedInt32Array([48, 1, 2, 2])
 			&"birch_forest":
-				return PackedInt32Array([16, 1, 2, 1])  # was 28 - major reduction
+				return PackedInt32Array([48, 1, 2, 1])
 			&"hills":
-				return PackedInt32Array([3, 3, 1, 2])  # was 4
+				return PackedInt32Array([9, 3, 1, 2])
 			&"riverside":
-				return PackedInt32Array([8, 4, 5, 1])  # was 10
-		return PackedInt32Array([8, 2, 3, 1])  # was 12
+				return PackedInt32Array([24, 4, 5, 1])
+		return PackedInt32Array([24, 2, 3, 1])
 	return _get_biome_counts(biome)
 
 
 static func _get_biome_counts(biome: StringName) -> PackedInt32Array:
 	if biome == &"hearthlands":
-		return PackedInt32Array([8, 2, 3, 1])  # was 12
+		return PackedInt32Array([24, 2, 3, 1])
 	return PackedInt32Array([0, 0, 0, 0])
 
 
@@ -4336,6 +4352,231 @@ static func _scatter_water_plants(
 		mm.set_instance_transform(idx, transforms[idx])
 	mmi.multimesh = mm
 	mmi.name = "Reeds"
+	mmi.material_override = _reed_mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	zone_root.add_child(mmi)
+
+
+static func _scatter_creek_rocks(
+	zone_root: Node3D,
+	coord: Vector2i,
+	rng: RandomNumberGenerator,
+	height_func: Callable,
+) -> void:
+	var wg := _get_world_generator()
+	if not wg or not wg.has_method("get_creek_segments_for_zone"):
+		return
+
+	var segments: Array = wg.get_creek_segments_for_zone(coord)
+	if segments.is_empty():
+		return
+
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+	var structs := _get_structures_cached()
+
+	for seg in segments:
+		var points: PackedVector3Array = seg["points"]
+		var widths: PackedFloat32Array = seg["widths"]
+		if points.size() < 2:
+			continue
+
+		var num_rocks := maxi(2, points.size() / 4)
+		var num_pebbles := num_rocks * 3
+
+		for _i in num_rocks:
+			var idx := rng.randi_range(0, points.size() - 1)
+			var center := points[idx]
+			var half_w: float = widths[idx] if idx < widths.size() else 1.0
+
+			var side := 1.0 if rng.randf() > 0.5 else -1.0
+			var perp := Vector2.ZERO
+			if idx < points.size() - 1:
+				var dir := Vector2(points[idx + 1].x - center.x, points[idx + 1].z - center.z).normalized()
+				perp = Vector2(-dir.y, dir.x)
+			elif idx > 0:
+				var dir := Vector2(center.x - points[idx - 1].x, center.z - points[idx - 1].z).normalized()
+				perp = Vector2(-dir.y, dir.x)
+			else:
+				perp = Vector2(1, 0)
+
+			var offset_dist := half_w + rng.randf_range(0.5, 3.0)
+			var wx := center.x + perp.x * side * offset_dist
+			var wz := center.z + perp.y * side * offset_dist
+			var lx := wx - origin_x
+			var lz := wz - origin_z
+
+			if lx < 1.0 or lx > ZONE_SIZE - 1.0 or lz < 1.0 or lz > ZONE_SIZE - 1.0:
+				continue
+
+			var ground_y := _hg_snap_height(wx, wz)
+			if ground_y < _MIN_LAND_Y:
+				continue
+			if _is_near_structure(wx, wz, 3.0, structs):
+				continue
+
+			var rock := _create_rock(rng)
+			rock.scale *= rng.randf_range(0.4, 0.8)
+			zone_root.add_child(rock)
+			rock.position = Vector3(lx, ground_y, lz)
+
+		for _i in num_pebbles:
+			var idx := rng.randi_range(0, points.size() - 1)
+			var center := points[idx]
+			var half_w: float = widths[idx] if idx < widths.size() else 1.0
+
+			var side := 1.0 if rng.randf() > 0.5 else -1.0
+			var perp := Vector2.ZERO
+			if idx < points.size() - 1:
+				var dir := Vector2(points[idx + 1].x - center.x, points[idx + 1].z - center.z).normalized()
+				perp = Vector2(-dir.y, dir.x)
+			elif idx > 0:
+				var dir := Vector2(center.x - points[idx - 1].x, center.z - points[idx - 1].z).normalized()
+				perp = Vector2(-dir.y, dir.x)
+			else:
+				perp = Vector2(1, 0)
+
+			var offset_dist := half_w * rng.randf_range(0.3, 1.2) + rng.randf_range(-0.5, 1.5)
+			var wx := center.x + perp.x * side * offset_dist
+			var wz := center.z + perp.y * side * offset_dist
+			var lx := wx - origin_x
+			var lz := wz - origin_z
+
+			if lx < 0.5 or lx > ZONE_SIZE - 0.5 or lz < 0.5 or lz > ZONE_SIZE - 0.5:
+				continue
+
+			var ground_y := _hg_snap_height(wx, wz)
+			if ground_y < _MIN_LAND_Y - 0.3:
+				continue
+
+			var peb := _create_pebble(rng)
+			zone_root.add_child(peb)
+			peb.position = Vector3(lx, ground_y + 0.03, lz)
+
+
+static func _scatter_creek_vegetation(
+	zone_root: Node3D,
+	coord: Vector2i,
+	rng: RandomNumberGenerator,
+	height_func: Callable,
+) -> void:
+	if not _water_plants_ready:
+		return
+
+	var wg := _get_world_generator()
+	if not wg or not wg.has_method("get_creek_segments_for_zone"):
+		return
+
+	var segments: Array = wg.get_creek_segments_for_zone(coord)
+	if segments.is_empty():
+		return
+
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+	var structs := _get_structures_cached()
+
+	var reed_transforms: Array[Transform3D] = []
+
+	for seg in segments:
+		var points: PackedVector3Array = seg["points"]
+		var widths: PackedFloat32Array = seg["widths"]
+		if points.size() < 2:
+			continue
+
+		var num_cattails := maxi(1, points.size() / 6)
+		var num_reeds := maxi(2, points.size() / 3)
+
+		for _i in num_cattails:
+			var idx := rng.randi_range(0, points.size() - 1)
+			var center := points[idx]
+			var half_w: float = widths[idx] if idx < widths.size() else 1.0
+
+			var side := 1.0 if rng.randf() > 0.5 else -1.0
+			var perp := Vector2.ZERO
+			if idx < points.size() - 1:
+				var dir := Vector2(points[idx + 1].x - center.x, points[idx + 1].z - center.z).normalized()
+				perp = Vector2(-dir.y, dir.x)
+			elif idx > 0:
+				var dir := Vector2(center.x - points[idx - 1].x, center.z - points[idx - 1].z).normalized()
+				perp = Vector2(-dir.y, dir.x)
+			else:
+				perp = Vector2(1, 0)
+
+			var offset_dist := half_w * rng.randf_range(0.8, 1.1)
+			var wx := center.x + perp.x * side * offset_dist
+			var wz := center.z + perp.y * side * offset_dist
+			var lx := wx - origin_x
+			var lz := wz - origin_z
+
+			if lx < 1.0 or lx > ZONE_SIZE - 1.0 or lz < 1.0 or lz > ZONE_SIZE - 1.0:
+				continue
+			if _is_near_structure(wx, wz):
+				continue
+
+			var ground_y := _hg_snap_height(wx, wz)
+			var clump_size := rng.randi_range(2, 4)
+			for _ci in clump_size:
+				var ox := rng.randf_range(-0.3, 0.3)
+				var oz := rng.randf_range(-0.3, 0.3)
+				var cattail := _create_cattail(rng)
+				var cy := maxf(_hg_snap_height(wx + ox, wz + oz), ground_y - 0.1)
+				cattail.position = Vector3(lx + ox, cy, lz + oz)
+				zone_root.add_child(cattail)
+
+		for _i in num_reeds:
+			var idx := rng.randi_range(0, points.size() - 1)
+			var center := points[idx]
+			var half_w: float = widths[idx] if idx < widths.size() else 1.0
+
+			var side := 1.0 if rng.randf() > 0.5 else -1.0
+			var perp := Vector2.ZERO
+			if idx < points.size() - 1:
+				var dir := Vector2(points[idx + 1].x - center.x, points[idx + 1].z - center.z).normalized()
+				perp = Vector2(-dir.y, dir.x)
+			elif idx > 0:
+				var dir := Vector2(center.x - points[idx - 1].x, center.z - points[idx - 1].z).normalized()
+				perp = Vector2(-dir.y, dir.x)
+			else:
+				perp = Vector2(1, 0)
+
+			var offset_dist := half_w * rng.randf_range(0.7, 1.05)
+			var base_wx := center.x + perp.x * side * offset_dist
+			var base_wz := center.z + perp.y * side * offset_dist
+
+			if _is_near_structure(base_wx, base_wz):
+				continue
+
+			var reeds_in_clump := rng.randi_range(8, 20)
+			for _r in reeds_in_clump:
+				var ox := rng.randf_range(-1.0, 1.0)
+				var oz := rng.randf_range(-1.0, 1.0)
+				var wx := base_wx + ox
+				var wz := base_wz + oz
+				var lx := wx - origin_x
+				var lz := wz - origin_z
+
+				if lx < 0.5 or lx > ZONE_SIZE - 0.5 or lz < 0.5 or lz > ZONE_SIZE - 0.5:
+					continue
+
+				var ground_y := _hg_snap_height(wx, wz)
+				var sc := rng.randf_range(1.2, 2.2)
+				var rot := rng.randf_range(0.0, TAU)
+				var basis := Basis(Vector3.UP, rot).scaled(Vector3(0.5 * sc, 1.0 * sc, 0.5 * sc))
+				reed_transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+
+	if reed_transforms.is_empty() or not _reed_mat or not _billboard_quad_mesh:
+		return
+
+	var mmi := MultiMeshInstance3D.new()
+	var mm := MultiMesh.new()
+	mm.mesh = _billboard_quad_mesh
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	mm.instance_count = reed_transforms.size()
+	for idx in reed_transforms.size():
+		mm.set_instance_transform(idx, reed_transforms[idx])
+	mmi.multimesh = mm
+	mmi.name = "CreekReeds"
 	mmi.material_override = _reed_mat
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	zone_root.add_child(mmi)
