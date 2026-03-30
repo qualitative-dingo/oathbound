@@ -225,6 +225,26 @@ static var _lingonberry_mat: StandardMaterial3D
 static var _textures_loaded := false
 
 
+## Invalidate all static caches. Call before _ensure_textures() when starting a new game
+## to ensure fresh shader/mesh/material state. Prevents stale cache issues after code changes.
+static func reset_all_caches() -> void:
+	_textures_loaded = false
+	_grass_shader = null
+	_grass_quad_mesh = null
+	_grass_textures.clear()
+	_flower_textures.clear()
+	_cached_grass_mats.clear()
+	_cached_flower_mats.clear()
+	_water_plants_ready = false
+	_berry_bushes_ready = false
+	_hg_data.resize(0)
+	_hg_coord = Vector2i(-999999, -999999)
+	_rg_data.resize(0)
+	_rg_coord = Vector2i(-999999, -999999)
+	_grass_types_table.clear()
+	print("[ZonePopulator] All static caches reset")
+
+
 static func _ensure_textures() -> void:
 	if _textures_loaded:
 		return

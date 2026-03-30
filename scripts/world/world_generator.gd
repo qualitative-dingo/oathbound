@@ -352,6 +352,7 @@ func _ready() -> void:
 	_ZonePopulator.grass_density_multiplier = grass_density_multiplier
 	_ZonePopulator.grass_visibility_range_end = grass_visibility_range_end
 	_ZonePool.flush_all()
+	_ZonePopulator.reset_all_caches()
 	_finalize_backlog.clear()
 	_populate_backlog.clear()
 	_gen_ready_queue.clear()
@@ -569,10 +570,14 @@ func _physics_process(delta: float) -> void:
 	var t2 := Time.get_ticks_usec()
 	_process_pending_zones()
 	var t3 := Time.get_ticks_usec()
+	# Adaptive unload: more aggressive when zones accumulate or FPS drops
+	var zone_count := _loaded_zones.size()
+	var fps := Engine.get_frames_per_second()
+	var force_unload := zone_count > _max_loaded_zones * 0.8 or fps < 30
 	_unload_timer -= delta
-	if _unload_timer <= 0.0:
-		_unload_timer = 0.5
-		_unload_distant_zones(_players)
+	if force_unload or _unload_timer <= 0.0:
+		_unload_timer = 0.2 if force_unload else 0.5
+		_unload_distant_zones(_players, force_unload)
 	var t4 := Time.get_ticks_usec()
 	_update_zone_lods(_players, delta)
 	_check_biome_change(world_to_zone(host_wp))
@@ -1556,13 +1561,16 @@ func _evict_terrain_cache() -> void:
 
 const _MAX_UNLOADS_PER_FRAME := 4
 
-func _unload_distant_zones(players: Array[Node3D]) -> void:
+func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = false) -> void:
 	var any_flying := false
 	for p in players:
 		if p.get(&"flight_mode"):
 			any_flying = true
 			break
 	var effective_unload: float = float(unload_radius_zones + 1) if any_flying else float(unload_radius_zones)
+	# When forcing aggressive unload, tighten the radius
+	if force_aggressive:
+		effective_unload = maxf(effective_unload - 1.0, float(load_radius_zones))
 	var to_remove: Array[Vector2i] = []
 	for coord in _loaded_zones:
 		var near_any := false
@@ -1573,7 +1581,18 @@ func _unload_distant_zones(players: Array[Node3D]) -> void:
 				break
 		if not near_any:
 			to_remove.append(coord)
-	var max_unloads := _MAX_UNLOADS_PER_FRAME * 2 if any_flying else _MAX_UNLOADS_PER_FRAME
+	# Sort by distance so we unload farthest zones first
+	if not players.is_empty():
+		var primary_pz := world_to_zone(get_world_position(players[0]))
+		to_remove.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+			return (a - primary_pz).length_squared() > (b - primary_pz).length_squared()
+		)
+	# More aggressive limits when needed
+	var max_unloads := _MAX_UNLOADS_PER_FRAME
+	if force_aggressive:
+		max_unloads = _MAX_UNLOADS_PER_FRAME * 4
+	elif any_flying:
+		max_unloads = _MAX_UNLOADS_PER_FRAME * 2
 	var unloaded := 0
 	for coord in to_remove:
 		if unloaded >= max_unloads:
