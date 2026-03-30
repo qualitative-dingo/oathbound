@@ -24,6 +24,18 @@ const _WATER_LEVEL := 0.0
 # ─── Floating origin offset (set by WorldGenerator on each origin shift) ──────
 static var origin_shift := Vector3.ZERO
 
+# ─── Structures group cache (refreshed once per frame to avoid repeated scene tree scans) ──
+static var _cached_structures: Array = []
+static var _structures_cache_frame: int = -1
+
+static func _get_structures_cached() -> Array:
+	var current_frame := Engine.get_frames_drawn()
+	if current_frame != _structures_cache_frame:
+		var tree := Engine.get_main_loop() as SceneTree
+		_cached_structures = tree.get_nodes_in_group(&"structures") if tree else []
+		_structures_cache_frame = current_frame
+	return _cached_structures
+
 # ─── Zone height grid (pre-computed to avoid per-blade noise calls) ───────────
 const _HG_RES := 48
 const _HG_PAD := 2        # extra cells on each side for slope/cliff checks near zone edges
@@ -1095,7 +1107,7 @@ static func populate_zone_phase(
 			if coord == Vector2i(0, 0):
 				_VillageGenerator.force_spawn_village(zone_root, 20.0, 20.0, height_func)
 
-		var structs := (Engine.get_main_loop() as SceneTree).get_nodes_in_group(&"structures") if Engine.get_main_loop() else []
+		var structs := _get_structures_cached()
 		var scatter_n := int(tree_n * 0.4)
 
 		var _placed_trees: Array[Vector2] = []
@@ -1135,7 +1147,7 @@ static func populate_zone_phase(
 
 	if phase == 1:
 		# ── Phase 1: cluster trees + rocks + stones ──
-		var structs := (Engine.get_main_loop() as SceneTree).get_nodes_in_group(&"structures") if Engine.get_main_loop() else []
+		var structs := _get_structures_cached()
 		var cluster_budget := tree_n - int(tree_n * 0.4)
 
 		var _cluster_placed: Array[Vector2] = []
@@ -1708,10 +1720,7 @@ static func _scatter_flowers(
 
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
-	var structs: Array = []
-	var tree := Engine.get_main_loop() as SceneTree
-	if tree:
-		structs = tree.get_nodes_in_group(&"structures")
+	var structs := _get_structures_cached()
 
 	for fi in range(type_start, type_end):
 		var cfg: Array = flower_types[fi]
@@ -1870,10 +1879,7 @@ static func _make_grass_atlas_mat() -> ShaderMaterial:
 static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, cached_structures: Array = []) -> bool:
 	var structs: Array = cached_structures
 	if structs.is_empty():
-		var tree := Engine.get_main_loop() as SceneTree
-		if not tree:
-			return false
-		structs = tree.get_nodes_in_group(&"structures")
+		structs = _get_structures_cached()
 	for s: Node3D in structs:
 		var sp := s.global_position
 		# sp is scene-space; wx/wz are world-space. Convert sp to world-space.
@@ -1942,10 +1948,7 @@ static func _scatter_grass(
 
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
-	var structs: Array = []
-	var tree := Engine.get_main_loop() as SceneTree
-	if tree:
-		structs = tree.get_nodes_in_group(&"structures")
+	var structs := _get_structures_cached()
 
 	# Collect ALL grass instances from ALL types into one array
 	var all_transforms: Array[Transform3D] = []
@@ -4412,7 +4415,7 @@ static func _scatter_berry_bushes(
 	if not _berry_bushes_ready:
 		return
 
-	var structs := (Engine.get_main_loop() as SceneTree).get_nodes_in_group(&"structures") if Engine.get_main_loop() else []
+	var structs := _get_structures_cached()
 
 	# Per-zone hash for density variation
 	var zone_hash := absf(sin(float(coord.x * 51637 + coord.y * 83291) * 0.073))

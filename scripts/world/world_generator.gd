@@ -181,39 +181,42 @@ func _bg_rebuild_zone(coord: Vector2i) -> void:
 
 
 func _apply_rebuild_results() -> void:
+	# PERF: Only process ONE terrain rebuild per frame to avoid physics spikes
 	_gen_mutex.lock()
-	var batch := _rebuild_ready_queue.duplicate()
-	_rebuild_ready_queue.clear()
+	if _rebuild_ready_queue.is_empty():
+		_gen_mutex.unlock()
+		return
+	var item: Dictionary = _rebuild_ready_queue.pop_front()
 	_gen_mutex.unlock()
 
-	for item in batch:
-		var coord: Vector2i = item["coord"]
-		_gen_in_flight.erase(coord)
-		var arrays: Array = item["arrays"]
-		var shape: ConcavePolygonShape3D = item["shape"]
-		_terrain_mesh_cache[coord] = arrays
-		_terrain_shape_cache[coord] = shape
+	var coord: Vector2i = item["coord"]
+	_gen_in_flight.erase(coord)
+	var arrays: Array = item["arrays"]
+	var shape: ConcavePolygonShape3D = item["shape"]
+	_terrain_mesh_cache[coord] = arrays
+	_terrain_shape_cache[coord] = shape
 
-		if coord not in _loaded_zones:
-			continue
-		var zone_node: Node = _loaded_zones[coord]
-		if not zone_node is StaticBody3D:
-			continue
+	if coord not in _loaded_zones:
+		return
+	var zone_node: Node = _loaded_zones[coord]
+	if not zone_node is StaticBody3D:
+		return
 
-		var mi := zone_node.get_node_or_null("TerrainMesh") as MeshInstance3D
-		if mi:
-			var arr_mesh: ArrayMesh = mi.mesh as ArrayMesh if mi.mesh is ArrayMesh else ArrayMesh.new()
-			arr_mesh.clear_surfaces()
-			var biome := _determine_biome(coord)
-			var biome_mat: Material = _biome_materials.get(biome, _biome_materials[&"hearthlands"])
-			arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-			arr_mesh.surface_set_material(0, biome_mat)
-			mi.mesh = arr_mesh
+	var mi := zone_node.get_node_or_null("TerrainMesh") as MeshInstance3D
+	if mi:
+		var arr_mesh: ArrayMesh = mi.mesh as ArrayMesh if mi.mesh is ArrayMesh else ArrayMesh.new()
+		arr_mesh.clear_surfaces()
+		var biome := _determine_biome(coord)
+		var biome_mat: Material = _biome_materials.get(biome, _biome_materials[&"hearthlands"])
+		arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		arr_mesh.surface_set_material(0, biome_mat)
+		mi.mesh = arr_mesh
 
-		var col := zone_node.get_node_or_null("TerrainCol") as CollisionShape3D
-		if col and shape:
-			col.shape = shape
-			col.disabled = false
+	var col := zone_node.get_node_or_null("TerrainCol") as CollisionShape3D
+	if col and shape:
+		col.shape = shape
+		col.disabled = true
+		_deferred_collisions.append(col)  # Queue for gradual enabling
 
 func get_terrain_mods() -> Dictionary:
 	return _terrain_mods.duplicate()
@@ -1412,6 +1415,7 @@ func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 var _finalize_backlog: Array = []   # zones ready for mesh setup
 var _populate_backlog: Array = []   # zones with mesh ready, waiting for object spawning
 var _deferred_collisions: Array[CollisionShape3D] = []  # collision shapes to enable next frame
+var _deferred_disable_collisions: Array = []  # collision shapes to disable next frame (untyped to handle freed)
 
 func _is_in_load_range(coord: Vector2i) -> bool:
 	for p in _players:
@@ -1422,19 +1426,30 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 
 
 const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
+const _MAX_COLLISION_TOGGLES_PER_FRAME := 4  # Cap total collision toggles to avoid physics spikes
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
 
-	# 0. Enable at most 1 collision shape per frame to avoid physics rebuild spikes.
-	#    Skip if we're already over budget from previous frame carry-over.
-	while not _deferred_collisions.is_empty():
+	# 0. Process collision shape toggles - spread across frames to avoid physics rebuild spikes
+	#    Process up to _MAX_COLLISION_TOGGLES_PER_FRAME total (enable + disable combined)
+	var toggles_this_frame := 0
+	
+	# Enable collision shapes (higher priority - needed for interaction)
+	while not _deferred_collisions.is_empty() and toggles_this_frame < _MAX_COLLISION_TOGGLES_PER_FRAME:
 		var col_shape = _deferred_collisions.pop_front()  # Untyped to avoid crash on freed instance
 		if is_instance_valid(col_shape):
 			col_shape.disabled = false
-			break  # Only enable one valid shape per frame
+			toggles_this_frame += 1
+	
+	# Disable collision shapes (lower priority - just cleanup)
+	while not _deferred_disable_collisions.is_empty() and toggles_this_frame < _MAX_COLLISION_TOGGLES_PER_FRAME:
+		var col_shape = _deferred_disable_collisions.pop_front()
+		if is_instance_valid(col_shape):
+			col_shape.disabled = true
+			toggles_this_frame += 1
 
-	# 0.5. Apply completed terrain rebuilds (from terraform / hoe) immediately
+	# 0.5. Apply completed terrain rebuilds (from terraform / hoe) - throttled
 	_apply_rebuild_results()
 
 	# 1. Collect completed background builds — cap per frame to prevent burst spikes
@@ -1642,7 +1657,12 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 			continue
 		var cname: String = child.name
 		if cname == "TerrainCol":
-			(child as CollisionShape3D).set_deferred("disabled", zone_dist > 2.0)
+			var col := child as CollisionShape3D
+			var should_disable := zone_dist > 2.0
+			if should_disable and not col.disabled:
+				_deferred_disable_collisions.append(col)
+			elif not should_disable and col.disabled:
+				_deferred_collisions.append(col)
 			continue
 		if cname == "TerrainMesh":
 			continue
@@ -1662,12 +1682,12 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 					if skip_col_lod:
 						continue  # Don't toggle collision for small bushes
 					# Only enable collision for LOD 0 (very close); disable for LOD 1/2
-					# CRITICAL: Queue collision enabling to avoid physics spike
-					if new_lod >= 1:  # Changed from >= 2 to >= 1 (LOD 0 only)
-						sub.set_deferred("disabled", true)
+					# CRITICAL: Queue ALL collision toggles to avoid physics rebuild spikes
+					if new_lod >= 1:
+						if not sub.disabled:
+							_deferred_disable_collisions.append(sub)  # Queue for gradual disabling
 					elif sub.disabled:
-						# Queue for gradual enabling (1 per frame via _deferred_collisions)
-						_deferred_collisions.append(sub)
+						_deferred_collisions.append(sub)  # Queue for gradual enabling
 				elif sub is Node3D and sub.name == "Canopy":
 					# Canopy stays visible at LOD 0 and LOD 1; only hidden at LOD 2
 					sub.visible = new_lod <= 1
