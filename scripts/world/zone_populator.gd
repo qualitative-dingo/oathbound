@@ -1968,23 +1968,24 @@ static func _get_microbiome_counts(biome: StringName, micro: StringName) -> Pack
 	if biome == &"hearthlands" and micro != &"none":
 		# [trees, rocks, bushes, enemies]
 		match micro:
+			# PERF: Reduced tree counts by 50% to speed up population phases
 			&"meadow":
-				return PackedInt32Array([6, 2, 6, 1])
+				return PackedInt32Array([3, 2, 4, 1])
 			&"forest":
-				return PackedInt32Array([28, 1, 3, 2])
+				return PackedInt32Array([14, 1, 2, 2])
 			&"birch_forest":
-				return PackedInt32Array([28, 1, 4, 1])
+				return PackedInt32Array([14, 1, 2, 1])
 			&"hills":
-				return PackedInt32Array([4, 4, 2, 2])
+				return PackedInt32Array([2, 3, 1, 2])
 			&"riverside":
-				return PackedInt32Array([10, 6, 8, 1])
-		return PackedInt32Array([12, 2, 4, 1])
+				return PackedInt32Array([5, 4, 5, 1])
+		return PackedInt32Array([6, 2, 3, 1])
 	return _get_biome_counts(biome)
 
 
 static func _get_biome_counts(biome: StringName) -> PackedInt32Array:
 	if biome == &"hearthlands":
-		return PackedInt32Array([12, 2, 4, 1])
+		return PackedInt32Array([6, 2, 3, 1])
 	return PackedInt32Array([0, 0, 0, 0])
 
 
