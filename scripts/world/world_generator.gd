@@ -604,12 +604,14 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var continent := _continent_noise.get_noise_2d(wx, wz)
 	var mountain := _mountain_noise.get_noise_2d(wx, wz)
 	var h := continent * height_scale * 0.6
-	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
-	h += mtn_ramp * height_scale * 1.5
+	# Reduced mountain influence by 70% (1.5 -> 0.45) for more valleys/meadows
+	var mtn_ramp := mountain * smoothstep(0.0, 0.3, mountain)  # Higher threshold = fewer peaks
+	h += mtn_ramp * height_scale * 0.45
 
 	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	h += ridge * height_scale * 0.4 - height_scale * 0.12
+	# Reduced ridge influence by 70% for gentler terrain
+	h += ridge * height_scale * 0.12 - height_scale * 0.04
 
 	# Continental bias — central play area stays above water
 	h += lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
@@ -1075,8 +1077,8 @@ func _determine_microbiome(zone: Vector2i) -> StringName:
 	# River areas: near rivers/streams
 	if accum > _WS_RIVER_THRESH * 0.6:
 		micro = &"riverside"
-	# Hilly terrain: high elevation + mountainous noise
-	elif height > 10.0:
+	# Hilly terrain: high elevation (lowered threshold for flatter world)
+	elif height > 6.0:
 		micro = &"hills"
 	# Use the two noise layers to partition the rest
 	elif n1 > 0.15:
@@ -1119,19 +1121,22 @@ func get_height_at(x: float, z: float) -> float:
 	var detail := _detail_noise.get_noise_2d(x, z)
 
 	var h := continent * height_scale * 0.6
-	var mtn_ramp := mountain * smoothstep(0.0, 0.2, mountain)
-	h += mtn_ramp * height_scale * 1.5
+	# Reduced mountain influence by 70% for more valleys/meadows
+	var mtn_ramp := mountain * smoothstep(0.0, 0.3, mountain)  # Higher threshold = fewer peaks
+	h += mtn_ramp * height_scale * 0.45
 
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	h += ridge * height_scale * 0.4 - height_scale * 0.12
+	# Reduced ridge influence by 70% for gentler terrain
+	h += ridge * height_scale * 0.12 - height_scale * 0.04
 
-	h += detail * height_scale * 0.2
+	h += detail * height_scale * 0.15  # Slightly reduced detail for smoother meadows
 
-	var elev_t := clampf((h - 8.0) / 15.0, 0.0, 1.0)
+	# Reduced crag threshold so rocky details only appear on remaining peaks
+	var elev_t := clampf((h - 12.0) / 15.0, 0.0, 1.0)
 	if elev_t > 0.0:
 		var crag := _detail_noise.get_noise_2d(x * 0.12 + 7000.0, z * 0.12 + 7000.0)
-		h += crag * height_scale * 0.06 * elev_t
+		h += crag * height_scale * 0.04 * elev_t
 
 	# Pre-sample lake noise so bias and clamp can respect water bodies
 	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _detail_noise else 0.0
