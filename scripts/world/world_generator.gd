@@ -1707,10 +1707,15 @@ func _bg_build_zone(coord: Vector2i) -> void:
 	_gen_mutex.unlock()
 
 
+var _finalize_count: Dictionary = {}  # Track how many times each coord is finalized
+
 ## Main-thread only: creates scene nodes from pre-computed mesh data + shape.
 func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D) -> void:
 	if coord in _loaded_zones:
 		return
+	_finalize_count[coord] = _finalize_count.get(coord, 0) + 1
+	if _finalize_count[coord] > 1:
+		push_warning("[FINALIZE] Zone %s finalized %d times total" % [coord, _finalize_count[coord]])
 	var biome := _determine_biome(coord)
 	var biome_mat: Material = _biome_materials.get(biome, _biome_materials[&"hearthlands"])
 
@@ -1782,9 +1787,13 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 	# Queue object spawning for the NEXT frame to keep this frame light
 	var micro := _determine_microbiome(coord)
 	# Clear any stale backlog entries for this coord before adding new one
+	var cleaned := 0
 	for i in range(_populate_backlog.size() - 1, -1, -1):
 		if _populate_backlog[i]["coord"] == coord:
+			cleaned += 1
 			_populate_backlog.remove_at(i)
+	if cleaned > 0:
+		push_warning("[BACKLOG] Cleaned %d stale entries for %s before adding new" % [cleaned, coord])
 	_populate_backlog.append({
 		"coord": coord,
 		"zone_root": zone_root,
