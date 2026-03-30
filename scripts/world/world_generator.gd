@@ -1494,12 +1494,9 @@ func _on_egg_spawn_hawk(egg: Node3D, zone_root: Node3D, egg_local_pos: Vector3) 
 	hawk.add_child(tears)
 
 	var rng_radius := randf_range(1.5, 3.5)
-	var rng_speed := randf_range(0.5, 1.2)
 	var start_angle := randf_range(0.0, TAU)
-	hawk.position = egg_local_pos + Vector3(cos(start_angle) * rng_radius, 0.0, sin(start_angle) * rng_radius)
+	hawk.position = egg_local_pos + Vector3(cos(start_angle) * rng_radius, 0.5, sin(start_angle) * rng_radius)
 	zone_root.add_child(hawk)
-
-	hawk.setup(egg_local_pos, rng_radius, rng_speed)
 
 
 var _max_loaded_zones: int = 50
