@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_disabled, specular_schlick_ggx;
+render_mode blend_mix, depth_draw_always, cull_disabled, specular_schlick_ggx;
 
 group_uniforms flow;
 uniform float flow_speed : hint_range(0.0, 3.0) = 0.8;
@@ -7,13 +7,14 @@ uniform float ripple_scale : hint_range(0.5, 8.0) = 3.0;
 uniform float ripple_strength : hint_range(0.0, 0.1) = 0.02;
 
 group_uniforms colors;
-uniform vec4 water_color : source_color = vec4(0.08, 0.18, 0.32, 0.65);
-uniform vec4 foam_color  : source_color = vec4(0.75, 0.82, 0.88, 0.70);
-uniform vec4 deep_tint   : source_color = vec4(0.04, 0.10, 0.22, 0.80);
+uniform vec4 water_color : source_color = vec4(0.10, 0.16, 0.13, 0.55);
+uniform vec4 foam_color  : source_color = vec4(0.80, 0.85, 0.82, 0.70);
+uniform vec4 deep_tint   : source_color = vec4(0.05, 0.10, 0.08, 0.75);
+uniform vec4 sky_tint    : source_color = vec4(0.30, 0.38, 0.35, 1.0);
 
 group_uniforms edge;
-uniform float foam_width : hint_range(0.0, 0.3) = 0.12;
-uniform float edge_fade  : hint_range(0.01, 0.2) = 0.08;
+uniform float foam_width : hint_range(0.0, 0.5) = 0.15;
+uniform float depth_foam_width : hint_range(0.01, 0.5) = 0.12;
 
 uniform sampler2D DEPTH_TEXTURE : hint_depth_texture, filter_linear;
 

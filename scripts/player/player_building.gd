@@ -2350,8 +2350,8 @@ func start_campfire_sound(structure: StaticBody3D) -> void:
 	audio.play()
 	audio.finished.connect(audio.play)
 
-	var max_dist := 20.0
-	var full_vol_dist := 2.0
+	var max_dist := 60.0
+	var full_vol_dist := 6.0
 	var vol_max_db := 4.0
 	var vol_min_db := -80.0
 
