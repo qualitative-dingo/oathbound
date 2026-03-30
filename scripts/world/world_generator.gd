@@ -1467,6 +1467,13 @@ func _process_pending_zones() -> void:
 				_populate_backlog.pop_front()
 				continue
 			var phase: int = pitem.get("phase", 0)
+			# DEBUG: Check for duplicate backlog entries
+			var dup_count := 0
+			for bi in _populate_backlog.size():
+				if _populate_backlog[bi]["coord"] == pcoord:
+					dup_count += 1
+			if dup_count > 1:
+				push_warning("[POP BUG] %d duplicate backlog entries for coord %s!" % [dup_count, pcoord])
 			var biome: StringName = pitem["biome"]
 			var micro: StringName = pitem["micro"]
 			var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
