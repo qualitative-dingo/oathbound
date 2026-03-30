@@ -947,8 +947,11 @@ func _trace_creek_paths() -> void:
 			var widths := PackedFloat32Array()
 			var flow_uvs := PackedFloat32Array()
 			var cum_dist := 0.0
+			var entered_pool := false
 
 			for i in raw_points.size() - 1:
+				if entered_pool:
+					break
 				var g0 := raw_points[i]
 				var g1 := raw_points[i + 1]
 				var a0 := raw_accums[i]
@@ -978,6 +981,12 @@ func _trace_creek_paths() -> void:
 					wx += seg_perp.x * lateral_offset * _WS_CELL * 0.18
 					wz += seg_perp.y * lateral_offset * _WS_CELL * 0.18
 
+					# Stop creek mesh when entering pool/lake areas
+					var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
+					if lake_n < -0.18:
+						entered_pool = true
+						break  # Creek enters pool - stop here, let pool water be visible
+
 					var terrain_h := get_height_at(wx, wz)
 					terrain_h = maxf(terrain_h, WATER_LEVEL + 0.3)
 					var creek_y := terrain_h + 0.15
@@ -998,22 +1007,26 @@ func _trace_creek_paths() -> void:
 					widths.append(w)
 					flow_uvs.append(cum_dist)
 
-			# Final point
-			var last_g := raw_points[raw_points.size() - 1]
-			var lwx: float = -world_radius + last_g.x * _WS_CELL
-			var lwz: float = -world_radius + last_g.y * _WS_CELL
-			var lh := get_height_at(lwx, lwz)
-			lh = maxf(lh, WATER_LEVEL + 0.3)
-			var last_acc := raw_accums[raw_accums.size() - 1]
-			var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
-			var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
-			var lw_noise := _detail_noise.get_noise_2d(lwx * 1.5 + 13000.0, lwz * 1.5 + 13000.0)
-			last_w *= (0.75 + lw_noise * 0.5)
-			if not points.is_empty():
-				cum_dist += Vector3(lwx, lh + 0.15, lwz).distance_to(points[points.size() - 1])
-			points.append(Vector3(lwx, lh + 0.15, lwz))
-			widths.append(last_w)
-			flow_uvs.append(cum_dist)
+			# Final point - only add if we haven't entered a pool
+			if not entered_pool:
+				var last_g := raw_points[raw_points.size() - 1]
+				var lwx: float = -world_radius + last_g.x * _WS_CELL
+				var lwz: float = -world_radius + last_g.y * _WS_CELL
+				# Check if final point is in a pool
+				var final_lake_n := _continent_noise.get_noise_2d(lwx * 0.7 + 5000.0, lwz * 0.7 + 5000.0)
+				if final_lake_n >= -0.18:
+					var lh := get_height_at(lwx, lwz)
+					lh = maxf(lh, WATER_LEVEL + 0.3)
+					var last_acc := raw_accums[raw_accums.size() - 1]
+					var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
+					var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
+					var lw_noise := _detail_noise.get_noise_2d(lwx * 1.5 + 13000.0, lwz * 1.5 + 13000.0)
+					last_w *= (0.75 + lw_noise * 0.5)
+					if not points.is_empty():
+						cum_dist += Vector3(lwx, lh + 0.15, lwz).distance_to(points[points.size() - 1])
+					points.append(Vector3(lwx, lh + 0.15, lwz))
+					widths.append(last_w)
+					flow_uvs.append(cum_dist)
 
 			if points.size() < 2:
 				continue
