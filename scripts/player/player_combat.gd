@@ -44,7 +44,7 @@ func _ensure_arrow_resources() -> void:
 func _get_pooled_arrow() -> Node3D:
 	_ensure_arrow_resources()
 	if not _arrow_pool.is_empty():
-		var arrow := _arrow_pool.pop_back()
+		var arrow: Node3D = _arrow_pool.pop_back()
 		arrow.visible = true
 		return arrow
 	var arrow := Node3D.new()

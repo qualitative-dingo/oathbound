@@ -35,7 +35,7 @@ static func _ensure_rng() -> void:
 
 static func _get_pooled() -> DamageNumber:
 	if not _pool.is_empty():
-		var label := _pool.pop_back()
+		var label: DamageNumber = _pool.pop_back()
 		label.visible = true
 		label._lifetime = 0.0
 		label.modulate.a = 1.0
