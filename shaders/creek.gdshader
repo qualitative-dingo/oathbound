@@ -7,9 +7,9 @@ uniform float ripple_scale : hint_range(0.5, 8.0) = 3.0;
 uniform float ripple_strength : hint_range(0.0, 0.1) = 0.02;
 
 group_uniforms colors;
-uniform vec4 water_color : source_color = vec4(0.10, 0.16, 0.13, 0.55);
-uniform vec4 foam_color  : source_color = vec4(0.80, 0.85, 0.82, 0.70);
-uniform vec4 deep_tint   : source_color = vec4(0.05, 0.10, 0.08, 0.75);
+uniform vec4 water_color : source_color = vec4(0.08, 0.18, 0.32, 0.65);
+uniform vec4 foam_color  : source_color = vec4(0.75, 0.82, 0.88, 0.70);
+uniform vec4 deep_tint   : source_color = vec4(0.04, 0.10, 0.22, 0.80);
 
 group_uniforms edge;
 uniform float foam_width : hint_range(0.0, 0.3) = 0.12;
@@ -90,7 +90,7 @@ void fragment() {
 	vec3 view_dir = normalize(CAMERA_POSITION_WORLD - world_pos);
 	float fresnel = pow(1.0 - max(dot(NORMAL, view_dir), 0.0), 2.5);
 	fresnel = clamp(fresnel, 0.0, 0.5);
-	col.rgb = mix(col.rgb, vec3(0.30, 0.38, 0.35), fresnel * 0.3);
+	col.rgb = mix(col.rgb, vec3(0.25, 0.35, 0.50), fresnel * 0.3);
 	col.a = mix(col.a, 0.85, fresnel * 0.4);
 
 	ALBEDO = col.rgb;
