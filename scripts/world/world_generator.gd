@@ -180,12 +180,13 @@ func _bg_rebuild_zone(coord: Vector2i) -> void:
 	_gen_mutex.unlock()
 
 
-func _apply_rebuild_results() -> void:
+func _apply_rebuild_results() -> bool:
 	# PERF: Only process ONE terrain rebuild per frame to avoid physics spikes
+	# Returns true if a ConcavePolygonShape3D was assigned (expensive operation)
 	_gen_mutex.lock()
 	if _rebuild_ready_queue.is_empty():
 		_gen_mutex.unlock()
-		return
+		return false
 	var item: Dictionary = _rebuild_ready_queue.pop_front()
 	_gen_mutex.unlock()
 
@@ -197,10 +198,10 @@ func _apply_rebuild_results() -> void:
 	_terrain_shape_cache[coord] = shape
 
 	if coord not in _loaded_zones:
-		return
+		return false
 	var zone_node: Node = _loaded_zones[coord]
 	if not zone_node is StaticBody3D:
-		return
+		return false
 
 	var mi := zone_node.get_node_or_null("TerrainMesh") as MeshInstance3D
 	if mi:
@@ -217,6 +218,8 @@ func _apply_rebuild_results() -> void:
 		col.shape = shape
 		col.disabled = true
 		_deferred_collisions.append(col)  # Queue for gradual enabling
+		return true  # Shape was assigned - skip other terrain shape work this frame
+	return false
 
 func get_terrain_mods() -> Dictionary:
 	return _terrain_mods.duplicate()
@@ -1280,11 +1283,18 @@ func _generate_spawn_area() -> void:
 				_terrain_mesh_cache[coord] = arrays
 				_terrain_shape_cache[coord] = shape
 				_finalize_zone(coord, arrays, shape)
-	# Spawn area collision must be active immediately for the player to stand
-	for col_shape in _deferred_collisions:
-		if is_instance_valid(col_shape):
-			col_shape.disabled = false
-	_deferred_collisions.clear()
+	# Only enable the CENTER spawn zone's terrain collision immediately (player needs to stand)
+	# Leave surrounding zones' terrain in the deferred queue for gradual enabling
+	# This prevents a massive physics spike from enabling 9+ ConcavePolygonShape3D at once
+	var center_zone_root = _loaded_zones.get(spawn_zone)
+	if center_zone_root:
+		var center_col = center_zone_root.get_node_or_null("TerrainCol")
+		if center_col:
+			center_col.disabled = false
+			# Remove it from deferred queue since we enabled it directly
+			var idx := _deferred_collisions.find(center_col)
+			if idx >= 0:
+				_deferred_collisions.remove_at(idx)
 
 	# Only fully populate the center spawn zone synchronously (the one the player stands on).
 	# Surrounding zones stay in _populate_backlog and load incrementally via _process_pending_zones.
@@ -1450,7 +1460,8 @@ func _process_pending_zones() -> void:
 			toggles_this_frame += 1
 
 	# 0.5. Apply completed terrain rebuilds (from terraform / hoe) - throttled
-	_apply_rebuild_results()
+	# Track if we assigned a terrain shape this frame (expensive ConcavePolygonShape3D)
+	var terrain_shape_assigned := _apply_rebuild_results()
 
 	# 1. Collect completed background builds — cap per frame to prevent burst spikes
 	# PERF: Reduced from 4 to 2 to spread work across more frames
@@ -1528,10 +1539,11 @@ func _process_pending_zones() -> void:
 			break  # Break after collision phases (0-2)
 
 	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
-	# PERF: Reduced from 3-6 to 1-2 to spread work across more frames
-	var max_finalize := 2 if _any_flying else 1
+	# PERF: Only 1 terrain shape assignment per frame total (rebuild OR finalize, not both)
+	# ConcavePolygonShape3D assignment is extremely expensive (mesh cooking)
+	var max_finalize := 0 if terrain_shape_assigned else (2 if _any_flying else 1)
 	var finalized := 0
-	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
+	if max_finalize > 0 and Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
 		while not _finalize_backlog.is_empty() and finalized < max_finalize:
 			if finalized > 0 and Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
 				break
@@ -1608,12 +1620,11 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 		to_remove.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 			return (a - primary_pz).length_squared() > (b - primary_pz).length_squared()
 		)
-	# More aggressive limits when needed
+	# Cap unloads to avoid physics spikes from tearing down many bodies at once
+	# Maximum 6 zones/frame even in aggressive mode (was 16, caused huge spikes)
 	var max_unloads := _MAX_UNLOADS_PER_FRAME
-	if force_aggressive:
-		max_unloads = _MAX_UNLOADS_PER_FRAME * 4
-	elif any_flying:
-		max_unloads = _MAX_UNLOADS_PER_FRAME * 2
+	if force_aggressive or any_flying:
+		max_unloads = 6  # Capped at 6 to prevent physics spike from mass body removal
 	var unloaded := 0
 	for coord in to_remove:
 		if unloaded >= max_unloads:
@@ -1636,16 +1647,34 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 		zone_unloaded.emit(coord)
 
 
-var _lod_timer := 0.0
-const _LOD_INTERVAL := 0.5
+var _lod_update_index := 0
+var _lod_zone_keys: Array = []  # Cache of zone coordinates for cycling
+const _MAX_LOD_UPDATES_PER_FRAME := 8  # Process max 8 zones per frame to spread work
 
-func _update_zone_lods(players: Array[Node3D], delta: float) -> void:
-	_lod_timer -= delta
-	if _lod_timer > 0.0:
+func _update_zone_lods(players: Array[Node3D], _delta: float) -> void:
+	# Rebuild zone key list if it changed (zones loaded/unloaded)
+	var current_keys := _loaded_zones.keys()
+	if current_keys.size() != _lod_zone_keys.size():
+		_lod_zone_keys = current_keys
+		_lod_update_index = 0
+	
+	if _lod_zone_keys.is_empty():
 		return
-	_lod_timer = _LOD_INTERVAL
-	var nearest_pz := world_to_zone(get_world_position(players[0])) if not players.is_empty() else Vector2i.ZERO
-	for coord in _loaded_zones:
+	
+	# Process up to _MAX_LOD_UPDATES_PER_FRAME zones per frame, cycling through all
+	var processed := 0
+	while processed < _MAX_LOD_UPDATES_PER_FRAME and processed < _lod_zone_keys.size():
+		if _lod_update_index >= _lod_zone_keys.size():
+			_lod_update_index = 0
+		
+		var coord: Vector2i = _lod_zone_keys[_lod_update_index]
+		_lod_update_index += 1
+		processed += 1
+		
+		# Skip if zone was unloaded
+		if coord not in _loaded_zones:
+			continue
+		
 		var min_dist := 999.0
 		for p in players:
 			var pz := world_to_zone(get_world_position(p))

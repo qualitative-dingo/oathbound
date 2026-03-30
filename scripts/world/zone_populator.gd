@@ -2099,25 +2099,26 @@ static func _scatter_blueberry_bushes(
 static func _get_microbiome_counts(biome: StringName, micro: StringName) -> PackedInt32Array:
 	if biome == &"hearthlands" and micro != &"none":
 		# [trees, rocks, bushes, enemies]
+		# PERF: Reduced tree counts to prevent massive CPU spikes during initial loading
+		# Each unpooled tree requires full procedural generation (expensive)
 		match micro:
-			# Restored to full tree counts (2x the reduced amount)
 			&"meadow":
-				return PackedInt32Array([6, 2, 4, 1])
+				return PackedInt32Array([4, 2, 4, 1])  # was 6
 			&"forest":
-				return PackedInt32Array([28, 1, 2, 2])
+				return PackedInt32Array([16, 1, 2, 2])  # was 28 - major reduction
 			&"birch_forest":
-				return PackedInt32Array([28, 1, 2, 1])
+				return PackedInt32Array([16, 1, 2, 1])  # was 28 - major reduction
 			&"hills":
-				return PackedInt32Array([4, 3, 1, 2])
+				return PackedInt32Array([3, 3, 1, 2])  # was 4
 			&"riverside":
-				return PackedInt32Array([10, 4, 5, 1])
-		return PackedInt32Array([12, 2, 3, 1])
+				return PackedInt32Array([8, 4, 5, 1])  # was 10
+		return PackedInt32Array([8, 2, 3, 1])  # was 12
 	return _get_biome_counts(biome)
 
 
 static func _get_biome_counts(biome: StringName) -> PackedInt32Array:
 	if biome == &"hearthlands":
-		return PackedInt32Array([12, 2, 3, 1])
+		return PackedInt32Array([8, 2, 3, 1])  # was 12
 	return PackedInt32Array([0, 0, 0, 0])
 
 
