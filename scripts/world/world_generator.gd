@@ -1426,7 +1426,10 @@ func _process_pending_zones() -> void:
 			var pitem: Dictionary = _populate_backlog[0]
 			var pcoord: Vector2i = pitem["coord"]
 			var zone_root = pitem["zone_root"]  # untyped — may be freed between frames
-			if not is_instance_valid(zone_root) or not _is_in_load_range(pcoord):
+			# Skip stale entries: zone was unloaded/reloaded and zone_root was reused from pool
+			# The old backlog entry would still pass is_instance_valid but refers to wrong lifecycle
+			var current_zone = _loaded_zones.get(pcoord)
+			if not is_instance_valid(zone_root) or not _is_in_load_range(pcoord) or zone_root != current_zone:
 				_populate_backlog.pop_front()
 				continue
 			var phase: int = pitem.get("phase", 0)
@@ -1546,6 +1549,12 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 		_zone_biome_cache.erase(coord)
 		_zone_microbiome_cache.erase(coord)
 		_zone_water_cache.erase(coord)
+		# Remove any pending population entries for this zone to prevent re-population
+		# when the zone_root is reused from the pool for a different zone
+		for i in range(_populate_backlog.size() - 1, -1, -1):
+			if _populate_backlog[i]["coord"] == coord:
+				_populate_backlog.remove_at(i)
+				break  # Only one entry per coord should exist
 		unloaded += 1
 		zone_unloaded.emit(coord)
 
