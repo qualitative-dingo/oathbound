@@ -597,26 +597,42 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mmi)
 
+	# PERF FIX: Batch all berries into single MMI instead of individual meshes
+	# This reduces draw calls from 24-42 per bush to just 1
 	_ensure_berry_bushes()
 	var berry_count := rng.randi_range(24, 42)
+	var berry_xforms: Array[Transform3D] = []
+	var avg_radius := 0.09  # Average berry radius for uniform sphere mesh
+	
 	for _bi in berry_count:
 		var b_angle := rng.randf_range(0.0, TAU)
 		var b_out := rng.randf_range(0.1, crown_r * 0.8)
 		var b_y := maxf(0.15, crown_y + rng.randf_range(-crown_h * 0.2, crown_h * 0.5))
-		var berry_mi := MeshInstance3D.new()
-		var bsphere := SphereMesh.new()
-		bsphere.radius = rng.randf_range(0.067, 0.118)
-		bsphere.height = bsphere.radius * 2.0
-		bsphere.radial_segments = 4
-		bsphere.rings = 2
-		berry_mi.mesh = bsphere
-		berry_mi.set_surface_override_material(0, _blueberry_mat)
-		berry_mi.position = Vector3(
-			cos(b_angle) * b_out,
-			b_y,
-			sin(b_angle) * b_out)
-		berry_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(berry_mi)
+		var b_scale := rng.randf_range(0.75, 1.3)  # Slight size variation
+		var pos := Vector3(cos(b_angle) * b_out, b_y, sin(b_angle) * b_out)
+		berry_xforms.append(Transform3D(Basis().scaled(Vector3(b_scale, b_scale, b_scale)), pos))
+	
+	if not berry_xforms.is_empty():
+		var berry_sphere := SphereMesh.new()
+		berry_sphere.radius = avg_radius
+		berry_sphere.height = avg_radius * 2.0
+		berry_sphere.radial_segments = 4
+		berry_sphere.rings = 2
+		
+		var berry_mm := MultiMesh.new()
+		berry_mm.mesh = berry_sphere
+		berry_mm.transform_format = MultiMesh.TRANSFORM_3D
+		berry_mm.use_colors = false
+		berry_mm.instance_count = berry_xforms.size()
+		for i in berry_xforms.size():
+			berry_mm.set_instance_transform(i, berry_xforms[i])
+		
+		var berry_mmi := MultiMeshInstance3D.new()
+		berry_mmi.name = "BerryMM"
+		berry_mmi.multimesh = berry_mm
+		berry_mmi.material_override = _blueberry_mat
+		berry_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(berry_mmi)
 
 	return root
 
@@ -645,7 +661,11 @@ static func _create_lingonberry_bush(rng: RandomNumberGenerator) -> StaticBody3D
 	bush_mi.rotation.y = rng.randf_range(0.0, TAU)
 	root.add_child(bush_mi)
 
+	# PERF FIX: Batch berries into single MMI
 	var berry_count := rng.randi_range(5, 8)
+	var berry_xforms: Array[Transform3D] = []
+	var avg_radius := 0.065
+	
 	for _bi in berry_count:
 		var angle := rng.randf_range(0.0, TAU)
 		var elev := rng.randf_range(0.0, 0.8)
@@ -653,18 +673,30 @@ static func _create_lingonberry_bush(rng: RandomNumberGenerator) -> StaticBody3D
 		var bx := cos(angle) * out
 		var bz := sin(angle) * out
 		var by := bush_mi.position.y + elev * 0.25 * sf
-
-		var berry_mi := MeshInstance3D.new()
-		var bsphere := SphereMesh.new()
-		bsphere.radius = rng.randf_range(0.05, 0.08)
-		bsphere.height = bsphere.radius * 2.0
-		bsphere.radial_segments = 4
-		bsphere.rings = 2
-		berry_mi.mesh = bsphere
-		berry_mi.set_surface_override_material(0, _lingonberry_mat)
-		berry_mi.position = Vector3(bx, by, bz)
-		berry_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(berry_mi)
+		var b_scale := rng.randf_range(0.8, 1.2)
+		berry_xforms.append(Transform3D(Basis().scaled(Vector3(b_scale, b_scale, b_scale)), Vector3(bx, by, bz)))
+	
+	if not berry_xforms.is_empty():
+		var berry_sphere := SphereMesh.new()
+		berry_sphere.radius = avg_radius
+		berry_sphere.height = avg_radius * 2.0
+		berry_sphere.radial_segments = 4
+		berry_sphere.rings = 2
+		
+		var berry_mm := MultiMesh.new()
+		berry_mm.mesh = berry_sphere
+		berry_mm.transform_format = MultiMesh.TRANSFORM_3D
+		berry_mm.use_colors = false
+		berry_mm.instance_count = berry_xforms.size()
+		for i in berry_xforms.size():
+			berry_mm.set_instance_transform(i, berry_xforms[i])
+		
+		var berry_mmi := MultiMeshInstance3D.new()
+		berry_mmi.name = "BerryMM"
+		berry_mmi.multimesh = berry_mm
+		berry_mmi.material_override = _lingonberry_mat
+		berry_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(berry_mmi)
 
 	# Small bushes: collision always enabled (no LOD toggle needed)
 	var col := CollisionShape3D.new()
