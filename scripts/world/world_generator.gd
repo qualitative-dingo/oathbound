@@ -439,10 +439,10 @@ func _process(_delta: float) -> void:
 		_perf_max_total_ms, _perf_max_queue_ms, _perf_max_pending_ms,
 		_perf_max_unload_ms, _perf_max_explore_ms, _perf_pending_size_max,
 		origin_shift.x, origin_shift.z, displaced])
-	# Vegetation debug: count grass/flower MMIs and instances per zone
+	# Vegetation debug: count flower MMIs and instances per zone
 	var veg_snap := _vegetation_perf_snapshot()
-	print("[PERF VEG] g_mmi=%d g_inst=%d fl_mmi=%d fl_inst=%d trees=%d" % [
-		veg_snap["g_mmi"], veg_snap["g_inst"], veg_snap["fl_mmi"], veg_snap["fl_inst"], veg_snap["trees"]])
+	print("[PERF VEG] fl_mmi=%d fl_inst=%d trees=%d" % [
+		veg_snap["fl_mmi"], veg_snap["fl_inst"], veg_snap["trees"]])
 	_perf_max_queue_ms = 0.0
 	_perf_max_pending_ms = 0.0
 	_perf_max_unload_ms = 0.0
@@ -452,8 +452,6 @@ func _process(_delta: float) -> void:
 
 
 func _vegetation_perf_snapshot() -> Dictionary:
-	var g_mmi := 0
-	var g_inst := 0
 	var fl_mmi := 0
 	var fl_inst := 0
 	var trees := 0
@@ -465,19 +463,14 @@ func _vegetation_perf_snapshot() -> Dictionary:
 			if not is_instance_valid(child):
 				continue
 			var cname: String = child.name
-			if cname.begins_with("Grass_") and child is MultiMeshInstance3D:
-				g_mmi += 1
-				var mmi := child as MultiMeshInstance3D
-				if mmi.multimesh:
-					g_inst += mmi.multimesh.instance_count
-			elif cname.begins_with("Flower_") and child is MultiMeshInstance3D:
+			if cname.begins_with("Flower_") and child is MultiMeshInstance3D:
 				fl_mmi += 1
 				var mmi := child as MultiMeshInstance3D
 				if mmi.multimesh:
 					fl_inst += mmi.multimesh.instance_count
 			elif child is StaticBody3D and child.has_meta("tree_name"):
 				trees += 1
-	return {"g_mmi": g_mmi, "g_inst": g_inst, "fl_mmi": fl_mmi, "fl_inst": fl_inst, "trees": trees}
+	return {"fl_mmi": fl_mmi, "fl_inst": fl_inst, "trees": trees}
 
 
 func _physics_process(delta: float) -> void:
@@ -1491,9 +1484,9 @@ func _process_pending_zones() -> void:
 
 	_evict_terrain_cache()
 
-	# 2. Populate zone objects — batch ALL vegetation phases (3-6) together for fast grass loading
+	# 2. Populate zone objects — batch ALL vegetation phases (3-6) together for fast flower loading
 	#    Phases 0-2 have collision objects (trees, rocks, creatures) - one per frame, budget-checked
-	#    Phases 3-6 are vegetation-only (grass, flowers) with NO collision - process ALL in one go
+	#    Phases 3-6 are vegetation-only (flowers, bushes) with NO collision - process ALL in one go
 	#    Also allow multiple zones' vegetation to be processed per frame for faster loading
 	var veg_zones_this_frame := 0
 	const _MAX_VEG_ZONES_PER_FRAME := 4  # Process up to 4 zones' vegetation per frame
@@ -1734,9 +1727,9 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 			continue
 		if cname == "TerrainMesh":
 			continue
-		var is_grass := cname.begins_with("Grass_") or cname.begins_with("Flower_")
-		var is_vegetation := is_grass or cname == "Reeds" or cname.begins_with("BlueberryBush")
-		if is_grass:
+		var is_flower := cname.begins_with("Flower_")
+		var is_vegetation := is_flower or cname == "Reeds" or cname.begins_with("BlueberryBush")
+		if is_flower:
 			child.visible = new_lod == 0
 		elif is_vegetation:
 			child.visible = new_lod <= 1

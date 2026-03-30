@@ -6639,48 +6639,6 @@ func _clear_vegetation_at(pos: Vector3, sz: Vector3) -> void:
 		if dx * dx + dz * dz < r2:
 			node.queue_free()
 
-	_clear_grass_multimesh_at(pos, r2)
-
-
-func _clear_grass_multimesh_at(pos: Vector3, r2: float) -> void:
-	var scene_root := get_tree().current_scene
-	if not scene_root:
-		return
-	for zone in scene_root.get_children():
-		if not zone is Node3D:
-			continue
-		var zone_origin := (zone as Node3D).global_position
-		for child in zone.get_children():
-			var mmi := child as MultiMeshInstance3D
-			if not mmi or not mmi.name.begins_with("Grass_"):
-				continue
-			var mm := mmi.multimesh
-			if not mm or mm.instance_count == 0:
-				continue
-			var kept_t: Array[Transform3D] = []
-			var kept_cd: Array[Color] = []
-			var use_cd := mm.use_custom_data
-			for i in mm.instance_count:
-				var t := mm.get_instance_transform(i)
-				var wx := zone_origin.x + t.origin.x
-				var wz := zone_origin.z + t.origin.z
-				var dx := wx - pos.x
-				var dz := wz - pos.z
-				if dx * dx + dz * dz >= r2:
-					kept_t.append(t)
-					if use_cd:
-						kept_cd.append(mm.get_instance_custom_data(i))
-			if kept_t.size() == mm.instance_count:
-				continue
-			if kept_t.is_empty():
-				mmi.queue_free()
-			else:
-				mm.instance_count = kept_t.size()
-				for idx in kept_t.size():
-					mm.set_instance_transform(idx, kept_t[idx])
-					if use_cd:
-						mm.set_instance_custom_data(idx, kept_cd[idx])
-
 
 func _clear_build_ghost() -> void:
 	if _build_from_workbench and _build_selected != &"":

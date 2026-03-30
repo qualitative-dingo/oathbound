@@ -127,7 +127,7 @@ static func _hg_is_steep_edge(wx: float, wz: float, ground_y: float) -> bool:
 		return true
 	return false
 
-# ─── Grass/flower rejection grid (pre-computed to skip expensive noise per sample)
+# ─── Flower rejection grid (pre-computed to skip expensive noise per sample)
 const _RG_RES := 16
 const _RG_CELL := ZONE_SIZE / float(_RG_RES)
 const _RG_DENSITY_LOW := 1
@@ -147,7 +147,7 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 			var wz := origin_z + (gz + 0.5) * _RG_CELL
 			var idx := gz * _RG_RES + gx
 			var flags := 0
-			if _grass_density_noise(wx, wz) < 0.18:
+			if _vegetation_density_noise(wx, wz) < 0.18:
 				flags |= _RG_DENSITY_LOW
 			if is_dirt_patch(wx, wz):
 				flags |= _RG_DIRT
@@ -159,7 +159,6 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 static var debug_skip_trees := false
 static var debug_skip_rocks := false
 static var debug_skip_saplings := false
-static var debug_skip_grass := false
 static var debug_skip_flowers := false
 static var debug_skip_creatures := false
 static var debug_skip_villages := false
@@ -234,13 +233,9 @@ static var _tex_horse_walk: Dictionary = {}  # {dir -> Array[Texture2D]} walk an
 static var _tex_horse_run: Dictionary = {}   # {dir -> Array[Texture2D]} run animation frames
 static var _tex_bush: Texture2D  # fallback if no 3D tex
 
-static var _grass_shader: Shader
-static var _grass_quad_mesh: ArrayMesh
+static var _billboard_shader: Shader  # Used for reeds and other billboard vegetation
+static var _billboard_quad_mesh: ArrayMesh  # Cross-plane mesh for billboard vegetation
 static var _leaf_unit_quad: QuadMesh
-static var _grass_textures: Array[ImageTexture] = []
-static var _grass_atlas: ImageTexture  # Combined atlas of all grass types
-static var _grass_atlas_mat: ShaderMaterial  # Shared material for batched grass
-const GRASS_ATLAS_COLUMNS := 4  # Number of grass varieties in atlas
 static var _flower_textures: Array[ImageTexture] = []
 
 static var _water_plants_ready := false
@@ -268,13 +263,9 @@ static var _textures_loaded := false
 ## Call at game start to ensure fresh state after code changes.
 static func reset_texture_cache() -> void:
 	_textures_loaded = false
-	_cached_grass_mats.clear()
 	_cached_leaf_mats.clear()
 	_cached_flower_mats.clear()
-	_grass_types_table.clear()  # Must clear so it repopulates with new texture refs
-	_flower_types_table.clear()  # Same for flowers
-	_grass_atlas = null  # Clear atlas so it regenerates
-	_grass_atlas_mat = null
+	_flower_types_table.clear()
 	print("[ZonePopulator] Texture cache reset - will reload on next use")
 
 
@@ -401,19 +392,12 @@ static func _ensure_textures() -> void:
 	if ResourceLoader.exists("res://shaders/wind_foliage.gdshader"):
 		_wind_shader = load("res://shaders/wind_foliage.gdshader") as Shader
 
-	# ── Grass billboard shader + procedural textures ──
+	# ── Billboard shader + quad mesh (used for reeds and other vegetation) ──
 	if ResourceLoader.exists("res://shaders/grass_billboard.gdshader"):
-		_grass_shader = load("res://shaders/grass_billboard.gdshader") as Shader
-	_grass_quad_mesh = _create_grass_cross(1.0, 1.0)
+		_billboard_shader = load("res://shaders/grass_billboard.gdshader") as Shader
+	_billboard_quad_mesh = _create_billboard_cross(1.0, 1.0)
 	_leaf_unit_quad = QuadMesh.new()
 	_leaf_unit_quad.size = Vector2(1.0, 1.0)
-	_grass_textures.clear()
-	for gi in 20:
-		_grass_textures.append(_gen_grass_variety(gi))
-	
-	# Create grass atlas by combining first GRASS_ATLAS_COLUMNS textures horizontally
-	_grass_atlas = _create_grass_atlas()
-	_grass_atlas_mat = _make_grass_atlas_mat()
 
 	_flower_textures.clear()
 	for fi in 10:
@@ -1070,7 +1054,7 @@ static func _make_triplanar_mat(tex: Texture2D, fallback_color: Color) -> Standa
 ## phase=0: villages + scatter trees
 ## phase=1: cluster trees + rocks + pebbles + stones
 ## phase=2: creatures + caves + horses + fish
-## phase=3: grass (batched - all types in single MMI for 75% draw call reduction)
+## phase=3: (unused - grass removed)
 ## phase=4-5: wildflowers (5 types per phase)
 ## phase=6: blueberry bushes + water plants
 ## Returns true when ALL phases are done.
@@ -1315,10 +1299,8 @@ static func populate_zone_phase(
 
 		return false
 
-	# ── Phase 3: grass (batched - all types in single MMI) ──
+	# ── Phase 3: (grass removed - was causing severe FPS issues) ──
 	if phase == 3:
-		if not debug_skip_grass:
-			_scatter_grass(zone_root, coord, biome, rng, height_func)
 		return false
 
 	# ── Phases 4–5: wildflowers (5 types per frame) ──
@@ -1346,12 +1328,12 @@ static func populate_zone(
 	height_func: Callable,
 	microbiome: StringName = &"none",
 ) -> void:
-	for p in 7:  # 0-6: villages/trees, clusters/rocks, creatures, grass, flowers(x2), bushes
+	for p in 7:  # 0-6: villages/trees, clusters/rocks, creatures, (unused), flowers(x2), bushes
 		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
 
 
-# Two intersecting planes (cross) so grass is never edge-on to camera
-static func _create_grass_cross(w: float, h: float) -> ArrayMesh:
+# Two intersecting planes (cross) so billboard vegetation is never edge-on to camera
+static func _create_billboard_cross(w: float, h: float) -> ArrayMesh:
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var normals := PackedVector3Array()
@@ -1381,119 +1363,6 @@ static func _create_grass_cross(w: float, h: float) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
-
-
-# ── Procedural grass texture generators (same technique as tree leaves) ────────
-
-static func _paint_grass_clump(img: Image, cx: int, base_y: int, clump_h: int,
-		clump_w: int, bri_base: float, bri_tip: float, rng: RandomNumberGenerator) -> void:
-	var w := img.get_width()
-	var h := img.get_height()
-	var num_blobs := rng.randi_range(3, 6)
-	for _bi in num_blobs:
-		var t := rng.randf_range(0.0, 1.0)
-		var blob_y := base_y - int(t * clump_h)
-		var spread := int(clump_w * 0.5 * (1.0 - t * 0.6))
-		var blob_x := cx + rng.randi_range(-spread, spread)
-		var rx := maxi(2, int(clump_w * 0.3 * (1.0 - t * 0.5)))
-		var ry := maxi(2, int(clump_h * 0.15 * (1.0 - t * 0.3)))
-		var bri := lerpf(bri_base, bri_tip, t) + rng.randf_range(-0.05, 0.05)
-		for dy in range(-ry, ry + 1):
-			for dx in range(-rx, rx + 1):
-				var px := blob_x + dx
-				var py := blob_y + dy
-				if px < 0 or px >= w or py < 0 or py >= h:
-					continue
-				var nx := float(dx) / maxf(float(rx), 0.5)
-				var ny := float(dy) / maxf(float(ry), 0.5)
-				if nx * nx + ny * ny > 1.0:
-					continue
-				var edge := 1.0 - (nx * nx + ny * ny)
-				var v := clampf(bri * (0.75 + edge * 0.25) + rng.randf_range(-0.04, 0.04), 0.15, 1.0)
-				img.set_pixel(px, py, Color(v, v, v, 1.0))
-
-
-static func _paint_pointed_blade(img: Image, cx: int, base_y: int, blade_h: int,
-		blade_w: int, bri_base: float, bri_tip: float, curve: float,
-		taper: float, rng: RandomNumberGenerator) -> void:
-	var w := img.get_width()
-	var h := img.get_height()
-	for dy in blade_h:
-		var y := base_y - dy
-		if y < 0 or y >= h:
-			continue
-		var t := float(dy) / float(blade_h)
-		var bw := maxi(1, int(blade_w * (1.0 - t * taper)))
-		var x_off := int(curve * dy * dy * 0.012)
-		var v := clampf(lerpf(bri_base, bri_tip, t) + rng.randf_range(-0.04, 0.04), 0.15, 1.0)
-		var col := Color(v, v, v, 1.0)
-		for dx in range(-bw / 2, bw / 2 + 1):
-			var px := cx + x_off + dx
-			if px >= 0 and px < w:
-				img.set_pixel(px, y, col)
-
-
-static func _gen_grass_variety(idx: int) -> ImageTexture:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 80000 + idx * 173
-
-	# Variety type: 0-9 leafy clumps, 10-15 pointed blades, 16-19 mixed
-	var sz_w := rng.randi_range(40, 56)
-	var sz_h := rng.randi_range(40, 64)
-	var img := Image.create(sz_w, sz_h, true, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-
-	if idx < 10:
-		# Leafy clump varieties — different densities and shapes
-		var clump_count := rng.randi_range(5, 12)
-		var h_min := rng.randi_range(12, 22)
-		var h_max := rng.randi_range(h_min + 8, h_min + 25)
-		var w_min := rng.randi_range(8, 14)
-		var w_max := rng.randi_range(w_min + 4, w_min + 12)
-		var bri_lo := rng.randf_range(0.3, 0.5)
-		var bri_hi := rng.randf_range(0.75, 0.95)
-		for _i in clump_count:
-			var cx := rng.randi_range(6, sz_w - 7)
-			_paint_grass_clump(img, cx, sz_h - 2,
-				rng.randi_range(h_min, h_max),
-				rng.randi_range(w_min, w_max),
-				bri_lo, bri_hi, rng)
-		_punch_holes(img, rng.randi_range(3, 8), rng)
-
-	elif idx < 16:
-		# Pointed blade varieties — spiky grass
-		var blade_count := rng.randi_range(8, 20)
-		var bri_lo := rng.randf_range(0.3, 0.5)
-		var bri_hi := rng.randf_range(0.8, 1.0)
-		var taper := rng.randf_range(0.4, 0.8)
-		for _i in blade_count:
-			var cx := rng.randi_range(4, sz_w - 5)
-			var bh := rng.randi_range(16, sz_h - 4)
-			var bw := rng.randi_range(3, 7)
-			var curve := rng.randf_range(-0.08, 0.08)
-			_paint_pointed_blade(img, cx, sz_h - 1, bh, bw, bri_lo, bri_hi, curve, taper, rng)
-
-	else:
-		# Mixed — clumps at the base with pointed tips poking out
-		var clump_count := rng.randi_range(4, 7)
-		var bri_lo := rng.randf_range(0.3, 0.45)
-		var bri_hi := rng.randf_range(0.7, 0.9)
-		for _i in clump_count:
-			var cx := rng.randi_range(6, sz_w - 7)
-			_paint_grass_clump(img, cx, sz_h - 2,
-				rng.randi_range(10, 22),
-				rng.randi_range(10, 18),
-				bri_lo, bri_hi * 0.85, rng)
-		var blade_count := rng.randi_range(6, 12)
-		for _i in blade_count:
-			var cx := rng.randi_range(4, sz_w - 5)
-			var bh := rng.randi_range(20, sz_h - 4)
-			var bw := rng.randi_range(2, 5)
-			var curve := rng.randf_range(-0.06, 0.06)
-			_paint_pointed_blade(img, cx, sz_h - 1, bh, bw, bri_lo, bri_hi, curve, 0.6, rng)
-		_punch_holes(img, rng.randi_range(2, 5), rng)
-
-	return ImageTexture.create_from_image(img)
 
 
 # ── Procedural wildflower texture generators ─────────────────────────────────
@@ -1684,7 +1553,7 @@ static func _make_flower_mat(tex: ImageTexture, color: Color) -> ShaderMaterial:
 	if _cached_flower_mats.has(cache_key):
 		return _cached_flower_mats[cache_key]
 	var mat := ShaderMaterial.new()
-	mat.shader = _grass_shader
+	mat.shader = _billboard_shader
 	mat.set_shader_parameter("albedo_texture", tex)
 	mat.set_shader_parameter("albedo_color", color)
 	mat.set_shader_parameter("alpha_cutoff", 0.35)
@@ -1704,7 +1573,7 @@ static func _scatter_flowers(
 	type_start: int = 0,
 	type_end: int = -1,
 ) -> void:
-	if not _grass_shader or not _grass_quad_mesh:
+	if not _billboard_shader or not _billboard_quad_mesh:
 		return
 	if biome != &"hearthlands":
 		return
@@ -1750,7 +1619,7 @@ static func _scatter_flowers(
 			if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH) != 0:
 				continue
 
-			var density := _grass_density_noise(wx, wz)
+			var density := _vegetation_density_noise(wx, wz)
 			if density < 0.22:
 				continue
 
@@ -1797,7 +1666,7 @@ static func _scatter_flowers(
 
 		var mmi := MultiMeshInstance3D.new()
 		var mm := MultiMesh.new()
-		mm.mesh = _grass_quad_mesh
+		mm.mesh = _billboard_quad_mesh
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = false
 		mm.instance_count = transforms.size()
@@ -1808,72 +1677,9 @@ static func _scatter_flowers(
 		mmi.name = "Flower_%d" % fi
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.visibility_range_end = 40.0  # Valheim-style: 40m for flowers, 32m for grass
+		mmi.visibility_range_end = 40.0  # Valheim-style: 40m for flowers
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		zone_root.add_child(mmi)
-
-
-static var _cached_grass_mats: Dictionary = {}
-
-static func _make_grass_mat(tex: ImageTexture, color: Color) -> ShaderMaterial:
-	var cache_key := str(tex.get_rid().get_id()) + "_" + color.to_html()
-	if _cached_grass_mats.has(cache_key):
-		return _cached_grass_mats[cache_key]
-
-	var mat := ShaderMaterial.new()
-	mat.shader = _grass_shader
-	mat.set_shader_parameter("albedo_texture", tex)
-	mat.set_shader_parameter("albedo_color", color)
-	mat.set_shader_parameter("alpha_cutoff", 0.4)
-	mat.set_shader_parameter("wind_strength", 0.5)
-	mat.set_shader_parameter("wind_speed", 1.5)
-	mat.set_shader_parameter("wind_turbulence", 0.8)
-	mat.set_shader_parameter("atlas_columns", 1)  # Single texture, not atlas
-	_cached_grass_mats[cache_key] = mat
-	return mat
-
-
-## Create a horizontal texture atlas from the first GRASS_ATLAS_COLUMNS grass textures
-static func _create_grass_atlas() -> ImageTexture:
-	if _grass_textures.is_empty():
-		return null
-	
-	# Get dimensions from first texture
-	var first_img := _grass_textures[0].get_image()
-	var tex_w := first_img.get_width()
-	var tex_h := first_img.get_height()
-	
-	# Create combined image (horizontal strip)
-	var atlas_w := tex_w * GRASS_ATLAS_COLUMNS
-	var atlas_img := Image.create(atlas_w, tex_h, false, Image.FORMAT_RGBA8)
-	
-	for col in GRASS_ATLAS_COLUMNS:
-		if col >= _grass_textures.size():
-			break
-		var src_img := _grass_textures[col].get_image()
-		# Blit each texture into its column
-		atlas_img.blit_rect(src_img, Rect2i(0, 0, tex_w, tex_h), Vector2i(col * tex_w, 0))
-	
-	return ImageTexture.create_from_image(atlas_img)
-
-
-## Create the shared material for batched grass (uses atlas)
-static func _make_grass_atlas_mat() -> ShaderMaterial:
-	if not _grass_atlas or not _grass_shader:
-		return null
-	
-	var mat := ShaderMaterial.new()
-	mat.shader = _grass_shader
-	mat.set_shader_parameter("albedo_texture", _grass_atlas)
-	mat.set_shader_parameter("albedo_color", Color(0.18, 0.45, 0.12))  # Average grass color
-	mat.set_shader_parameter("alpha_cutoff", 0.4)
-	mat.set_shader_parameter("wind_strength", 0.5)
-	mat.set_shader_parameter("wind_speed", 1.5)
-	mat.set_shader_parameter("wind_turbulence", 0.8)
-	mat.set_shader_parameter("atlas_columns", GRASS_ATLAS_COLUMNS)
-	mat.set_shader_parameter("density_near", 16.0)  # Full density up to 16m
-	mat.set_shader_parameter("density_far", 32.0)   # 50% density at 32m
-	return mat
 
 
 static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, cached_structures: Array = []) -> bool:
@@ -1902,144 +1708,9 @@ static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, c
 	return false
 
 
-static func _grass_density_noise(wx: float, wz: float) -> float:
+## Vegetation density noise - used for flowers and rejection grid
+static func _vegetation_density_noise(wx: float, wz: float) -> float:
 	return _fbm2(wx * 0.055 + 1200.0, wz * 0.055 + 900.0)
-
-
-static var _grass_types_table: Array = []
-
-## Grass type configs: [atlas_index, base_count, scale_min, scale_max, size_w, size_h]
-## Using GRASS_ATLAS_COLUMNS types for variety while keeping draw calls minimal
-static func _get_grass_types() -> Array:
-	if _grass_types_table.is_empty():
-		# PERF: Reduced from 750 to 150 per type (3000 to 600 total per zone)
-		# 3000 grass placement attempts per zone caused massive FPS drops
-		# 600 still looks lush but doesn't tank performance
-		_grass_types_table = [
-			[0, 150, 0.9, 1.7, 1.8, 1.2],   # Atlas slot 0 - tall grass
-			[1, 150, 0.8, 1.4, 1.5, 1.0],   # Atlas slot 1 - medium grass
-			[2, 150, 0.7, 1.2, 1.4, 0.9],   # Atlas slot 2 - short grass
-			[3, 150, 0.6, 1.0, 1.2, 0.8],   # Atlas slot 3 - tiny grass
-		]
-	return _grass_types_table
-
-
-## BATCHED grass scattering - all grass types in ONE MMI per zone (Valheim-style)
-## This cuts draw calls by 75% compared to separate MMIs per type
-static func _scatter_grass(
-	zone_root: Node3D,
-	coord: Vector2i,
-	biome: StringName,
-	rng: RandomNumberGenerator,
-	height_func: Callable,
-	_type_start: int = 0,
-	_type_end: int = -1,
-) -> void:
-	if not _grass_shader or not _grass_quad_mesh or not _grass_atlas_mat:
-		return
-
-	if biome != &"hearthlands":
-		return
-
-	_ensure_height_grid(coord, height_func)
-
-	var grass_types := _get_grass_types()
-	var origin_x: float = coord.x * ZONE_SIZE
-	var origin_z: float = coord.y * ZONE_SIZE
-
-	_ensure_rejection_grid(coord, origin_x, origin_z)
-
-	var structs := _get_structures_cached()
-
-	# Collect ALL grass instances from ALL types into one array
-	var all_transforms: Array[Transform3D] = []
-	var all_custom_data: Array[Color] = []  # x = atlas index (0-1 range)
-	
-	for gi in grass_types.size():
-		var cfg: Array = grass_types[gi]
-		var atlas_idx: int = cfg[0]
-		var count: int = cfg[1]
-		var scale_min: float = cfg[2]
-		var scale_max: float = cfg[3]
-		var quad_w: float = cfg[4]
-		var quad_h: float = cfg[5]
-		
-		# Encode atlas index as 0-1 value for shader
-		var atlas_encoded: float = float(atlas_idx) / float(GRASS_ATLAS_COLUMNS)
-
-		for _i in count:
-			var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
-			var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
-			var wx := origin_x + lx
-			var wz := origin_z + lz
-
-			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
-			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
-			if _rg_data[rgz * _RG_RES + rgx] != 0:
-				continue
-
-			var sn := _hg_snap_and_normal(wx, wz)
-			var ground_y := sn.x
-			if ground_y < _MIN_LAND_Y or ground_y > 40.0:
-				continue
-			if sn.y < 0.97:
-				continue
-			const _SLOPE_R := 8.0
-			var h_l := _hg_sample(wx - _SLOPE_R, wz)
-			var h_r := _hg_sample(wx + _SLOPE_R, wz)
-			var h_u := _hg_sample(wx, wz - _SLOPE_R)
-			var h_d := _hg_sample(wx, wz + _SLOPE_R)
-			var slope_x := absf(h_r - h_l) / (_SLOPE_R * 2.0)
-			var slope_z := absf(h_d - h_u) / (_SLOPE_R * 2.0)
-			if slope_x > 0.20 or slope_z > 0.20:
-				continue
-			var _hc := ground_y
-			if absf(_hc - h_l) > 3.0 or absf(_hc - h_r) > 3.0 \
-					or absf(_hc - h_u) > 3.0 or absf(_hc - h_d) > 3.0:
-				continue
-			if _is_near_structure(wx, wz, 4.0, structs):
-				continue
-			var density := _grass_density_noise(wx, wz)
-			var cluster_boost := clampf((density - 0.18) * 1.6, 0.0, 1.0)
-			var scale := lerpf(scale_min, scale_max, cluster_boost)
-			var slope_factor := clampf((sn.y - 0.97) / 0.03, 0.0, 1.0)
-			scale *= lerpf(0.3, 1.0, slope_factor)
-			scale *= rng.randf_range(0.85, 1.15)
-			var rot := rng.randf_range(0.0, TAU)
-
-			var sx := quad_w * scale
-			var sy := quad_h * scale
-			var sz := quad_w * scale
-			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
-			all_transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
-			all_custom_data.append(Color(atlas_encoded, 0.0, 0.0, 1.0))
-
-	if all_transforms.is_empty():
-		return
-
-	# Create SINGLE MMI for all grass in this zone
-	var mmi := _ZonePool.get_grass_mmi() as MultiMeshInstance3D
-	if not mmi:
-		mmi = MultiMeshInstance3D.new()
-
-	var mm := MultiMesh.new()
-	mm.mesh = _grass_quad_mesh
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = false
-	mm.use_custom_data = true  # Enable custom data for atlas index
-	mm.instance_count = all_transforms.size()
-	mmi.multimesh = mm
-	
-	for idx in all_transforms.size():
-		mm.set_instance_transform(idx, all_transforms[idx])
-		mm.set_instance_custom_data(idx, all_custom_data[idx])
-
-	mmi.name = "Grass_Batched"  # Single MMI for all grass types
-	mmi.material_override = _grass_atlas_mat
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mmi.visibility_range_end = 32.0  # Reduced from 48 for Valheim-style optimization
-	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-	zone_root.add_child(mmi)
 
 
 static func _scatter_blueberry_bushes(
@@ -4095,10 +3766,10 @@ static func _ensure_water_plants() -> void:
 	_loosestrife_flower_mat.roughness = 0.85
 	_loosestrife_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
 
-	# Reeds — tall grass-like, reuse grass shader for wind sway
-	if _grass_shader:
+	# Reeds — tall vegetation, reuse billboard shader for wind sway
+	if _billboard_shader:
 		_reed_mat = ShaderMaterial.new()
-		_reed_mat.shader = _grass_shader
+		_reed_mat.shader = _billboard_shader
 		var reed_tex := _gen_reed_texture()
 		_reed_mat.set_shader_parameter("albedo_texture", reed_tex)
 		_reed_mat.set_shader_parameter("albedo_color", Color(1.0, 1.0, 1.0))
@@ -4597,7 +4268,7 @@ static func _scatter_water_plants(
 			zone_root.add_child(plant)
 
 	# ── Reeds — clumped along water edges, per-zone variation ──
-	if not _reed_mat or not _grass_quad_mesh:
+	if not _reed_mat or not _billboard_quad_mesh:
 		return
 	var reed_hash := absf(sin(float(coord.x * 97 + coord.y * 163) * 0.1))
 	var num_clumps := 0
@@ -4640,7 +4311,7 @@ static func _scatter_water_plants(
 		return
 	var mmi := MultiMeshInstance3D.new()
 	var mm := MultiMesh.new()
-	mm.mesh = _grass_quad_mesh
+	mm.mesh = _billboard_quad_mesh
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = false
 	mm.instance_count = transforms.size()

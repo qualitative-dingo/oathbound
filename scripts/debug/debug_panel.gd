@@ -15,7 +15,6 @@ var _toggles: Dictionary = {
 	"trees": true,
 	"rocks": true,
 	"blueberries": true,
-	"grass": true,
 	"flowers": true,
 	"creatures": true,
 	"villages": true,
@@ -171,7 +170,6 @@ func _build_ui() -> void:
 	_add_toggle(left, "Trees", "trees")
 	_add_toggle(left, "Rocks (harvestable)", "rocks")
 	_add_toggle(left, "Blueberry Bushes", "blueberries")
-	_add_toggle(left, "Grass", "grass")
 	_add_toggle(left, "Flowers", "flowers")
 	_add_toggle(left, "Creatures", "creatures")
 	_add_toggle(left, "Villages / Structures", "villages")
@@ -349,8 +347,6 @@ func _apply_toggle(key: String, on: bool) -> void:
 				pop_cls.set("debug_skip_rocks", not on)
 			"blueberries":
 				pop_cls.set("debug_skip_saplings", not on)
-			"grass":
-				pop_cls.set("debug_skip_grass", not on)
 			"flowers":
 				pop_cls.set("debug_skip_flowers", not on)
 			"creatures":
@@ -450,8 +446,6 @@ func _toggle_existing(key: String, on: bool) -> void:
 				var n: String = node.name
 				if n.begins_with("BlueberryBush"):
 					_set_node_active(node, on)
-		"grass":
-			_toggle_by_name_prefix("Grass_", on)
 		"creatures":
 			for node in tree.get_nodes_in_group(&"enemies"):
 				_set_node_active(node, on)

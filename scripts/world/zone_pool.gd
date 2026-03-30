@@ -1,6 +1,6 @@
 class_name ZonePool
 extends RefCounted
-## Object pool that recycles zone roots, trees, rocks, blueberry bushes, and grass MMIs.
+## Object pool that recycles zone roots, trees, rocks, and blueberry bushes.
 ##
 ## Instead of queue_free() on zone children, nodes are stripped from the tree,
 ## hidden, and stashed here. Next zone that needs the same kind of object grabs
@@ -12,7 +12,6 @@ extends RefCounted
 # ─── Pool storage ──────────────────────────────────────────────────────────────
 
 static var _zone_roots: Array[StaticBody3D] = []
-static var _grass_mmis: Array[MultiMeshInstance3D] = []
 static var _trees: Array[StaticBody3D] = []
 static var _rocks: Array[StaticBody3D] = []
 static var _blueberry_bushes: Array[StaticBody3D] = []
@@ -20,7 +19,6 @@ static var _blueberry_bushes: Array[StaticBody3D] = []
 const MAX_TREES := 30
 const MAX_ROCKS := 10
 const MAX_BLUEBERRY := 30
-const MAX_GRASS := 16
 const MAX_ZONE_ROOTS := 5
 
 static var _stats_recycled := 0
@@ -158,31 +156,6 @@ static func recycle_blueberry(node: StaticBody3D) -> void:
 		node.queue_free()
 
 
-# ─── Grass MMI Pool ────────────────────────────────────────────────────────────
-
-static func get_grass_mmi() -> MultiMeshInstance3D:
-	while not _grass_mmis.is_empty():
-		var mmi := _grass_mmis.pop_back() as MultiMeshInstance3D
-		if is_instance_valid(mmi):
-			mmi.visible = true
-			_stats_reused += 1
-			return mmi
-	return null
-
-
-static func recycle_grass_mmi(node: MultiMeshInstance3D) -> void:
-	if not is_instance_valid(node):
-		return
-	if node.get_parent():
-		node.get_parent().remove_child(node)
-	node.visible = false
-	if _grass_mmis.size() < MAX_GRASS:
-		_grass_mmis.append(node)
-		_stats_recycled += 1
-	else:
-		node.queue_free()
-
-
 # ─── Zone Recycling (walks children, categorizes, and pools everything) ────────
 
 static func recycle_zone(zone_root: StaticBody3D) -> void:
@@ -196,9 +169,7 @@ static func recycle_zone(zone_root: StaticBody3D) -> void:
 
 		var cname: String = child.name
 
-		if cname.begins_with("Grass_") and child is MultiMeshInstance3D:
-			recycle_grass_mmi(child as MultiMeshInstance3D)
-		elif child is StaticBody3D and child.is_in_group(&"interactables"):
+		if child is StaticBody3D and child.is_in_group(&"interactables"):
 			var sb := child as StaticBody3D
 			if cname.begins_with("BlueberryBush"):
 				recycle_blueberry(sb)
@@ -246,10 +217,6 @@ static func flush_all() -> void:
 		if is_instance_valid(n):
 			n.queue_free()
 	_blueberry_bushes.clear()
-	for n in _grass_mmis:
-		if is_instance_valid(n):
-			n.queue_free()
-	_grass_mmis.clear()
 	_stats_recycled = 0
 	_stats_reused = 0
 
@@ -257,7 +224,7 @@ static func flush_all() -> void:
 # ─── Diagnostics ───────────────────────────────────────────────────────────────
 
 static func get_pool_stats() -> String:
-	return "pool[z=%d t=%d r=%d bb=%d g=%d re=%d ru=%d]" % [
+	return "pool[z=%d t=%d r=%d bb=%d re=%d ru=%d]" % [
 		_zone_roots.size(), _trees.size(), _rocks.size(),
-		_blueberry_bushes.size(), _grass_mmis.size(),
+		_blueberry_bushes.size(),
 		_stats_recycled, _stats_reused]
