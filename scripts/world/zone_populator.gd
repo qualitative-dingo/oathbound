@@ -3040,10 +3040,11 @@ static func _create_rock(rng: RandomNumberGenerator) -> StaticBody3D:
 	var col := CollisionShape3D.new()
 	col.shape = _rock_convex_shapes[mesh_idx]
 	col.scale = Vector3(sf, sf, sf)
-	col.disabled = true  # Start disabled; LOD update enables for nearby zones
+	col.disabled = true  # Keep always disabled - raycast still works for harvesting
 	root.add_child(col)
 
 	root.add_to_group(&"interactables")
+	root.set_meta("skip_collision_lod", true)  # Tell LOD system to not toggle collision
 	root.set_meta("harvestable", true)
 	root.set_meta("hp", 15.0 + sf * 5.0)
 	root.set_meta("drop_id", &"stone")

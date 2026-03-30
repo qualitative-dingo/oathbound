@@ -1426,7 +1426,7 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 
 
 const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
-const _MAX_COLLISION_TOGGLES_PER_FRAME := 4  # Cap total collision toggles to avoid physics spikes
+const _MAX_COLLISION_TOGGLES_PER_FRAME := 2  # Cap total collision toggles (1 enable + 1 disable max) to avoid physics spikes
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
@@ -1480,7 +1480,9 @@ func _process_pending_zones() -> void:
 
 	_evict_terrain_cache()
 
-	# 2. Populate zone objects — one phase per iteration within time budget
+	# 2. Populate zone objects — batch vegetation phases (3-6) for faster grass loading
+	#    Phases 0-2 have collision objects (trees, rocks, creatures) - process one at a time
+	#    Phases 3-6 are vegetation-only (grass, flowers) with NO collision - safe to batch
 	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
 		while not _populate_backlog.is_empty():
 			if Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
@@ -1488,8 +1490,6 @@ func _process_pending_zones() -> void:
 			var pitem: Dictionary = _populate_backlog[0]
 			var pcoord: Vector2i = pitem["coord"]
 			var zone_root = pitem["zone_root"]  # untyped — may be freed between frames
-			# Skip stale entries: zone was unloaded/reloaded and zone_root was reused from pool
-			# The old backlog entry would still pass is_instance_valid but refers to wrong lifecycle
 			var current_zone = _loaded_zones.get(pcoord)
 			if not is_instance_valid(zone_root) or not _is_in_load_range(pcoord) or zone_root != current_zone:
 				_populate_backlog.pop_front()
@@ -1508,9 +1508,14 @@ func _process_pending_zones() -> void:
 						min_dist = d
 				_update_zone_lod(zone_root, min_dist)
 				zone_loaded.emit(pcoord)
+				break  # Done with this zone
 			else:
-				pitem["phase"] = phase + 1
-			break
+				var next_phase := phase + 1
+				pitem["phase"] = next_phase
+				# Vegetation phases (3-6) have no collision - process next immediately
+				if next_phase >= 3 and next_phase <= 6:
+					continue  # Don't break, process next phase in same frame
+			break  # Break after collision phases (0-2) or if not vegetation
 
 	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
 	# PERF: Reduced from 3-6 to 1-2 to spread work across more frames
