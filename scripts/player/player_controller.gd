@@ -196,9 +196,8 @@ var _gallop_player: AudioStreamPlayer
 var _gallop_fast_stream: AudioStream
 var _gallop_normal_stream: AudioStream
 var _on_stone_surface: bool = false
-var _footstep_timer: float = 0.0
-const _WALK_STEP_INTERVAL := 0.5
-const _RUN_STEP_INTERVAL := 0.3
+var _last_footstep_frame: int = -1
+var _gltf_footstep_phase: float = 0.0
 
 # Bow draw
 var _bow_drawing: bool = false
@@ -2355,23 +2354,44 @@ func _on_gallop_finished() -> void:
 			_gallop_player.play()
 
 
-func _tick_footstep_sfx(delta: float) -> void:
+func _tick_footstep_sfx(_delta: float) -> void:
 	if not _footstep_player:
 		return
 	var flat_speed := Vector2(velocity.x, velocity.z).length()
 	var want_stepping := not _mounted and flat_speed > 0.5 and is_on_floor() and not _is_swimming
 	if not want_stepping:
-		_footstep_timer = 0.0
+		_last_footstep_frame = -1
+		_gltf_footstep_phase = 0.0
 		return
 
 	_on_stone_surface = _check_stone_surface()
-
 	var is_running := flat_speed > walk_speed * 1.1
-	var interval := _RUN_STEP_INTERVAL if is_running else _WALK_STEP_INTERVAL
-	_footstep_timer -= delta
-	if _footstep_timer <= 0.0:
-		_play_footstep(is_running)
-		_footstep_timer = interval
+
+	if _gltf_anim_player and _gltf_anim_player.is_playing():
+		var anim_name := _gltf_anim_player.current_animation
+		if anim_name != "":
+			var anim := _gltf_anim_player.get_animation(anim_name)
+			if anim and anim.length > 0.0:
+				var pos := _gltf_anim_player.current_animation_position
+				var cycle_pos := fmod(pos, anim.length) / anim.length
+				var prev_phase := _gltf_footstep_phase
+				_gltf_footstep_phase = cycle_pos
+				if (prev_phase < 0.25 and cycle_pos >= 0.25) or (prev_phase < 0.75 and cycle_pos >= 0.75) or (prev_phase > 0.75 and cycle_pos < 0.25):
+					_play_footstep(is_running)
+				return
+
+	if _is_run_animating and not _run_frames.is_empty():
+		var dir := _current_run_dir
+		if _run_frames.has(dir):
+			var frame_count: int = _run_frames[dir].size()
+			var step_frame_a: int = 0
+			var step_frame_b: int = frame_count / 2
+			var curr_frame := _run_frame_idx
+			var prev_frame := _last_footstep_frame
+			_last_footstep_frame = curr_frame
+			if prev_frame != curr_frame:
+				if curr_frame == step_frame_a or curr_frame == step_frame_b:
+					_play_footstep(is_running)
 
 
 func _play_footstep(is_running: bool) -> void:
