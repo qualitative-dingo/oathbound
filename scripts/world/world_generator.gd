@@ -1650,6 +1650,8 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 		if child is StaticBody3D:
 			for sub in child.get_children():
 				if sub is CollisionShape3D:
+					# Only enable collision for LOD 0/1; keep disabled for LOD 2 (far zones)
+					# Using set_deferred to avoid physics spike from mass enable/disable
 					sub.set_deferred("disabled", new_lod >= 2)
 				elif sub is Node3D and sub.name == "Canopy":
 					# Canopy stays visible at LOD 0 and LOD 1; only hidden at LOD 2

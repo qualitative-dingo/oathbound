@@ -508,6 +508,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	shape.height = trunk_h * 0.8
 	col.shape = shape
 	col.position.y = trunk_h * 0.4
+	col.disabled = true  # Start disabled; LOD update enables for nearby zones
 	root.add_child(col)
 
 	root.set_meta("harvestable", true)
@@ -658,6 +659,7 @@ static func _create_lingonberry_bush(rng: RandomNumberGenerator) -> StaticBody3D
 	col_shape.radius = 0.35 * sf
 	col.shape = col_shape
 	col.position.y = 0.18 * sf
+	col.disabled = true  # Start disabled; LOD update enables for nearby zones
 	root.add_child(col)
 
 	root.add_to_group(&"interactables")
@@ -2727,12 +2729,14 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		canopy_parent.add_child(mmi)
 
 	# ── Collision — wider at base to cover root flare ──
+	# Start disabled to avoid physics spike on creation; LOD update enables for nearby zones
 	var col := CollisionShape3D.new()
 	var shape := CapsuleShape3D.new()
 	shape.radius = trunk_bot_r * 1.5
 	shape.height = trunk_h * 0.8
 	col.shape = shape
 	col.position.y = trunk_h * 0.4
+	col.disabled = true
 	root.add_child(col)
 
 	# ── Harvestable metadata ──
@@ -2925,6 +2929,7 @@ static func _create_rock(rng: RandomNumberGenerator) -> StaticBody3D:
 	var col := CollisionShape3D.new()
 	col.shape = _rock_convex_shapes[mesh_idx]
 	col.scale = Vector3(sf, sf, sf)
+	col.disabled = true  # Start disabled; LOD update enables for nearby zones
 	root.add_child(col)
 
 	root.add_to_group(&"interactables")
