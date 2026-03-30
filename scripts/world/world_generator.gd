@@ -1449,7 +1449,7 @@ func _on_egg_spawn_hawk(egg: Node3D, zone_root: Node3D, egg_local_pos: Vector3) 
 	if not scene:
 		return
 
-	var hawk := SadHawk.new()
+	var hawk := Node3D.new()
 	hawk.name = "SadHawk_%d" % hawk_count
 
 	var model := scene.instantiate()
