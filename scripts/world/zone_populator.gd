@@ -1808,22 +1808,22 @@ static func _get_microbiome_counts(biome: StringName, micro: StringName) -> Pack
 		# [trees, rocks, bushes, enemies]
 		match micro:
 			&"meadow":
-				return PackedInt32Array([12, 2, 4, 1])
+				return PackedInt32Array([6, 2, 4, 1])
 			&"forest":
-				return PackedInt32Array([48, 1, 2, 2])
+				return PackedInt32Array([24, 1, 2, 2])
 			&"birch_forest":
-				return PackedInt32Array([48, 1, 2, 1])
+				return PackedInt32Array([24, 1, 2, 1])
 			&"hills":
-				return PackedInt32Array([9, 3, 1, 2])
+				return PackedInt32Array([5, 3, 1, 2])
 			&"riverside":
-				return PackedInt32Array([24, 4, 5, 1])
-		return PackedInt32Array([24, 2, 3, 1])
+				return PackedInt32Array([12, 4, 5, 1])
+		return PackedInt32Array([12, 2, 3, 1])
 	return _get_biome_counts(biome)
 
 
 static func _get_biome_counts(biome: StringName) -> PackedInt32Array:
 	if biome == &"hearthlands":
-		return PackedInt32Array([24, 2, 3, 1])
+		return PackedInt32Array([12, 2, 3, 1])
 	return PackedInt32Array([0, 0, 0, 0])
 
 
@@ -2381,7 +2381,9 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	trunk_mi.name = "MeshInstance3D"
 	trunk_mi.mesh = merge_st.commit()
 	trunk_mi.set_surface_override_material(0, bark_mat)
-	trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	trunk_mi.visibility_range_end = 120.0
+	trunk_mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	root.add_child(trunk_mi)
 
 	# ── Trunk spine leaf anchors: upper 40% of trunk always covered ──
@@ -2543,6 +2545,8 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		mmi.multimesh = mm
 		mmi.material_override = leaf_mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = 100.0
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		canopy_parent.add_child(mmi)
 
 	# ── Collision — wider at base to cover root flare ──

@@ -1831,7 +1831,8 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 			continue
 		var is_flower := cname.begins_with("Flower_")
 		var is_vegetation := is_flower or cname == "Reeds" or cname.begins_with("BlueberryBush")
-		if is_flower:
+		var is_tree := child is StaticBody3D and (child as StaticBody3D).has_meta("tree_name")
+		if is_flower or is_tree:
 			child.visible = new_lod == 0
 		elif is_vegetation:
 			child.visible = new_lod <= 1

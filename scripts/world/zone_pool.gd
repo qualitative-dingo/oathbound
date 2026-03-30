@@ -16,7 +16,7 @@ static var _trees: Array[StaticBody3D] = []
 static var _rocks: Array[StaticBody3D] = []
 static var _blueberry_bushes: Array[StaticBody3D] = []
 
-const MAX_TREES := 30
+const MAX_TREES := 100
 const MAX_ROCKS := 10
 const MAX_BLUEBERRY := 30
 const MAX_ZONE_ROOTS := 5
