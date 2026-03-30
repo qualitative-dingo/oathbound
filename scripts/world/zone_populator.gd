@@ -1891,17 +1891,13 @@ static func _scatter_grass(
 		if not mmi:
 			mmi = MultiMeshInstance3D.new()
 
-		var mm: MultiMesh = mmi.multimesh
-		if mm:
-			mm.instance_count = 0
-			mm.instance_count = transforms.size()
-		else:
-			mm = MultiMesh.new()
-			mm.mesh = _grass_quad_mesh
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.use_colors = false
-			mm.instance_count = transforms.size()
-			mmi.multimesh = mm
+		# Always create fresh MultiMesh to avoid stale mesh references from pooled MMIs
+		var mm := MultiMesh.new()
+		mm.mesh = _grass_quad_mesh
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = false
+		mm.instance_count = transforms.size()
+		mmi.multimesh = mm
 		for idx in transforms.size():
 			mm.set_instance_transform(idx, transforms[idx])
 
