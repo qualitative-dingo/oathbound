@@ -1009,22 +1009,6 @@ static func populate_zone_phase(
 	var bush_n := counts[2]
 	var enemy_n := counts[3]
 
-	# DEBUG: Check if zone already has content from this phase
-	if phase == 0:
-		var existing_trees := 0
-		for child in zone_root.get_children():
-			if child is StaticBody3D and child.has_meta("tree_name"):
-				existing_trees += 1
-		if existing_trees > 0:
-			push_warning("[REPOP BUG] Phase 0 for %s but zone already has %d trees!" % [coord, existing_trees])
-	elif phase == 1:
-		var existing_rocks := 0
-		for child in zone_root.get_children():
-			if child is StaticBody3D and child.name.begins_with("Rock"):
-				existing_rocks += 1
-		if existing_rocks > 0:
-			push_warning("[REPOP BUG] Phase 1 for %s but zone already has %d rocks!" % [coord, existing_rocks])
-
 	if phase == 0:
 		# ── Phase 0: villages + scatter trees ──
 		if not debug_skip_villages:

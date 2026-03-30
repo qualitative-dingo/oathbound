@@ -33,18 +33,12 @@ static func get_zone_root() -> StaticBody3D:
 	if not _zone_roots.is_empty():
 		var root := _zone_roots.pop_back() as StaticBody3D
 		if is_instance_valid(root):
-			# Safety: verify zone_root was properly cleaned (should only have TerrainMesh/TerrainCol)
-			var child_count := root.get_child_count()
-			var unexpected := 0
+			# Safety: clean up any stale children (should only have TerrainMesh/TerrainCol)
 			for child in root.get_children():
 				var cname: String = child.name if is_instance_valid(child) else ""
 				if cname != "TerrainMesh" and cname != "TerrainCol":
-					unexpected += 1
-					# Clean up any stale children that shouldn't be here
 					root.remove_child(child)
 					child.queue_free()
-			if unexpected > 0:
-				push_warning("[POOL BUG] Zone root from pool had %d unexpected children! Cleaned." % unexpected)
 			root.visible = true
 			root.collision_layer = 1
 			root.collision_mask = 0
