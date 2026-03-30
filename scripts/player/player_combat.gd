@@ -18,6 +18,70 @@ const HEATSEEK_TURN_SPEED := 4.5
 const _DamageNumber := preload("res://scripts/ui/damage_number.gd")
 const _LootDrop := preload("res://scripts/items/loot_drop.gd")
 
+# Arrow pool for basic (non-legendary) arrows
+const _ARROW_POOL_SIZE := 20
+var _arrow_pool: Array[Node3D] = []
+var _arrow_shaft_mesh: BoxMesh
+var _arrow_tip_mesh: BoxMesh
+var _arrow_fletch_mesh: BoxMesh
+var _arrow_shaft_mat: StandardMaterial3D
+var _arrow_tip_mat: StandardMaterial3D
+var _arrow_fletch_mat: StandardMaterial3D
+
+func _ensure_arrow_resources() -> void:
+	if _arrow_shaft_mesh:
+		return
+	_arrow_shaft_mesh = BoxMesh.new()
+	_arrow_shaft_mesh.size = Vector3(0.05, 0.05, 0.8)
+	_arrow_tip_mesh = BoxMesh.new()
+	_arrow_tip_mesh.size = Vector3(0.08, 0.08, 0.12)
+	_arrow_fletch_mesh = BoxMesh.new()
+	_arrow_fletch_mesh.size = Vector3(0.1, 0.1, 0.1)
+	_arrow_shaft_mat = _make_unshaded_mat(Color(0.45, 0.3, 0.12))
+	_arrow_tip_mat = _make_unshaded_mat(Color(0.3, 0.3, 0.3))
+	_arrow_fletch_mat = _make_unshaded_mat(Color(0.8, 0.8, 0.75))
+
+func _get_pooled_arrow() -> Node3D:
+	_ensure_arrow_resources()
+	if not _arrow_pool.is_empty():
+		var arrow := _arrow_pool.pop_back()
+		arrow.visible = true
+		return arrow
+	var arrow := Node3D.new()
+	arrow.name = "Arrow"
+	var mesh_inst := MeshInstance3D.new()
+	mesh_inst.name = "ArrowMesh"
+	mesh_inst.mesh = _arrow_shaft_mesh
+	mesh_inst.set_surface_override_material(0, _arrow_shaft_mat)
+	arrow.add_child(mesh_inst)
+	var tip_inst := MeshInstance3D.new()
+	tip_inst.name = "Tip"
+	tip_inst.mesh = _arrow_tip_mesh
+	tip_inst.set_surface_override_material(0, _arrow_tip_mat)
+	tip_inst.position.z = -0.42
+	arrow.add_child(tip_inst)
+	var fletch_inst := MeshInstance3D.new()
+	fletch_inst.name = "Fletch"
+	fletch_inst.mesh = _arrow_fletch_mesh
+	fletch_inst.set_surface_override_material(0, _arrow_fletch_mat)
+	fletch_inst.position.z = 0.38
+	arrow.add_child(fletch_inst)
+	return arrow
+
+func _return_arrow_to_pool(arrow: Node3D) -> void:
+	if arrow.get_child_count() > 3:
+		arrow.queue_free()
+		return
+	if _arrow_pool.size() >= _ARROW_POOL_SIZE:
+		arrow.queue_free()
+		return
+	arrow.visible = false
+	arrow.remove_from_group(&"arrows")
+	var parent := arrow.get_parent()
+	if parent:
+		parent.remove_child(arrow)
+	_arrow_pool.append(arrow)
+
 
 # --- Bow ---
 func is_bow_weapon(wpn: StringName) -> bool:
@@ -201,65 +265,57 @@ func _make_glow_mat(col: Color, alpha: float, energy: float) -> StandardMaterial
 
 
 func spawn_arrow(origin: Vector3, vel: Vector3, damage: float, knockback: float, tension_pct: float = 1.0, bow_stars: int = 0, quality_color: Variant = null) -> void:
-	var arrow := Node3D.new()
-	arrow.name = "Arrow"
-	arrow.global_position = origin
-
 	var is_legendary := bow_stars >= 4
-	var aura_color := _get_arrow_aura_color(bow_stars, quality_color)
+	var arrow: Node3D
 
-	# --- Arrow shaft ---
-	var mesh_inst := MeshInstance3D.new()
-	mesh_inst.name = "ArrowMesh"
-	var box := BoxMesh.new()
-	box.size = Vector3(0.05, 0.05, 0.8)
-	mesh_inst.mesh = box
-	if is_legendary:
+	if not is_legendary:
+		arrow = _get_pooled_arrow()
+		arrow.global_position = origin
+	else:
+		var aura_color := _get_arrow_aura_color(bow_stars, quality_color)
+		arrow = Node3D.new()
+		arrow.name = "Arrow"
+		arrow.global_position = origin
+
+		var mesh_inst := MeshInstance3D.new()
+		mesh_inst.name = "ArrowMesh"
+		var box := BoxMesh.new()
+		box.size = Vector3(0.05, 0.05, 0.8)
+		mesh_inst.mesh = box
 		var mat := _make_unshaded_mat(aura_color)
 		mat.emission_enabled = true
 		mat.emission = aura_color
 		mat.emission_energy_multiplier = 8.0
 		mesh_inst.set_surface_override_material(0, mat)
-	else:
-		mesh_inst.set_surface_override_material(0, _make_unshaded_mat(Color(0.45, 0.3, 0.12)))
-	arrow.add_child(mesh_inst)
+		arrow.add_child(mesh_inst)
 
-	# --- Arrowhead ---
-	var tip_inst := MeshInstance3D.new()
-	tip_inst.name = "Tip"
-	var tip_mesh := BoxMesh.new()
-	tip_mesh.size = Vector3(0.08, 0.08, 0.12)
-	tip_inst.mesh = tip_mesh
-	if is_legendary:
+		var tip_inst := MeshInstance3D.new()
+		tip_inst.name = "Tip"
+		var tip_mesh := BoxMesh.new()
+		tip_mesh.size = Vector3(0.08, 0.08, 0.12)
+		tip_inst.mesh = tip_mesh
 		var tip_mat := _make_unshaded_mat(Color(1.0, 1.0, 0.9))
 		tip_mat.emission_enabled = true
 		tip_mat.emission = aura_color
 		tip_mat.emission_energy_multiplier = 12.0
 		tip_inst.set_surface_override_material(0, tip_mat)
-	else:
-		tip_inst.set_surface_override_material(0, _make_unshaded_mat(Color(0.3, 0.3, 0.3)))
-	tip_inst.position.z = -0.42
-	arrow.add_child(tip_inst)
+		tip_inst.position.z = -0.42
+		arrow.add_child(tip_inst)
 
-	# --- Fletching ---
-	var fletch_inst := MeshInstance3D.new()
-	fletch_inst.name = "Fletch"
-	var fletch_mesh := BoxMesh.new()
-	fletch_mesh.size = Vector3(0.1, 0.1, 0.1)
-	fletch_inst.mesh = fletch_mesh
-	if is_legendary:
+		var fletch_inst := MeshInstance3D.new()
+		fletch_inst.name = "Fletch"
+		var fletch_mesh := BoxMesh.new()
+		fletch_mesh.size = Vector3(0.1, 0.1, 0.1)
+		fletch_inst.mesh = fletch_mesh
 		var fm := _make_unshaded_mat(aura_color)
 		fm.emission_enabled = true
 		fm.emission = aura_color
 		fm.emission_energy_multiplier = 6.0
 		fletch_inst.set_surface_override_material(0, fm)
-	else:
-		fletch_inst.set_surface_override_material(0, _make_unshaded_mat(Color(0.8, 0.8, 0.75)))
-	fletch_inst.position.z = 0.38
-	arrow.add_child(fletch_inst)
+		fletch_inst.position.z = 0.38
+		arrow.add_child(fletch_inst)
 
-	# --- Legendary+ aura ---
-	if is_legendary:
+		# Legendary aura effects
 		var light := OmniLight3D.new()
 		light.name = "AuraLight"
 		light.light_color = aura_color
@@ -550,7 +606,7 @@ func stick_arrow(arrow: Node3D) -> void:
 	arrow.remove_from_group(&"arrows")
 	var tween := arrow.create_tween()
 	tween.tween_interval(4.0)
-	tween.tween_callback(arrow.queue_free)
+	tween.tween_callback(_return_arrow_to_pool.bind(arrow))
 
 
 func update_bow_draw_sprite() -> void:

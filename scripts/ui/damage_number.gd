@@ -15,14 +15,42 @@ const DRIFT_RANGE := 0.6
 const CRIT_SNAP_TIME := 0.1
 const CRIT_SPAWN_SCALE := 2.5
 const REFERENCE_DIST := 10.0
+const _POOL_SIZE := 30
 
 static var _combat_font: Font = null
+static var _rng := RandomNumberGenerator.new()
+static var _rng_ready := false
+static var _pool: Array[DamageNumber] = []
 
 static var _dmg_stack_idx := 0
 static var _dmg_last_msec := 0
 
 static var _heal_stack_idx := 0
 static var _heal_last_msec := 0
+
+static func _ensure_rng() -> void:
+	if not _rng_ready:
+		_rng.randomize()
+		_rng_ready = true
+
+static func _get_pooled() -> DamageNumber:
+	if not _pool.is_empty():
+		var label := _pool.pop_back()
+		label.visible = true
+		label._lifetime = 0.0
+		label.modulate.a = 1.0
+		return label
+	return DamageNumber.new()
+
+static func _return_to_pool(label: DamageNumber) -> void:
+	if _pool.size() >= _POOL_SIZE:
+		label.queue_free()
+		return
+	label.visible = false
+	var parent := label.get_parent()
+	if parent:
+		parent.remove_child(label)
+	_pool.append(label)
 
 
 static func _get_combat_font() -> Font:
@@ -36,7 +64,8 @@ static func _get_combat_font() -> Font:
 ## hit_type: "auto" = white auto-attack, "ability" = yellow special/elemental,
 ##           "enemy" = red damage taken from creature
 static func spawn(tree: SceneTree, world_pos: Vector3, amount: float, is_crit := false, hit_type := "auto") -> void:
-	var label := DamageNumber.new()
+	_ensure_rng()
+	var label := _get_pooled()
 	label.text = str(roundi(amount))
 	label.pixel_size = 0.012
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -70,9 +99,6 @@ static func spawn(tree: SceneTree, world_pos: Vector3, amount: float, is_crit :=
 	var idx := _dmg_stack_idx
 	_dmg_stack_idx += 1
 
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-
 	var cam := tree.root.get_camera_3d()
 	var cam_right := Vector3.RIGHT
 	if cam:
@@ -90,13 +116,13 @@ static func spawn(tree: SceneTree, world_pos: Vector3, amount: float, is_crit :=
 
 	if is_crit:
 		label._velocity = lateral_vel + Vector3(
-			rng.randf_range(-0.1, 0.1), RISE_SPEED_CRIT,
-			rng.randf_range(-0.1, 0.1))
+			_rng.randf_range(-0.1, 0.1), RISE_SPEED_CRIT,
+			_rng.randf_range(-0.1, 0.1))
 		label.scale = Vector3.ONE * CRIT_SPAWN_SCALE
 	else:
 		label._velocity = lateral_vel + Vector3(
-			rng.randf_range(-0.2, 0.2), RISE_SPEED + rng.randf_range(-0.3, 0.3),
-			rng.randf_range(-0.2, 0.2))
+			_rng.randf_range(-0.2, 0.2), RISE_SPEED + _rng.randf_range(-0.3, 0.3),
+			_rng.randf_range(-0.2, 0.2))
 
 	tree.current_scene.add_child(label)
 	label.global_position = world_pos + lateral_offset + Vector3(0.0, 1.8 + vertical_stagger, 0.0)
@@ -106,6 +132,7 @@ static func spawn_heal(tree: SceneTree, world_pos: Vector3, amount: float, cam_b
 	if amount < 0.5:
 		return
 
+	_ensure_rng()
 	var now := Time.get_ticks_msec()
 	if now - _heal_last_msec > 300:
 		_heal_stack_idx = 0
@@ -113,7 +140,7 @@ static func spawn_heal(tree: SceneTree, world_pos: Vector3, amount: float, cam_b
 	var idx := _heal_stack_idx
 	_heal_stack_idx += 1
 
-	var label := DamageNumber.new()
+	var label := _get_pooled()
 	label.text = "+%d" % roundi(amount)
 	label.font_size = 38
 	label.pixel_size = 0.01
@@ -122,6 +149,7 @@ static func spawn_heal(tree: SceneTree, world_pos: Vector3, amount: float, cam_b
 	label.modulate = Color(0.0, 1.0, 0.0)
 	label.outline_modulate = Color.BLACK
 	label.outline_size = 8
+	label._is_crit = false
 
 	var fnt := _get_combat_font()
 	if fnt:
@@ -130,9 +158,7 @@ static func spawn_heal(tree: SceneTree, world_pos: Vector3, amount: float, cam_b
 	var cam_left := -cam_basis.x.normalized()
 	var cam_up := cam_basis.y.normalized()
 	var vertical_stagger := idx * 0.45
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
-	var lateral_drift := rng.randf_range(-0.3, 0.3)
+	var lateral_drift := _rng.randf_range(-0.3, 0.3)
 	label._velocity = Vector3(0, RISE_SPEED * 0.8, 0) + cam_left * lateral_drift
 
 	tree.current_scene.add_child(label)
@@ -142,7 +168,7 @@ static func spawn_heal(tree: SceneTree, world_pos: Vector3, amount: float, cam_b
 func _process(delta: float) -> void:
 	_lifetime += delta
 	if _lifetime >= MAX_LIFE:
-		queue_free()
+		DamageNumber._return_to_pool(self)
 		return
 
 	global_position += _velocity * delta

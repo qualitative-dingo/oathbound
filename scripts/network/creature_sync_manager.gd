@@ -21,13 +21,8 @@ var _diag_tick: int = 0
 
 func _ready() -> void:
 	add_to_group(&"creature_sync_manager")
+	set_physics_process(false)  # Sync handled by WorldStateSync now
 	if _DEBUG_LOG: print("[CSM] CreatureSyncManager ready | is_server=%s path=%s" % [str(multiplayer.is_server()), str(get_path())])
-
-
-func _physics_process(_delta: float) -> void:
-	# Creature sync is now handled by WorldStateSync (scene-file node with
-	# guaranteed matching paths for RPCs). This node is kept for backward compat.
-	pass
 
 
 func _broadcast_creature_positions() -> void:

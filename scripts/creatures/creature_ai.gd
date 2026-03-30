@@ -69,6 +69,7 @@ var _nameplate_label: Label3D
 var _stars_label: Label3D
 var _nameplate_bg: Sprite3D
 var _accent_bar: Sprite3D
+var _floating_ui: Node3D
 static var _shared_panel_tex: ImageTexture
 static var _shared_accent_tex: ImageTexture
 const _BANNER_W := 128
@@ -241,11 +242,6 @@ func _find_anim_player_recursive(node: Node) -> AnimationPlayer:
 	return null
 
 
-func _setup_multiplayer_sync() -> void:
-	# Creature sync handled by CreatureSyncManager (batched per-zone RPCs).
-	pass
-
-
 func _ready() -> void:
 	current_health = max_health
 	add_to_group(&"enemies")
@@ -263,7 +259,6 @@ func _ready() -> void:
 	# Host-authoritative creatures: only server runs AI; clients receive synced state
 	if multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
 		_state = State.IDLE
-		_setup_multiplayer_sync()
 		if use_3d_model and _model_node:
 			_compute_arrow_hitbox()
 			_cache_model_material_colors(_model_node)
@@ -280,8 +275,6 @@ func _ready() -> void:
 							anim.loop_mode = Animation.LOOP_LINEAR
 							_strip_root_motion(anim)
 		return
-
-	_setup_multiplayer_sync()
 
 	if use_3d_model and _model_node:
 		_compute_arrow_hitbox()
@@ -317,9 +310,8 @@ func _physics_process(delta: float) -> void:
 			if not _death_visual_started:
 				_death_visual_started = true
 				_play_death_sound()
-				var ui := get_node_or_null("FloatingUI")
-				if ui:
-					ui.visible = false
+				if _floating_ui:
+					_floating_ui.visible = false
 				_spawn_loot_and_play_ground_death()
 			return
 		if _dying_fall:
@@ -952,9 +944,8 @@ func _check_aggro() -> void:
 		if creature_type in ["lion", "wolf", "hyena", "bear"] and _roar_cooldown <= 0.0:
 			AudioManager.play_sfx_at("lion_roar", global_position, -6.0, 0.2)
 			_roar_cooldown = 8.0
-		var ui := get_node_or_null("FloatingUI")
-		if ui:
-			ui.visible = true
+		if _floating_ui:
+			_floating_ui.visible = true
 
 
 func _pick_wander_direction() -> void:
@@ -1193,9 +1184,8 @@ func take_damage(amount: float, source: Node3D = null) -> void:
 	_hp_bar_visible_timer = 5.0
 	_update_hp_bar()
 
-	var ui := get_node_or_null("FloatingUI")
-	if ui:
-		ui.visible = true
+	if _floating_ui:
+		_floating_ui.visible = true
 
 	_play_hurt_sound()
 
@@ -1302,9 +1292,8 @@ func _die() -> void:
 	if _carried_fish_sprite:
 		drop_carried_fish()
 
-	var ui := get_node_or_null("FloatingUI")
-	if ui:
-		ui.visible = false
+	if _floating_ui:
+		_floating_ui.visible = false
 	_play_death_sound()
 
 	if is_flying and not is_on_floor():
@@ -1451,9 +1440,8 @@ func _update_hit_flash(delta: float) -> void:
 	if _hp_bar_visible_timer > 0.0:
 		_hp_bar_visible_timer -= delta
 		var show := _hp_bar_visible_timer > 0.0 or _state == State.CHASE
-		var ui := get_node_or_null("FloatingUI")
-		if ui:
-			ui.visible = show
+		if _floating_ui:
+			_floating_ui.visible = show
 
 	if _hit_flash_timer <= 0.0:
 		return
@@ -1548,18 +1536,18 @@ const _UI_HEIGHT_OVERRIDES := {
 func _recompute_ui_height() -> void:
 	if not use_3d_model or not _model_node:
 		return
-	var ui := get_node_or_null("FloatingUI")
-	if not ui:
+	if not _floating_ui:
 		return
 	var top := _estimate_model_top(_model_node)
 	if creature_kind in _UI_HEIGHT_OVERRIDES:
 		top = maxf(top, _UI_HEIGHT_OVERRIDES[creature_kind])
-	ui.position.y = top + 0.5
+	_floating_ui.position.y = top + 0.5
 
 
 func _create_floating_ui() -> void:
 	var ui_root := Node3D.new()
 	ui_root.name = "FloatingUI"
+	_floating_ui = ui_root
 
 	var ui_y := 1.2 if is_flying else 1.6
 	if use_3d_model and _model_node:
@@ -1772,14 +1760,13 @@ func _update_proximity_label() -> void:
 		return
 	if _hp_bar_visible_timer > 0.0 or _state == State.CHASE:
 		return
-	var ui := get_node_or_null("FloatingUI")
-	if not ui:
+	if not _floating_ui:
 		return
 	var player := _get_player()
 	if not player:
 		return
 	var dist := global_position.distance_to(player.global_position)
 	if dist < _LABEL_SHOW_DIST:
-		ui.visible = true
+		_floating_ui.visible = true
 	elif dist > _LABEL_HIDE_DIST:
-		ui.visible = false
+		_floating_ui.visible = false

@@ -708,7 +708,7 @@ func update_target_hud(delta: float) -> void:
 		var ray_end := ray_origin + ray_dir * 200.0
 		var space := pc.get_world_3d().direct_space_state
 		if space:
-			var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 0xFFFFFFFF)
+			var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 16)  # Creatures layer only
 			q.exclude = [pc.get_rid()]
 			q.collide_with_bodies = true
 			var hit := space.intersect_ray(q)

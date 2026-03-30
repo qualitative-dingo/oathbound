@@ -6,6 +6,7 @@ var _anim_idx: int = 0
 var _anim_timer: float = 0.0
 var _bob_phase: float = 0.0
 var _base_y: float = 0.0
+var _body_sprite: Sprite3D
 const FRAME_DUR := 0.15
 const BOB_AMP := 0.06
 const BOB_SPEED := 1.8
@@ -14,15 +15,16 @@ const BOB_SPEED := 1.8
 func _ready() -> void:
 	_bob_phase = get_meta("bob_phase", randf_range(0.0, TAU))
 	_base_y = position.y
+	_body_sprite = get_node_or_null("BodySprite") as Sprite3D
 
 
 func _process(delta: float) -> void:
 	_bob_phase += delta * BOB_SPEED
 	position.y = _base_y + sin(_bob_phase) * BOB_AMP
 
-	var sprite := get_node_or_null("BodySprite") as Sprite3D
-	if not sprite:
+	if not _body_sprite:
 		return
+	var sprite := _body_sprite
 
 	var dir := "south"
 	var cam := get_viewport().get_camera_3d()

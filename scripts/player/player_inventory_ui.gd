@@ -2,7 +2,6 @@ class_name PlayerInventoryUI
 extends Node
 
 const _DamageNumber := preload("res://scripts/ui/damage_number.gd")
-const _LootDrop := preload("res://scripts/items/loot_drop.gd")
 
 var pc: PlayerController
 

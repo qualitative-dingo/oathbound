@@ -2093,12 +2093,23 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 	var origin_x: float = coord.x * ZONE_SIZE
 	var origin_z: float = coord.y * ZONE_SIZE
 	var step: float = ZONE_SIZE / res
+	var w := res + 1
 
-	for z in range(res + 1):
-		for x in range(res + 1):
+	# First pass: sample heights into a flat array for fast lookup
+	var heights := PackedFloat32Array()
+	heights.resize(w * w)
+	for z in range(w):
+		for x in range(w):
 			var wx := origin_x + x * step
 			var wz := origin_z + z * step
-			var h := get_height_at(wx, wz)
+			heights[z * w + x] = get_height_at(wx, wz)
+
+	# Second pass: build vertices, UVs, colors using cached heights
+	for z in range(w):
+		for x in range(w):
+			var wx := origin_x + x * step
+			var wz := origin_z + z * step
+			var h := heights[z * w + x]
 			verts.append(Vector3(x * step, h, z * step))
 			uvs.append(Vector2(x as float / res, z as float / res))
 
@@ -2106,14 +2117,11 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			var brightness := 0.92 + cn * 0.12
 			var path_f := _ZonePopulator.get_path_factor(wx, wz)
 
-			# Blue channel = shore/bank proximity (0..1) for muddy shoreline blending
-			# Perturb sample coords with multi-octave noise to break the coarse 48m watershed grid
 			var bw1 := _detail_noise.get_noise_2d(wx * 0.06 + 4000.0, wz * 0.06 + 4000.0) * 18.0 if _detail_noise else 0.0
 			var bw2 := _detail_noise.get_noise_2d(wx * 0.15 + 6000.0, wz * 0.15 + 6000.0) * 8.0 if _detail_noise else 0.0
 			var accum_here := _ws_sample_accum(wx + bw1 + bw2, wz + bw1 - bw2)
 			var river_bank := smoothstep(_WS_RIVER_THRESH * 0.7, _WS_RIVER_THRESH * 1.3, accum_here)
 
-			# Lake shores also get bank signal so muddy edges appear around lakes
 			if _detail_noise:
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
 				var lake_shore := smoothstep(-0.15, -0.38, lake_n)
@@ -2122,14 +2130,13 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			river_bank = clampf(river_bank, 0.0, 1.0)
 			colors.append(Color(path_f, brightness, river_bank))
 
-	for z in range(res + 1):
-		for x in range(res + 1):
-			var wx := origin_x + x * step
-			var wz := origin_z + z * step
-			var h_left := get_height_at(wx - step, wz)
-			var h_right := get_height_at(wx + step, wz)
-			var h_up := get_height_at(wx, wz - step)
-			var h_down := get_height_at(wx, wz + step)
+	# Third pass: compute normals from height buffer (no extra get_height_at calls)
+	for z in range(w):
+		for x in range(w):
+			var h_left := heights[z * w + maxi(x - 1, 0)]
+			var h_right := heights[z * w + mini(x + 1, res)]
+			var h_up := heights[maxi(z - 1, 0) * w + x]
+			var h_down := heights[mini(z + 1, res) * w + x]
 			var tangent_x := Vector3(2.0 * step, h_right - h_left, 0.0)
 			var tangent_z := Vector3(0.0, h_down - h_up, 2.0 * step)
 			normals.append(tangent_z.cross(tangent_x).normalized())

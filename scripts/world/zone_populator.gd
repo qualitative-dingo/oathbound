@@ -86,6 +86,35 @@ static func _hg_snap_and_normal(wx: float, wz: float) -> Vector2:
 	var ny := tz.cross(tx).normalized().y
 	return Vector2(snapped, ny)
 
+static func _hg_snap_height(wx: float, wz: float) -> float:
+	const STEP := ZONE_SIZE / 48.0
+	var gx := floorf(wx / STEP) * STEP
+	var gz := floorf(wz / STEP) * STEP
+	var fx := (wx - gx) / STEP
+	var fz := (wz - gz) / STEP
+	var h00 := _hg_sample(gx, gz)
+	var h10 := _hg_sample(gx + STEP, gz)
+	var h01 := _hg_sample(gx, gz + STEP)
+	var h11 := _hg_sample(gx + STEP, gz + STEP)
+	if fx + fz <= 1.0:
+		return h00 + (h10 - h00) * fx + (h01 - h00) * fz
+	return h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
+
+static func _hg_is_steep_edge(wx: float, wz: float, ground_y: float) -> bool:
+	const R := 10.0
+	var h_l := _hg_snap_height(wx - R, wz)
+	var h_r := _hg_snap_height(wx + R, wz)
+	var h_u := _hg_snap_height(wx, wz - R)
+	var h_d := _hg_snap_height(wx, wz + R)
+	var slope_x := absf(h_r - h_l) / (R * 2.0)
+	var slope_z := absf(h_d - h_u) / (R * 2.0)
+	if slope_x > 0.28 or slope_z > 0.28:
+		return true
+	if absf(ground_y - h_l) > 5.0 or absf(ground_y - h_r) > 5.0 \
+			or absf(ground_y - h_u) > 5.0 or absf(ground_y - h_d) > 5.0:
+		return true
+	return false
+
 # ─── Grass/flower rejection grid (pre-computed to skip expensive noise per sample)
 const _RG_RES := 16
 const _RG_CELL := ZONE_SIZE / float(_RG_RES)
@@ -1043,6 +1072,7 @@ static func populate_zone_phase(
 	phase: int,
 ) -> bool:
 	_ensure_textures()
+	_ensure_height_grid(coord, height_func)
 
 	var base_seed: int = world_seed_hash + coord.x * 73856093 + coord.y * 19349663
 	var rng := RandomNumberGenerator.new()
@@ -1077,13 +1107,13 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var sn := _snap_and_normal(wx, wz, height_func)
+				var sn := _hg_snap_and_normal(wx, wz)
 				var ground_y := sn.x
 				if ground_y < _MIN_LAND_Y:
 					continue
 				if sn.y < 0.82:
 					continue
-				if _is_steep_edge(wx, wz, ground_y, height_func):
+				if _hg_is_steep_edge(wx, wz, ground_y):
 					continue
 				if is_dirt_patch(wx, wz):
 					continue
@@ -1130,13 +1160,13 @@ static func populate_zone_phase(
 					var lz := clampf(cz + sin(angle) * dist, 4.0, ZONE_SIZE - 4.0)
 					var wx := origin_x + lx
 					var wz := origin_z + lz
-					var sn := _snap_and_normal(wx, wz, height_func)
+					var sn := _hg_snap_and_normal(wx, wz)
 					var ground_y := sn.x
 					if ground_y < _MIN_LAND_Y:
 						continue
 					if sn.y < 0.82:
 						continue
-					if _is_steep_edge(wx, wz, ground_y, height_func):
+					if _hg_is_steep_edge(wx, wz, ground_y):
 						continue
 					if is_dirt_patch(wx, wz):
 						continue
@@ -1160,12 +1190,12 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				var ground_y := _hg_snap_height(wx, wz)
 				if ground_y < _MIN_LAND_Y:
 					continue
 				if _is_near_structure(wx, wz, 4.0, structs):
 					continue
-				if _is_steep_edge(wx, wz, ground_y, height_func):
+				if _hg_is_steep_edge(wx, wz, ground_y):
 					continue
 				var obj := _create_rock(rng)
 				zone_root.add_child(obj)
@@ -1177,10 +1207,10 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				var ground_y := _hg_snap_height(wx, wz)
 				if ground_y < _MIN_LAND_Y:
 					continue
-				if _is_steep_edge(wx, wz, ground_y, height_func):
+				if _hg_is_steep_edge(wx, wz, ground_y):
 					continue
 				var peb := _create_pebble(rng)
 				zone_root.add_child(peb)
@@ -1193,12 +1223,12 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				var ground_y := _hg_snap_height(wx, wz)
 				if ground_y < _MIN_LAND_Y:
 					continue
 				if _is_near_structure(wx, wz, 4.0, structs):
 					continue
-				if _is_steep_edge(wx, wz, ground_y, height_func):
+				if _hg_is_steep_edge(wx, wz, ground_y):
 					continue
 				var stone := _create_ground_stone(rng)
 				zone_root.add_child(stone)
@@ -1216,7 +1246,7 @@ static func populate_zone_phase(
 				var lz := rng.randf_range(8.0, ZONE_SIZE - 8.0)
 				var wx := origin_x + lx
 				var wz := origin_z + lz
-				var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+				var ground_y := _hg_snap_height(wx, wz)
 				if ground_y < _MIN_LAND_Y:
 					continue
 				if ground_y > 8.0:
@@ -1245,7 +1275,7 @@ static func populate_zone_phase(
 					var lz := rng.randf_range(10.0, ZONE_SIZE - 10.0)
 					var wx := origin_x + lx
 					var wz := origin_z + lz
-					var ground_y := _snap_height_to_mesh(wx, wz, height_func)
+					var ground_y := _hg_snap_height(wx, wz)
 					if ground_y > _MIN_LAND_Y:
 						if _has_saved_horses:
 							rng.randf()
@@ -1265,7 +1295,7 @@ static func populate_zone_phase(
 					var lz := rng.randf_range(4.0, ZONE_SIZE - 4.0)
 					var wx := origin_x + lx
 					var wz := origin_z + lz
-					var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+					var mesh_h := _hg_snap_height(wx, wz)
 					if mesh_h < -0.5:
 						var fish := _create_fish(rng)
 						zone_root.add_child(fish)
@@ -2026,13 +2056,13 @@ static func _scatter_blueberry_bushes(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var sn := _snap_and_normal(wx, wz, height_func)
+		var sn := _hg_snap_and_normal(wx, wz)
 		var ground_y := sn.x
 		if ground_y < _MIN_LAND_Y or ground_y > 40.0:
 			continue
 		if sn.y < 0.85:
 			continue
-		if _is_steep_edge(wx, wz, ground_y, height_func):
+		if _hg_is_steep_edge(wx, wz, ground_y):
 			continue
 		if is_dirt_patch(wx, wz):
 			continue
@@ -2050,7 +2080,7 @@ static func _scatter_blueberry_bushes(
 				var off_dist := rng.randf_range(0.8, 2.0)
 				cx = clampf(lx + cos(off_angle) * off_dist, 2.0, ZONE_SIZE - 2.0)
 				cz = clampf(lz + sin(off_angle) * off_dist, 2.0, ZONE_SIZE - 2.0)
-				var csn := _snap_and_normal(origin_x + cx, origin_z + cz, height_func)
+				var csn := _hg_snap_and_normal(origin_x + cx, origin_z + cz)
 				if csn.x < _MIN_LAND_Y or csn.y < 0.85:
 					continue
 				ground_y = csn.x
@@ -3591,39 +3621,6 @@ static func _pick_creature_kind(biome: StringName, rng: RandomNumberGenerator) -
 		return &"hawk"
 	else:
 		return &"boar"
-	#var roll := rng.randf() if rng else randf()
-	#match biome:
-	#	&"hearthlands":
-	#		if roll < 0.06:
-	#			return &"lion"
-	#		elif roll < 0.10:
-	#			return &"seagull"
-	#		elif roll < 0.15:
-	#			return &"hawk"
-	#		elif roll < 0.22:
-	#			return &"grizzly"
-	#		elif roll < 0.30:
-	#			return &"moose"
-	#		elif roll < 0.42:
-	#			return &"black_bear"
-	#		else:
-	#			return &"boar"
-	#	&"thornwood":
-	#		if roll < 0.20:
-	#			return &"tiger"
-	#		elif roll < 0.40:
-	#			return &"mama_bear"
-	#		else:
-	#			return &"grizzly"
-	#	&"scorched_steppe":
-	#		if roll < 0.25:
-	#			return &"lion"
-	#		elif roll < 0.40:
-	#			return &"tiger"
-	#		else:
-	#			return &"hyena"
-	#	_:
-	#		return &"boar"
 
 
 ## All creature stats in one place, keyed by creature kind.
@@ -3988,7 +3985,7 @@ static func _try_spawn_cave(
 	# Place the entrance partway down the slope from the peak
 	var entrance_wx := peak_x + best_dir.x * 5.0
 	var entrance_wz := peak_z + best_dir.z * 5.0
-	var entrance_h := _snap_height_to_mesh(entrance_wx, entrance_wz, height_func)
+	var entrance_h := _hg_snap_height(entrance_wx, entrance_wz)
 
 	var entrance_pos := Vector3(
 		entrance_wx - origin_x,
@@ -4033,7 +4030,7 @@ static func _restore_saved_horses_in_zone(zone_root: Node, coord: Vector2i, heig
 		zone_root.add_child(horse)
 		var local_x := hx - origin_x
 		var local_z := hz - origin_z
-		var snap_y := _snap_height_to_mesh(hx, hz, height_func)
+		var snap_y := _hg_snap_height(hx, hz)
 		horse.position = Vector3(local_x, snap_y, local_z)
 
 
@@ -4429,7 +4426,7 @@ static func _scatter_berry_bushes(
 		var cz := rng.randf_range(6.0, ZONE_SIZE - 6.0)
 		var wx := origin_x + cx
 		var wz := origin_z + cz
-		var sn := _snap_and_normal(wx, wz, height_func)
+		var sn := _hg_snap_and_normal(wx, wz)
 		if sn.x < _MIN_LAND_Y or sn.y < 0.85:
 			continue
 		if get_path_factor(wx, wz) > 0.3:
@@ -4442,7 +4439,7 @@ static func _scatter_berry_bushes(
 			var oz := cz + rng.randf_range(-1.8, 1.8)
 			var owx := origin_x + ox
 			var owz := origin_z + oz
-			var bsn := _snap_and_normal(owx, owz, height_func)
+			var bsn := _hg_snap_and_normal(owx, owz)
 			if bsn.x < _MIN_LAND_Y or bsn.y < 0.85:
 				continue
 			var bush := _create_blueberry_bush(rng)
@@ -4460,7 +4457,7 @@ static func _scatter_berry_bushes(
 		var cz := rng.randf_range(6.0, ZONE_SIZE - 6.0)
 		var wx := origin_x + cx
 		var wz := origin_z + cz
-		var sn := _snap_and_normal(wx, wz, height_func)
+		var sn := _hg_snap_and_normal(wx, wz)
 		if sn.x < _MIN_LAND_Y or sn.y < 0.82:
 			continue
 		if get_path_factor(wx, wz) > 0.3:
@@ -4473,7 +4470,7 @@ static func _scatter_berry_bushes(
 			var oz := cz + rng.randf_range(-1.5, 1.5)
 			var owx := origin_x + ox
 			var owz := origin_z + oz
-			var bsn := _snap_and_normal(owx, owz, height_func)
+			var bsn := _hg_snap_and_normal(owx, owz)
 			if bsn.x < _MIN_LAND_Y or bsn.y < 0.82:
 				continue
 			var bush := _create_lingonberry_bush(rng)
@@ -4509,7 +4506,7 @@ static func _scatter_water_plants(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+		var mesh_h := _hg_snap_height(wx, wz)
 		if mesh_h > -1.5 or mesh_h < -4.0:
 			continue
 		var pad := MeshInstance3D.new()
@@ -4558,7 +4555,7 @@ static func _scatter_water_plants(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+		var mesh_h := _hg_snap_height(wx, wz)
 		if mesh_h < -0.15 or mesh_h > 0.25:
 			continue
 		if _is_near_structure(wx, wz):
@@ -4568,7 +4565,7 @@ static func _scatter_water_plants(
 			var ox := rng.randf_range(-0.4, 0.4)
 			var oz := rng.randf_range(-0.4, 0.4)
 			var cattail := _create_cattail(rng)
-			var ground_y := maxf(_snap_height_to_mesh(wx + ox, wz + oz, height_func), _WATER_LEVEL - 0.05)
+			var ground_y := maxf(_hg_snap_height(wx + ox, wz + oz), _WATER_LEVEL - 0.05)
 			cattail.position = Vector3(lx + ox, ground_y, lz + oz)
 			zone_root.add_child(cattail)
 
@@ -4579,7 +4576,7 @@ static func _scatter_water_plants(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
-		var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+		var mesh_h := _hg_snap_height(wx, wz)
 		if mesh_h < 0.0 or mesh_h > 0.5:
 			continue
 		if _is_near_structure(wx, wz):
@@ -4589,7 +4586,7 @@ static func _scatter_water_plants(
 			var ox := rng.randf_range(-0.5, 0.5)
 			var oz := rng.randf_range(-0.5, 0.5)
 			var plant := _create_loosestrife(rng)
-			var ground_y := maxf(_snap_height_to_mesh(wx + ox, wz + oz, height_func), _WATER_LEVEL + 0.02)
+			var ground_y := maxf(_hg_snap_height(wx + ox, wz + oz), _WATER_LEVEL + 0.02)
 			plant.position = Vector3(lx + ox, ground_y, lz + oz)
 			zone_root.add_child(plant)
 
@@ -4610,7 +4607,7 @@ static func _scatter_water_plants(
 		for _try in 20:
 			cx = rng.randf_range(4.0, ZONE_SIZE - 4.0)
 			cz = rng.randf_range(4.0, ZONE_SIZE - 4.0)
-		var ch := _snap_height_to_mesh(origin_x + cx, origin_z + cz, height_func)
+		var ch := _hg_snap_height(origin_x + cx, origin_z + cz)
 		if ch >= -0.25 and ch <= _WATER_LEVEL:
 				found = true
 				break
@@ -4622,7 +4619,7 @@ static func _scatter_water_plants(
 			var oz := rng.randf_range(-3.0, 3.0)
 			var wx := origin_x + cx + ox
 			var wz := origin_z + cz + oz
-			var mesh_h := _snap_height_to_mesh(wx, wz, height_func)
+			var mesh_h := _hg_snap_height(wx, wz)
 			if mesh_h < -0.3 or mesh_h > _WATER_LEVEL:
 				continue
 			if _is_near_structure(wx, wz):

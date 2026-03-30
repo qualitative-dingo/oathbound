@@ -24,6 +24,7 @@ const CLOUD_Y := 80.0
 const CLOUD_SPREAD := 200.0
 var _cached_player: Node3D
 var _cached_day_night: Node
+var _cached_world_gen: Node
 
 var _tumble_parent: Node3D
 var _tumble_leaves: Array[MeshInstance3D] = []
@@ -322,10 +323,11 @@ func _update_tumble_leaves(delta: float, player: Node3D) -> void:
 		return
 	if player and not is_instance_valid(player):
 		return
-	var wg: Node = null
-	var scene := get_tree().current_scene
-	if scene:
-		wg = scene.get_node_or_null("WorldGenerator")
+	if not is_instance_valid(_cached_world_gen):
+		var scene := get_tree().current_scene
+		if scene:
+			_cached_world_gen = scene.get_node_or_null("WorldGenerator")
+	var wg := _cached_world_gen
 
 	for leaf in _tumble_leaves:
 		if not is_instance_valid(leaf):

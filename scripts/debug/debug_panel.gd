@@ -8,6 +8,7 @@ var _fps_label: Label
 var _stats_label: Label
 var _version_label: Label
 var _player_ref: Node  # PlayerController
+var _last_fps_band: int = -1  # 0=red, 1=yellow, 2=green
 
 # Tracks which toggles are ON (true = enabled / spawning normally)
 var _toggles: Dictionary = {
@@ -284,8 +285,11 @@ func _process(_delta: float) -> void:
 	if not visible:
 		return
 	var fps := Engine.get_frames_per_second()
-	var fps_color := Color(0.3, 1.0, 0.3) if fps >= 55 else (Color(1.0, 0.8, 0.2) if fps >= 35 else Color(1.0, 0.3, 0.3))
-	_fps_label.add_theme_color_override("font_color", fps_color)
+	var band := 2 if fps >= 55 else (1 if fps >= 35 else 0)
+	if band != _last_fps_band:
+		_last_fps_band = band
+		var fps_color := Color(0.3, 1.0, 0.3) if band == 2 else (Color(1.0, 0.8, 0.2) if band == 1 else Color(1.0, 0.3, 0.3))
+		_fps_label.add_theme_color_override("font_color", fps_color)
 	_fps_label.text = "FPS: %d" % fps
 
 	var nodes := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)

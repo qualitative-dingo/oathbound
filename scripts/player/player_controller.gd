@@ -3999,7 +3999,7 @@ func _check_speech_triggers(delta: float) -> void:
 			var from := global_position + Vector3.UP * 0.5
 			var to := from + Vector3.UP * 12.0
 			var query := PhysicsRayQueryParameters3D.create(from, to)
-			query.collision_mask = 0xFFFFFFFF
+			query.collision_mask = 9  # Terrain (1) + Buildings (8)
 			query.exclude = [get_rid()]
 			var result := space.intersect_ray(query)
 			if not result.is_empty():
@@ -4534,7 +4534,7 @@ func _update_target_hud(delta: float) -> void:
 		var ray_end := ray_origin + ray_dir * 200.0
 		var space := get_world_3d().direct_space_state
 		if space:
-			var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 0xFFFFFFFF)
+			var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 16)  # Creatures layer only
 			q.exclude = [get_rid()]
 			q.collide_with_bodies = true
 			var hit := space.intersect_ray(q)
