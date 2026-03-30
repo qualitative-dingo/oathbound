@@ -1627,6 +1627,37 @@ func _create_floating_ui() -> void:
 
 	_hp_bar_full_width = bg_w * 0.92
 
+	# Health bar below the nameplate
+	var bar_y := label_y - bg_h * 0.5 - 0.04
+	var bar_h := 0.025
+
+	_hp_bar_bg = Sprite3D.new()
+	_hp_bar_bg.name = "HPBarBG"
+	_hp_bar_bg.pixel_size = 0.001
+	_hp_bar_bg.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_hp_bar_bg.no_depth_test = false
+	_hp_bar_bg.render_priority = 0
+	var bg_img := Image.create(128, 8, false, Image.FORMAT_RGBA8)
+	bg_img.fill(Color(0.1, 0.1, 0.1, 0.85))
+	_hp_bar_bg.texture = ImageTexture.create_from_image(bg_img)
+	_hp_bar_bg.scale = Vector3(_hp_bar_full_width / 0.128, bar_h / 0.008, 1.0)
+	_hp_bar_bg.position = Vector3(0.0, bar_y, 0.001)
+	ui_root.add_child(_hp_bar_bg)
+
+	_hp_bar_fill = Sprite3D.new()
+	_hp_bar_fill.name = "HPBarFill"
+	_hp_bar_fill.pixel_size = 0.001
+	_hp_bar_fill.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_hp_bar_fill.no_depth_test = false
+	_hp_bar_fill.render_priority = 1
+	var fill_img := Image.create(128, 8, false, Image.FORMAT_RGBA8)
+	fill_img.fill(Color.WHITE)
+	_hp_bar_fill.texture = ImageTexture.create_from_image(fill_img)
+	_hp_bar_fill.scale = Vector3(_hp_bar_full_width / 0.128, bar_h / 0.008, 1.0)
+	_hp_bar_fill.position = Vector3(0.0, bar_y, 0.002)
+	_hp_bar_fill.modulate = Color(0.1, 0.85, 0.15)
+	ui_root.add_child(_hp_bar_fill)
+
 
 static func _estimate_text_width(text: String, unit: float) -> float:
 	var w := 0.0
@@ -1716,7 +1747,8 @@ func _update_hp_bar() -> void:
 	else:
 		fill_color = Color(0.9, 0.85, 0.1).lerp(Color(0.85, 0.15, 0.1), (0.5 - ratio) * 2.0)
 	_hp_bar_fill.modulate = fill_color
-	_hp_bar_fill.scale.x = maxf(ratio, 0.001)
+	var full_scale_x := _hp_bar_full_width / 0.128
+	_hp_bar_fill.scale.x = full_scale_x * maxf(ratio, 0.001)
 	_hp_bar_fill.position.x = -_hp_bar_full_width * (1.0 - ratio) * 0.5
 
 
