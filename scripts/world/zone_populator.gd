@@ -224,6 +224,10 @@ static var _textures_loaded := false
 static func reset_texture_cache() -> void:
 	_textures_loaded = false
 	_cached_grass_mats.clear()
+	_cached_leaf_mats.clear()
+	_cached_flower_mats.clear()
+	_grass_types_table.clear()  # Must clear so it repopulates with new texture refs
+	_flower_types_table.clear()  # Same for flowers
 	print("[ZonePopulator] Texture cache reset - will reload on next use")
 
 
