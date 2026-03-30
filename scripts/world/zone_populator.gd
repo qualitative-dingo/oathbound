@@ -1225,21 +1225,20 @@ static func populate_zone_phase(
 
 		return false
 
-	# ── Phases 3–6: grass (1 type per frame, 4 types total) ──
-	if phase >= 3 and phase <= 6:
+	# ── Phase 3: grass (1 type only for testing) ──
+	if phase == 3:
 		if not debug_skip_grass:
-			var gi := phase - 3
-			_scatter_grass(zone_root, coord, biome, rng, height_func, gi, gi + 1)
+			_scatter_grass(zone_root, coord, biome, rng, height_func, 0, 1)
 		return false
 
-	# ── Phases 7–8: wildflowers (5 types per frame) ──
-	if phase >= 7 and phase <= 8:
+	# ── Phases 4–5: wildflowers (5 types per frame) ──
+	if phase >= 4 and phase <= 5:
 		if not debug_skip_grass:
-			var fi_start := (phase - 7) * 5
+			var fi_start := (phase - 4) * 5
 			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 5)
 		return false
 
-	# ── Phase 9: blueberry bushes + water plants ──
+	# ── Phase 6: blueberry bushes + water plants ──
 	if not debug_skip_saplings:
 		_scatter_blueberry_bushes(zone_root, coord, biome, rng, height_func, origin_x, origin_z)
 
@@ -1784,12 +1783,9 @@ static var _grass_types_table: Array = []
 static func _get_grass_types() -> Array:
 	if _grass_types_table.is_empty():
 		# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
-		# PERF: Reduced from 8 types to 4, cut density by 75% to fix FPS tank
+		# PERF: Testing with just 1 grass type to isolate performance issue
 		_grass_types_table = [
-			[_grass_textures[0],  Color(0.13, 0.40, 0.08), 250, 0.9, 1.7, 1.8, 1.2],
-			[_grass_textures[2],  Color(0.16, 0.38, 0.10), 240, 0.9, 1.8, 1.9, 1.1],
-			[_grass_textures[10], Color(0.12, 0.36, 0.06), 210, 1.0, 1.9, 1.6, 1.6],
-			[_grass_textures[16], Color(0.14, 0.36, 0.08), 200, 0.9, 1.7, 1.7, 1.4],
+			[_grass_textures[0], Color(0.13, 0.40, 0.08), 300, 0.9, 1.7, 1.8, 1.2],
 		]
 	return _grass_types_table
 
