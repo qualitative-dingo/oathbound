@@ -197,6 +197,9 @@ static var _grass_shader: Shader
 static var _grass_quad_mesh: ArrayMesh
 static var _leaf_unit_quad: QuadMesh
 static var _grass_textures: Array[ImageTexture] = []
+static var _grass_atlas: ImageTexture  # Combined atlas of all grass types
+static var _grass_atlas_mat: ShaderMaterial  # Shared material for batched grass
+const GRASS_ATLAS_COLUMNS := 4  # Number of grass varieties in atlas
 static var _flower_textures: Array[ImageTexture] = []
 
 static var _water_plants_ready := false
@@ -229,6 +232,8 @@ static func reset_texture_cache() -> void:
 	_cached_flower_mats.clear()
 	_grass_types_table.clear()  # Must clear so it repopulates with new texture refs
 	_flower_types_table.clear()  # Same for flowers
+	_grass_atlas = null  # Clear atlas so it regenerates
+	_grass_atlas_mat = null
 	print("[ZonePopulator] Texture cache reset - will reload on next use")
 
 
@@ -364,6 +369,10 @@ static func _ensure_textures() -> void:
 	_grass_textures.clear()
 	for gi in 20:
 		_grass_textures.append(_gen_grass_variety(gi))
+	
+	# Create grass atlas by combining first GRASS_ATLAS_COLUMNS textures horizontally
+	_grass_atlas = _create_grass_atlas()
+	_grass_atlas_mat = _make_grass_atlas_mat()
 
 	_flower_textures.clear()
 	for fi in 10:
@@ -503,14 +512,16 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	root.add_to_group(&"interactables")
 	root.add_to_group(&"berry_bushes")
 
+	# Small bushes: collision always enabled (no LOD toggle needed)
+	# They're cheap and don't cause physics churn when not toggled
 	var col := CollisionShape3D.new()
 	var shape := CylinderShape3D.new()
 	shape.radius = 0.7 * sf
 	shape.height = trunk_h * 0.8
 	col.shape = shape
 	col.position.y = trunk_h * 0.4
-	col.disabled = true  # Start disabled; LOD update enables for nearby zones
 	root.add_child(col)
+	root.set_meta("skip_collision_lod", true)  # Tell LOD system to not toggle this
 
 	root.set_meta("harvestable", true)
 	root.set_meta("hp", 10.0 * sf)
@@ -655,13 +666,14 @@ static func _create_lingonberry_bush(rng: RandomNumberGenerator) -> StaticBody3D
 		berry_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(berry_mi)
 
+	# Small bushes: collision always enabled (no LOD toggle needed)
 	var col := CollisionShape3D.new()
 	var col_shape := SphereShape3D.new()
 	col_shape.radius = 0.35 * sf
 	col.shape = col_shape
 	col.position.y = 0.18 * sf
-	col.disabled = true  # Start disabled; LOD update enables for nearby zones
 	root.add_child(col)
+	root.set_meta("skip_collision_lod", true)  # Tell LOD system to not toggle this
 
 	root.add_to_group(&"interactables")
 	root.set_meta("harvestable", true)
@@ -982,9 +994,9 @@ static func _make_triplanar_mat(tex: Texture2D, fallback_color: Color) -> Standa
 ## phase=0: villages + scatter trees
 ## phase=1: cluster trees + rocks + pebbles + stones
 ## phase=2: creatures + caves + horses + fish
-## phase=3-6: grass (2 types per phase)
-## phase=7-8: wildflowers (5 types per phase)
-## phase=9: blueberry bushes + water plants
+## phase=3: grass (batched - all types in single MMI for 75% draw call reduction)
+## phase=4-5: wildflowers (5 types per phase)
+## phase=6: blueberry bushes + water plants
 ## Returns true when ALL phases are done.
 static func populate_zone_phase(
 	zone_root: Node3D,
@@ -1226,10 +1238,10 @@ static func populate_zone_phase(
 
 		return false
 
-	# ── Phase 3: grass (1 type only for testing) ──
+	# ── Phase 3: grass (batched - all types in single MMI) ──
 	if phase == 3:
 		if not debug_skip_grass:
-			_scatter_grass(zone_root, coord, biome, rng, height_func, 0, 1)
+			_scatter_grass(zone_root, coord, biome, rng, height_func)
 		return false
 
 	# ── Phases 4–5: wildflowers (5 types per frame) ──
@@ -1257,7 +1269,7 @@ static func populate_zone(
 	height_func: Callable,
 	microbiome: StringName = &"none",
 ) -> void:
-	for p in 14:
+	for p in 7:  # 0-6: villages/trees, clusters/rocks, creatures, grass, flowers(x2), bushes
 		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
 
 
@@ -1722,7 +1734,7 @@ static func _scatter_flowers(
 		mmi.name = "Flower_%d" % fi
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.visibility_range_end = 48.0  # Reduced from 96 for performance
+		mmi.visibility_range_end = 40.0  # Valheim-style: 40m for flowers, 32m for grass
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		zone_root.add_child(mmi)
 
@@ -1742,7 +1754,51 @@ static func _make_grass_mat(tex: ImageTexture, color: Color) -> ShaderMaterial:
 	mat.set_shader_parameter("wind_strength", 0.5)
 	mat.set_shader_parameter("wind_speed", 1.5)
 	mat.set_shader_parameter("wind_turbulence", 0.8)
+	mat.set_shader_parameter("atlas_columns", 1)  # Single texture, not atlas
 	_cached_grass_mats[cache_key] = mat
+	return mat
+
+
+## Create a horizontal texture atlas from the first GRASS_ATLAS_COLUMNS grass textures
+static func _create_grass_atlas() -> ImageTexture:
+	if _grass_textures.is_empty():
+		return null
+	
+	# Get dimensions from first texture
+	var first_img := _grass_textures[0].get_image()
+	var tex_w := first_img.get_width()
+	var tex_h := first_img.get_height()
+	
+	# Create combined image (horizontal strip)
+	var atlas_w := tex_w * GRASS_ATLAS_COLUMNS
+	var atlas_img := Image.create(atlas_w, tex_h, false, Image.FORMAT_RGBA8)
+	
+	for col in GRASS_ATLAS_COLUMNS:
+		if col >= _grass_textures.size():
+			break
+		var src_img := _grass_textures[col].get_image()
+		# Blit each texture into its column
+		atlas_img.blit_rect(src_img, Rect2i(0, 0, tex_w, tex_h), Vector2i(col * tex_w, 0))
+	
+	return ImageTexture.create_from_image(atlas_img)
+
+
+## Create the shared material for batched grass (uses atlas)
+static func _make_grass_atlas_mat() -> ShaderMaterial:
+	if not _grass_atlas or not _grass_shader:
+		return null
+	
+	var mat := ShaderMaterial.new()
+	mat.shader = _grass_shader
+	mat.set_shader_parameter("albedo_texture", _grass_atlas)
+	mat.set_shader_parameter("albedo_color", Color(0.18, 0.45, 0.12))  # Average grass color
+	mat.set_shader_parameter("alpha_cutoff", 0.4)
+	mat.set_shader_parameter("wind_strength", 0.5)
+	mat.set_shader_parameter("wind_speed", 1.5)
+	mat.set_shader_parameter("wind_turbulence", 0.8)
+	mat.set_shader_parameter("atlas_columns", GRASS_ATLAS_COLUMNS)
+	mat.set_shader_parameter("density_near", 16.0)  # Full density up to 16m
+	mat.set_shader_parameter("density_far", 32.0)   # 50% density at 32m
 	return mat
 
 
@@ -1781,26 +1837,32 @@ static func _grass_density_noise(wx: float, wz: float) -> float:
 
 static var _grass_types_table: Array = []
 
+## Grass type configs: [atlas_index, base_count, scale_min, scale_max, size_w, size_h]
+## Using GRASS_ATLAS_COLUMNS types for variety while keeping draw calls minimal
 static func _get_grass_types() -> Array:
 	if _grass_types_table.is_empty():
-		# [texture, color, base_count, scale_min, scale_max, size_w, size_h]
-		# PERF: Testing with just 1 grass type to isolate performance issue
+		# Each type gets ~75 instances (300 total / 4 types) for balanced density
 		_grass_types_table = [
-			[_grass_textures[0], Color(0.13, 0.40, 0.08), 300, 0.9, 1.7, 1.8, 1.2],
+			[0, 75, 0.9, 1.7, 1.8, 1.2],   # Atlas slot 0 - tall grass
+			[1, 75, 0.8, 1.4, 1.5, 1.0],   # Atlas slot 1 - medium grass
+			[2, 75, 0.7, 1.2, 1.4, 0.9],   # Atlas slot 2 - short grass
+			[3, 75, 0.6, 1.0, 1.2, 0.8],   # Atlas slot 3 - tiny grass
 		]
 	return _grass_types_table
 
 
+## BATCHED grass scattering - all grass types in ONE MMI per zone (Valheim-style)
+## This cuts draw calls by 75% compared to separate MMIs per type
 static func _scatter_grass(
 	zone_root: Node3D,
 	coord: Vector2i,
 	biome: StringName,
 	rng: RandomNumberGenerator,
 	height_func: Callable,
-	type_start: int = 0,
-	type_end: int = -1,
+	_type_start: int = 0,
+	_type_end: int = -1,
 ) -> void:
-	if not _grass_shader or not _grass_quad_mesh:
+	if not _grass_shader or not _grass_quad_mesh or not _grass_atlas_mat:
 		return
 
 	if biome != &"hearthlands":
@@ -1809,9 +1871,6 @@ static func _scatter_grass(
 	_ensure_height_grid(coord, height_func)
 
 	var grass_types := _get_grass_types()
-	if type_end < 0:
-		type_end = grass_types.size()
-
 	var origin_x: float = coord.x * ZONE_SIZE
 	var origin_z: float = coord.y * ZONE_SIZE
 
@@ -1822,22 +1881,22 @@ static func _scatter_grass(
 	if tree:
 		structs = tree.get_nodes_in_group(&"structures")
 
-	for gi in range(type_start, type_end):
+	# Collect ALL grass instances from ALL types into one array
+	var all_transforms: Array[Transform3D] = []
+	var all_custom_data: Array[Color] = []  # x = atlas index (0-1 range)
+	
+	for gi in grass_types.size():
 		var cfg: Array = grass_types[gi]
-		var tex: ImageTexture = cfg[0]
-		var color: Color = cfg[1]
-		var count: int = cfg[2]
-		var scale_min: float = cfg[3]
-		var scale_max: float = cfg[4]
-		var quad_w: float = cfg[5]
-		var quad_h: float = cfg[6]
+		var atlas_idx: int = cfg[0]
+		var count: int = cfg[1]
+		var scale_min: float = cfg[2]
+		var scale_max: float = cfg[3]
+		var quad_w: float = cfg[4]
+		var quad_h: float = cfg[5]
+		
+		# Encode atlas index as 0-1 value for shader
+		var atlas_encoded: float = float(atlas_idx) / float(GRASS_ATLAS_COLUMNS)
 
-		if not tex:
-			continue
-
-		var mat := _make_grass_mat(tex, Color(color, 1.0))
-
-		var transforms: Array[Transform3D] = []
 		for _i in count:
 			var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
 			var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
@@ -1882,31 +1941,35 @@ static func _scatter_grass(
 			var sy := quad_h * scale
 			var sz := quad_w * scale
 			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
-			transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+			all_transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+			all_custom_data.append(Color(atlas_encoded, 0.0, 0.0, 1.0))
 
-		if transforms.is_empty():
-			continue
+	if all_transforms.is_empty():
+		return
 
-		var mmi := _ZonePool.get_grass_mmi() as MultiMeshInstance3D
-		if not mmi:
-			mmi = MultiMeshInstance3D.new()
+	# Create SINGLE MMI for all grass in this zone
+	var mmi := _ZonePool.get_grass_mmi() as MultiMeshInstance3D
+	if not mmi:
+		mmi = MultiMeshInstance3D.new()
 
-		# Always create fresh MultiMesh to avoid stale mesh references from pooled MMIs
-		var mm := MultiMesh.new()
-		mm.mesh = _grass_quad_mesh
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = false
-		mm.instance_count = transforms.size()
-		mmi.multimesh = mm
-		for idx in transforms.size():
-			mm.set_instance_transform(idx, transforms[idx])
+	var mm := MultiMesh.new()
+	mm.mesh = _grass_quad_mesh
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	mm.use_custom_data = true  # Enable custom data for atlas index
+	mm.instance_count = all_transforms.size()
+	mmi.multimesh = mm
+	
+	for idx in all_transforms.size():
+		mm.set_instance_transform(idx, all_transforms[idx])
+		mm.set_instance_custom_data(idx, all_custom_data[idx])
 
-		mmi.name = "Grass_%d" % gi
-		mmi.material_override = mat
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.visibility_range_end = 48.0  # Reduced from 96 for performance
-		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-		zone_root.add_child(mmi)
+	mmi.name = "Grass_Batched"  # Single MMI for all grass types
+	mmi.material_override = _grass_atlas_mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.visibility_range_end = 32.0  # Reduced from 48 for Valheim-style optimization
+	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	zone_root.add_child(mmi)
 
 
 static func _scatter_blueberry_bushes(

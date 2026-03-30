@@ -8,12 +8,33 @@ uniform float alpha_cutoff : hint_range(0.0, 1.0) = 0.4;
 uniform float wind_strength : hint_range(0.0, 4.0) = 0.5;
 uniform float wind_speed : hint_range(0.0, 8.0) = 1.5;
 uniform float wind_turbulence : hint_range(0.0, 5.0) = 0.8;
+uniform int atlas_columns : hint_range(1, 8) = 1;
+uniform float density_near : hint_range(0.0, 32.0) = 16.0;
+uniform float density_far : hint_range(0.0, 64.0) = 32.0;
 global uniform float leaf_wind_multiplier;
 
 varying vec3 world_pos;
+varying flat int tex_index;
+varying flat float discard_threshold;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	
+	// Extract texture index from custom data (encoded in x component)
+	tex_index = int(INSTANCE_CUSTOM.x * float(atlas_columns) + 0.5);
+	tex_index = clamp(tex_index, 0, atlas_columns - 1);
+	
+	// Distance-based density reduction (Valheim-style LOD)
+	// Use per-instance random value from custom data Y for consistent culling
+	float instance_rand = fract(INSTANCE_CUSTOM.y * 12345.67 + world_pos.x * 0.123 + world_pos.z * 0.456);
+	float cam_dist = length(world_pos - CAMERA_POSITION_WORLD);
+	// Near: keep all (threshold=1.0), Far: keep 50% (threshold=0.5)
+	float dist_factor = smoothstep(density_near, density_far, cam_dist);
+	discard_threshold = mix(1.0, 0.5, dist_factor);
+	
+	// Scale down grass at distance for softer LOD transition
+	float scale_factor = mix(1.0, 0.8, dist_factor);
+	VERTEX *= scale_factor;
 
 	float height_factor = 1.0 - UV.y;
 	height_factor *= height_factor;
@@ -44,10 +65,19 @@ void vertex() {
 }
 
 void fragment() {
+	// Distance-based density culling: discard instances randomly based on distance
+	float instance_rand = fract(world_pos.x * 73.27 + world_pos.z * 97.41);
+	if (instance_rand > discard_threshold) {
+		discard;
+	}
+	
 	// Force normals upward so all faces catch sunlight uniformly
 	NORMAL = vec3(0.0, 1.0, 0.0);
 
-	vec4 tex = texture(albedo_texture, UV);
+	// Calculate atlas UV - divide texture into columns
+	float col_width = 1.0 / float(atlas_columns);
+	vec2 atlas_uv = vec2(UV.x * col_width + float(tex_index) * col_width, UV.y);
+	vec4 tex = texture(albedo_texture, atlas_uv);
 
 	float ground_ao = mix(0.88, 1.0, 1.0 - UV.y);
 	ALBEDO = tex.rgb * albedo_color.rgb * ground_ao;

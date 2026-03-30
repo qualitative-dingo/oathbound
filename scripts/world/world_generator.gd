@@ -1643,12 +1643,15 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 		else:
 			child.visible = new_lod <= 1
 		if child is StaticBody3D:
+			# Skip collision LOD for small objects (bushes) - they stay always enabled
+			var skip_col_lod: bool = child.get_meta("skip_collision_lod", false)
 			for sub in child.get_children():
 				if sub is CollisionShape3D:
-					# Only enable collision for LOD 0/1; keep disabled for LOD 2 (far zones)
+					if skip_col_lod:
+						continue  # Don't toggle collision for small bushes
+					# Only enable collision for LOD 0 (very close); disable for LOD 1/2
 					# CRITICAL: Queue collision enabling to avoid physics spike
-					# Enabling many shapes at once causes massive physics rebuild
-					if new_lod >= 2:
+					if new_lod >= 1:  # Changed from >= 2 to >= 1 (LOD 0 only)
 						sub.set_deferred("disabled", true)
 					elif sub.disabled:
 						# Queue for gradual enabling (1 per frame via _deferred_collisions)
