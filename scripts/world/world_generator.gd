@@ -64,8 +64,8 @@ var _microbiome_secondary: FastNoiseLite
 # ─── Watershed Grid ───────────────────────────────────────────────────────────
 
 const _WS_CELL := 48.0
-const _WS_RIVER_THRESH := 3.0
-const _WS_RIVER_FULL := 80.0
+const _WS_RIVER_THRESH := 3.5
+const _WS_RIVER_FULL := 94.0
 
 const _D8X := [1, 1, 0, -1, -1, -1, 0, 1]
 const _D8Z := [0, -1, -1, -1, 0, 1, 1, 1]
@@ -85,7 +85,7 @@ var _ws_flow: PackedInt32Array
 const _CREEK_ACCUM_THRESH := 2.5
 const _CREEK_MIN_ELEV := 1.5          # min terrain height above WATER_LEVEL
 const _CREEK_MIN_WIDTH := 2.0
-const _CREEK_MAX_WIDTH := 40.0
+const _CREEK_MAX_WIDTH := 33.2
 const _CREEK_DEPTH := 1.2             # how deep the channel is carved
 const _CREEK_SUBDIV := 14             # interpolation points between grid cells
 var _creek_segments: Dictionary = {}   # Vector2i -> Array[Dictionary]

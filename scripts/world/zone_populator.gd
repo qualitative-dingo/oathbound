@@ -35,13 +35,28 @@ static func _get_structures_cached() -> Array:
 	if current_frame != _structures_cache_frame:
 		var tree := Engine.get_main_loop() as SceneTree
 		var raw := tree.get_nodes_in_group(&"structures") if tree else []
-		# Filter out any freed instances to prevent crashes
 		_cached_structures = []
 		for node in raw:
 			if is_instance_valid(node):
 				_cached_structures.append(node)
 		_structures_cache_frame = current_frame
 	return _cached_structures
+
+# ─── Berry bushes group cache ──
+static var _cached_bushes: Array = []
+static var _bushes_cache_frame: int = -1
+
+static func _get_berry_bushes_cached() -> Array:
+	var current_frame := Engine.get_frames_drawn()
+	if current_frame != _bushes_cache_frame:
+		var tree := Engine.get_main_loop() as SceneTree
+		var raw := tree.get_nodes_in_group(&"berry_bushes") if tree else []
+		_cached_bushes = []
+		for node in raw:
+			if is_instance_valid(node):
+				_cached_bushes.append(node)
+		_bushes_cache_frame = current_frame
+	return _cached_bushes
 
 
 static func _get_world_generator() -> Node:
@@ -150,6 +165,7 @@ const _RG_CELL := ZONE_SIZE / float(_RG_RES)
 const _RG_DENSITY_LOW := 1
 const _RG_DIRT := 2
 const _RG_PATH := 4
+const _RG_WATER := 8
 static var _rg_data := PackedByteArray()
 static var _rg_coord := Vector2i(-999999, -999999)
 
@@ -158,6 +174,7 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 		return
 	_rg_coord = coord
 	_rg_data.resize(_RG_RES * _RG_RES)
+	var wg := _get_world_generator()
 	for gz in _RG_RES:
 		for gx in _RG_RES:
 			var wx := origin_x + (gx + 0.5) * _RG_CELL
@@ -170,6 +187,10 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 				flags |= _RG_DIRT
 			if is_on_path(wx, wz):
 				flags |= _RG_PATH
+			if wg and wg.has_method("_ws_sample_accum"):
+				var accum: float = wg._ws_sample_accum(wx, wz)
+				if accum > 1.5:
+					flags |= _RG_WATER
 			_rg_data[idx] = flags
 
 # ─── Debug toggles (set by DebugPanel to skip spawning categories) ────────────
@@ -1740,6 +1761,7 @@ static func _scatter_grass(
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
 	var structs := _get_structures_cached()
+	var bushes := _get_berry_bushes_cached()
 	var transforms: Array[Transform3D] = []
 
 	const GRASS_COUNT := 2800
@@ -1751,7 +1773,7 @@ static func _scatter_grass(
 
 		var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 		var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
-		if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH | _RG_DIRT) != 0:
+		if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH | _RG_DIRT | _RG_WATER) != 0:
 			continue
 
 		var sn := _hg_snap_and_normal(wx, wz)
@@ -1763,6 +1785,8 @@ static func _scatter_grass(
 		if _hg_is_steep_edge(wx, wz, ground_y):
 			continue
 		if _is_near_structure(wx, wz, 3.0, structs):
+			continue
+		if _is_near_bush(wx, wz, 1.5, bushes):
 			continue
 
 		var scale := rng.randf_range(0.4, 0.85)
@@ -1820,6 +1844,23 @@ static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, c
 					r_sq = maxf(r_sq, half * half)
 					break
 		if dist_sq < r_sq:
+			return true
+	return false
+
+
+static func _is_near_bush(wx: float, wz: float, min_dist: float, cached_bushes: Array = []) -> bool:
+	var bushes: Array = cached_bushes
+	if bushes.is_empty():
+		bushes = _get_berry_bushes_cached()
+	var r_sq := min_dist * min_dist
+	for i in bushes.size():
+		var b = bushes[i]
+		if not is_instance_valid(b):
+			continue
+		var bp: Vector3 = (b as Node3D).global_position
+		var dx := (bp.x + origin_shift.x) - wx
+		var dz := (bp.z + origin_shift.z) - wz
+		if dx * dx + dz * dz < r_sq:
 			return true
 	return false
 
