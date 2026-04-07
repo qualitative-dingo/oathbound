@@ -59,7 +59,12 @@ func _on_child_entered(node: Node) -> void:
 	if force_nearest_filter:
 		_force_nearest_recursive.call_deferred(node)
 
+const _SKIP_GROUPS: Array[StringName] = [&"player", &"horses"]
+
 func _force_nearest_recursive(node: Node) -> void:
+	for grp in _SKIP_GROUPS:
+		if node.is_in_group(grp):
+			return
 	if node is MeshInstance3D:
 		_force_nearest_mesh(node)
 	if node is GeometryInstance3D:
