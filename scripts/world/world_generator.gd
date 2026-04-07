@@ -429,6 +429,7 @@ var _last_player_zones: Array[Vector2i] = []  # throttle _queue_zones_around
 var _unload_timer := 0.0
 var _requeue_timer := 0.0  # periodic re-queue to fill gaps from cap-limited passes
 var _any_flying := false
+var _clip_recovery_timer := 0.0  # Grace period after clip-through teleport to prevent loop
 
 
 func _process(_delta: float) -> void:
@@ -1002,7 +1003,7 @@ func _trace_creek_paths() -> void:
 				raw_accums.append(_ws_accum[cidx])
 
 				var ch: float = _ws_heights[cidx]
-				if ch < WATER_LEVEL + 1.5:
+				if ch < WATER_LEVEL + 0.5:
 					break
 
 				var fd: int = _ws_flow[cidx]
@@ -1067,8 +1068,8 @@ func _trace_creek_paths() -> void:
 					# Detect pool/water body entry and create smooth transition
 					var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
 					var terrain_h := get_height_at(wx, wz)
-					var near_pool := lake_n < -0.08 or terrain_h < WATER_LEVEL + 1.5
-					var in_pool := lake_n < -0.13 or terrain_h < WATER_LEVEL + 0.8
+					var near_pool := lake_n < -0.10 or terrain_h < WATER_LEVEL + 0.3
+					var in_pool := lake_n < -0.15 or terrain_h < WATER_LEVEL - 0.5
 
 					if in_pool:
 						if not points.is_empty():
@@ -1112,7 +1113,7 @@ func _trace_creek_paths() -> void:
 				var lwz: float = -world_radius + last_g.y * _WS_CELL
 				var final_lake_n := _continent_noise.get_noise_2d(lwx * 0.7 + 5000.0, lwz * 0.7 + 5000.0)
 				var lh := get_height_at(lwx, lwz)
-				if final_lake_n >= -0.13 and lh >= WATER_LEVEL + 0.8:
+				if final_lake_n >= -0.15 and lh >= WATER_LEVEL - 0.5:
 					var last_acc := raw_accums[raw_accums.size() - 1]
 					var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 					var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
