@@ -1879,7 +1879,7 @@ static func _scatter_blueberry_bushes(
 			var bush := _create_blueberry_bush(rng)
 			if not bush:
 				continue
-			bush.position = Vector3(cx, ground_y, cz)
+			bush.position = Vector3(cx, ground_y + 0.08, cz)
 			bush.rotation.y = rng.randf_range(0.0, TAU)
 			zone_root.add_child(bush)
 
