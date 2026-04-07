@@ -2217,8 +2217,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	var light := OmniLight3D.new()
 	light.name = "FireLight"
 	light.light_color = Color(1.0, 0.55, 0.15)
-	light.light_energy = 5.0
-	light.omni_range = 270.0
+	light.light_energy = 15.0
+	light.omni_range = 810.0
 	light.omni_attenuation = 1.4
 	light.shadow_enabled = true
 	light.light_volumetric_fog_energy = 0.8
@@ -2228,8 +2228,8 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	# -- Warm fill light at base --
 	var fill := OmniLight3D.new()
 	fill.light_color = Color(1.0, 0.3, 0.05)
-	fill.light_energy = 2.0
-	fill.omni_range = 120.0
+	fill.light_energy = 6.0
+	fill.omni_range = 360.0
 	fill.omni_attenuation = 1.8
 	fill.shadow_enabled = false
 	fill.light_volumetric_fog_energy = 0.5
@@ -2402,9 +2402,9 @@ func start_campfire_animation(
 
 		var energy: float
 		if is_breath:
-			energy = randf_range(4.0, 7.0)
+			energy = randf_range(12.0, 21.0)
 		else:
-			energy = randf_range(7.0, 14.0)
+			energy = randf_range(21.0, 42.0)
 		var col_g := randf_range(0.25, 0.65)
 		tw.tween_property(light, "light_energy", energy, dur)
 		tw.parallel().tween_property(light, "light_color", Color(randf_range(0.92, 1.0), col_g, randf_range(0.05, 0.12)), dur)
