@@ -4571,6 +4571,10 @@ func _update_target_hud(delta: float) -> void:
 	if _target_hud_timer > 0.0:
 		_target_hud_timer -= delta
 		if _target_hud_timer <= 0.0:
+			if _target_creature and is_instance_valid(_target_creature):
+				_target_creature.set("_hud_targeted", false)
+				if _target_creature.has_method("_update_hp_bar"):
+					_target_creature._update_hp_bar()
 			_target_creature = null
 			_target_hud_panel.visible = false
 			return
@@ -4603,8 +4607,15 @@ func _set_target_creature(creature: Node3D) -> void:
 	if creature == _target_creature and _target_hud_timer > 0.0:
 		_target_hud_timer = 5.0
 		return
+	if _target_creature and is_instance_valid(_target_creature) and _target_creature != creature:
+		_target_creature.set("_hud_targeted", false)
+		if _target_creature.has_method("_update_hp_bar"):
+			_target_creature._update_hp_bar()
 	_target_creature = creature
 	_target_hud_timer = 5.0
+	creature.set("_hud_targeted", true)
+	if creature.has_method("_update_hp_bar"):
+		creature._update_hp_bar()
 
 	if not _target_hud_name:
 		return

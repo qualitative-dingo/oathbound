@@ -62,6 +62,7 @@ var _idle_timer: float = 0.0
 var _hit_flash_timer: float = 0.0
 var _spawn_recorded := false
 var _hp_bar_visible_timer: float = 0.0
+var _hud_targeted: bool = false
 var _hp_bar_fill: Sprite3D
 var _hp_bar_bg: Sprite3D
 var _hp_bar_full_width: float = 0.35
@@ -311,7 +312,7 @@ func _physics_process(delta: float) -> void:
 				_death_visual_started = true
 				_play_death_sound()
 				if _floating_ui:
-					_floating_ui.visible = false
+					_floating_ui.visible = true
 				_spawn_loot_and_play_ground_death()
 			return
 		if _dying_fall:
@@ -1293,7 +1294,7 @@ func _die() -> void:
 		drop_carried_fish()
 
 	if _floating_ui:
-		_floating_ui.visible = false
+		_floating_ui.visible = true
 	_play_death_sound()
 
 	if is_flying and not is_on_floor():
@@ -1366,6 +1367,8 @@ func _spawn_loot_and_play_ground_death() -> void:
 
 
 func _explode_and_free() -> void:
+	if _floating_ui:
+		_floating_ui.visible = false
 	GameEvents.creature_killed.emit(global_position)
 
 	# Loot and affix application only on host (host spawns loot via WorldStateSync)
@@ -1437,7 +1440,9 @@ func _explode_and_free() -> void:
 
 
 func _update_hit_flash(delta: float) -> void:
-	if _hp_bar_visible_timer > 0.0:
+	if _state == State.DEAD:
+		pass
+	elif _hp_bar_visible_timer > 0.0:
 		_hp_bar_visible_timer -= delta
 		var show := _hp_bar_visible_timer > 0.0 or _state == State.CHASE
 		if _floating_ui:
@@ -1739,6 +1744,11 @@ func _attach_nameplate_bg(_ui_root: Node3D, _bg_w: float, _bg_h: float, _label_y
 
 func _update_hp_bar() -> void:
 	if not _hp_bar_fill or not _hp_bar_bg:
+		return
+	var bar_hidden := _hud_targeted
+	_hp_bar_fill.visible = not bar_hidden
+	_hp_bar_bg.visible = not bar_hidden
+	if bar_hidden:
 		return
 	var ratio := clampf(current_health / max_health, 0.0, 1.0)
 	var fill_color: Color

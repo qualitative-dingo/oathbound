@@ -6,17 +6,27 @@
 [ext_resource type="Script" uid="uid://c7lx21y7jm2w0" path="res://scripts/world/art_unifier.gd" id="5_artunify"]
 [ext_resource type="Script" uid="uid://bphqbl2qnm5mh" path="res://scripts/network/world_state_sync.gd" id="6_worldstatesync"]
 [ext_resource type="Script" path="res://scripts/world/day_night_cycle.gd" id="7_daynightcycle"]
+[ext_resource type="Shader" path="res://shaders/sky_clouds.gdshader" id="8_skyshader"]
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_1"]
-sky_top_color = Color(0.22, 0.42, 0.78, 1)
-sky_horizon_color = Color(0.5, 0.62, 0.78, 1)
-ground_bottom_color = Color(0.12, 0.1, 0.08, 1)
-ground_horizon_color = Color(0.4, 0.45, 0.38, 1)
-sun_angle_max = 20.0
-sun_curve = 0.08
+[sub_resource type="ShaderMaterial" id="SkyCloudMaterial_1"]
+shader = ExtResource("8_skyshader")
+shader_parameter/sky_top_color = Color(0.22, 0.42, 0.78, 1)
+shader_parameter/sky_horizon_color = Color(0.5, 0.62, 0.78, 1)
+shader_parameter/ground_bottom_color = Color(0.12, 0.1, 0.08, 1)
+shader_parameter/ground_horizon_color = Color(0.4, 0.45, 0.38, 1)
+shader_parameter/sun_angle_max = 20.0
+shader_parameter/sun_curve = 0.08
+shader_parameter/cloud_coverage = 0.3
+shader_parameter/cloud_softness = 0.12
+shader_parameter/cloud_bright_color = Color(1, 1, 1, 1)
+shader_parameter/cloud_shadow_color = Color(0.55, 0.58, 0.68, 1)
+shader_parameter/cloud_speed = 0.006
+shader_parameter/cloud_scale = 1.8
 
 [sub_resource type="Sky" id="Sky_1"]
-sky_material = SubResource("ProceduralSkyMaterial_1")
+sky_material = SubResource("SkyCloudMaterial_1")
+process_mode = 3
+radiance_size = 3
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 2
