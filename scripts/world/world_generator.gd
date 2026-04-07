@@ -2496,13 +2496,29 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			river_bank = clampf(river_bank, 0.0, 1.0)
 			colors.append(Color(path_f, brightness, river_bank))
 
-	# Third pass: compute normals from height buffer (no extra get_height_at calls)
+	# Third pass: compute normals — sample beyond zone edges for seamless boundaries
 	for z in range(w):
 		for x in range(w):
-			var h_left := heights[z * w + maxi(x - 1, 0)]
-			var h_right := heights[z * w + mini(x + 1, res)]
-			var h_up := heights[maxi(z - 1, 0) * w + x]
-			var h_down := heights[mini(z + 1, res) * w + x]
+			var h_left: float
+			var h_right: float
+			var h_up: float
+			var h_down: float
+			if x > 0:
+				h_left = heights[z * w + (x - 1)]
+			else:
+				h_left = get_height_at(origin_x - step, origin_z + z * step)
+			if x < res:
+				h_right = heights[z * w + (x + 1)]
+			else:
+				h_right = get_height_at(origin_x + (res + 1) * step, origin_z + z * step)
+			if z > 0:
+				h_up = heights[(z - 1) * w + x]
+			else:
+				h_up = get_height_at(origin_x + x * step, origin_z - step)
+			if z < res:
+				h_down = heights[(z + 1) * w + x]
+			else:
+				h_down = get_height_at(origin_x + x * step, origin_z + (res + 1) * step)
 			var tangent_x := Vector3(2.0 * step, h_right - h_left, 0.0)
 			var tangent_z := Vector3(0.0, h_down - h_up, 2.0 * step)
 			normals.append(tangent_z.cross(tangent_x).normalized())
