@@ -1665,57 +1665,38 @@ func _process_pending_zones() -> void:
 
 	_evict_terrain_cache()
 
-	# 2. Populate zone objects — batch ALL vegetation phases (3-6) together for fast flower loading
-	#    Phases 0-2 have collision objects (trees, rocks, creatures) - one per frame, budget-checked
-	#    Phases 3-6 are vegetation-only (flowers, bushes) with NO collision - process ALL in one go
-	#    Also allow multiple zones' vegetation to be processed per frame for faster loading
-	var veg_zones_this_frame := 0
-	const _MAX_VEG_ZONES_PER_FRAME := 4  # Process up to 4 zones' vegetation per frame
-	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
-		while not _populate_backlog.is_empty():
-			var pitem: Dictionary = _populate_backlog[0]
-			var pcoord: Vector2i = pitem["coord"]
-			var zone_root = pitem["zone_root"]  # untyped — may be freed between frames
-			var current_zone = _loaded_zones.get(pcoord)
-			if not is_instance_valid(zone_root) or not _is_in_load_range(pcoord) or zone_root != current_zone:
-				_populate_backlog.pop_front()
-				continue
-			var phase: int = pitem.get("phase", 0)
-			
-			# Budget check ONLY for collision phases (0-2) - vegetation phases run to completion
-			if phase < 3 and Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
-				break
-			
-			var biome: StringName = pitem["biome"]
-			var micro: StringName = pitem["micro"]
-			var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
-			if done:
-				_populate_backlog.pop_front()
-				var min_dist := 999.0
-				for p in _players:
-					var pz := world_to_zone(get_world_position(p))
-					var d := float((pcoord - pz).length())
-					if d < min_dist:
-						min_dist = d
-				_update_zone_lod(zone_root, min_dist)
-				zone_loaded.emit(pcoord)
-				veg_zones_this_frame += 1
-				# Allow multiple zones' vegetation per frame (up to cap)
-				if veg_zones_this_frame >= _MAX_VEG_ZONES_PER_FRAME:
-					break
-				continue  # Try to process next zone's vegetation too
-			else:
-				var next_phase := phase + 1
-				pitem["phase"] = next_phase
-				# Vegetation phases (3-6) have no collision - process next immediately without budget check
-				if next_phase >= 3 and next_phase <= 6:
-					continue  # Loop back and process next vegetation phase in same frame
-			break  # Break after collision phases (0-2)
+	# 2. Populate zone objects — budget-checked before EVERY phase so no single phase blows the frame
+	while not _populate_backlog.is_empty():
+		if Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
+			break
+		var pitem: Dictionary = _populate_backlog[0]
+		var pcoord: Vector2i = pitem["coord"]
+		var zone_root = pitem["zone_root"]  # untyped — may be freed between frames
+		var current_zone = _loaded_zones.get(pcoord)
+		if not is_instance_valid(zone_root) or not _is_in_load_range(pcoord) or zone_root != current_zone:
+			_populate_backlog.pop_front()
+			continue
+		var phase: int = pitem.get("phase", 0)
+		var biome: StringName = pitem["biome"]
+		var micro: StringName = pitem["micro"]
+		var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
+		if done:
+			_populate_backlog.pop_front()
+			var min_dist := 999.0
+			for p in _players:
+				var pz := world_to_zone(get_world_position(p))
+				var d := float((pcoord - pz).length())
+				if d < min_dist:
+					min_dist = d
+			_update_zone_lod(zone_root, min_dist)
+			zone_loaded.emit(pcoord)
+			continue
+		pitem["phase"] = phase + 1
 
 	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
 	# PERF: Only 1 terrain shape assignment per frame total (rebuild OR finalize, not both)
 	# ConcavePolygonShape3D assignment is extremely expensive (mesh cooking)
-	var max_finalize := 0 if terrain_shape_assigned else (2 if _any_flying else 1)
+	var max_finalize := 0 if terrain_shape_assigned else 1
 	var finalized := 0
 	if max_finalize > 0 and Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
 		while not _finalize_backlog.is_empty() and finalized < max_finalize:

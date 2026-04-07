@@ -1328,18 +1328,6 @@ func _physics_process(delta: float) -> void:
 			if y_drop > 2.0:
 				global_position.y = pre_move_pos.y - 2.0
 				velocity.y = maxf(velocity.y, -12.0)
-			var space := get_world_3d().direct_space_state
-			if space:
-				var check_from := Vector3(global_position.x, global_position.y + 3.0, global_position.z)
-				var check_to := Vector3(global_position.x, global_position.y - 10.0, global_position.z)
-				var q := PhysicsRayQueryParameters3D.create(check_from, check_to, 1)
-				q.exclude = [get_rid()]
-				var r := space.intersect_ray(q)
-				if not r.is_empty():
-					var surf: float = r["position"].y
-					if global_position.y < surf - 0.3 and surf - global_position.y < 3.0:
-						global_position.y = surf + 0.15
-						velocity.y = 0.0
 
 		if not _on_raft:
 			_clamp_to_terrain()
@@ -1523,17 +1511,9 @@ func _clamp_to_terrain() -> void:
 		return
 	var surface_y: float = result["position"].y
 	var below_surface := surface_y - global_position.y
-	if below_surface > 2.0:
+	if below_surface > 3.0:
 		global_position.y = surface_y + 0.2
 		velocity = Vector3.ZERO
-		return
-	if not is_on_floor():
-		return
-	var snap_threshold := 0.1 if _mounted else 0.3
-	var max_snap := 1.5 if _mounted else 2.0
-	if below_surface > snap_threshold and below_surface < max_snap:
-		global_position.y = move_toward(global_position.y, surface_y + 0.15, below_surface * 0.4)
-		velocity.y = maxf(velocity.y, 0.0)
 
 
 func _handle_jump() -> void:
