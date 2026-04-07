@@ -78,18 +78,18 @@ const SUN_COLOR_KEYS := [
 ]
 
 const AMBIENT_ENERGY_KEYS := [
-	[0.0,    0.15],   # midnight — dark but navigable
-	[0.125,  0.15],   # 03:00 — dark but navigable
-	[0.146,  0.22],   # 03:30 — first glow
-	[0.167,  0.35],   # 04:00 — dawn ambient
-	[0.229,  0.55],   # 05:30 — full day
-	[0.50,   0.70],   # noon
-	[0.854,  0.55],   # 20:30 — still afternoon
-	[0.875,  0.35],   # 21:00 — full golden
-	[0.917,  0.20],   # 22:00 — fading
-	[0.958,  0.15],   # 23:00 — near dark
-	[0.98,   0.15],   # near midnight
-	[1.0,    0.15],   # midnight
+	[0.0,    0.18],   # midnight — dark but navigable
+	[0.125,  0.18],   # 03:00 — dark but navigable
+	[0.146,  0.28],   # 03:30 — first glow
+	[0.167,  0.45],   # 04:00 — dawn ambient
+	[0.229,  0.75],   # 05:30 — full day
+	[0.50,   0.90],   # noon
+	[0.854,  0.75],   # 20:30 — still afternoon
+	[0.875,  0.45],   # 21:00 — full golden
+	[0.917,  0.25],   # 22:00 — fading
+	[0.958,  0.18],   # 23:00 — near dark
+	[0.98,   0.18],   # near midnight
+	[1.0,    0.18],   # midnight
 ]
 
 const AMBIENT_COLOR_KEYS := [
@@ -222,16 +222,16 @@ const SATURATION_KEYS := [
 const SHADOW_OPACITY_KEYS := [
 	[0.0,    0.0],    # night: no shadows
 	[0.125,  0.0],
-	[0.146,  0.20],
-	[0.167,  0.45],   # dawn
-	[0.229,  0.70],   # full day
-	[0.35,   0.75],
-	[0.50,   0.75],   # noon
-	[0.70,   0.75],
-	[0.854,  0.70],   # 20:30
-	[0.875,  0.35],   # 21:00 golden
-	[0.917,  0.10],   # 22:00 fading
-	[0.958,  0.10],   # last light
+	[0.146,  0.10],
+	[0.167,  0.25],   # dawn
+	[0.229,  0.40],   # full day
+	[0.35,   0.42],
+	[0.50,   0.42],   # noon
+	[0.70,   0.42],
+	[0.854,  0.38],   # 20:30
+	[0.875,  0.20],   # 21:00 golden
+	[0.917,  0.08],   # 22:00 fading
+	[0.958,  0.05],   # last light
 	[0.98,   0.0],
 	[1.0,    0.0],
 ]

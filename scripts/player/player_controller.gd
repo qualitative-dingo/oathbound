@@ -198,6 +198,8 @@ var _gallop_normal_stream: AudioStream
 var _on_stone_surface: bool = false
 var _last_footstep_frame: int = -1
 var _gltf_footstep_phase: float = 0.0
+var _footstep_contacts: Array[float] = []
+var _footstep_contacts_anim: String = ""
 
 # River ambient audio
 var _river_ambient_player: AudioStreamPlayer
@@ -2388,17 +2390,29 @@ func _tick_footstep_sfx(_delta: float) -> void:
 		if anim_name != "":
 			var anim := _gltf_anim_player.get_animation(anim_name)
 			if anim and anim.length > 0.0:
+				if _footstep_contacts_anim != anim_name:
+					_footstep_contacts = _detect_foot_contacts(anim)
+					_footstep_contacts_anim = anim_name
+					print("[FOOTSTEP] Detected contacts for '%s': %s" % [anim_name, _footstep_contacts])
 				var pos := _gltf_anim_player.current_animation_position
 				var cycle_pos := fmod(pos, anim.length) / anim.length
 				var prev_phase := _gltf_footstep_phase
 				_gltf_footstep_phase = cycle_pos
-				var stepped := false
-				if prev_phase > 0.85 and cycle_pos < 0.15:
-					stepped = true
-				elif prev_phase < 0.5 and cycle_pos >= 0.5:
-					stepped = true
-				if stepped:
-					_play_footstep(is_running)
+				for contact in _footstep_contacts:
+					var lo := contact - 0.08
+					var hi := contact + 0.08
+					if lo < 0.0:
+						if (prev_phase > 1.0 + lo and cycle_pos < hi) or (prev_phase < hi and prev_phase > 1.0 + lo):
+							_play_footstep(is_running)
+							break
+					elif hi > 1.0:
+						if (prev_phase > lo and cycle_pos < hi - 1.0) or (prev_phase < hi - 1.0 and prev_phase > lo):
+							_play_footstep(is_running)
+							break
+					else:
+						if prev_phase < contact and cycle_pos >= contact:
+							_play_footstep(is_running)
+							break
 				return
 
 	if _is_run_animating and not _run_frames.is_empty():
@@ -2434,6 +2448,64 @@ func _play_footstep(is_running: bool) -> void:
 	_footstep_player.volume_db = vol_db
 	_footstep_player.pitch_scale = pitch
 	_footstep_player.play()
+
+
+func _detect_foot_contacts(anim: Animation) -> Array[float]:
+	var skel := _find_skeleton(_player_sprite) if _player_sprite else null
+	if not skel:
+		return [0.0, 0.5]
+	var l_foot_idx := skel.find_bone("mixamorig_LeftFoot")
+	var r_foot_idx := skel.find_bone("mixamorig_RightFoot")
+	if l_foot_idx < 0 and r_foot_idx < 0:
+		return [0.0, 0.5]
+
+	var samples := 40
+	var length := anim.length
+	var l_heights: Array[float] = []
+	var r_heights: Array[float] = []
+
+	var orig_pos := _gltf_anim_player.current_animation_position
+	var was_playing := _gltf_anim_player.is_playing()
+
+	for i in samples:
+		var t := float(i) / float(samples) * length
+		_gltf_anim_player.seek(t, true)
+		_gltf_anim_player.advance(0.0)
+		if l_foot_idx >= 0:
+			l_heights.append(skel.get_bone_global_pose(l_foot_idx).origin.y)
+		else:
+			l_heights.append(0.0)
+		if r_foot_idx >= 0:
+			r_heights.append(skel.get_bone_global_pose(r_foot_idx).origin.y)
+		else:
+			r_heights.append(0.0)
+
+	_gltf_anim_player.seek(orig_pos, true)
+	if was_playing:
+		_gltf_anim_player.advance(0.0)
+
+	var contacts: Array[float] = []
+	var l_min_phase := _find_lowest_phase(l_heights, samples)
+	var r_min_phase := _find_lowest_phase(r_heights, samples)
+	if l_foot_idx >= 0:
+		contacts.append(l_min_phase)
+	if r_foot_idx >= 0:
+		contacts.append(r_min_phase)
+	contacts.sort()
+	if contacts.size() == 2 and absf(contacts[1] - contacts[0]) < 0.1:
+		contacts = [contacts[0], fmod(contacts[0] + 0.5, 1.0)]
+		contacts.sort()
+	return contacts
+
+
+func _find_lowest_phase(heights: Array[float], samples: int) -> float:
+	var min_y := 99999.0
+	var min_idx := 0
+	for i in samples:
+		if heights[i] < min_y:
+			min_y = heights[i]
+			min_idx = i
+	return float(min_idx) / float(samples)
 
 
 func _check_stone_surface() -> bool:
