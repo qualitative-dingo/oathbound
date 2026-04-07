@@ -1860,10 +1860,10 @@ func _update_zone_lods(players: Array[Node3D], _delta: float) -> void:
 
 func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 	var zone_meta_key := &"lod_level"
-	# LOD 0: full detail (≤1.5 zones — covers diagonal neighbors at √2)
-	# LOD 1: medium — canopy visible but leaf shadows off (≤3.0 zones)
+	# LOD 0: full detail (≤4.5 zones — all trees/grass/flowers visible)
+	# LOD 1: medium — canopy visible but trunk/leaf shadows off
 	# LOD 2: far — non-terrain hidden entirely
-	var new_lod: int = 0 if zone_dist <= 1.5 else (1 if zone_dist <= 3.0 else 2)
+	var new_lod: int = 0 if zone_dist <= 4.5 else (1 if zone_dist <= 9.0 else 2)
 	var old_lod: int = zone_node.get_meta(zone_meta_key, -1)
 	if new_lod == old_lod:
 		return

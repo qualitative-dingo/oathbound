@@ -1736,7 +1736,7 @@ static func _scatter_flowers(
 		mmi.name = "Flower_%d" % fi
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.visibility_range_end = 40.0  # Valheim-style: 40m for flowers
+		mmi.visibility_range_end = 120.0
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		zone_root.add_child(mmi)
 
@@ -1813,7 +1813,7 @@ static func _scatter_grass(
 	mmi.name = "GrassClump"
 	mmi.material_override = _grass_mat
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mmi.visibility_range_end = 48.0
+	mmi.visibility_range_end = 144.0
 	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	zone_root.add_child(mmi)
 
@@ -2504,7 +2504,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	trunk_mi.mesh = merge_st.commit()
 	trunk_mi.set_surface_override_material(0, bark_mat)
 	trunk_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	trunk_mi.visibility_range_end = 120.0
+	trunk_mi.visibility_range_end = 360.0
 	trunk_mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	root.add_child(trunk_mi)
 
@@ -2667,7 +2667,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		mmi.multimesh = mm
 		mmi.material_override = leaf_mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.visibility_range_end = 100.0
+		mmi.visibility_range_end = 300.0
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		canopy_parent.add_child(mmi)
 
