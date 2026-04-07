@@ -1943,6 +1943,7 @@ func _setup_player_sprite() -> void:
 			if _DEBUG_LOG: print("[PLAYER MODEL] Tripo model - skipping Blockbench shaders")
 		call_deferred("_update_equipped_weapon_model")
 		call_deferred("_update_armor_visuals")
+		_schedule_filter_audit()
 	else:
 		_player_model_3d = PlayerModel3D.new()
 		_player_model_3d.build()
@@ -11638,6 +11639,46 @@ func _apply_tripo_player_texture() -> void:
 		mi.material_override = mat
 		mi.visible = true
 	if _DEBUG_LOG: print("[PLAYER MODEL] Applied Tripo barbarian texture to %d meshes" % _gltf_all_meshes.size())
+
+
+func _schedule_filter_audit() -> void:
+	var t := get_tree().create_timer(2.0)
+	t.timeout.connect(_audit_player_material_filters)
+
+func _audit_player_material_filters() -> void:
+	if _gltf_all_meshes.is_empty():
+		print("[FILTER AUDIT] No meshes to audit")
+		return
+	var found_nearest := false
+	for mi in _gltf_all_meshes:
+		if not mi or not is_instance_valid(mi):
+			continue
+		var ovr := mi.material_override
+		if ovr:
+			if ovr is StandardMaterial3D:
+				var f := (ovr as StandardMaterial3D).texture_filter
+				print("[FILTER AUDIT] %s override=%s filter=%d" % [mi.name, ovr.resource_name, f])
+				if f == BaseMaterial3D.TEXTURE_FILTER_NEAREST or f == BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS:
+					(ovr as StandardMaterial3D).texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+					found_nearest = true
+					print("[FILTER AUDIT]   -> FIXED to LINEAR_WITH_MIPMAPS")
+			elif ovr is ShaderMaterial:
+				print("[FILTER AUDIT] %s override=ShaderMaterial (filter in shader)" % mi.name)
+		if not mi.mesh:
+			continue
+		for si in mi.mesh.get_surface_count():
+			var mat := mi.get_active_material(si)
+			if mat is StandardMaterial3D:
+				var f := (mat as StandardMaterial3D).texture_filter
+				print("[FILTER AUDIT] %s surf[%d] filter=%d" % [mi.name, si, f])
+				if f == BaseMaterial3D.TEXTURE_FILTER_NEAREST or f == BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS:
+					(mat as StandardMaterial3D).texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+					found_nearest = true
+					print("[FILTER AUDIT]   -> FIXED to LINEAR_WITH_MIPMAPS")
+	if found_nearest:
+		print("[FILTER AUDIT] Fixed NEAREST filters on player model!")
+	else:
+		print("[FILTER AUDIT] All player materials already LINEAR - issue may be texture quality or compression")
 
 
 func _apply_viking_texture() -> void:
