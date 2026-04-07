@@ -8481,7 +8481,7 @@ func _show_grouped_tooltip(base_id: StringName, variants: Dictionary, display_id
 			if s == 0:
 				text += "  [color=%s]Common: %d[/color]\n" % [hex, amt]
 			else:
-				text += "  [color=%s]%s %s: %d[/color]\n" % [hex, "*".repeat(s), rarity_name, amt]
+				text += "  [color=%s]%s %s: %d[/color]\n" % [hex, "★".repeat(s), rarity_name, amt]
 
 	if data.has("description"):
 		text += "\n%s" % str(data["description"])

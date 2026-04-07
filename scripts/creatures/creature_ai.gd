@@ -1671,7 +1671,7 @@ func _create_floating_ui() -> void:
 static func _estimate_text_width(text: String, unit: float) -> float:
 	var w := 0.0
 	for c in text:
-		if c == "*":
+		if c == "★":
 			w += unit * 0.72
 		elif c == " ":
 			w += unit * 0.3
