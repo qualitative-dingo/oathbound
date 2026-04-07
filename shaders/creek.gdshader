@@ -15,6 +15,7 @@ uniform vec4 sky_tint    : source_color = vec4(0.30, 0.38, 0.35, 1.0);
 group_uniforms edge;
 uniform float foam_width : hint_range(0.0, 0.5) = 0.15;
 uniform float depth_foam_width : hint_range(0.01, 0.5) = 0.12;
+uniform float water_level = 0.0;
 
 uniform sampler2D DEPTH_TEXTURE : hint_depth_texture, filter_linear;
 
@@ -35,10 +36,12 @@ float vnoise(vec2 p) {
 
 varying vec2 v_uv;
 varying float v_slope;
+varying float v_world_y;
 
 void vertex() {
 	v_uv = UV;
 	v_slope = COLOR.r;
+	v_world_y = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
 
 	// Slope-scaled speed: flat = base, steep = up to 4x
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
@@ -126,6 +129,10 @@ void fragment() {
 	// Soft fade at mesh edges so the boundary is never a hard line
 	float edge_fade = smoothstep(0.0, 0.06, min(v_uv.x, 1.0 - v_uv.x));
 	ALPHA *= edge_fade;
+
+	// Fade out creek mesh as it approaches water bodies
+	float water_fade = smoothstep(water_level + 0.3, water_level + 1.8, v_world_y);
+	ALPHA *= water_fade;
 
 	ROUGHNESS = mix(0.1, 0.4, total_foam);
 	METALLIC = mix(0.05, 0.0, total_foam);
