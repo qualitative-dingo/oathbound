@@ -198,6 +198,7 @@ var _gallop_normal_stream: AudioStream
 var _on_stone_surface: bool = false
 var _last_footstep_frame: int = -1
 var _gltf_footstep_phase: float = 0.0
+var _footstep_timer: float = 0.0
 
 # River ambient audio
 var _river_ambient_player: AudioStreamPlayer
@@ -1326,6 +1327,9 @@ func _physics_process(delta: float) -> void:
 				velocity.x *= scale_f
 				velocity.z *= scale_f
 
+		if not _in_cave and not _on_raft:
+			_pre_move_analytic_guard()
+
 		var pre_move_pos := global_position
 		var was_in_air := not is_on_floor()
 		if not _on_raft:
@@ -1541,8 +1545,8 @@ func _clamp_to_terrain() -> void:
 	if not result.is_empty():
 		var surface_y: float = result["position"].y
 		var below_surface := surface_y - global_position.y
-		if below_surface > 3.0:
-			global_position.y = surface_y + 0.2
+		if below_surface > 0.3:
+			global_position.y = surface_y + 0.15
 			velocity = Vector3.ZERO
 		return
 
@@ -1555,15 +1559,35 @@ func _clamp_to_terrain() -> void:
 			velocity.y = 0.0
 
 
-func _enforce_analytic_floor() -> void:
-	if _in_cave or flight_mode:
+func _pre_move_analytic_guard() -> void:
+	if _is_swimming:
 		return
 	var wg := _find_world_generator()
 	if not wg:
 		return
 	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
-	if global_position.y < ground_y - 0.15:
-		global_position.y = ground_y + 0.1
+	if global_position.y < ground_y + 0.1 and velocity.y < 0.0:
+		velocity.y = 0.0
+		if global_position.y < ground_y - 0.02:
+			global_position.y = ground_y + 0.05
+
+
+var _analytic_floor_corrections := 0
+
+func _enforce_analytic_floor() -> void:
+	if _in_cave or flight_mode or _is_swimming:
+		return
+	var wg := _find_world_generator()
+	if not wg:
+		return
+	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
+	if global_position.y < ground_y - 0.05:
+		_analytic_floor_corrections += 1
+		if _analytic_floor_corrections <= 20 or _analytic_floor_corrections % 100 == 0:
+			print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f, delta=%.2f) frame=%d" % [
+				_analytic_floor_corrections, global_position.y, ground_y + 0.15,
+				ground_y, ground_y - global_position.y, Engine.get_frames_drawn()])
+		global_position.y = ground_y + 0.15
 		if velocity.y < 0.0:
 			velocity.y = 0.0
 
@@ -2402,7 +2426,7 @@ func _on_gallop_finished() -> void:
 			_gallop_player.play()
 
 
-func _tick_footstep_sfx(_delta: float) -> void:
+func _tick_footstep_sfx(delta: float) -> void:
 	if not _footstep_player:
 		return
 	var flat_speed := Vector2(velocity.x, velocity.z).length()
@@ -2410,25 +2434,21 @@ func _tick_footstep_sfx(_delta: float) -> void:
 	if not want_stepping:
 		_last_footstep_frame = -1
 		_gltf_footstep_phase = 0.0
+		_footstep_timer = 0.0
 		return
 
 	_on_stone_surface = _check_stone_surface()
 	var is_running := flat_speed > walk_speed * 1.1
-
-	if _gltf_anim_player and _gltf_anim_player.is_playing():
-		var anim_name := _gltf_anim_player.current_animation
-		if anim_name != "":
-			var anim := _gltf_anim_player.get_animation(anim_name)
-			if anim and anim.length > 0.0:
-				var pos := _gltf_anim_player.current_animation_position
-				var cycle_pos := fmod(pos, anim.length) / anim.length
-				var prev_phase := _gltf_footstep_phase
-				_gltf_footstep_phase = cycle_pos
-				var in_first_half := cycle_pos < 0.5
-				var was_in_first_half := prev_phase < 0.5
-				if in_first_half != was_in_first_half:
-					_play_footstep(is_running)
-				return
+	var step_interval: float
+	if is_running:
+		step_interval = lerpf(0.34, 0.28, clampf((flat_speed - walk_speed) / (sprint_speed - walk_speed), 0.0, 1.0))
+	else:
+		step_interval = lerpf(0.55, 0.42, clampf(flat_speed / walk_speed, 0.0, 1.0))
+	_footstep_timer += delta
+	if _footstep_timer >= step_interval:
+		_footstep_timer -= step_interval
+		_play_footstep(is_running)
+		return
 
 	if _is_run_animating and not _run_frames.is_empty():
 		var dir := _current_run_dir
