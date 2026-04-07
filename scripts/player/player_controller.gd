@@ -957,6 +957,7 @@ func _on_inventory_changed() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		SaveManager.stop_game()
 		get_tree().quit()
 
 

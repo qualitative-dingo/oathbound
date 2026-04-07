@@ -335,10 +335,9 @@ func _deferred_load_save() -> void:
 	await get_tree().process_frame
 	var save_data := load_game()
 
-	# LAN clients use world ID "lan_client" which has no save file on first join.
-	# Fall back to the character's most recent save from any world so they keep
-	# their inventory / stats across sessions.
-	if save_data.is_empty() and multiplayer.has_multiplayer_peer() and not multiplayer.is_server():
+	# No save for this character+world combo — carry over inventory/stats from
+	# the character's most recent save on any world so gear persists across worlds.
+	if save_data.is_empty():
 		var fallback := _load_latest_character_save()
 		if not fallback.is_empty():
 			save_data = {
