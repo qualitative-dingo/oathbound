@@ -240,6 +240,24 @@ func set_terrain_mods(mods: Dictionary) -> void:
 		_terrain_mods[key] = h
 
 
+func _force_enable_player_zone_collision(wp: Vector3) -> void:
+	var zone_coord := world_to_zone(wp)
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			var zc := zone_coord + Vector2i(dx, dz)
+			var zone_node = _loaded_zones.get(zc)
+			if not zone_node:
+				continue
+			var tc = zone_node.get_node_or_null("TerrainCol")
+			if tc and tc.disabled:
+				tc.disabled = false
+				_deferred_collisions.erase(tc)
+			for child in zone_node.get_children():
+				if child is CollisionShape3D and child.disabled:
+					child.disabled = false
+					_deferred_collisions.erase(child)
+
+
 func _enforce_world_boundary(delta: float) -> void:
 	var boundary_start := world_radius * 0.85
 	var boundary_hard := world_radius * 0.95
@@ -540,14 +558,38 @@ func _physics_process(delta: float) -> void:
 		host.global_position.y = spawn_h + 2.5
 		host.velocity = Vector3.ZERO
 	else:
-		for p in _players:
-			if p.get("_in_cave"):
-				continue
-			var wp := get_world_position(p)
-			var ground := get_height_at(wp.x, wp.z)
-			if p.global_position.y < ground - 3.0:
-				p.global_position.y = ground + 0.5
-				p.velocity = Vector3.ZERO
+		if _clip_recovery_timer > 0.0:
+			_clip_recovery_timer -= delta
+			for p in _players:
+				if p.get("_in_cave"):
+					continue
+				if p.velocity.y < 0.0:
+					p.velocity.y = 0.0
+		else:
+			for p in _players:
+				if p.get("_in_cave"):
+					continue
+				var wp := get_world_position(p)
+				var ground := get_height_at(wp.x, wp.z)
+				if p.global_position.y < ground - 3.0:
+					p.global_position.y = ground + 2.0
+					p.velocity = Vector3.ZERO
+					_clip_recovery_timer = 0.5
+					_force_enable_player_zone_collision(wp)
+					var zone_coord := world_to_zone(wp)
+					var zone_node = _loaded_zones.get(zone_coord)
+					var col_state := "no_zone"
+					var lod_level := -1
+					if zone_node:
+						var tc = zone_node.get_node_or_null("TerrainCol")
+						col_state = "enabled" if (tc and not tc.disabled) else ("disabled" if tc else "missing")
+						lod_level = zone_node.get_meta(&"lod_level", -1)
+					print("[CLIP RECOVERY] frame=%d pos=(%.1f,%.1f,%.1f) world=(%.1f,%.1f,%.1f) ground=%.1f delta=%.1f zone=%s col=%s lod=%d en_q=%d dis_q=%d" % [
+						Engine.get_frames_drawn(),
+						p.global_position.x, p.global_position.y, p.global_position.z,
+						wp.x, wp.y, wp.z, ground, ground - (p.global_position.y - 2.0),
+						str(zone_coord), col_state, lod_level,
+						_deferred_collisions.size(), _deferred_disable_collisions.size()])
 
 	_enforce_world_boundary(delta)
 
@@ -1683,28 +1725,26 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 
 
 const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
-const _MAX_COLLISION_TOGGLES_PER_FRAME := 4
+const _MAX_COLLISION_ENABLES_PER_FRAME := 4
+const _MAX_COLLISION_DISABLES_PER_FRAME := 4
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
 
-	# 0. Process collision shape toggles - spread across frames to avoid physics rebuild spikes
-	#    Process up to _MAX_COLLISION_TOGGLES_PER_FRAME total (enable + disable combined)
-	var toggles_this_frame := 0
-	
-	# Enable collision shapes (higher priority - needed for interaction)
-	while not _deferred_collisions.is_empty() and toggles_this_frame < _MAX_COLLISION_TOGGLES_PER_FRAME:
-		var col_shape = _deferred_collisions.pop_front()  # Untyped to avoid crash on freed instance
+	# 0. Process collision shape toggles - separate budgets so disables can't starve enables
+	var enables_this_frame := 0
+	while not _deferred_collisions.is_empty() and enables_this_frame < _MAX_COLLISION_ENABLES_PER_FRAME:
+		var col_shape = _deferred_collisions.pop_front()
 		if is_instance_valid(col_shape):
 			col_shape.disabled = false
-			toggles_this_frame += 1
-	
-	# Disable collision shapes (lower priority - just cleanup)
-	while not _deferred_disable_collisions.is_empty() and toggles_this_frame < _MAX_COLLISION_TOGGLES_PER_FRAME:
+			enables_this_frame += 1
+
+	var disables_this_frame := 0
+	while not _deferred_disable_collisions.is_empty() and disables_this_frame < _MAX_COLLISION_DISABLES_PER_FRAME:
 		var col_shape = _deferred_disable_collisions.pop_front()
 		if is_instance_valid(col_shape):
 			col_shape.disabled = true
-			toggles_this_frame += 1
+			disables_this_frame += 1
 
 	# 0.5. Apply completed terrain rebuilds (from terraform / hoe) - throttled
 	# Track if we assigned a terrain shape this frame (expensive ConcavePolygonShape3D)
