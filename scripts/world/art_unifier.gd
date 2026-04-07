@@ -62,9 +62,8 @@ func _on_child_entered(node: Node) -> void:
 const _SKIP_GROUPS: Array[StringName] = [&"player", &"horses"]
 
 func _force_nearest_recursive(node: Node) -> void:
-	for grp in _SKIP_GROUPS:
-		if node.is_in_group(grp):
-			return
+	if _is_in_skip_subtree(node):
+		return
 	if node is MeshInstance3D:
 		_force_nearest_mesh(node)
 	if node is GeometryInstance3D:
@@ -73,6 +72,15 @@ func _force_nearest_recursive(node: Node) -> void:
 			_force_nearest_standard(mat)
 	for child in node.get_children():
 		_force_nearest_recursive(child)
+
+func _is_in_skip_subtree(node: Node) -> bool:
+	var current := node
+	while current:
+		for grp in _SKIP_GROUPS:
+			if current.is_in_group(grp):
+				return true
+		current = current.get_parent()
+	return false
 
 func _force_nearest_mesh(mi: MeshInstance3D) -> void:
 	var mesh := mi.mesh

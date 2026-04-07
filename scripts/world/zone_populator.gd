@@ -166,6 +166,8 @@ const _RG_DENSITY_LOW := 1
 const _RG_DIRT := 2
 const _RG_PATH := 4
 const _RG_WATER := 8
+const _RG_STRUCTURE := 16
+const _RG_BUSH := 32
 static var _rg_data := PackedByteArray()
 static var _rg_coord := Vector2i(-999999, -999999)
 
@@ -192,6 +194,55 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 				if accum > 1.5:
 					flags |= _RG_WATER
 			_rg_data[idx] = flags
+
+	var os := origin_shift
+	var structs := _get_structures_cached()
+	for s in structs:
+		if not is_instance_valid(s):
+			continue
+		var sp: Vector3 = (s as Node3D).global_position
+		var swx := sp.x + os.x
+		var swz := sp.z + os.z
+		var r := 4.0
+		if (s as Node3D).has_meta("footprint_radius"):
+			r = float((s as Node3D).get_meta("footprint_radius"))
+		else:
+			for child in (s as Node3D).get_children():
+				if not is_instance_valid(child):
+					continue
+				if child is CollisionShape3D and child.shape is BoxShape3D:
+					var sz: Vector3 = (child.shape as BoxShape3D).size
+					r = maxf(r, maxf(sz.x, sz.z) * 0.5 + 1.5)
+					break
+		var lx := swx - origin_x
+		var lz := swz - origin_z
+		if lx < -r or lx > ZONE_SIZE + r or lz < -r or lz > ZONE_SIZE + r:
+			continue
+		var cmin_x := maxi(0, int((lx - r) / _RG_CELL))
+		var cmax_x := mini(_RG_RES - 1, int((lx + r) / _RG_CELL))
+		var cmin_z := maxi(0, int((lz - r) / _RG_CELL))
+		var cmax_z := mini(_RG_RES - 1, int((lz + r) / _RG_CELL))
+		for rgz in range(cmin_z, cmax_z + 1):
+			for rgx in range(cmin_x, cmax_x + 1):
+				var cx := origin_x + (rgx + 0.5) * _RG_CELL
+				var cz := origin_z + (rgz + 0.5) * _RG_CELL
+				if (cx - swx) * (cx - swx) + (cz - swz) * (cz - swz) < r * r:
+					_rg_data[rgz * _RG_RES + rgx] |= _RG_STRUCTURE
+
+	var bushes := _get_berry_bushes_cached()
+	for b in bushes:
+		if not is_instance_valid(b):
+			continue
+		var bp: Vector3 = (b as Node3D).global_position
+		var bwx := bp.x + os.x
+		var bwz := bp.z + os.z
+		var blx := bwx - origin_x
+		var blz := bwz - origin_z
+		if blx < -2.0 or blx > ZONE_SIZE + 2.0 or blz < -2.0 or blz > ZONE_SIZE + 2.0:
+			continue
+		var cgx := clampi(int(blx / _RG_CELL), 0, _RG_RES - 1)
+		var cgz := clampi(int(blz / _RG_CELL), 0, _RG_RES - 1)
+		_rg_data[cgz * _RG_RES + cgx] |= _RG_BUSH
 
 # ─── Debug toggles (set by DebugPanel to skip spawning categories) ────────────
 static var debug_skip_trees := false
@@ -1648,8 +1699,6 @@ static func _scatter_flowers(
 
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
-	var structs := _get_structures_cached()
-
 	for fi in range(type_start, type_end):
 		var cfg: Array = flower_types[fi]
 		var tex: ImageTexture = cfg[0]
@@ -1675,7 +1724,7 @@ static func _scatter_flowers(
 
 			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
-			if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH) != 0:
+			if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH | _RG_STRUCTURE) != 0:
 				continue
 
 			var density := _vegetation_density_noise(wx, wz)
@@ -1709,8 +1758,6 @@ static func _scatter_flowers(
 						break
 				if not near_water:
 					continue
-			if _is_near_structure(wx, wz, 4.0, structs):
-				continue
 
 			var scale := rng.randf_range(scale_min, scale_max)
 			var rot := rng.randf_range(0.0, TAU)
@@ -1760,9 +1807,8 @@ static func _scatter_grass(
 
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
-	var structs := _get_structures_cached()
-	var bushes := _get_berry_bushes_cached()
 	var transforms: Array[Transform3D] = []
+	const _RG_VEG_REJECT := _RG_DENSITY_LOW | _RG_PATH | _RG_DIRT | _RG_WATER | _RG_STRUCTURE | _RG_BUSH
 
 	const GRASS_COUNT := 4760
 	for _i in GRASS_COUNT:
@@ -1773,7 +1819,7 @@ static func _scatter_grass(
 
 		var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 		var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
-		if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH | _RG_DIRT | _RG_WATER) != 0:
+		if _rg_data[rgz * _RG_RES + rgx] & _RG_VEG_REJECT != 0:
 			continue
 
 		var sn := _hg_snap_and_normal(wx, wz)
@@ -1783,10 +1829,6 @@ static func _scatter_grass(
 		if sn.y < 0.90:
 			continue
 		if _hg_is_steep_edge(wx, wz, ground_y):
-			continue
-		if _is_near_structure(wx, wz, 3.0, structs):
-			continue
-		if _is_near_bush(wx, wz, 1.5, bushes):
 			continue
 
 		var scale := rng.randf_range(0.4, 0.85)
