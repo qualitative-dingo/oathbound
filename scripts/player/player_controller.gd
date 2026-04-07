@@ -1360,6 +1360,7 @@ func _physics_process(delta: float) -> void:
 
 		if not _on_raft:
 			_clamp_to_terrain()
+		_enforce_analytic_floor()
 	_handle_stamina(delta)
 	_handle_health_regen(delta)
 	if _death_immunity_timer > 0.0:
@@ -1551,6 +1552,19 @@ func _clamp_to_terrain() -> void:
 		var analytic_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
 		if global_position.y < analytic_y - 1.0:
 			global_position.y = analytic_y + 0.5
+			velocity.y = 0.0
+
+
+func _enforce_analytic_floor() -> void:
+	if _in_cave or flight_mode:
+		return
+	var wg := _find_world_generator()
+	if not wg:
+		return
+	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
+	if global_position.y < ground_y - 0.15:
+		global_position.y = ground_y + 0.1
+		if velocity.y < 0.0:
 			velocity.y = 0.0
 
 
