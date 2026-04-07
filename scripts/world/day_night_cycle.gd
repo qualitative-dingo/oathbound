@@ -13,6 +13,7 @@ var paused: bool = false
 var _sun: DirectionalLight3D
 var _env: Environment
 var _sky_mat: ProceduralSkyMaterial
+var _sky_shader_mat: ShaderMaterial
 
 # ── Cached base values from the scene (so biome tweaks layer on top) ────
 var _base_fog_density: float = 0.0005
@@ -259,8 +260,11 @@ func _find_scene_nodes() -> void:
 		we = _find_child_of_type("WorldEnvironment") as WorldEnvironment
 	if we:
 		_env = we.environment
-		if _env and _env.sky and _env.sky.sky_material is ProceduralSkyMaterial:
-			_sky_mat = _env.sky.sky_material as ProceduralSkyMaterial
+		if _env and _env.sky:
+			if _env.sky.sky_material is ProceduralSkyMaterial:
+				_sky_mat = _env.sky.sky_material as ProceduralSkyMaterial
+			elif _env.sky.sky_material is ShaderMaterial:
+				_sky_shader_mat = _env.sky.sky_material as ShaderMaterial
 		_base_fog_density = _env.fog_density if _env else 0.0005
 		_base_fog_color = _env.fog_light_color if _env else Color(0.65, 0.72, 0.82)
 		_base_ambient_color = _env.ambient_light_color if _env else Color(0.38, 0.42, 0.58)
@@ -311,9 +315,14 @@ func _update_environment() -> void:
 		return
 
 	# Sky colors
+	var top_col := _sample_color(SKY_TOP_KEYS, game_time)
+	var horizon_col := _sample_color(SKY_HORIZON_KEYS, game_time)
 	if _sky_mat:
-		_sky_mat.sky_top_color = _sample_color(SKY_TOP_KEYS, game_time)
-		_sky_mat.sky_horizon_color = _sample_color(SKY_HORIZON_KEYS, game_time)
+		_sky_mat.sky_top_color = top_col
+		_sky_mat.sky_horizon_color = horizon_col
+	elif _sky_shader_mat:
+		_sky_shader_mat.set_shader_parameter("sky_top_color", top_col)
+		_sky_shader_mat.set_shader_parameter("sky_horizon_color", horizon_col)
 
 	# Ambient
 	_env.ambient_light_energy = _sample_float(AMBIENT_ENERGY_KEYS, game_time) * weather_ambient_mult
