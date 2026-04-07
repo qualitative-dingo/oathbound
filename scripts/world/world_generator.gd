@@ -52,6 +52,7 @@ var _theme_songs: Array[String] = []
 var _seed_hash: int
 var _continent_noise: FastNoiseLite
 var _mountain_noise: FastNoiseLite
+var _mountain_broad_noise: FastNoiseLite
 var _detail_noise: FastNoiseLite
 var _ridge_noise: FastNoiseLite
 var _mtn_path_noise: FastNoiseLite  # For walkable mountain paths
@@ -619,6 +620,15 @@ func _init_noise_layers() -> void:
 	_mountain_noise.fractal_lacunarity = 2.2
 	_mountain_noise.fractal_gain = 0.5
 
+	# Base octave only — large-scale mountain region mask.
+	# Prevents isolated narrow peaks ("nipples") by requiring broad-scale
+	# mountain presence before fine-detail octaves can raise terrain.
+	_mountain_broad_noise = FastNoiseLite.new()
+	_mountain_broad_noise.seed = _seed_hash + 1000
+	_mountain_broad_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_mountain_broad_noise.frequency = base_frequency * 2.0
+	_mountain_broad_noise.fractal_octaves = 1
+
 	_detail_noise = FastNoiseLite.new()
 	_detail_noise.seed = _seed_hash + 2000
 	_detail_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -678,12 +688,23 @@ func _init_noise_layers() -> void:
 #  WATERSHED COMPUTATION — runs once at startup
 # ═══════════════════════════════════════════════════════════════════════════════
 
+## Gate fine-detail mountain value by the broad (base-octave) mountain mask.
+## Returns 0 where there's no large-scale mountain region, preserving the full
+## value inside established mountain chains.
+func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
+	if mountain_raw <= 0.0:
+		return 0.0
+	var broad := _mountain_broad_noise.get_noise_2d(wx, wz)
+	var breadth := smoothstep(0.15, 0.40, broad)
+	return mountain_raw * breadth
+
+
 func _get_base_height(wx: float, wz: float) -> float:
 	var dist := Vector2(wx, wz).length()
 	if dist > world_radius * 0.9:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
 	var continent := _continent_noise.get_noise_2d(wx, wz)
-	var mountain := maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.35, 0.0)
+	var mountain := _gate_mountain(wx, wz, maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.35, 0.0))
 	var h := continent * height_scale * 0.35
 
 	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
@@ -1239,7 +1260,7 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 	if dist > world_radius * 0.9:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
 	var continent := _continent_noise.get_noise_2d(x, z)
-	var mountain := maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0)
+	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
 	var h := continent * height_scale * 0.35
 	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
 	h += foothills * height_scale * 1.5
@@ -1266,7 +1287,7 @@ func get_height_at(x: float, z: float) -> float:
 		return -20.0 * edge_factor
 
 	var continent := _continent_noise.get_noise_2d(x, z)
-	var mountain := maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0)
+	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
 	var detail := _detail_noise.get_noise_2d(x, z)
 
 	var h := continent * height_scale * 0.35
@@ -1323,11 +1344,11 @@ func get_height_at(x: float, z: float) -> float:
 	# Continental bias — lift central play area above water, but fade to zero
 	# in lake/shore regions so the bias doesn't create terrain arches over water
 	var bias := lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
-	bias *= smoothstep(-0.45, -0.12, lake_n)
+	bias *= smoothstep(-0.45, -0.08, lake_n)
 	h += bias
 
-	# Keep terrain above water — soft floor that respects lake basins
-	var min_land := lerpf(WATER_LEVEL + 0.3, WATER_LEVEL + 2.0, smoothstep(-0.28, 0.05, lake_n))
+	# Keep terrain above water — soft floor that allows underwater banks near lakes
+	var min_land := lerpf(WATER_LEVEL - 1.5, WATER_LEVEL + 2.0, smoothstep(-0.30, 0.10, lake_n))
 	h = maxf(h, min_land)
 
 	# Watershed river/creek carving
@@ -1353,14 +1374,14 @@ func get_height_at(x: float, z: float) -> float:
 				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
 				h = lerpf(h, WATER_LEVEL - depth, carve)
 
-	# Noise-driven lakes
+	# Noise-driven lakes — steep banks that drop below water for natural shorelines
 	if _detail_noise:
-		if lake_n < -0.20 and lake_n >= -0.42:
-			var shore_t := smoothstep(-0.20, -0.42, lake_n)
-			h = lerpf(h, WATER_LEVEL + 0.05, shore_t)
-		if lake_n < -0.42:
-			var lake_t := smoothstep(-0.42, -0.62, lake_n)
-			var lake_depth := lerpf(1.0, 3.5, lake_t)
+		if lake_n < -0.15 and lake_n >= -0.32:
+			var shore_t := smoothstep(-0.15, -0.32, lake_n)
+			h = lerpf(h, WATER_LEVEL - 0.8, shore_t)
+		if lake_n < -0.32:
+			var lake_t := smoothstep(-0.32, -0.55, lake_n)
+			var lake_depth := lerpf(2.0, 5.0, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
 	# Flatten spawn area — fully flat within 20m, fading to 80m
@@ -2380,7 +2401,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 
 			if _detail_noise:
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
-				var lake_shore := smoothstep(-0.15, -0.38, lake_n)
+				var lake_shore := smoothstep(-0.10, -0.30, lake_n)
 				river_bank = maxf(river_bank, lake_shore)
 
 			river_bank = clampf(river_bank, 0.0, 1.0)

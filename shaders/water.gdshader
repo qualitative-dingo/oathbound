@@ -7,8 +7,8 @@ uniform float wave_height : hint_range(0.0, 2.0)   = 0.06;
 uniform float wave_frequency : hint_range(0.5, 8.0) = 1.2;
 
 group_uniforms colors;
-uniform vec4 shallow_color : source_color = vec4(0.08, 0.18, 0.32, 0.45);
-uniform vec4 deep_color    : source_color = vec4(0.04, 0.10, 0.22, 0.88);
+uniform vec4 shallow_color : source_color = vec4(0.06, 0.16, 0.30, 0.70);
+uniform vec4 deep_color    : source_color = vec4(0.03, 0.08, 0.20, 0.92);
 uniform vec4 foam_color    : source_color = vec4(0.75, 0.82, 0.88, 0.85);
 
 group_uniforms depth;
@@ -109,10 +109,10 @@ void fragment() {
 	float perturbed_depth = depth_diff + (edge_noise - 0.45) * 0.4;
 
 	// Hard cutoff: never render water where terrain is clearly above water
-	float hard_mask = smoothstep(-0.02, 0.15, depth_diff);
+	float hard_mask = smoothstep(-0.02, 0.08, depth_diff);
 
-	// ── Shore alpha fade — smoothly hides the mesh/water intersection ──
-	float shore_alpha = smoothstep(0.0, 0.6, perturbed_depth) * hard_mask;
+	// ── Shore alpha fade — tight transition so edges look clean, not ghostly ──
+	float shore_alpha = smoothstep(-0.05, 0.3, perturbed_depth) * hard_mask;
 
 	// ── Foam along shoreline (tight edge only) ──
 	float foam_noise = vnoise(world_pos.xz * 1.8 + vec2(TIME * 0.25, TIME * 0.18));
