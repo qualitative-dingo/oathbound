@@ -332,6 +332,9 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	boss_chest_pos.y = boss_end.y
 	_add_boss_chest(cave_root, boss_chest_pos, fwd, rng)
 
+	# Exit portal at end of boss chamber
+	_build_exit_marker(cave_root, boss_end - fwd * 4.0 + Vector3(0, 0, 0))
+
 	cave_waypoints.append(boss_start)
 	cave_widths.append(boss_w)
 	cave_waypoints.append(boss_end)
@@ -368,7 +371,7 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	return cave_root
 
 
-static func _build_exit_marker(cave_root: Node3D) -> void:
+static func _build_exit_marker(cave_root: Node3D, pos: Vector3 = Vector3(0.0, 0.0, 2.0)) -> void:
 	var exit_marker := StaticBody3D.new()
 	exit_marker.name = "CaveExit"
 	exit_marker.collision_layer = 4
@@ -397,7 +400,7 @@ static func _build_exit_marker(cave_root: Node3D) -> void:
 	exit_light.light_color = Color(0.8, 0.7, 0.5)
 	exit_light.light_energy = 1.5
 	exit_light.omni_range = 50.0
-	exit_marker.position = Vector3(0.0, 0.0, 2.0)
+	exit_marker.position = pos
 	exit_marker.add_child(exit_light)
 	cave_root.add_child(exit_marker)
 
@@ -705,50 +708,14 @@ static func _add_cave_chest(parent: Node3D, pos: Vector3, fwd: Vector3, rng: Ran
 
 
 static func _add_cave_enemy(parent: Node3D, pos: Vector3, creature_type: String, idx: int = 0) -> void:
-	var stats := ZonePopulator._creature_stats(StringName(creature_type))
-	if stats.is_empty():
+	ZonePopulator._ensure_textures()
+	var kind := StringName(creature_type)
+	var enemy := ZonePopulator._create_enemy(&"hearthlands", null, kind)
+	if not enemy:
 		return
-
-	var enemy := _CreatureAI.new()
-	enemy.display_name = stats.get("name", "Creature") as String
-	enemy.creature_type = creature_type
-	enemy.max_health = float(stats.get("hp", 50.0))
-	enemy.attack_damage = float(stats.get("dmg", 10.0))
-	enemy.move_speed = float(stats.get("spd", 3.0))
-	enemy.attack_cooldown = float(stats.get("cd", 2.0))
+	enemy.name = "CaveCreature_%d" % idx
 	enemy.aggro_range = 10.0
 	enemy.leash_range = 50.0
-
-	var sprite := Sprite3D.new()
-	sprite.name = "BodySprite"
-	sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	sprite.pixel_size = 1.0 / 100.0
-	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	sprite.position.y = float(stats.get("sprite_y", 0.8))
-	var tex_dict: Dictionary = stats.get("tex", {}) as Dictionary
-	if tex_dict.has("south"):
-		sprite.texture = tex_dict["south"] as Texture2D
-	enemy.add_child(sprite)
-
-	enemy.sprite_textures = tex_dict
-	enemy.run_frames = stats.get("run_tex", {}) as Dictionary
-	enemy.attack_frames = stats.get("atk_tex", {}) as Dictionary
-	var _loot := ZonePopulator._creature_loot_for(StringName(creature_type))
-	enemy.loot_table = _loot.get("normal", [])
-	enemy.rare_loot_table = _loot.get("rare", [])
-
-	var col_r: float = float(stats.get("col_r", 0.4))
-	var col_h: float = float(stats.get("col_h", 1.0))
-	var col_y: float = float(stats.get("col_y", 0.5))
-	var col_shape := CollisionShape3D.new()
-	var capsule := CapsuleShape3D.new()
-	capsule.radius = col_r
-	capsule.height = col_h
-	col_shape.shape = capsule
-	col_shape.position.y = col_y
-	enemy.add_child(col_shape)
-
-	enemy.name = "CaveCreature_%d" % idx
 	enemy.position = pos
 	parent.add_child(enemy)
 
