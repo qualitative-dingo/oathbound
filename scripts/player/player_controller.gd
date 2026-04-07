@@ -2392,7 +2392,12 @@ func _tick_footstep_sfx(_delta: float) -> void:
 				var cycle_pos := fmod(pos, anim.length) / anim.length
 				var prev_phase := _gltf_footstep_phase
 				_gltf_footstep_phase = cycle_pos
-				if (prev_phase < 0.25 and cycle_pos >= 0.25) or (prev_phase < 0.75 and cycle_pos >= 0.75) or (prev_phase > 0.75 and cycle_pos < 0.25):
+				var stepped := false
+				if prev_phase > 0.85 and cycle_pos < 0.15:
+					stepped = true
+				elif prev_phase < 0.5 and cycle_pos >= 0.5:
+					stepped = true
+				if stepped:
 					_play_footstep(is_running)
 				return
 
