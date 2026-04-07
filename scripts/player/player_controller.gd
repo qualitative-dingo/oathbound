@@ -11646,6 +11646,61 @@ func _apply_tripo_player_texture() -> void:
 	if _DEBUG_LOG: print("[PLAYER MODEL] Applied Tripo barbarian texture to %d meshes" % _gltf_all_meshes.size())
 
 
+func _schedule_filter_audit() -> void:
+	var t := get_tree().create_timer(3.0)
+	t.timeout.connect(_audit_scene_filters)
+
+func _audit_scene_filters() -> void:
+	var counts := [0, 0, 0]  # [nearest, linear, shader]
+	var nearest_nodes: Array[String] = []
+	_audit_recursive(get_tree().root, counts, nearest_nodes)
+	print("[FILTER AUDIT] Scene-wide scan: %d NEAREST, %d LINEAR, %d ShaderMat" % [counts[0], counts[1], counts[2]])
+	if nearest_nodes.size() > 0:
+		for desc in nearest_nodes.slice(0, 30):
+			print("[FILTER AUDIT]   NEAREST -> %s" % desc)
+		if nearest_nodes.size() > 30:
+			print("[FILTER AUDIT]   ... and %d more" % (nearest_nodes.size() - 30))
+	else:
+		print("[FILTER AUDIT] No NEAREST filtering found in any StandardMaterial3D in the scene!")
+
+func _audit_recursive(node: Node, counts: Array, nearest_nodes: Array[String]) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		var ovr := mi.material_override
+		if ovr is StandardMaterial3D:
+			var f := (ovr as StandardMaterial3D).texture_filter
+			if f == BaseMaterial3D.TEXTURE_FILTER_NEAREST or f == BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS:
+				counts[0] += 1
+				nearest_nodes.append("%s (override, filter=%d)" % [mi.name, f])
+			else:
+				counts[1] += 1
+		elif ovr is ShaderMaterial:
+			counts[2] += 1
+		if mi.mesh:
+			for si in mi.mesh.get_surface_count():
+				var mat := mi.get_active_material(si)
+				if mat is StandardMaterial3D:
+					var f := (mat as StandardMaterial3D).texture_filter
+					if f == BaseMaterial3D.TEXTURE_FILTER_NEAREST or f == BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS:
+						counts[0] += 1
+						nearest_nodes.append("%s surf[%d] (filter=%d)" % [mi.name, si, f])
+					else:
+						counts[1] += 1
+				elif mat is ShaderMaterial:
+					counts[2] += 1
+	if node is GeometryInstance3D and not (node is MeshInstance3D):
+		var mat := (node as GeometryInstance3D).material_override
+		if mat is StandardMaterial3D:
+			var f := (mat as StandardMaterial3D).texture_filter
+			if f == BaseMaterial3D.TEXTURE_FILTER_NEAREST or f == BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS:
+				counts[0] += 1
+				nearest_nodes.append("%s (geo override, filter=%d)" % [node.name, f])
+			else:
+				counts[1] += 1
+	for child in node.get_children():
+		_audit_recursive(child, counts, nearest_nodes)
+
+
 func _apply_viking_texture() -> void:
 	# Extract materials from the textured GLB and apply them to the FBX meshes.
 	# The FBX meshes are skinned to the skeleton (so they animate), but Mixamo
