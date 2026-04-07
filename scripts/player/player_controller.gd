@@ -170,7 +170,7 @@ const MOUNT_STAMINA_REGEN_RATE := 18.0
 const MOUNT_STAMINA_REGEN_DELAY := 1.2
 
 # Flight mode (debug): 150% of a 5-star horse sprint speed
-var flight_mode: bool = true
+var flight_mode: bool = false
 const FLIGHT_SPEED := 34.65
 
 
