@@ -186,7 +186,7 @@ func _build_ui() -> void:
 	_add_toggle(left, "Terrain Visible", "terrain_visible")
 	_add_toggle(left, "SSAO", "ssao")
 	_add_toggle(left, "Glow", "glow")
-	_add_toggle(left, "Nearest Tex Filter", "nearest_filter")
+	_add_toggle(left, "Pixel-Art Filter (nearest)", "nearest_filter")
 
 	var deselect_btn := _make_button("Disable ALL", Color(0.7, 0.15, 0.15))
 	deselect_btn.pressed.connect(_deselect_all)
