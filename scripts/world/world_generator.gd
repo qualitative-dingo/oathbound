@@ -700,6 +700,8 @@ func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
 
 
 func _get_base_height(wx: float, wz: float) -> float:
+	if not _continent_noise:
+		return WATER_LEVEL
 	var dist := Vector2(wx, wz).length()
 	if dist > world_radius * 0.9:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
@@ -1257,6 +1259,8 @@ func _sample_terrain_concavity(x: float, z: float, _mountain_val: float) -> floa
 
 
 func _get_raw_height_no_paths(x: float, z: float) -> float:
+	if not _continent_noise:
+		return WATER_LEVEL
 	var dist := Vector2(x, z).length()
 	if dist > world_radius * 0.9:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
@@ -1278,6 +1282,9 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 
 
 func get_height_at(x: float, z: float) -> float:
+	if not _continent_noise:
+		return WATER_LEVEL
+
 	var mod_key := _terrain_mod_key(x, z)
 	if _terrain_mods.has(mod_key):
 		return _terrain_mods[mod_key] as float
@@ -1340,7 +1347,7 @@ func get_height_at(x: float, z: float) -> float:
 				h = lerpf(h, pool_floor, pool_t * 0.7)
 
 	# Pre-sample lake noise so bias and clamp can respect water bodies
-	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _detail_noise else 0.0
+	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _continent_noise else 0.0
 
 	# Continental bias — lift central play area above water, but fade to zero
 	# in lake/shore regions so the bias doesn't create terrain arches over water
