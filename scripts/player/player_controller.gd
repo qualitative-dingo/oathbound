@@ -1662,6 +1662,8 @@ func _handle_movement(delta: float) -> void:
 		speed *= _get_mount_speed_mult()
 	if _has_affix(&"swiftness"):
 		speed *= (1.0 + _affix_val(&"swiftness"))
+	if _has_affix(&"fleetfooted") and _is_sprinting:
+		speed *= (1.0 + _affix_val(&"fleetfooted"))
 	if _is_swimming and _has_affix(&"trailblazer"):
 		speed *= (1.0 + _affix_val(&"trailblazer"))
 	if _adrenaline_timer > 0.0:
@@ -1944,6 +1946,7 @@ func _setup_player_sprite() -> void:
 			if _DEBUG_LOG: print("[PLAYER MODEL] Tripo model - skipping Blockbench shaders")
 		call_deferred("_update_equipped_weapon_model")
 		call_deferred("_update_armor_visuals")
+		_schedule_filter_audit()
 	else:
 		_player_model_3d = PlayerModel3D.new()
 		_player_model_3d.build()
@@ -6849,7 +6852,7 @@ static func _load_building_mat(path: String, tint: Color, rough: float, uv_scale
 	if tex:
 		mat.albedo_texture = tex
 		mat.albedo_color = tint
-		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	else:
 		mat.albedo_color = tint
 	mat.roughness = rough
@@ -9219,6 +9222,8 @@ func _apply_affix_stat_bonuses() -> void:
 		new_max_hp += _affix_val(&"vitality")
 	if affixes.has(&"endurance"):
 		new_max_stam += _affix_val(&"endurance")
+	if affixes.has(&"athletic_endurance"):
+		new_max_stam *= (1.0 + _affix_val(&"athletic_endurance"))
 	if new_max_hp != max_health:
 		var hp_ratio := current_health / max_health if max_health > 0 else 1.0
 		max_health = new_max_hp
@@ -12208,7 +12213,7 @@ func _update_equipped_weapon_model() -> void:
 				for si in mi.mesh.get_surface_count():
 					var mat := mi.get_active_material(si)
 					if mat is StandardMaterial3D:
-						(mat as StandardMaterial3D).texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+						(mat as StandardMaterial3D).texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 
 func _stow_weapon() -> void:
@@ -12255,22 +12260,22 @@ func _create_stone_axe_2h() -> Node3D:
 	var wood_mat := StandardMaterial3D.new()
 	wood_mat.albedo_color = Color(0.45, 0.32, 0.18)
 	wood_mat.roughness = 0.9
-	wood_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	wood_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	var stone_mat := StandardMaterial3D.new()
 	stone_mat.albedo_color = Color(0.52, 0.50, 0.48)
 	stone_mat.roughness = 0.95
-	stone_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	stone_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	var leather_mat := StandardMaterial3D.new()
 	leather_mat.albedo_color = Color(0.35, 0.22, 0.12)
 	leather_mat.roughness = 0.85
-	leather_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	leather_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	var edge_mat := StandardMaterial3D.new()
 	edge_mat.albedo_color = Color(0.62, 0.60, 0.56)
 	edge_mat.roughness = 0.80
-	edge_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	edge_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	# Long handle shaft
 	_add_box_part(root, "shaft", Vector3(0.028, 0.80, 0.028), Vector3(0, -0.05, 0), wood_mat)
@@ -12324,15 +12329,15 @@ func _create_crude_bow() -> Node3D:
 	var wood := StandardMaterial3D.new()
 	wood.albedo_color = Color(0.50, 0.36, 0.20)
 	wood.roughness = 0.9
-	wood.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	wood.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var dark_wood := StandardMaterial3D.new()
 	dark_wood.albedo_color = Color(0.35, 0.24, 0.14)
 	dark_wood.roughness = 0.85
-	dark_wood.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	dark_wood.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var string_mat := StandardMaterial3D.new()
 	string_mat.albedo_color = Color(0.82, 0.78, 0.68)
 	string_mat.roughness = 0.7
-	string_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	string_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	_add_box_part(root, "grip", Vector3(0.035, 0.10, 0.045), Vector3(0, 0, 0), dark_wood)
 	_add_box_part(root, "upper1", Vector3(0.028, 0.18, 0.038), Vector3(0, 0.14, 0), wood)
@@ -12354,23 +12359,23 @@ func _create_quiver() -> Node3D:
 	var leather := StandardMaterial3D.new()
 	leather.albedo_color = Color(0.38, 0.26, 0.14)
 	leather.roughness = 0.85
-	leather.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	leather.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var leather_dark := StandardMaterial3D.new()
 	leather_dark.albedo_color = Color(0.28, 0.18, 0.10)
 	leather_dark.roughness = 0.9
-	leather_dark.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	leather_dark.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var shaft_mat := StandardMaterial3D.new()
 	shaft_mat.albedo_color = Color(0.55, 0.40, 0.25)
 	shaft_mat.roughness = 0.85
-	shaft_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	shaft_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var fletch_mat := StandardMaterial3D.new()
 	fletch_mat.albedo_color = Color(0.78, 0.72, 0.60)
 	fletch_mat.roughness = 0.8
-	fletch_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	fletch_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var tip_mat := StandardMaterial3D.new()
 	tip_mat.albedo_color = Color(0.50, 0.48, 0.44)
 	tip_mat.roughness = 0.6
-	tip_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	tip_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	_add_box_part(root, "body", Vector3(0.06, 0.32, 0.05), Vector3(-0.10, 0.12, 0.0), leather)
 	_add_box_part(root, "rim_top", Vector3(0.065, 0.015, 0.055), Vector3(-0.10, 0.28, 0.0), leather_dark)
@@ -12400,15 +12405,15 @@ func _create_bow_arrow() -> Node3D:
 	var shaft_mat := StandardMaterial3D.new()
 	shaft_mat.albedo_color = Color(0.55, 0.40, 0.25)
 	shaft_mat.roughness = 0.85
-	shaft_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	shaft_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var tip_mat := StandardMaterial3D.new()
 	tip_mat.albedo_color = Color(0.50, 0.48, 0.44)
 	tip_mat.roughness = 0.9
-	tip_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	tip_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var fletch_mat := StandardMaterial3D.new()
 	fletch_mat.albedo_color = Color(0.78, 0.72, 0.60)
 	fletch_mat.roughness = 0.8
-	fletch_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	fletch_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	_add_box_part(root, "shaft", Vector3(0.018, 0.018, 0.55), Vector3(0, 0, 0), shaft_mat)
 	_add_box_part(root, "tip", Vector3(0.028, 0.028, 0.05), Vector3(0, 0, -0.30), tip_mat)
@@ -12424,16 +12429,16 @@ func _create_sword_model() -> Node3D:
 	blade.albedo_color = Color(0.62, 0.60, 0.56)
 	blade.roughness = 0.4
 	blade.metallic = 0.6
-	blade.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	blade.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var guard := StandardMaterial3D.new()
 	guard.albedo_color = Color(0.40, 0.35, 0.25)
 	guard.roughness = 0.7
 	guard.metallic = 0.3
-	guard.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	guard.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var grip := StandardMaterial3D.new()
 	grip.albedo_color = Color(0.30, 0.20, 0.12)
 	grip.roughness = 0.9
-	grip.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	grip.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_add_box_part(root, "blade_lo", Vector3(0.05, 0.22, 0.015), Vector3(0, 0.14, 0), blade)
 	_add_box_part(root, "blade_hi", Vector3(0.045, 0.20, 0.013), Vector3(0, 0.34, 0), blade)
 	_add_box_part(root, "blade_tip", Vector3(0.035, 0.10, 0.012), Vector3(0, 0.50, 0), blade)

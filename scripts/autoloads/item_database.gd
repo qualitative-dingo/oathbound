@@ -136,6 +136,8 @@ const AFFIXES: Dictionary = {
 	&"trailblazer":     {"name": "Trailblazer",      "slot": "feet", "tier": 1, "min": 0.11, "max": 0.19, "fmt": "+%.0f%% movement speed in water", "pct": true, "description": "+15% movement speed in water"},
 	&"nimble":          {"name": "Nimble",            "slot": "feet", "tier": 2, "min": 0.06, "max": 0.10, "fmt": "+%.0f%% dodge chance while sprinting", "pct": true, "description": "+8% dodge chance while sprinting"},
 	&"double_jump":     {"name": "Double Jump",       "slot": "feet", "tier": 2, "description": "Perform one additional jump while mid-air"},
+	&"fleetfooted":     {"name": "Fleetfooted",       "slot": "feet", "tier": 1, "min": 0.20, "max": 0.40, "fmt": "+%.0f%% run speed", "pct": true, "description": "+30% run speed"},
+	&"athletic_endurance": {"name": "Athletic Endurance", "slot": "feet", "tier": 1, "min": 0.20, "max": 0.40, "fmt": "+%.0f%% max stamina", "pct": true, "description": "+30% max stamina"},
 }
 
 static func _get_affix_pool(affix_slot: String) -> Array[StringName]:

@@ -1,8 +1,8 @@
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert_wrap;
 
-uniform sampler2D stone_texture : source_color, filter_nearest;
-uniform sampler2D normal_texture : hint_normal, filter_nearest;
+uniform sampler2D stone_texture : source_color, filter_linear_mipmap;
+uniform sampler2D normal_texture : hint_normal, filter_linear_mipmap;
 uniform vec4 stone_color : source_color = vec4(0.5, 0.48, 0.45, 1.0);
 uniform vec4 stone_color_dark : source_color = vec4(0.32, 0.30, 0.28, 1.0);
 uniform vec4 moss_color : source_color = vec4(0.18, 0.38, 0.08, 1.0);

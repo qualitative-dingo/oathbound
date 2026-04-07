@@ -26,12 +26,12 @@ static func _ensure_materials() -> void:
 	_mat_cave_rock = StandardMaterial3D.new()
 	_mat_cave_rock.albedo_color = Color(0.18, 0.16, 0.14)
 	_mat_cave_rock.roughness = 0.95
-	_mat_cave_rock.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_mat_cave_rock.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	_mat_cave_floor = StandardMaterial3D.new()
 	_mat_cave_floor.albedo_color = Color(0.22, 0.19, 0.16)
 	_mat_cave_floor.roughness = 0.9
-	_mat_cave_floor.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_mat_cave_floor.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	_mat_copper_vein = StandardMaterial3D.new()
 	_mat_copper_vein.albedo_color = Color(0.55, 0.35, 0.18)
@@ -40,7 +40,7 @@ static func _ensure_materials() -> void:
 	_mat_copper_vein.emission_enabled = true
 	_mat_copper_vein.emission = Color(0.3, 0.18, 0.05)
 	_mat_copper_vein.emission_energy_multiplier = 0.3
-	_mat_copper_vein.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_mat_copper_vein.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

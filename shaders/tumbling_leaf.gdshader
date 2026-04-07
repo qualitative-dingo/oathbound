@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_disabled, diffuse_lambert_wrap;
 
-uniform sampler2D albedo_texture : source_color, filter_nearest_mipmap;
+uniform sampler2D albedo_texture : source_color, filter_linear_mipmap;
 uniform vec4 albedo_color : source_color = vec4(0.45, 0.35, 0.15, 1.0);
 uniform float alpha_cutoff : hint_range(0.0, 1.0) = 0.35;
 uniform float tumble_speed : hint_range(0.0, 8.0) = 2.5;

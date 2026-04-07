@@ -1789,13 +1789,44 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 
 
 const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
-const _MAX_COLLISION_ENABLES_PER_FRAME := 4
+const _MAX_COLLISION_ENABLES_PER_FRAME := 6
 const _MAX_COLLISION_DISABLES_PER_FRAME := 4
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
 
-	# 0. Process collision shape toggles - separate budgets so disables can't starve enables
+	# 0a. Fast-path: immediately enable ALL collision shapes near any player (no budget)
+	if not _deferred_collisions.is_empty() and not _players.is_empty():
+		var player_zones: Array[Vector2i] = []
+		for p in _players:
+			if p.get("_in_cave"):
+				continue
+			player_zones.append(world_to_zone(get_world_position(p)))
+		var remaining: Array = []
+		for col_shape in _deferred_collisions:
+			if not is_instance_valid(col_shape):
+				continue
+			var parent = col_shape.get_parent()
+			if not parent:
+				remaining.append(col_shape)
+				continue
+			var zone_coord: Variant = parent.get_meta(&"zone_coord", null)
+			if zone_coord == null:
+				col_shape.disabled = false
+				continue
+			var zc: Vector2i = zone_coord as Vector2i
+			var near_player := false
+			for pz in player_zones:
+				if absi(zc.x - pz.x) <= 1 and absi(zc.y - pz.y) <= 1:
+					near_player = true
+					break
+			if near_player:
+				col_shape.disabled = false
+			else:
+				remaining.append(col_shape)
+		_deferred_collisions = remaining
+
+	# 0b. Process remaining collision shape toggles under budget
 	var enables_this_frame := 0
 	while not _deferred_collisions.is_empty() and enables_this_frame < _MAX_COLLISION_ENABLES_PER_FRAME:
 		var col_shape = _deferred_collisions.pop_front()
@@ -2226,6 +2257,7 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 
 	# Local position = world coords; parent (WorldGenerator) global_position handles origin shift
 	zone_root.position = Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE)
+	zone_root.set_meta(&"zone_coord", coord)
 	_loaded_zones[coord] = zone_root
 	_explored_zones[coord] = true
 
@@ -2727,7 +2759,7 @@ func _init_biome_materials() -> void:
 			# Fallback if shader fails to load
 			var mat := StandardMaterial3D.new()
 			mat.albedo_color = _get_biome_terrain_color(biome_id)
-			mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+			mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 			mat.roughness = 0.85
 			mat.vertex_color_use_as_albedo = true
 			mat.uv1_triplanar = true

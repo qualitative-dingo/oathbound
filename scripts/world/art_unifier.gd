@@ -93,4 +93,4 @@ func _force_nearest_mesh(mi: MeshInstance3D) -> void:
 			_force_nearest_standard(mat)
 
 func _force_nearest_standard(mat: StandardMaterial3D) -> void:
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS

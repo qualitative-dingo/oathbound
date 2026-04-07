@@ -751,7 +751,7 @@ func _grab_fish() -> void:
 		_carried_fish_sprite.texture = ImageTexture.create_from_image(img)
 	_carried_fish_sprite.pixel_size = 0.02
 	_carried_fish_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_carried_fish_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_carried_fish_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_carried_fish_sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
 	_carried_fish_sprite.transparent = true
 	_carried_fish_sprite.shaded = true

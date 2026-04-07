@@ -955,7 +955,7 @@ static func load_building_mat(path: String, tint: Color, rough: float, uv_scale:
 	if tex:
 		mat.albedo_texture = tex
 		mat.albedo_color = tint
-		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	else:
 		mat.albedo_color = tint
 	mat.roughness = rough
@@ -1820,7 +1820,7 @@ func _build_campfire_stone_ring(structure: StaticBody3D) -> void:
 		mat.albedo_color = Color(randf_range(0.28, 0.42), randf_range(0.26, 0.38), randf_range(0.22, 0.34))
 		mat.roughness = randf_range(0.8, 0.95)
 		mat.metallic = randf_range(0.0, 0.08)
-		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		stone.set_surface_override_material(0, mat)
 		var angle := float(i) * TAU / float(stone_count) + randf_range(-0.12, 0.12)
 		var radial_offset := randf_range(-0.04, 0.04)
@@ -1859,7 +1859,7 @@ func build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 		log_mat.albedo_texture = bark_tex
 		log_mat.albedo_color = Color(randf_range(0.7, 1.0), randf_range(0.65, 0.9), randf_range(0.6, 0.85))
 		log_mat.roughness = 1.0
-		log_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		log_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		log_mat.emission_enabled = true
 		log_mat.emission = Color(0.5, 0.1, 0.0)
 		log_mat.emission_energy_multiplier = 0.6
@@ -2556,15 +2556,15 @@ func build_raft_model() -> Node3D:
 	var plank_mat := StandardMaterial3D.new()
 	plank_mat.albedo_color = Color(0.45, 0.32, 0.18)
 	plank_mat.roughness = 0.9
-	plank_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	plank_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var dark_mat := StandardMaterial3D.new()
 	dark_mat.albedo_color = Color(0.32, 0.22, 0.12)
 	dark_mat.roughness = 0.85
-	dark_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	dark_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var rope_mat := StandardMaterial3D.new()
 	rope_mat.albedo_color = Color(0.60, 0.52, 0.35)
 	rope_mat.roughness = 0.8
-	rope_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	rope_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	# Base planks (5 logs lashed together)
 	for i in 5:

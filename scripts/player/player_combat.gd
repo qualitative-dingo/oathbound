@@ -941,6 +941,8 @@ func apply_affix_stat_bonuses() -> void:
 		new_max_hp += affix_val(&"vitality")
 	if affixes.has(&"endurance"):
 		new_max_stam += affix_val(&"endurance")
+	if affixes.has(&"athletic_endurance"):
+		new_max_stam *= (1.0 + affix_val(&"athletic_endurance"))
 	if new_max_hp != pc.max_health:
 		var hp_ratio: float = pc.current_health / pc.max_health if pc.max_health > 0 else 1.0
 		pc.max_health = new_max_hp

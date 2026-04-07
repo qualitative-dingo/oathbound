@@ -181,6 +181,8 @@ func handle_movement(delta: float) -> void:
 		speed *= MOUNT_SPEED_MULT
 	if pc._has_affix(&"swiftness"):
 		speed *= 1.1
+	if pc._has_affix(&"fleetfooted") and pc._is_sprinting:
+		speed *= 1.3
 	if pc._is_swimming and pc._has_affix(&"trailblazer"):
 		speed *= 1.15
 	if pc._adrenaline_timer > 0.0:

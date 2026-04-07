@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley;
 
-uniform sampler2D albedo_texture : source_color, filter_nearest_mipmap;
+uniform sampler2D albedo_texture : source_color, filter_linear_mipmap;
 uniform vec3 albedo_color : source_color = vec3(0.25, 0.55, 0.15);
 uniform float roughness : hint_range(0.0, 1.0) = 0.85;
 uniform vec3 uv1_scale = vec3(3.0, 3.0, 3.0);

@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode blend_mix, cull_disabled, depth_prepass_alpha, diffuse_burley, specular_schlick_ggx;
 
-uniform sampler2D sprite_texture : filter_nearest, source_color;
+uniform sampler2D sprite_texture : filter_linear_mipmap, source_color;
 uniform float alpha_cutoff : hint_range(0.0, 1.0) = 0.5;
 uniform float normal_strength : hint_range(0.0, 5.0) = 2.5;
 uniform float rim_power : hint_range(0.5, 8.0) = 2.5;

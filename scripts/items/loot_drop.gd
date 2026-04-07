@@ -52,7 +52,7 @@ func _ready() -> void:
 	_sprite = Sprite3D.new()
 	_sprite.pixel_size = 0.02
 	_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	_sprite.alpha_scissor_threshold = 0.5
 	_sprite.transparent = true
@@ -379,7 +379,7 @@ func _update_visuals() -> void:
 		mesh.size = Vector3(0.25, 0.25, 0.25)
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = _get_item_color()
-		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		var mi := MeshInstance3D.new()
 		mi.mesh = mesh
 		mi.set_surface_override_material(0, mat)

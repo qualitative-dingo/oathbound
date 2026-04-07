@@ -8,7 +8,7 @@ const _DEBUG_LOG := false
 ## Trees = procedural trunk (root flare + buttress ridges) + billboard leaf canopy.
 ## Rocks = low-poly SphereMesh with triplanar stone texture.
 ## Bushes = small squished SphereMesh with triplanar leaf texture.
-## All materials use TEXTURE_FILTER_NEAREST + triplanar mapping for pixel-art look.
+## All materials use triplanar mapping.
 ## Creatures keep billboards (they have directional sprite swapping).
 
 const _CreatureAI := preload("res://scripts/creatures/creature_ai.gd")
@@ -473,7 +473,7 @@ static func _ensure_textures() -> void:
 	var birch_tex := _generate_birch_bark_texture()
 	_mat_birch_bark = StandardMaterial3D.new()
 	_mat_birch_bark.albedo_texture = birch_tex
-	_mat_birch_bark.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_mat_birch_bark.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_mat_birch_bark.uv1_triplanar = true
 	_mat_birch_bark.uv1_world_triplanar = true
 	_mat_birch_bark.uv1_triplanar_sharpness = 1.0
@@ -555,7 +555,7 @@ static func _ensure_textures() -> void:
 	# ── Pebble material — flat, muted, no normal map ──
 	_mat_pebble = StandardMaterial3D.new()
 	_mat_pebble.albedo_color = Color(0.42, 0.40, 0.37)
-	_mat_pebble.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_mat_pebble.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_mat_pebble.roughness = 0.95
 
 	# ── 30 unique procedural rock meshes ──
@@ -603,7 +603,7 @@ static func _ensure_berry_bushes() -> void:
 	_blueberry_mat.emission = Color(0.06, 0.04, 0.22)
 	_blueberry_mat.emission_energy_multiplier = 0.4
 	_blueberry_mat.roughness = 0.65
-	_blueberry_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_blueberry_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	_lingonberry_mat = StandardMaterial3D.new()
 	_lingonberry_mat.albedo_color = Color(0.72, 0.08, 0.10)
@@ -611,7 +611,7 @@ static func _ensure_berry_bushes() -> void:
 	_lingonberry_mat.emission = Color(0.36, 0.04, 0.05)
 	_lingonberry_mat.emission_energy_multiplier = 0.4
 	_lingonberry_mat.roughness = 0.65
-	_lingonberry_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_lingonberry_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 
 static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
@@ -1117,7 +1117,7 @@ static func _make_wind_leaf_mat(
 		fb.albedo_texture = tex
 	else:
 		fb.albedo_color = color
-	fb.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	fb.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	fb.uv1_triplanar = true
 	fb.uv1_world_triplanar = true
 	fb.uv1_triplanar_sharpness = 1.0
@@ -1132,7 +1132,7 @@ static func _make_triplanar_mat(tex: Texture2D, fallback_color: Color) -> Standa
 		mat.albedo_texture = tex
 	else:
 		mat.albedo_color = fallback_color
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	mat.uv1_triplanar = true
 	mat.uv1_world_triplanar = true
 	mat.uv1_triplanar_sharpness = 1.0
@@ -3149,7 +3149,7 @@ static func _create_enemy(biome: StringName, rng: RandomNumberGenerator = null, 
 		sprite.texture = initial_tex
 		sprite.pixel_size = 0.04
 		sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		sprite.transparent = true
 		sprite.shaded = true
 		sprite.double_sided = true
@@ -3242,7 +3242,7 @@ static func _apply_nearest_filter_recursive(node: Node) -> void:
 		for surf_idx in mi.mesh.get_surface_count() if mi.mesh else 0:
 			var mat := mi.get_active_material(surf_idx)
 			if mat is StandardMaterial3D:
-				(mat as StandardMaterial3D).texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+				(mat as StandardMaterial3D).texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	for child in node.get_children():
 		_apply_nearest_filter_recursive(child)
 
@@ -3270,7 +3270,7 @@ static func _fix_model_materials_inner(node: Node, fallback_tex: Texture2D, forc
 		mi.visible = true
 		if mi.mesh and force_override:
 			var new_mat := StandardMaterial3D.new()
-			new_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+			new_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 			if fallback_tex:
 				new_mat.albedo_texture = fallback_tex
 			else:
@@ -3323,7 +3323,7 @@ static func _tint_meshes_recursive(node: Node, tint: Color) -> void:
 		var mi := node as MeshInstance3D
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = tint
-		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		mi.material_override = mat
 	for child in node.get_children():
 		_tint_meshes_recursive(child, tint)
@@ -3380,7 +3380,7 @@ static func _create_horse(rng: RandomNumberGenerator = null, override_stars: int
 		sprite.texture = tex
 		sprite.pixel_size = 0.04
 		sprite.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		sprite.transparent = true
 		sprite.shaded = true
 		sprite.double_sided = true
@@ -3788,7 +3788,7 @@ static func _create_fish(rng: RandomNumberGenerator) -> Node3D:
 			sprite.texture = ImageTexture.create_from_image(img)
 		sprite.pixel_size = 0.02
 		sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
 		sprite.transparent = true
 		sprite.shaded = true
@@ -3924,7 +3924,7 @@ static func _ensure_water_plants() -> void:
 	_lily_pad_mat = StandardMaterial3D.new()
 	_lily_pad_mat.albedo_color = Color(0.15, 0.42, 0.12)
 	_lily_pad_mat.roughness = 0.9
-	_lily_pad_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_lily_pad_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_lily_pad_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 	# Lily flower — detailed pink/white bloom with vertex color gradient
@@ -3934,38 +3934,38 @@ static func _ensure_water_plants() -> void:
 	_lily_flower_mat.vertex_color_use_as_albedo = true
 	_lily_flower_mat.roughness = 0.75
 	_lily_flower_mat.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
-	_lily_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_lily_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_lily_flower_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 
 	# Lily pad stem — dark underwater branch
 	_lily_stem_mat = StandardMaterial3D.new()
 	_lily_stem_mat.albedo_color = Color(0.05, 0.08, 0.03)
 	_lily_stem_mat.roughness = 0.95
-	_lily_stem_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_lily_stem_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	# Cattail stalk
 	_cattail_mat = StandardMaterial3D.new()
 	_cattail_mat.albedo_color = Color(0.22, 0.38, 0.15)
 	_cattail_mat.roughness = 0.9
-	_cattail_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_cattail_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	# Cattail brown head
 	_cattail_head_mat = StandardMaterial3D.new()
 	_cattail_head_mat.albedo_color = Color(0.35, 0.22, 0.10)
 	_cattail_head_mat.roughness = 0.95
-	_cattail_head_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_cattail_head_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	# Loosestrife stalk
 	_loosestrife_mat = StandardMaterial3D.new()
 	_loosestrife_mat.albedo_color = Color(0.20, 0.35, 0.12)
 	_loosestrife_mat.roughness = 0.9
-	_loosestrife_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_loosestrife_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	# Loosestrife purple flower
 	_loosestrife_flower_mat = StandardMaterial3D.new()
 	_loosestrife_flower_mat.albedo_color = Color(0.62, 0.18, 0.58)
 	_loosestrife_flower_mat.roughness = 0.85
-	_loosestrife_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+	_loosestrife_flower_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	# Reeds — tall vegetation, reuse billboard shader for wind sway
 	if _billboard_shader:

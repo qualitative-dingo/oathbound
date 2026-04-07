@@ -818,7 +818,7 @@ func mount(horse: Node3D) -> void:
 			rider.texture = pc._player_textures["south"] as Texture2D
 		rider.pixel_size = 0.025
 		rider.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		rider.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		rider.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		rider.alpha_cut = SpriteBase3D.ALPHA_CUT_OPAQUE_PREPASS
 		rider.transparent = true
 		rider.shaded = true
@@ -962,15 +962,15 @@ func build_raft_model() -> Node3D:
 	var plank_mat := StandardMaterial3D.new()
 	plank_mat.albedo_color = Color(0.45, 0.32, 0.18)
 	plank_mat.roughness = 0.9
-	plank_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	plank_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var dark_mat := StandardMaterial3D.new()
 	dark_mat.albedo_color = Color(0.32, 0.22, 0.12)
 	dark_mat.roughness = 0.85
-	dark_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	dark_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	var rope_mat := StandardMaterial3D.new()
 	rope_mat.albedo_color = Color(0.60, 0.52, 0.35)
 	rope_mat.roughness = 0.8
-	rope_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	rope_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 	# Base planks (5 logs lashed together)
 	for i in 5:
