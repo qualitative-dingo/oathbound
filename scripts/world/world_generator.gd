@@ -1000,6 +1000,9 @@ func _trace_creek_paths() -> void:
 
 	var visited := {}
 
+	# Collect candidate start cells sorted by accumulation (highest first)
+	# so the longest rivers get traced first and shorter tributaries merge into them
+	var candidates: Array[Vector3i] = []  # (gx, gz, sort_key)
 	for gz in range(1, _ws_dim - 1):
 		for gx in range(1, _ws_dim - 1):
 			var idx: int = gz * _ws_dim + gx
@@ -1009,57 +1012,95 @@ func _trace_creek_paths() -> void:
 			var h: float = _ws_heights[idx]
 			if h < WATER_LEVEL + _CREEK_MIN_ELEV:
 				continue
-			if visited.has(idx):
-				continue
+			candidates.append(Vector3i(gx, gz, int(accum * 1000.0)))
+	candidates.sort_custom(func(a: Vector3i, b: Vector3i) -> bool: return a.z > b.z)
 
-			# Require a lake neighbor — creeks must emerge from water pools
-			var has_lake_neighbor := false
+	for cand in candidates:
+		var gx: int = cand.x
+		var gz: int = cand.y
+		var idx: int = gz * _ws_dim + gx
+		if visited.has(idx):
+			continue
+
+		# Walk upstream against flow to find the highest source point
+		var src_gx := gx
+		var src_gz := gz
+		for _up in 200:
+			var best_d := -1
+			var best_h := -999.0
 			for d in 8:
-				var lnx: int = gx + _D8X[d]
-				var lnz: int = gz + _D8Z[d]
-				if lnx < 0 or lnx >= _ws_dim or lnz < 0 or lnz >= _ws_dim:
+				var ux: int = src_gx + _D8X[d]
+				var uz: int = src_gz + _D8Z[d]
+				if ux < 1 or ux >= _ws_dim - 1 or uz < 1 or uz >= _ws_dim - 1:
 					continue
-				var lnwx: float = -world_radius + float(lnx) * _WS_CELL
-				var lnwz: float = -world_radius + float(lnz) * _WS_CELL
-				var ln_val := _continent_noise.get_noise_2d(lnwx * 0.7 + 5000.0, lnwz * 0.7 + 5000.0)
-				if ln_val < -0.20:
-					has_lake_neighbor = true
-					break
-			if not has_lake_neighbor:
-				continue
+				var uid := uz * _ws_dim + ux
+				var uflow: int = _ws_flow[uid]
+				if uflow < 0:
+					continue
+				var dnx: int = ux + _D8X[uflow]
+				var dnz: int = uz + _D8Z[uflow]
+				if dnx == src_gx and dnz == src_gz:
+					if _ws_accum[uid] >= _CREEK_ACCUM_THRESH and _ws_heights[uid] > best_h:
+						best_d = d
+						best_h = _ws_heights[uid]
+			if best_d < 0:
+				break
+			src_gx += _D8X[best_d]
+			src_gz += _D8Z[best_d]
 
-			# Trace downstream from this cell
-			var raw_points: Array[Vector2] = []
-			var raw_accums: Array[float] = []
-			var cgx := gx
-			var cgz := gz
-			for _step in 500:
-				var cidx := cgz * _ws_dim + cgx
-				if visited.has(cidx):
-					raw_points.append(Vector2(float(cgx), float(cgz)))
-					raw_accums.append(_ws_accum[cidx])
-					break
-				visited[cidx] = true
-
+		# Trace downstream from the source
+		var raw_points: Array[Vector2] = []
+		var raw_accums: Array[float] = []
+		var cgx := src_gx
+		var cgz := src_gz
+		var flat_bridges := 0
+		for _step in 500:
+			var cidx := cgz * _ws_dim + cgx
+			if visited.has(cidx):
 				raw_points.append(Vector2(float(cgx), float(cgz)))
 				raw_accums.append(_ws_accum[cidx])
+				break
+			visited[cidx] = true
 
-				var ch: float = _ws_heights[cidx]
-				if ch < WATER_LEVEL + 0.5:
-					break
+			raw_points.append(Vector2(float(cgx), float(cgz)))
+			raw_accums.append(_ws_accum[cidx])
 
-				var fd: int = _ws_flow[cidx]
-				if fd < 0:
-					break
-				var nx: int = cgx + _D8X[fd]
-				var nz: int = cgz + _D8Z[fd]
-				if nx < 0 or nx >= _ws_dim or nz < 0 or nz >= _ws_dim:
-					break
-				cgx = nx
-				cgz = nz
+			var ch: float = _ws_heights[cidx]
+			if ch < WATER_LEVEL + 0.1:
+				break
 
-			if raw_points.size() < 2:
+			var fd: int = _ws_flow[cidx]
+			if fd < 0:
+				# Bridge flat spots: find lowest neighbor and continue (limited)
+				if flat_bridges >= 3:
+					break
+				var lowest_d := -1
+				var lowest_h := ch + 999.0
+				for d in 8:
+					var bnx: int = cgx + _D8X[d]
+					var bnz: int = cgz + _D8Z[d]
+					if bnx < 1 or bnx >= _ws_dim - 1 or bnz < 1 or bnz >= _ws_dim - 1:
+						continue
+					var bh: float = _ws_heights[bnz * _ws_dim + bnx]
+					if bh < lowest_h and not visited.has(bnz * _ws_dim + bnx):
+						lowest_h = bh
+						lowest_d = d
+				if lowest_d < 0:
+					break
+				cgx += _D8X[lowest_d]
+				cgz += _D8Z[lowest_d]
+				flat_bridges += 1
 				continue
+			flat_bridges = 0
+			var nx: int = cgx + _D8X[fd]
+			var nz: int = cgz + _D8Z[fd]
+			if nx < 0 or nx >= _ws_dim or nz < 0 or nz >= _ws_dim:
+				break
+			cgx = nx
+			cgz = nz
+
+		if raw_points.size() < 2:
+			continue
 
 			# Subdivide coarse grid path into smooth world-space polyline
 			# with noise-driven lateral meandering and organic width variation
@@ -1176,6 +1217,19 @@ func _trace_creek_paths() -> void:
 				if points[pi].y > running_min_y + 0.3:
 					points[pi].y = running_min_y + 0.3
 				running_min_y = minf(running_min_y, points[pi].y)
+
+			# Taper width to zero at source and (non-pool) mouth for smooth endpoints
+			var n_pts := points.size()
+			var taper_count := mini(6, n_pts / 2)
+			for ti in taper_count:
+				var t := float(ti) / float(taper_count)
+				var ease := t * t
+				widths[ti] *= ease
+			if not entered_pool:
+				for ti in taper_count:
+					var t := float(ti) / float(taper_count)
+					var ease := t * t
+					widths[n_pts - 1 - ti] *= ease
 
 			_bucket_creek_by_zone(points, widths, flow_uvs)
 
@@ -2013,7 +2067,9 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 		var is_vegetation := is_flower or is_grass or cname == "Reeds" or cname.begins_with("BlueberryBush")
 		var is_tree := child is StaticBody3D and (child as StaticBody3D).has_meta("tree_name")
 		if is_flower or is_grass:
-			child.visible = new_lod == 0
+			# visibility_range_end on the MMI handles distance culling per-instance;
+			# hard LOD toggle removed to avoid rectangular zone-block pop-in
+			pass
 		elif is_tree:
 			# Trees stay visible at LOD 1 so canopy children can render;
 			# trunk detail is hidden per-child below.  Only fully hidden at LOD 2.

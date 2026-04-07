@@ -120,12 +120,14 @@ varying vec3 v_world_pos;
 varying float v_path_mask;
 varying float v_brightness;
 varying float v_river_bank;
+varying vec2 v_zone_uv;
 
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
 	v_path_mask = COLOR.r;
 	v_brightness = COLOR.g;
 	v_river_bank = COLOR.b;
+	v_zone_uv = UV;
 }
 
 void fragment() {
@@ -254,7 +256,10 @@ void fragment() {
 
 	// Rock bump — coarse shapes + fine grit (grit lives HERE, not in albedo)
 	// dFdx/dFdy naturally fade high frequencies at distance = no aliasing
-	if (rock_w > 0.01) {
+	// Fade out near zone edges where dFdx/dFdy are discontinuous across draw calls
+	float zone_edge = min(min(v_zone_uv.x, 1.0 - v_zone_uv.x), min(v_zone_uv.y, 1.0 - v_zone_uv.y));
+	float bump_fade = smoothstep(0.0, 0.04, zone_edge);
+	if (rock_w > 0.01 && bump_fade > 0.001) {
 		float rn1 = vnoise(world_pos.xz * 0.12 + vec2(311.0, 719.0));
 		float rn2 = vnoise(world_pos.xz * 0.4 + vec2(853.0, 127.0));
 		float rn3 = vnoise(world_pos.xz * 1.2 + vec2(491.0, 953.0));
@@ -271,10 +276,11 @@ void fragment() {
 		                + (rn5 - 0.5) * 0.13
 		                + (rn6 - 0.5) * 0.08
 		                + vein_b * 0.04;
+		float bf = bump_fade * rock_w;
 		NORMAL = normalize(NORMAL + vec3(
-			dFdx(rock_bump) * 45.0 * rock_w,
+			dFdx(rock_bump) * 45.0 * bf,
 			0.0,
-			dFdy(rock_bump) * 45.0 * rock_w
+			dFdy(rock_bump) * 45.0 * bf
 		));
 	}
 }
