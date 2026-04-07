@@ -1002,13 +1002,16 @@ func _ws_sample_accum(wx: float, wz: float) -> float:
 
 
 func _ws_sample_flow_dir(wx: float, wz: float) -> Vector2:
-	if _ws_flow.is_empty():
+	if _ws_flow.is_empty() or _ws_dim < 1:
 		return Vector2.ZERO
 	var gx_f: float = (wx + world_radius) / _WS_CELL
 	var gz_f: float = (wz + world_radius) / _WS_CELL
 	var gx: int = clampi(int(round(gx_f)), 0, _ws_dim - 1)
 	var gz: int = clampi(int(round(gz_f)), 0, _ws_dim - 1)
-	var d_idx: int = _ws_flow[gz * _ws_dim + gx]
+	var idx := gz * _ws_dim + gx
+	if idx >= _ws_flow.size():
+		return Vector2.ZERO
+	var d_idx: int = _ws_flow[idx]
 	if d_idx < 0:
 		return Vector2(0, 1)
 	return Vector2(float(_D8X[d_idx]), float(_D8Z[d_idx])).normalized()
