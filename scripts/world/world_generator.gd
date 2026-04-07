@@ -1126,136 +1126,136 @@ func _trace_creek_paths() -> void:
 		if raw_points.size() < 2:
 			continue
 
-			# Subdivide coarse grid path into smooth world-space polyline
-			# with noise-driven lateral meandering and organic width variation
-			var points := PackedVector3Array()
-			var widths := PackedFloat32Array()
-			var flow_uvs := PackedFloat32Array()
-			var cum_dist := 0.0
-			var entered_pool := false
+		# Subdivide coarse grid path into smooth world-space polyline
+		# with noise-driven lateral meandering and organic width variation
+		var points := PackedVector3Array()
+		var widths := PackedFloat32Array()
+		var flow_uvs := PackedFloat32Array()
+		var cum_dist := 0.0
+		var entered_pool := false
 
-			for i in raw_points.size() - 1:
-				if entered_pool:
+		for i in raw_points.size() - 1:
+			if entered_pool:
+				break
+			var g0 := raw_points[i]
+			var g1 := raw_points[i + 1]
+			var a0 := raw_accums[i]
+			var a1 := raw_accums[i + 1]
+
+			# Flow direction for perpendicular offset
+			var seg_dir := (g1 - g0).normalized()
+			var seg_perp := Vector2(-seg_dir.y, seg_dir.x)
+
+			for s in _CREEK_SUBDIV:
+				var t_val: float = float(s) / float(_CREEK_SUBDIV)
+				var gp := g0.lerp(g1, t_val)
+				var wx: float = -world_radius + gp.x * _WS_CELL
+				var wz: float = -world_radius + gp.y * _WS_CELL
+
+				# Lateral meandering — multi-scale noise perpendicular to flow
+				# Frequencies account for _detail_noise built-in freq of 0.02
+				var wander_large := _detail_noise.get_noise_2d(wx * 0.5 + 8000.0, wz * 0.5 + 8000.0) * 3.0
+				var wander_med := _detail_noise.get_noise_2d(wx * 2.0 + 9500.0, wz * 2.0 + 9500.0) * 1.5
+				var wander_small := _detail_noise.get_noise_2d(wx * 6.0 + 11000.0, wz * 6.0 + 11000.0) * 0.6
+				var lateral_offset := wander_large + wander_med + wander_small
+				# Taper meander near path endpoints to keep source/sink connected
+				var path_t := (float(i) + t_val) / float(raw_points.size() - 1)
+				var taper := smoothstep(0.0, 0.12, path_t) * smoothstep(1.0, 0.88, path_t)
+				lateral_offset *= taper
+
+				wx += seg_perp.x * lateral_offset * _WS_CELL * 0.18
+				wz += seg_perp.y * lateral_offset * _WS_CELL * 0.18
+
+				var acc := lerpf(a0, a1, t_val)
+				var norm_acc := clampf((acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
+				var base_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, norm_acc) * 0.5
+				var width_noise := _detail_noise.get_noise_2d(wx * 1.5 + 13000.0, wz * 1.5 + 13000.0)
+				var w := base_w * (0.75 + width_noise * 0.5)
+
+				# Detect pool/water body entry and create smooth transition
+				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
+				var terrain_h := get_height_at(wx, wz)
+				var near_pool := lake_n < -0.10 or terrain_h < WATER_LEVEL + 0.3
+				var in_pool := lake_n < -0.15 or terrain_h < WATER_LEVEL - 0.5
+
+				if in_pool:
+					if not points.is_empty():
+						var last_y: float = points[points.size() - 1].y
+						var drop_y := WATER_LEVEL + 0.05
+						var step_advance := _WS_CELL / float(_CREEK_SUBDIV) * 0.3
+						for ti in 4:
+							var tf := float(ti + 1) / 4.0
+							var ease_t := tf * tf
+							var ty := lerpf(last_y, drop_y, ease_t)
+							wx += seg_dir.x * step_advance
+							wz += seg_dir.y * step_advance
+							var tw := w * (1.0 + tf * 0.6)
+							if not points.is_empty():
+								cum_dist += Vector3(wx, ty, wz).distance_to(points[points.size() - 1])
+							points.append(Vector3(wx, ty, wz))
+							widths.append(tw)
+							flow_uvs.append(cum_dist)
+					entered_pool = true
 					break
-				var g0 := raw_points[i]
-				var g1 := raw_points[i + 1]
-				var a0 := raw_accums[i]
-				var a1 := raw_accums[i + 1]
 
-				# Flow direction for perpendicular offset
-				var seg_dir := (g1 - g0).normalized()
-				var seg_perp := Vector2(-seg_dir.y, seg_dir.x)
+				var creek_y: float
+				if near_pool:
+					var pool_t := 1.0 - clampf((terrain_h - WATER_LEVEL - 0.15) / 0.35, 0.0, 1.0)
+					creek_y = lerpf(terrain_h + 0.08, WATER_LEVEL + 0.1, pool_t * pool_t)
+				else:
+					creek_y = terrain_h + 0.08
 
-				for s in _CREEK_SUBDIV:
-					var t_val: float = float(s) / float(_CREEK_SUBDIV)
-					var gp := g0.lerp(g1, t_val)
-					var wx: float = -world_radius + gp.x * _WS_CELL
-					var wz: float = -world_radius + gp.y * _WS_CELL
+				if not points.is_empty():
+					var prev := points[points.size() - 1]
+					cum_dist += Vector3(wx, creek_y, wz).distance_to(prev)
 
-					# Lateral meandering — multi-scale noise perpendicular to flow
-					# Frequencies account for _detail_noise built-in freq of 0.02
-					var wander_large := _detail_noise.get_noise_2d(wx * 0.5 + 8000.0, wz * 0.5 + 8000.0) * 3.0
-					var wander_med := _detail_noise.get_noise_2d(wx * 2.0 + 9500.0, wz * 2.0 + 9500.0) * 1.5
-					var wander_small := _detail_noise.get_noise_2d(wx * 6.0 + 11000.0, wz * 6.0 + 11000.0) * 0.6
-					var lateral_offset := wander_large + wander_med + wander_small
-					# Taper meander near path endpoints to keep source/sink connected
-					var path_t := (float(i) + t_val) / float(raw_points.size() - 1)
-					var taper := smoothstep(0.0, 0.12, path_t) * smoothstep(1.0, 0.88, path_t)
-					lateral_offset *= taper
+				points.append(Vector3(wx, creek_y, wz))
+				widths.append(w)
+				flow_uvs.append(cum_dist)
 
-					wx += seg_perp.x * lateral_offset * _WS_CELL * 0.18
-					wz += seg_perp.y * lateral_offset * _WS_CELL * 0.18
+		# Final point - only add if we haven't entered a pool/water body
+		if not entered_pool:
+			var last_g := raw_points[raw_points.size() - 1]
+			var lwx: float = -world_radius + last_g.x * _WS_CELL
+			var lwz: float = -world_radius + last_g.y * _WS_CELL
+			var final_lake_n := _continent_noise.get_noise_2d(lwx * 0.7 + 5000.0, lwz * 0.7 + 5000.0)
+			var lh := get_height_at(lwx, lwz)
+			if final_lake_n >= -0.15 and lh >= WATER_LEVEL - 0.5:
+				var last_acc := raw_accums[raw_accums.size() - 1]
+				var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
+				var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
+				var lw_noise := _detail_noise.get_noise_2d(lwx * 1.5 + 13000.0, lwz * 1.5 + 13000.0)
+				last_w *= (0.75 + lw_noise * 0.5)
+				if not points.is_empty():
+					cum_dist += Vector3(lwx, lh + 0.08, lwz).distance_to(points[points.size() - 1])
+				points.append(Vector3(lwx, lh + 0.08, lwz))
+				widths.append(last_w)
+				flow_uvs.append(cum_dist)
 
-					var acc := lerpf(a0, a1, t_val)
-					var norm_acc := clampf((acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
-					var base_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, norm_acc) * 0.5
-					var width_noise := _detail_noise.get_noise_2d(wx * 1.5 + 13000.0, wz * 1.5 + 13000.0)
-					var w := base_w * (0.75 + width_noise * 0.5)
+		if points.size() < 2:
+			continue
 
-					# Detect pool/water body entry and create smooth transition
-					var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
-					var terrain_h := get_height_at(wx, wz)
-					var near_pool := lake_n < -0.10 or terrain_h < WATER_LEVEL + 0.3
-					var in_pool := lake_n < -0.15 or terrain_h < WATER_LEVEL - 0.5
+		# Enforce mostly-downhill Y — allow up to 0.3m uphill to follow terrain dips
+		var running_min_y := points[0].y
+		for pi in range(1, points.size()):
+			if points[pi].y > running_min_y + 0.3:
+				points[pi].y = running_min_y + 0.3
+			running_min_y = minf(running_min_y, points[pi].y)
 
-					if in_pool:
-						if not points.is_empty():
-							var last_y: float = points[points.size() - 1].y
-							var drop_y := WATER_LEVEL + 0.05
-							var step_advance := _WS_CELL / float(_CREEK_SUBDIV) * 0.3
-							for ti in 4:
-								var tf := float(ti + 1) / 4.0
-								var ease_t := tf * tf
-								var ty := lerpf(last_y, drop_y, ease_t)
-								wx += seg_dir.x * step_advance
-								wz += seg_dir.y * step_advance
-								var tw := w * (1.0 + tf * 0.6)
-								if not points.is_empty():
-									cum_dist += Vector3(wx, ty, wz).distance_to(points[points.size() - 1])
-								points.append(Vector3(wx, ty, wz))
-								widths.append(tw)
-								flow_uvs.append(cum_dist)
-						entered_pool = true
-						break
-
-					var creek_y: float
-					if near_pool:
-						var pool_t := 1.0 - clampf((terrain_h - WATER_LEVEL - 0.15) / 0.35, 0.0, 1.0)
-						creek_y = lerpf(terrain_h + 0.08, WATER_LEVEL + 0.1, pool_t * pool_t)
-					else:
-						creek_y = terrain_h + 0.08
-
-					if not points.is_empty():
-						var prev := points[points.size() - 1]
-						cum_dist += Vector3(wx, creek_y, wz).distance_to(prev)
-
-					points.append(Vector3(wx, creek_y, wz))
-					widths.append(w)
-					flow_uvs.append(cum_dist)
-
-			# Final point - only add if we haven't entered a pool/water body
-			if not entered_pool:
-				var last_g := raw_points[raw_points.size() - 1]
-				var lwx: float = -world_radius + last_g.x * _WS_CELL
-				var lwz: float = -world_radius + last_g.y * _WS_CELL
-				var final_lake_n := _continent_noise.get_noise_2d(lwx * 0.7 + 5000.0, lwz * 0.7 + 5000.0)
-				var lh := get_height_at(lwx, lwz)
-				if final_lake_n >= -0.15 and lh >= WATER_LEVEL - 0.5:
-					var last_acc := raw_accums[raw_accums.size() - 1]
-					var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
-					var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
-					var lw_noise := _detail_noise.get_noise_2d(lwx * 1.5 + 13000.0, lwz * 1.5 + 13000.0)
-					last_w *= (0.75 + lw_noise * 0.5)
-					if not points.is_empty():
-						cum_dist += Vector3(lwx, lh + 0.08, lwz).distance_to(points[points.size() - 1])
-					points.append(Vector3(lwx, lh + 0.08, lwz))
-					widths.append(last_w)
-					flow_uvs.append(cum_dist)
-
-			if points.size() < 2:
-				continue
-
-			# Enforce mostly-downhill Y — allow up to 0.3m uphill to follow terrain dips
-			var running_min_y := points[0].y
-			for pi in range(1, points.size()):
-				if points[pi].y > running_min_y + 0.3:
-					points[pi].y = running_min_y + 0.3
-				running_min_y = minf(running_min_y, points[pi].y)
-
-			# Taper width to zero at source and (non-pool) mouth for smooth endpoints
-			var n_pts := points.size()
-			var taper_count := mini(6, n_pts / 2)
+		# Taper width to zero at source and (non-pool) mouth for smooth endpoints
+		var n_pts := points.size()
+		var taper_count := mini(6, n_pts / 2)
+		for ti in taper_count:
+			var t := float(ti) / float(taper_count)
+			var ease := t * t
+			widths[ti] *= ease
+		if not entered_pool:
 			for ti in taper_count:
 				var t := float(ti) / float(taper_count)
 				var ease := t * t
-				widths[ti] *= ease
-			if not entered_pool:
-				for ti in taper_count:
-					var t := float(ti) / float(taper_count)
-					var ease := t * t
-					widths[n_pts - 1 - ti] *= ease
+				widths[n_pts - 1 - ti] *= ease
 
-			_bucket_creek_by_zone(points, widths, flow_uvs)
+		_bucket_creek_by_zone(points, widths, flow_uvs)
 
 
 func _bucket_creek_by_zone(points: PackedVector3Array, widths: PackedFloat32Array, uvs: PackedFloat32Array) -> void:
