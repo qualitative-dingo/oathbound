@@ -1439,17 +1439,18 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
 	var continent := _continent_noise.get_noise_2d(x, z)
 	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
+	var breadth := _mountain_breadth(x, z)
 	var h := continent * height_scale * 0.35
 	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
 	h += foothills * height_scale * 1.5
 	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity)
+	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
 	h += peak_ramp * height_scale * mtn_multiplier
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
+	var ridge_mult := lerpf(0.1, 1.5, peak_intensity) * lerpf(0.3, 1.0, breadth)
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 	return h
 
@@ -1469,6 +1470,7 @@ func get_height_at(x: float, z: float) -> float:
 
 	var continent := _continent_noise.get_noise_2d(x, z)
 	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
+	var breadth := _mountain_breadth(x, z)
 	var detail := _detail_noise.get_noise_2d(x, z)
 
 	var h := continent * height_scale * 0.35
@@ -1478,12 +1480,12 @@ func get_height_at(x: float, z: float) -> float:
 	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity)
+	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
 	h += peak_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
+	var ridge_mult := lerpf(0.1, 1.5, peak_intensity) * lerpf(0.3, 1.0, breadth)
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 
 	h += detail * height_scale * 0.15
