@@ -1023,6 +1023,8 @@ func _trace_creek_paths() -> void:
 		return
 
 	var visited := {}
+	var occupied := {}
+	const OCC_CELL := 4.0
 
 	# Collect candidate start cells sorted by accumulation (highest first)
 	# so the longest rivers get traced first and shorter tributaries merge into them
@@ -1166,6 +1168,11 @@ func _trace_creek_paths() -> void:
 				wx += seg_perp.x * lateral_offset * _WS_CELL * 0.18
 				wz += seg_perp.y * lateral_offset * _WS_CELL * 0.18
 
+				var occ_key := Vector2i(int(floor(wx / OCC_CELL)), int(floor(wz / OCC_CELL)))
+				if occupied.has(occ_key) and not points.is_empty():
+					entered_pool = true
+					break
+
 				var acc := lerpf(a0, a1, t_val)
 				var norm_acc := clampf((acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 				var base_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, norm_acc) * 0.5
@@ -1256,6 +1263,17 @@ func _trace_creek_paths() -> void:
 				widths[n_pts - 1 - ti] *= ease
 
 		_bucket_creek_by_zone(points, widths, flow_uvs)
+
+		for pi in points.size():
+			var op := points[pi]
+			var ow := widths[pi] + 1.0
+			var ox_min := int(floor((op.x - ow) / OCC_CELL))
+			var ox_max := int(floor((op.x + ow) / OCC_CELL))
+			var oz_min := int(floor((op.z - ow) / OCC_CELL))
+			var oz_max := int(floor((op.z + ow) / OCC_CELL))
+			for ocx in range(ox_min, ox_max + 1):
+				for ocz in range(oz_min, oz_max + 1):
+					occupied[Vector2i(ocx, ocz)] = true
 
 
 func _bucket_creek_by_zone(points: PackedVector3Array, widths: PackedFloat32Array, uvs: PackedFloat32Array) -> void:
@@ -2454,7 +2472,7 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 		for i in points.size():
 			var p := points[i]
-			var w := half_widths[i] + 1.5
+			var w := half_widths[i] + 0.5
 			var uv_y := flow_uvs[i] * uv_scale
 
 			var flow_dir := tangents[i]

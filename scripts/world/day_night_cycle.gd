@@ -48,16 +48,16 @@ const NIGHT_START := 0.0     # 00:00 — midnight, full darkness begins
 const SUN_ENERGY_KEYS := [
 	[0.0,    0.0],    # midnight — pitch dark
 	[0.125,  0.0],    # 03:00 — still dark, about to rise
-	[0.146,  0.2],    # 03:30 — first hint of light
-	[0.167,  0.6],    # 04:00 — golden hour glow
-	[0.229,  1.5],    # 05:30 — full day
-	[0.35,   1.7],    # 08:24 — mid-morning
-	[0.50,   1.9],    # 12:00 — noon peak
-	[0.70,   1.7],    # 16:48 — afternoon
-	[0.854,  1.5],    # 20:30 — still bright evening
-	[0.875,  0.7],    # 21:00 — full golden hour
-	[0.917,  0.20],   # 22:00 — fading fast
-	[0.958,  0.05],   # 23:00 — last traces
+	[0.146,  0.15],   # 03:30 — first hint of light
+	[0.167,  0.45],   # 04:00 — golden hour glow
+	[0.229,  1.0],    # 05:30 — full day
+	[0.35,   1.1],    # 08:24 — mid-morning
+	[0.50,   1.2],    # 12:00 — noon peak
+	[0.70,   1.1],    # 16:48 — afternoon
+	[0.854,  1.0],    # 20:30 — still bright evening
+	[0.875,  0.5],    # 21:00 — full golden hour
+	[0.917,  0.15],   # 22:00 — fading fast
+	[0.958,  0.04],   # 23:00 — last traces
 	[0.98,   0.0],    # 23:31 — dark
 	[1.0,    0.0],    # midnight
 ]
@@ -222,16 +222,16 @@ const SATURATION_KEYS := [
 const SHADOW_OPACITY_KEYS := [
 	[0.0,    0.0],    # night: no shadows
 	[0.125,  0.0],
-	[0.146,  0.05],
-	[0.167,  0.10],   # dawn
-	[0.229,  0.18],   # full day
-	[0.35,   0.20],
-	[0.50,   0.20],   # noon
-	[0.70,   0.20],
-	[0.854,  0.16],   # 20:30
-	[0.875,  0.10],   # 21:00 golden
-	[0.917,  0.04],   # 22:00 fading
-	[0.958,  0.02],   # last light
+	[0.146,  0.02],
+	[0.167,  0.04],   # dawn
+	[0.229,  0.08],   # full day
+	[0.35,   0.10],
+	[0.50,   0.10],   # noon
+	[0.70,   0.10],
+	[0.854,  0.06],   # 20:30
+	[0.875,  0.04],   # 21:00 golden
+	[0.917,  0.02],   # 22:00 fading
+	[0.958,  0.01],   # last light
 	[0.98,   0.0],
 	[1.0,    0.0],
 ]

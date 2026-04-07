@@ -706,11 +706,11 @@ func _setup_camera_fill_light() -> void:
 		return
 	var fill := SpotLight3D.new()
 	fill.name = "CharacterFillLight"
-	fill.light_energy = 0.35
-	fill.light_color = Color(1.0, 0.97, 0.92)
-	fill.spot_range = 30.0
-	fill.spot_angle = 45.0
-	fill.spot_angle_attenuation = 0.5
+	fill.light_energy = 1.0
+	fill.light_color = Color(1.0, 0.98, 0.94)
+	fill.spot_range = 40.0
+	fill.spot_angle = 50.0
+	fill.spot_angle_attenuation = 0.3
 	fill.shadow_enabled = false
 	fill.light_bake_mode = Light3D.BAKE_DISABLED
 	parent.add_child(fill)
