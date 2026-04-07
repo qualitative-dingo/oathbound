@@ -1842,34 +1842,36 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 		var is_grass := cname == "GrassClump"
 		var is_vegetation := is_flower or is_grass or cname == "Reeds" or cname.begins_with("BlueberryBush")
 		var is_tree := child is StaticBody3D and (child as StaticBody3D).has_meta("tree_name")
-		if is_flower or is_grass or is_tree:
+		if is_flower or is_grass:
 			child.visible = new_lod == 0
+		elif is_tree:
+			# Trees stay visible at LOD 1 so canopy children can render;
+			# trunk detail is hidden per-child below.  Only fully hidden at LOD 2.
+			child.visible = new_lod <= 1
 		elif is_vegetation:
 			child.visible = new_lod <= 1
 		else:
 			child.visible = new_lod <= 1
 		if child is StaticBody3D:
-			# Skip collision LOD for small objects (bushes) - they stay always enabled
 			var skip_col_lod: bool = child.get_meta("skip_collision_lod", false)
 			for sub in child.get_children():
 				if sub is CollisionShape3D:
 					if skip_col_lod:
-						continue  # Don't toggle collision for small bushes
-					# Only enable collision for LOD 0 (very close); disable for LOD 1/2
-					# CRITICAL: Queue ALL collision toggles to avoid physics rebuild spikes
+						continue
 					if new_lod >= 1:
 						if not sub.disabled:
-							_deferred_disable_collisions.append(sub)  # Queue for gradual disabling
+							_deferred_disable_collisions.append(sub)
 					elif sub.disabled:
-						_deferred_collisions.append(sub)  # Queue for gradual enabling
+						_deferred_collisions.append(sub)
 				elif sub is Node3D and sub.name == "Canopy":
-					# Canopy stays visible at LOD 0 and LOD 1; only hidden at LOD 2
 					sub.visible = new_lod <= 1
-					# Disable leaf shadows at medium distance for performance
 					if sub.visible:
 						for leaf in sub.get_children():
 							if leaf is GeometryInstance3D:
 								leaf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if new_lod == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				elif is_tree and sub is Node3D:
+					# Hide trunk/detail meshes at LOD 1, only canopy shows
+					sub.visible = new_lod == 0
 
 
 ## Build a half-resolution ConcavePolygonShape3D for terrain collision.

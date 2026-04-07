@@ -1172,7 +1172,7 @@ static func populate_zone_phase(
 				var cwx := origin_x + cx
 				var cwz := origin_z + cz
 				var forest_n := _fbm2(cwx * 0.012 + 300.0, cwz * 0.012 + 400.0)
-				if forest_n < 0.42:
+				if forest_n < 0.28:
 					continue
 				var cluster_radius := rng.randf_range(8.0, 16.0)
 				for _ti in trees_per_cluster:
@@ -1742,7 +1742,7 @@ static func _scatter_grass(
 	var structs := _get_structures_cached()
 	var transforms: Array[Transform3D] = []
 
-	const GRASS_COUNT := 280
+	const GRASS_COUNT := 2800
 	for _i in GRASS_COUNT:
 		var lx := rng.randf_range(0.5, ZONE_SIZE - 0.5)
 		var lz := rng.randf_range(0.5, ZONE_SIZE - 0.5)
@@ -1767,9 +1767,9 @@ static func _scatter_grass(
 
 		var scale := rng.randf_range(0.4, 0.85)
 		var rot := rng.randf_range(0.0, TAU)
-		var sx := 0.6 * scale
-		var sy := 0.7 * scale
-		var sz := 0.6 * scale
+		var sx := 2.4 * scale
+		var sy := 2.8 * scale
+		var sz := 2.4 * scale
 		var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
 		transforms.append(Transform3D(basis, Vector3(lx, ground_y - 0.04, lz)))
 
@@ -1889,16 +1889,16 @@ static func _get_microbiome_counts(biome: StringName, micro: StringName) -> Pack
 		# [trees, rocks, bushes, enemies]
 		match micro:
 			&"meadow":
-				return PackedInt32Array([6, 2, 4, 1])
+				return PackedInt32Array([12, 2, 4, 1])
 			&"forest":
-				return PackedInt32Array([24, 1, 2, 2])
+				return PackedInt32Array([28, 1, 2, 2])
 			&"birch_forest":
-				return PackedInt32Array([24, 1, 2, 1])
+				return PackedInt32Array([28, 1, 2, 1])
 			&"hills":
-				return PackedInt32Array([5, 3, 1, 2])
+				return PackedInt32Array([10, 3, 1, 2])
 			&"riverside":
-				return PackedInt32Array([12, 4, 5, 1])
-		return PackedInt32Array([12, 2, 3, 1])
+				return PackedInt32Array([16, 4, 5, 1])
+		return PackedInt32Array([14, 2, 3, 1])
 	return _get_biome_counts(biome)
 
 
