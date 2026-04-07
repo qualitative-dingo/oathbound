@@ -1,6 +1,6 @@
 extends Node3D
 
-@export var force_nearest_filter := true
+@export var force_nearest_filter := false
 
 var _env: Environment
 var _tween: Tween
@@ -9,8 +9,9 @@ const BIOME_TRANSITION_TIME := 3.0
 var _biome_cache: Dictionary = {}
 
 func _ready() -> void:
-	_force_nearest_recursive(self)
-	child_entered_tree.connect(_on_child_entered)
+	if force_nearest_filter:
+		_force_nearest_recursive(self)
+		child_entered_tree.connect(_on_child_entered)
 
 	var we := get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if we:
