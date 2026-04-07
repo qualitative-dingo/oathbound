@@ -156,6 +156,8 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	var cursor := fwd * entrance_len
 	var descent := 0.5
 	var enemy_idx := 0
+	var cave_waypoints: Array[Vector3] = [Vector3(0.0, 0.0, 0.0)]
+	var cave_widths: Array[float] = [entrance_w]
 
 	# ════════════════════════════════════════════════════
 	#  SECTION 1: Entry corridor (3 segments with turns)
@@ -170,6 +172,8 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 			fwd = fwd.rotated(Vector3.UP, angle).normalized()
 			rt = fwd.cross(Vector3.UP).normalized()
 
+	cave_waypoints.append(cursor)
+	cave_widths.append(TUNNEL_WIDTH)
 	_add_wall_torch(cave_root, cursor + rt * (TUNNEL_WIDTH * 0.42), 1.8)
 	_add_cave_enemy(cave_root, cursor - fwd * 3.0 + Vector3(0, 0.2, 0), "goblin", enemy_idx)
 	enemy_idx += 1
@@ -194,6 +198,8 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 		_add_copper_vein_wall(cave_root, vpos, rng)
 
 	cursor = ch1_end
+	cave_waypoints.append(cursor)
+	cave_widths.append(ch1_w)
 
 	# ════════════════════════════════════════════════════
 	#  SECTION 3: Branching corridor — left branch = loot, right = main path
@@ -248,6 +254,8 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	fwd = branch_fwd_r
 	rt = branch_rt_r
 	cursor = r_cursor
+	cave_waypoints.append(cursor)
+	cave_widths.append(TUNNEL_WIDTH)
 
 	# ════════════════════════════════════════════════════
 	#  SECTION 4: Deep corridor with enemies
@@ -268,6 +276,9 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 		elif i == 3:
 			_add_cave_enemy(cave_root, cursor - fwd * 4.0 + Vector3(0, 0.2, 0), "grizzly", enemy_idx)
 			enemy_idx += 1
+
+	cave_waypoints.append(cursor)
+	cave_widths.append(TUNNEL_WIDTH)
 
 	for _v in rng.randi_range(3, 5):
 		_add_copper_rock_ground(cave_root, cursor - fwd * rng.randf_range(4.0, 20.0) + rt * rng.randf_range(-1.2, 1.2) + Vector3(0, 0.15, 0), rng)
@@ -320,6 +331,27 @@ static func create_cave_instance(rng: RandomNumberGenerator) -> Node3D:
 	var boss_chest_pos := boss_end - fwd * 2.0
 	boss_chest_pos.y = boss_end.y
 	_add_boss_chest(cave_root, boss_chest_pos, fwd, rng)
+
+	cave_waypoints.append(boss_start)
+	cave_widths.append(boss_w)
+	cave_waypoints.append(boss_end)
+	cave_widths.append(boss_w)
+
+	# ── 100 goblins spread throughout the cave ──
+	var total_goblins := 100
+	var n_waypoints := cave_waypoints.size()
+	for gi in total_goblins:
+		var t_val := float(gi) / float(total_goblins - 1)
+		var seg_f := t_val * float(n_waypoints - 1)
+		var seg_i := mini(int(seg_f), n_waypoints - 2)
+		var seg_t := seg_f - float(seg_i)
+		var base_pos_g := cave_waypoints[seg_i].lerp(cave_waypoints[seg_i + 1], seg_t)
+		var w := lerpf(cave_widths[seg_i], cave_widths[seg_i + 1], seg_t)
+		var offset_x := rng.randf_range(-w * 0.35, w * 0.35)
+		var offset_z := rng.randf_range(-1.5, 1.5)
+		var spawn_pos := base_pos_g + Vector3(offset_x, 0.2, offset_z)
+		_add_cave_enemy(cave_root, spawn_pos, "goblin", enemy_idx)
+		enemy_idx += 1
 
 	# ── Ambient lighting (dim, spread across dungeon) ──
 	for li in 5:
