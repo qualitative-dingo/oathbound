@@ -35,20 +35,18 @@ float vnoise(vec2 p) {
 
 varying vec2 v_uv;
 varying float v_slope;
-varying float v_is_surface;
 
 void vertex() {
 	v_uv = UV;
 	v_slope = COLOR.r;
-	v_is_surface = COLOR.g;
 
 	// Slope-scaled speed: flat = base, steep = up to 4x
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
-	// Subtle ripple displacement — surface only, not skirt walls
+	// Subtle ripple displacement along flow direction
 	float ripple = sin(UV.y * ripple_scale * 12.0 + TIME * speed * 4.0) * ripple_strength;
 	ripple += sin(UV.y * ripple_scale * 7.3 + UV.x * 3.0 + TIME * speed * 2.8) * ripple_strength * 0.6;
-	VERTEX.y += ripple * v_is_surface;
+	VERTEX.y += ripple;
 }
 
 void fragment() {
@@ -118,16 +116,6 @@ void fragment() {
 	fresnel = clamp(fresnel, 0.0, 0.5);
 	final_col.rgb = mix(final_col.rgb, sky_tint.rgb, fresnel * 0.3);
 	final_col.a = mix(final_col.a, 0.85, fresnel * 0.4);
-
-	// Skirt faces: dark underwater wall, no complex effects
-	if (v_is_surface < 0.5) {
-		ALBEDO = deep_tint.rgb * 0.6;
-		ALPHA = 0.85;
-		ROUGHNESS = 0.3;
-		METALLIC = 0.0;
-		SPECULAR = 0.1;
-		return;
-	}
 
 	ALBEDO = final_col.rgb;
 

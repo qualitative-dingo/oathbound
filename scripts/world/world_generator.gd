@@ -2244,6 +2244,8 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			if w > 5.0:
 				left_y = maxf(left_y, get_height_at(p.x - perp.x * w * 0.5, p.z - perp.y * w * 0.5) + 0.25)
 				right_y = maxf(right_y, get_height_at(p.x + perp.x * w * 0.5, p.z + perp.y * w * 0.5) + 0.25)
+			left_y = minf(left_y, local_p.y + 3.0)
+			right_y = minf(right_y, local_p.y + 3.0)
 
 			var left := Vector3(local_p.x - perp.x * w, left_y, local_p.z - perp.y * w)
 			var right := Vector3(local_p.x + perp.x * w, right_y, local_p.z + perp.y * w)
@@ -2285,58 +2287,6 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 		if verts.size() < 4:
 			continue
-
-		# Add skirt geometry — vertical walls below river edges for depth
-		var skirt_depth := 1.5
-		var surface_vert_count := verts.size()
-		var skirt_norm_left := Vector3(-1, 0, 0)
-		var skirt_norm_right := Vector3(1, 0, 0)
-		var skirt_col := Color(0.0, 0.0, 1.0, 1.0)
-
-		for i in points.size():
-			var vi := i * 2
-			var left_top := verts[vi]
-			var right_top := verts[vi + 1]
-			var left_bot := Vector3(left_top.x, left_top.y - skirt_depth, left_top.z)
-			var right_bot := Vector3(right_top.x, right_top.y - skirt_depth, right_top.z)
-			var uv_y := flow_uvs[i] * uv_scale
-
-			verts.append(left_top)
-			verts.append(left_bot)
-			norms.append(skirt_norm_left)
-			norms.append(skirt_norm_left)
-			mesh_uvs.append(Vector2(0.0, uv_y))
-			mesh_uvs.append(Vector2(0.0, uv_y))
-			colors.append(skirt_col)
-			colors.append(skirt_col)
-
-			verts.append(right_top)
-			verts.append(right_bot)
-			norms.append(skirt_norm_right)
-			norms.append(skirt_norm_right)
-			mesh_uvs.append(Vector2(1.0, uv_y))
-			mesh_uvs.append(Vector2(1.0, uv_y))
-			colors.append(skirt_col)
-			colors.append(skirt_col)
-
-			if i > 0:
-				var lb := surface_vert_count + (i - 1) * 4
-				var lt := surface_vert_count + i * 4
-				indices.append(lb)
-				indices.append(lb + 1)
-				indices.append(lt)
-				indices.append(lb + 1)
-				indices.append(lt + 1)
-				indices.append(lt)
-
-				var rb := lb + 2
-				var rt := lt + 2
-				indices.append(rb)
-				indices.append(rt)
-				indices.append(rb + 1)
-				indices.append(rb + 1)
-				indices.append(rt)
-				indices.append(rt + 1)
 
 		var arrays := []
 		arrays.resize(Mesh.ARRAY_MAX)
