@@ -90,9 +90,11 @@ void fragment() {
 
 	float depth_factor = clamp(depth_diff / depth_distance, 0.0, 1.0);
 	depth_factor = depth_factor * depth_factor;
+	float interior_opaque = smoothstep(0.15, 0.5, depth_diff);
 
 	// ── Water color with depth ──
 	vec4 water_col = mix(shallow_color, deep_color, depth_factor);
+	water_col.a = mix(water_col.a, deep_color.a, interior_opaque);
 	water_col.rgb += combined * 0.07;
 
 	// ── Fresnel for view-angle reflections ──
@@ -111,8 +113,9 @@ void fragment() {
 	// Hard cutoff: never render water where terrain is clearly above water
 	float hard_mask = smoothstep(-0.02, 0.08, depth_diff);
 
-	// ── Shore alpha fade — tight transition so edges look clean, not ghostly ──
-	float shore_alpha = smoothstep(-0.05, 0.3, perturbed_depth) * hard_mask;
+	// ── Shore alpha fade — organic edge with noise, but interior always opaque ──
+	float edge_fade = smoothstep(-0.05, 0.3, perturbed_depth);
+	float shore_alpha = max(edge_fade, interior_opaque) * hard_mask;
 
 	// ── Foam along shoreline (tight edge only) ──
 	float foam_noise = vnoise(world_pos.xz * 1.8 + vec2(TIME * 0.25, TIME * 0.18));
