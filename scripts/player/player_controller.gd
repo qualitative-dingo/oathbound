@@ -685,6 +685,7 @@ func _ready() -> void:
 	_build_hud()
 	if _spring_arm:
 		_spring_arm.spring_length = min_zoom + 0.85 * (max_zoom - min_zoom)
+	_setup_camera_fill_light()
 	# Delay camera activation and terrain snap by one frame to let the scene tree settle
 	call_deferred("_activate_camera")
 	call_deferred("_snap_to_terrain")
@@ -695,6 +696,23 @@ func _ready() -> void:
 	GameEvents.creature_killed.connect(_on_creature_killed_speech)
 	if NetworkManager.is_connected_to_game():
 		NetworkManager.chest_contents_received.connect(_on_chest_contents_received)
+
+
+func _setup_camera_fill_light() -> void:
+	var cam := get_node_or_null("CameraPivot/SpringArm3D/Camera3D") as Camera3D
+	var parent: Node3D = cam if cam else (_spring_arm if _spring_arm else null)
+	if not parent:
+		return
+	var fill := SpotLight3D.new()
+	fill.name = "CharacterFillLight"
+	fill.light_energy = 0.35
+	fill.light_color = Color(1.0, 0.97, 0.92)
+	fill.spot_range = 30.0
+	fill.spot_angle = 45.0
+	fill.spot_angle_attenuation = 0.5
+	fill.shadow_enabled = false
+	fill.light_bake_mode = Light3D.BAKE_DISABLED
+	parent.add_child(fill)
 
 
 func _activate_camera() -> void:
