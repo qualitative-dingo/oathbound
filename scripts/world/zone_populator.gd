@@ -4287,7 +4287,7 @@ static func _scatter_berry_bushes(
 				continue
 			var bush := _create_blueberry_bush(rng)
 			zone_root.add_child(bush)
-			bush.position = Vector3(ox, bsn.x, oz)
+			bush.position = Vector3(ox, bsn.x + 0.08, oz)
 			bush.rotation.y = rng.randf_range(0.0, TAU)
 
 	# Lingonberries — open/rocky areas, clusters of 2-5
@@ -4318,7 +4318,7 @@ static func _scatter_berry_bushes(
 				continue
 			var bush := _create_lingonberry_bush(rng)
 			zone_root.add_child(bush)
-			bush.position = Vector3(ox, bsn.x, oz)
+			bush.position = Vector3(ox, bsn.x + 0.08, oz)
 			bush.rotation.y = rng.randf_range(0.0, TAU)
 
 
