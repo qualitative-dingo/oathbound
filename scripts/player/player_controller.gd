@@ -199,6 +199,16 @@ var _on_stone_surface: bool = false
 var _last_footstep_frame: int = -1
 var _gltf_footstep_phase: float = 0.0
 
+# River ambient audio
+var _river_ambient_player: AudioStreamPlayer
+var _river_ambient_volume_target: float = -80.0
+const _RIVER_AUDIO_MAX_DIST := 60.0
+const _RIVER_AUDIO_MIN_DIST := 4.0
+const _RIVER_AUDIO_MAX_DB := -18.0
+const _RIVER_AUDIO_MIN_DB := -80.0
+const _RIVER_AUDIO_CHECK_INTERVAL := 0.25
+var _river_audio_timer: float = 0.0
+
 # Bow draw
 var _bow_drawing: bool = false
 var _bow_tension: float = 0.0
@@ -1350,6 +1360,7 @@ func _physics_process(delta: float) -> void:
 	_tick_remote_arrows(delta)
 	_tick_footstep_sfx(delta)
 	_tick_gallop_sfx(delta)
+	_tick_river_ambient(delta)
 	_update_floating_bars(delta)
 
 	if NetworkManager.is_connected_to_game():
@@ -2224,6 +2235,20 @@ func _setup_movement_audio() -> void:
 	_gallop_normal_stream = AudioManager.get_stream("horse_gallop")
 	_gallop_fast_stream = AudioManager.get_stream("horse_gallop_fast")
 
+	_river_ambient_player = AudioStreamPlayer.new()
+	_river_ambient_player.bus = &"SFX"
+	_river_ambient_player.volume_db = _RIVER_AUDIO_MIN_DB
+	var water_stream := AudioManager.get_stream("flowing_water")
+	if water_stream:
+		if water_stream is AudioStreamMP3:
+			(water_stream as AudioStreamMP3).loop = true
+		elif water_stream is AudioStreamWAV:
+			(water_stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
+		elif water_stream is AudioStreamOggVorbis:
+			(water_stream as AudioStreamOggVorbis).loop = true
+		_river_ambient_player.stream = water_stream
+	add_child(_river_ambient_player)
+
 	_setup_swim_effects()
 
 
@@ -2434,6 +2459,56 @@ func _tick_gallop_sfx(_delta: float) -> void:
 			_gallop_player.play()
 	elif _gallop_player.playing:
 		_gallop_player.stop()
+
+
+func _tick_river_ambient(delta: float) -> void:
+	if not _river_ambient_player or not _river_ambient_player.stream:
+		return
+
+	_river_audio_timer -= delta
+	if _river_audio_timer > 0.0:
+		_river_ambient_player.volume_db = lerpf(_river_ambient_player.volume_db, _river_ambient_volume_target, clampf(delta * 3.0, 0.0, 1.0))
+		return
+	_river_audio_timer = _RIVER_AUDIO_CHECK_INTERVAL
+
+	var wg := _find_world_generator()
+	if not wg:
+		_river_ambient_volume_target = _RIVER_AUDIO_MIN_DB
+		_river_ambient_player.volume_db = lerpf(_river_ambient_player.volume_db, _river_ambient_volume_target, clampf(delta * 3.0, 0.0, 1.0))
+		return
+
+	var world_pos := wg.get_world_position(self)
+	var player_xz := Vector2(world_pos.x, world_pos.z)
+	var player_zone := wg.world_to_zone(world_pos)
+
+	var best_dist_sq := _RIVER_AUDIO_MAX_DIST * _RIVER_AUDIO_MAX_DIST
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var zone := Vector2i(player_zone.x + dx, player_zone.y + dz)
+			var segs := wg.get_creek_segments_for_zone(zone)
+			for seg in segs:
+				var pts: PackedVector3Array = seg["points"]
+				for pi in range(0, pts.size(), 3):
+					var cp := pts[pi]
+					var d := player_xz.distance_squared_to(Vector2(cp.x, cp.z))
+					if d < best_dist_sq:
+						best_dist_sq = d
+
+	var best_dist := sqrt(best_dist_sq)
+	if best_dist >= _RIVER_AUDIO_MAX_DIST:
+		_river_ambient_volume_target = _RIVER_AUDIO_MIN_DB
+	elif best_dist <= _RIVER_AUDIO_MIN_DIST:
+		_river_ambient_volume_target = _RIVER_AUDIO_MAX_DB
+	else:
+		var t := 1.0 - (best_dist - _RIVER_AUDIO_MIN_DIST) / (_RIVER_AUDIO_MAX_DIST - _RIVER_AUDIO_MIN_DIST)
+		_river_ambient_volume_target = lerpf(_RIVER_AUDIO_MIN_DB, _RIVER_AUDIO_MAX_DB, t * t)
+
+	_river_ambient_player.volume_db = lerpf(_river_ambient_player.volume_db, _river_ambient_volume_target, clampf(delta * 3.0, 0.0, 1.0))
+
+	if _river_ambient_player.volume_db > -60.0 and not _river_ambient_player.playing:
+		_river_ambient_player.play()
+	elif _river_ambient_player.volume_db <= -60.0 and _river_ambient_player.playing:
+		_river_ambient_player.stop()
 
 
 func _get_camera_relative_dir() -> String:

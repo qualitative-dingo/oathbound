@@ -89,6 +89,7 @@ func _preload_sounds() -> void:
 	_load_group("stone_step", ["stone_step_1.mp3", "stone_step_2.mp3", "stone_step_3.mp3"])
 	_load_group("till_ground", ["till_ground_1.mp3", "till_ground_2.mp3"])
 	_load_group("bow_creak", ["bow_creak_1.wav", "bow_creak_2.wav"])
+	_load_group("flowing_water", ["flowing_water_#1-1775592827594.mp3"])
 
 
 func _load_group(group_name: String, filenames: Array) -> void:
