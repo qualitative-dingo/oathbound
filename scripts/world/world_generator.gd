@@ -1415,7 +1415,7 @@ func _determine_biome(zone: Vector2i) -> StringName:
 	var dist_norm := dist / world_radius
 
 	var biome: StringName
-	if dist_norm > 0.9 or (altitude < -2.0 and dist_norm > 0.3):
+	if dist_norm > 0.9 or (altitude < -2.0 and dist_norm > 0.75):
 		biome = &"ocean"
 	else:
 		biome = &"hearthlands"
