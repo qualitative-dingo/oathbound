@@ -34,6 +34,9 @@ var _toggles: Dictionary = {
 ## True while "Disable ALL post & filters" is active (WorldEnvironment + DayNightCycle bypass).
 var _post_fx_strip_active: bool = false
 
+## Stores original shader code so we can revert after hot-swapping filter modes.
+var _original_shader_codes: Dictionary = {}  # Shader -> String
+
 
 func _init() -> void:
 	layer = 110
@@ -399,10 +402,16 @@ func _apply_toggle(key: String, on: bool) -> void:
 
 	if key == "nearest_filter":
 		var scene := get_tree().current_scene
-		if scene and scene.has_method("_force_nearest_recursive"):
-			scene.set("force_nearest_filter", on)
-			if on:
+		if on:
+			if scene and scene.has_method("_force_nearest_recursive"):
+				scene.set("force_nearest_filter", on)
 				scene._force_nearest_recursive(scene)
+			_swap_all_shader_filters(true)
+		else:
+			if scene:
+				scene.set("force_nearest_filter", false)
+			_force_linear_recursive(scene if scene else get_tree().root)
+			_swap_all_shader_filters(false)
 
 	# Also show/hide existing instances in the current scene
 	_toggle_existing(key, on)
@@ -602,6 +611,57 @@ func _reselect_all() -> void:
 		_toggles[key] = true
 		_apply_toggle(key, true)
 	_refresh_checkboxes()
+
+
+func _force_linear_recursive(node: Node) -> void:
+	if not is_instance_valid(node):
+		return
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		if mi.mesh:
+			for i in mi.mesh.get_surface_count():
+				var mat := mi.get_active_material(i)
+				if mat is StandardMaterial3D:
+					(mat as StandardMaterial3D).texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if node is GeometryInstance3D:
+		var mat := (node as GeometryInstance3D).material_override
+		if mat is StandardMaterial3D:
+			(mat as StandardMaterial3D).texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	for child in node.get_children():
+		_force_linear_recursive(child)
+
+
+func _swap_all_shader_filters(use_nearest: bool) -> void:
+	var visited: Dictionary = {}
+	_collect_shaders_recursive(get_tree().root, visited)
+	for shader: Shader in visited:
+		if not _original_shader_codes.has(shader):
+			_original_shader_codes[shader] = shader.code
+		if use_nearest:
+			shader.code = _original_shader_codes[shader]
+		else:
+			var code: String = _original_shader_codes[shader]
+			code = code.replace("filter_nearest_mipmap", "filter_linear_mipmap")
+			code = code.replace("filter_nearest", "filter_linear")
+			shader.code = code
+
+
+func _collect_shaders_recursive(node: Node, visited: Dictionary) -> void:
+	if not is_instance_valid(node):
+		return
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		if mi.mesh:
+			for i in mi.mesh.get_surface_count():
+				var mat := mi.get_active_material(i)
+				if mat is ShaderMaterial and (mat as ShaderMaterial).shader:
+					visited[(mat as ShaderMaterial).shader] = true
+	if node is GeometryInstance3D:
+		var mat := (node as GeometryInstance3D).material_override
+		if mat is ShaderMaterial and (mat as ShaderMaterial).shader:
+			visited[(mat as ShaderMaterial).shader] = true
+	for child in node.get_children():
+		_collect_shaders_recursive(child, visited)
 
 
 func _make_button(text: String, color: Color) -> Button:

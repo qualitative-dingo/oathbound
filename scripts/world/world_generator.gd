@@ -1050,26 +1050,44 @@ func _trace_creek_paths() -> void:
 					wx += seg_perp.x * lateral_offset * _WS_CELL * 0.18
 					wz += seg_perp.y * lateral_offset * _WS_CELL * 0.18
 
-					# Stop creek mesh when entering any water body
-					var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
-					if lake_n < -0.18:
-						entered_pool = true
-						break
-
-					var terrain_h := get_height_at(wx, wz)
-					if terrain_h < WATER_LEVEL + 0.15:
-						entered_pool = true
-						break
-
-					var creek_y := terrain_h + 0.25
-
 					var acc := lerpf(a0, a1, t_val)
 					var norm_acc := clampf((acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 					var base_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, norm_acc) * 0.5
-
-					# Organic width variation — independent noise at different frequency
 					var width_noise := _detail_noise.get_noise_2d(wx * 1.5 + 13000.0, wz * 1.5 + 13000.0)
 					var w := base_w * (0.75 + width_noise * 0.5)
+
+					# Detect pool/water body entry and create smooth transition
+					var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
+					var terrain_h := get_height_at(wx, wz)
+					var near_pool := lake_n < -0.12 or terrain_h < WATER_LEVEL + 0.5
+					var in_pool := lake_n < -0.18 or terrain_h < WATER_LEVEL + 0.15
+
+					if in_pool:
+						if not points.is_empty():
+							var last_y: float = points[points.size() - 1].y
+							var drop_y := WATER_LEVEL + 0.05
+							var step_advance := _WS_CELL / float(_CREEK_SUBDIV) * 0.3
+							for ti in 4:
+								var tf := float(ti + 1) / 4.0
+								var ease_t := tf * tf
+								var ty := lerpf(last_y, drop_y, ease_t)
+								wx += seg_dir.x * step_advance
+								wz += seg_dir.y * step_advance
+								var tw := w * (1.0 + tf * 0.6)
+								if not points.is_empty():
+									cum_dist += Vector3(wx, ty, wz).distance_to(points[points.size() - 1])
+								points.append(Vector3(wx, ty, wz))
+								widths.append(tw)
+								flow_uvs.append(cum_dist)
+						entered_pool = true
+						break
+
+					var creek_y: float
+					if near_pool:
+						var pool_t := 1.0 - clampf((terrain_h - WATER_LEVEL - 0.15) / 0.35, 0.0, 1.0)
+						creek_y = lerpf(terrain_h + 0.25, WATER_LEVEL + 0.1, pool_t * pool_t)
+					else:
+						creek_y = terrain_h + 0.25
 
 					if not points.is_empty():
 						var prev := points[points.size() - 1]
@@ -2267,6 +2285,58 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 		if verts.size() < 4:
 			continue
+
+		# Add skirt geometry — vertical walls below river edges for depth
+		var skirt_depth := 1.5
+		var surface_vert_count := verts.size()
+		var skirt_norm_left := Vector3(-1, 0, 0)
+		var skirt_norm_right := Vector3(1, 0, 0)
+		var skirt_col := Color(0.0, 0.0, 1.0, 1.0)
+
+		for i in points.size():
+			var vi := i * 2
+			var left_top := verts[vi]
+			var right_top := verts[vi + 1]
+			var left_bot := Vector3(left_top.x, left_top.y - skirt_depth, left_top.z)
+			var right_bot := Vector3(right_top.x, right_top.y - skirt_depth, right_top.z)
+			var uv_y := flow_uvs[i] * uv_scale
+
+			verts.append(left_top)
+			verts.append(left_bot)
+			norms.append(skirt_norm_left)
+			norms.append(skirt_norm_left)
+			mesh_uvs.append(Vector2(0.0, uv_y))
+			mesh_uvs.append(Vector2(0.0, uv_y))
+			colors.append(skirt_col)
+			colors.append(skirt_col)
+
+			verts.append(right_top)
+			verts.append(right_bot)
+			norms.append(skirt_norm_right)
+			norms.append(skirt_norm_right)
+			mesh_uvs.append(Vector2(1.0, uv_y))
+			mesh_uvs.append(Vector2(1.0, uv_y))
+			colors.append(skirt_col)
+			colors.append(skirt_col)
+
+			if i > 0:
+				var lb := surface_vert_count + (i - 1) * 4
+				var lt := surface_vert_count + i * 4
+				indices.append(lb)
+				indices.append(lb + 1)
+				indices.append(lt)
+				indices.append(lb + 1)
+				indices.append(lt + 1)
+				indices.append(lt)
+
+				var rb := lb + 2
+				var rt := lt + 2
+				indices.append(rb)
+				indices.append(rt)
+				indices.append(rb + 1)
+				indices.append(rb + 1)
+				indices.append(rt)
+				indices.append(rt + 1)
 
 		var arrays := []
 		arrays.resize(Mesh.ARRAY_MAX)
