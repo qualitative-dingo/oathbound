@@ -1813,8 +1813,8 @@ static func _scatter_grass(
 	mmi.name = "GrassClump"
 	mmi.material_override = _grass_mat
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mmi.visibility_range_end = 144.0
-	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	mmi.visibility_range_end = 288.0
+	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	zone_root.add_child(mmi)
 
 
@@ -3948,8 +3948,8 @@ static func _ensure_water_plants() -> void:
 		_grass_mat.set_shader_parameter("wind_strength", 0.6)
 		_grass_mat.set_shader_parameter("wind_speed", 1.8)
 		_grass_mat.set_shader_parameter("wind_turbulence", 0.9)
-		_grass_mat.set_shader_parameter("density_near", 20.0)
-		_grass_mat.set_shader_parameter("density_far", 40.0)
+		_grass_mat.set_shader_parameter("density_near", 32.0)
+		_grass_mat.set_shader_parameter("density_far", 120.0)
 
 
 static func _gen_lily_pad_mesh() -> ArrayMesh:

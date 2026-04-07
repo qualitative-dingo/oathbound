@@ -28,12 +28,12 @@ void vertex() {
 	// Use per-instance random value from custom data Y for consistent culling
 	float instance_rand = fract(INSTANCE_CUSTOM.y * 12345.67 + world_pos.x * 0.123 + world_pos.z * 0.456);
 	float cam_dist = length(world_pos - CAMERA_POSITION_WORLD);
-	// Near: keep all (threshold=1.0), Far: keep 50% (threshold=0.5)
+	// Near: keep all (threshold=1.0), Far: keep 30% (threshold=0.3)
 	float dist_factor = smoothstep(density_near, density_far, cam_dist);
-	discard_threshold = mix(1.0, 0.5, dist_factor);
+	discard_threshold = mix(1.0, 0.3, dist_factor);
 	
-	// Scale down grass at distance for softer LOD transition
-	float scale_factor = mix(1.0, 0.8, dist_factor);
+	// Shrink grass at distance for gradual visual fade
+	float scale_factor = mix(1.0, 0.55, dist_factor);
 	VERTEX *= scale_factor;
 
 	float height_factor = 1.0 - UV.y;
