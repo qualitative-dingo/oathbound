@@ -668,13 +668,13 @@ func _init_noise_layers() -> void:
 	_mountain_noise.fractal_lacunarity = 2.2
 	_mountain_noise.fractal_gain = 0.5
 
-	# Base octave only — large-scale mountain region mask.
-	# Prevents isolated narrow peaks ("nipples") by requiring broad-scale
-	# mountain presence before fine-detail octaves can raise terrain.
+	# Large-scale mountain region mask (single octave, very low frequency).
+	# Mountains can only grow tall where this noise is strongly positive,
+	# ensuring peaks are part of wide mountain chains, not isolated spires.
 	_mountain_broad_noise = FastNoiseLite.new()
 	_mountain_broad_noise.seed = _seed_hash + 1000
 	_mountain_broad_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_mountain_broad_noise.frequency = base_frequency * 2.0
+	_mountain_broad_noise.frequency = base_frequency * 0.5
 	_mountain_broad_noise.fractal_octaves = 1
 
 	_detail_noise = FastNoiseLite.new()
@@ -743,8 +743,15 @@ func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
 	if mountain_raw <= 0.0:
 		return 0.0
 	var broad := _mountain_broad_noise.get_noise_2d(wx, wz)
-	var breadth := smoothstep(0.15, 0.40, broad)
+	var breadth := smoothstep(0.20, 0.50, broad)
 	return mountain_raw * breadth
+
+
+## How strongly this point belongs to a large mountain region (0..1).
+## Used to scale peak height so isolated features stay short.
+func _mountain_breadth(wx: float, wz: float) -> float:
+	var broad := _mountain_broad_noise.get_noise_2d(wx, wz)
+	return smoothstep(0.20, 0.50, broad)
 
 
 func _get_base_height(wx: float, wz: float) -> float:
@@ -755,6 +762,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
 	var continent := _continent_noise.get_noise_2d(wx, wz)
 	var mountain := _gate_mountain(wx, wz, maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.35, 0.0))
+	var breadth := _mountain_breadth(wx, wz)
 	var h := continent * height_scale * 0.35
 
 	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
@@ -762,12 +770,12 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(wx * 0.015 + 9000.0, wz * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity)
+	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
 	h += peak_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
+	var ridge_mult := lerpf(0.1, 1.5, peak_intensity) * lerpf(0.3, 1.0, breadth)
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 
 	h += lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
@@ -1277,9 +1285,9 @@ func _stamp_creek_bed() -> void:
 			for i in points.size():
 				var p := points[i]
 				var w := widths[i]
-				var radius := w + 3.0
-				var bed_center := p.y - 2.5
-				var inner_r := w * 0.85
+				var radius := w + 2.0
+				var bed_center := p.y - 0.5
+				var inner_r := w * 0.8
 
 				var cx_min := int(floor((p.x - radius) / _CREEK_BED_CELL))
 				var cx_max := int(floor((p.x + radius) / _CREEK_BED_CELL))
@@ -1302,7 +1310,7 @@ func _stamp_creek_bed() -> void:
 							carve_h = bed_center
 						else:
 							var bank_t := clampf((dist - inner_r) / maxf(radius - inner_r, 0.01), 0.0, 1.0)
-							carve_h = lerpf(bed_center, p.y + 0.5, bank_t * bank_t)
+							carve_h = lerpf(bed_center, p.y + 0.15, bank_t * bank_t)
 						var key := Vector2i(cx, cz)
 						if _creek_bed.has(key):
 							_creek_bed[key] = minf(_creek_bed[key] as float, carve_h)

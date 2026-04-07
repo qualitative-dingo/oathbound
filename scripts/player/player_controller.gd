@@ -204,7 +204,7 @@ var _river_ambient_player: AudioStreamPlayer
 var _river_ambient_volume_target: float = -80.0
 const _RIVER_AUDIO_MAX_DIST := 60.0
 const _RIVER_AUDIO_MIN_DIST := 4.0
-const _RIVER_AUDIO_MAX_DB := -18.0
+const _RIVER_AUDIO_MAX_DB := -14.5
 const _RIVER_AUDIO_MIN_DB := -80.0
 const _RIVER_AUDIO_CHECK_INTERVAL := 0.25
 var _river_audio_timer: float = 0.0
