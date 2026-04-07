@@ -1320,7 +1320,7 @@ func _stamp_creek_bed() -> void:
 							carve_h = bed_center
 						else:
 							var bank_t := clampf((dist - inner_r) / maxf(radius - inner_r, 0.01), 0.0, 1.0)
-							carve_h = lerpf(bed_center, p.y + 0.15, bank_t * bank_t)
+							carve_h = lerpf(bed_center, p.y + 0.3, bank_t * bank_t)
 						var key := Vector2i(cx, cz)
 						if _creek_bed.has(key):
 							_creek_bed[key] = minf(_creek_bed[key] as float, carve_h)
