@@ -443,8 +443,8 @@ func _process(_delta: float) -> void:
 		origin_shift.x, origin_shift.z, displaced])
 	# Vegetation debug: count flower MMIs and instances per zone
 	var veg_snap := _vegetation_perf_snapshot()
-	print("[PERF VEG] fl_mmi=%d fl_inst=%d trees=%d" % [
-		veg_snap["fl_mmi"], veg_snap["fl_inst"], veg_snap["trees"]])
+	print("[PERF VEG] fl_mmi=%d fl_inst=%d gr_mmi=%d gr_inst=%d trees=%d" % [
+		veg_snap["fl_mmi"], veg_snap["fl_inst"], veg_snap["gr_mmi"], veg_snap["gr_inst"], veg_snap["trees"]])
 	_perf_max_queue_ms = 0.0
 	_perf_max_pending_ms = 0.0
 	_perf_max_unload_ms = 0.0
@@ -456,6 +456,8 @@ func _process(_delta: float) -> void:
 func _vegetation_perf_snapshot() -> Dictionary:
 	var fl_mmi := 0
 	var fl_inst := 0
+	var gr_mmi := 0
+	var gr_inst := 0
 	var trees := 0
 	for coord in _loaded_zones:
 		var zone_node: Node3D = _loaded_zones[coord]
@@ -470,9 +472,14 @@ func _vegetation_perf_snapshot() -> Dictionary:
 				var mmi := child as MultiMeshInstance3D
 				if mmi.multimesh:
 					fl_inst += mmi.multimesh.instance_count
+			elif cname == "GrassClump" and child is MultiMeshInstance3D:
+				gr_mmi += 1
+				var mmi := child as MultiMeshInstance3D
+				if mmi.multimesh:
+					gr_inst += mmi.multimesh.instance_count
 			elif child is StaticBody3D and child.has_meta("tree_name"):
 				trees += 1
-	return {"fl_mmi": fl_mmi, "fl_inst": fl_inst, "trees": trees}
+	return {"fl_mmi": fl_mmi, "fl_inst": fl_inst, "gr_mmi": gr_mmi, "gr_inst": gr_inst, "trees": trees}
 
 
 func _physics_process(delta: float) -> void:
@@ -654,7 +661,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 	if dist > world_radius * 0.9:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
 	var continent := _continent_noise.get_noise_2d(wx, wz)
-	var mountain := _mountain_noise.get_noise_2d(wx, wz)
+	var mountain := maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.35, 0.0)
 	var h := continent * height_scale * 0.35
 
 	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
@@ -668,7 +675,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
 	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
-	h += ridge * height_scale * ridge_mult - height_scale * 0.02
+	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 
 	h += lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
 
@@ -1209,7 +1216,7 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 	if dist > world_radius * 0.9:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
 	var continent := _continent_noise.get_noise_2d(x, z)
-	var mountain := _mountain_noise.get_noise_2d(x, z)
+	var mountain := maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0)
 	var h := continent * height_scale * 0.35
 	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
 	h += foothills * height_scale * 1.5
@@ -1221,7 +1228,7 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
 	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
-	h += ridge * height_scale * ridge_mult - height_scale * 0.02
+	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 	return h
 
 
@@ -1236,7 +1243,7 @@ func get_height_at(x: float, z: float) -> float:
 		return -20.0 * edge_factor
 
 	var continent := _continent_noise.get_noise_2d(x, z)
-	var mountain := _mountain_noise.get_noise_2d(x, z)
+	var mountain := maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0)
 	var detail := _detail_noise.get_noise_2d(x, z)
 
 	var h := continent * height_scale * 0.35
@@ -1252,7 +1259,7 @@ func get_height_at(x: float, z: float) -> float:
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
 	var ridge_mult := lerpf(0.1, 1.5, peak_intensity)
-	h += ridge * height_scale * ridge_mult - height_scale * 0.02
+	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 
 	h += detail * height_scale * 0.15
 
@@ -1832,9 +1839,10 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 		if cname == "TerrainMesh":
 			continue
 		var is_flower := cname.begins_with("Flower_")
-		var is_vegetation := is_flower or cname == "Reeds" or cname.begins_with("BlueberryBush")
+		var is_grass := cname == "GrassClump"
+		var is_vegetation := is_flower or is_grass or cname == "Reeds" or cname.begins_with("BlueberryBush")
 		var is_tree := child is StaticBody3D and (child as StaticBody3D).has_meta("tree_name")
-		if is_flower or is_tree:
+		if is_flower or is_grass or is_tree:
 			child.visible = new_lod == 0
 		elif is_vegetation:
 			child.visible = new_lod <= 1

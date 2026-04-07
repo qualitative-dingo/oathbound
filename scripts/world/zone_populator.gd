@@ -182,6 +182,7 @@ static var debug_skip_villages := false
 static var debug_skip_stones := false
 static var debug_skip_fish := false
 static var debug_skip_horses := false
+static var debug_skip_grass := false
 
 # ─── Shared materials ──────────────────────────────────────────────────────────
 
@@ -266,6 +267,8 @@ static var _cattail_head_mat: StandardMaterial3D
 static var _loosestrife_mat: StandardMaterial3D
 static var _loosestrife_flower_mat: StandardMaterial3D
 static var _reed_mat: ShaderMaterial
+static var _grass_mat: ShaderMaterial
+static var _grass_texture: ImageTexture
 
 static var _berry_bushes_ready := false
 static var _blueberry_leaf_mat: Material
@@ -1071,7 +1074,7 @@ static func _make_triplanar_mat(tex: Texture2D, fallback_color: Color) -> Standa
 ## phase=0: villages + scatter trees
 ## phase=1: cluster trees + rocks + pebbles + stones
 ## phase=2: creatures + caves + horses + fish
-## phase=3: (unused - grass removed)
+## phase=3: ground grass (MultiMesh + billboard shader, distance-culled)
 ## phase=4-5: wildflowers (5 types per phase)
 ## phase=6: blueberry bushes + water plants
 ## Returns true when ALL phases are done.
@@ -1331,8 +1334,10 @@ static func populate_zone_phase(
 
 		return false
 
-	# ── Phase 3: (grass removed - was causing severe FPS issues) ──
+	# ── Phase 3: ground grass (MultiMesh, shader-culled for performance) ──
 	if phase == 3:
+		if not debug_skip_grass:
+			_scatter_grass(zone_root, coord, biome, rng, height_func)
 		return false
 
 	# ── Phases 4–5: wildflowers (5 types per frame) ──
@@ -1713,6 +1718,80 @@ static func _scatter_flowers(
 		mmi.visibility_range_end = 40.0  # Valheim-style: 40m for flowers
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 		zone_root.add_child(mmi)
+
+
+static func _scatter_grass(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	rng: RandomNumberGenerator,
+	height_func: Callable,
+) -> void:
+	if not _grass_mat or not _billboard_quad_mesh:
+		return
+	if biome != &"hearthlands":
+		return
+
+	_ensure_height_grid(coord, height_func)
+
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+
+	_ensure_rejection_grid(coord, origin_x, origin_z)
+
+	var structs := _get_structures_cached()
+	var transforms: Array[Transform3D] = []
+
+	const GRASS_COUNT := 280
+	for _i in GRASS_COUNT:
+		var lx := rng.randf_range(0.5, ZONE_SIZE - 0.5)
+		var lz := rng.randf_range(0.5, ZONE_SIZE - 0.5)
+		var wx := origin_x + lx
+		var wz := origin_z + lz
+
+		var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
+		var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
+		if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH | _RG_DIRT) != 0:
+			continue
+
+		var sn := _hg_snap_and_normal(wx, wz)
+		var ground_y := sn.x
+		if ground_y < _MIN_LAND_Y or ground_y > 20.0:
+			continue
+		if sn.y < 0.90:
+			continue
+		if _hg_is_steep_edge(wx, wz, ground_y):
+			continue
+		if _is_near_structure(wx, wz, 3.0, structs):
+			continue
+
+		var scale := rng.randf_range(0.4, 0.85)
+		var rot := rng.randf_range(0.0, TAU)
+		var sx := 0.6 * scale
+		var sy := 0.7 * scale
+		var sz := 0.6 * scale
+		var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+		transforms.append(Transform3D(basis, Vector3(lx, ground_y - 0.04, lz)))
+
+	if transforms.is_empty():
+		return
+
+	var mmi := MultiMeshInstance3D.new()
+	var mm := MultiMesh.new()
+	mm.mesh = _billboard_quad_mesh
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	mm.instance_count = transforms.size()
+	mmi.multimesh = mm
+	for tidx in transforms.size():
+		mm.set_instance_transform(tidx, transforms[tidx])
+
+	mmi.name = "GrassClump"
+	mmi.material_override = _grass_mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.visibility_range_end = 48.0
+	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	zone_root.add_child(mmi)
 
 
 static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, cached_structures: Array = []) -> bool:
@@ -3817,6 +3896,20 @@ static func _ensure_water_plants() -> void:
 		_reed_mat.set_shader_parameter("wind_speed", 1.2)
 		_reed_mat.set_shader_parameter("wind_turbulence", 0.6)
 
+	# Ground grass — uses same billboard shader with tighter distance culling
+	if _billboard_shader:
+		_grass_texture = _gen_grass_texture()
+		_grass_mat = ShaderMaterial.new()
+		_grass_mat.shader = _billboard_shader
+		_grass_mat.set_shader_parameter("albedo_texture", _grass_texture)
+		_grass_mat.set_shader_parameter("albedo_color", Color(0.85, 0.95, 0.80))
+		_grass_mat.set_shader_parameter("alpha_cutoff", 0.35)
+		_grass_mat.set_shader_parameter("wind_strength", 0.6)
+		_grass_mat.set_shader_parameter("wind_speed", 1.8)
+		_grass_mat.set_shader_parameter("wind_turbulence", 0.9)
+		_grass_mat.set_shader_parameter("density_near", 20.0)
+		_grass_mat.set_shader_parameter("density_far", 40.0)
+
 
 static func _gen_lily_pad_mesh() -> ArrayMesh:
 	var verts := PackedVector3Array()
@@ -4044,6 +4137,40 @@ static func _gen_reed_texture() -> ImageTexture:
 				var py := h - 1 - dy
 				if px >= 0 and px < w and py >= 0 and py < h:
 					img.set_pixel(px, py, blade_col)
+	return ImageTexture.create_from_image(img)
+
+
+static func _gen_grass_texture() -> ImageTexture:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77042
+	var w := 32
+	var h := 48
+	var img := Image.create(w, h, true, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var greens := [
+		Color(0.22, 0.48, 0.14),
+		Color(0.28, 0.55, 0.18),
+		Color(0.18, 0.42, 0.12),
+		Color(0.32, 0.58, 0.22),
+		Color(0.25, 0.50, 0.16),
+	]
+	for _blade in rng.randi_range(6, 9):
+		var cx := rng.randi_range(4, w - 5)
+		var blade_h := rng.randi_range(20, h - 6)
+		var blade_w := rng.randi_range(1, 2)
+		var curve := rng.randf_range(-0.06, 0.06)
+		var base_col: Color = greens[rng.randi() % greens.size()]
+		for dy in blade_h:
+			var t := float(dy) / float(blade_h)
+			var bw := int(lerpf(float(blade_w), 0.5, t * 0.9))
+			var ox := int(curve * dy * dy * 0.008)
+			var col := base_col * lerpf(0.65, 1.1, t)
+			col.a = 1.0
+			for dx in range(-bw, bw + 1):
+				var px := cx + dx + ox
+				var py := h - 1 - dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, col)
 	return ImageTexture.create_from_image(img)
 
 
