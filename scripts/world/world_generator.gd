@@ -581,8 +581,8 @@ func _physics_process(delta: float) -> void:
 					continue
 				var wp := get_world_position(p)
 				var ground := get_height_at(wp.x, wp.z)
-			if p.global_position.y < ground - 0.5:
-				p.global_position.y = ground + 0.5
+				if p.global_position.y < ground - 0.5:
+					p.global_position.y = ground + 0.5
 					p.velocity = Vector3.ZERO
 					_clip_recovery_timer = 0.5
 					_force_enable_player_zone_collision(wp)
@@ -597,7 +597,7 @@ func _physics_process(delta: float) -> void:
 					print("[CLIP RECOVERY] frame=%d pos=(%.1f,%.1f,%.1f) world=(%.1f,%.1f,%.1f) ground=%.1f delta=%.1f zone=%s col=%s lod=%d en_q=%d dis_q=%d" % [
 						Engine.get_frames_drawn(),
 						p.global_position.x, p.global_position.y, p.global_position.z,
-						wp.x, wp.y, wp.z, ground, ground - (p.global_position.y - 2.0),
+						wp.x, wp.y, wp.z, ground, ground - (p.global_position.y - 0.5),
 						str(zone_coord), col_state, lod_level,
 						_deferred_collisions.size(), _deferred_disable_collisions.size()])
 

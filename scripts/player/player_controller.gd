@@ -1566,10 +1566,11 @@ func _pre_move_analytic_guard() -> void:
 	if not wg:
 		return
 	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
-	if global_position.y < ground_y + 0.1 and velocity.y < 0.0:
+	if global_position.y < ground_y - 0.02:
+		global_position.y = ground_y + 0.25
 		velocity.y = 0.0
-		if global_position.y < ground_y - 0.02:
-			global_position.y = ground_y + 0.05
+	elif global_position.y < ground_y + 0.1 and velocity.y < 0.0:
+		velocity.y = 0.0
 
 
 var _analytic_floor_corrections := 0
@@ -1581,15 +1582,21 @@ func _enforce_analytic_floor() -> void:
 	if not wg:
 		return
 	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
-	if global_position.y < ground_y - 0.05:
-		_analytic_floor_corrections += 1
-		if _analytic_floor_corrections <= 20 or _analytic_floor_corrections % 100 == 0:
-			print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f, delta=%.2f) frame=%d" % [
-				_analytic_floor_corrections, global_position.y, ground_y + 0.15,
-				ground_y, ground_y - global_position.y, Engine.get_frames_drawn()])
-		global_position.y = ground_y + 0.15
-		if velocity.y < 0.0:
-			velocity.y = 0.0
+	if global_position.y >= ground_y - 0.02:
+		return
+	# Player is below the analytic terrain surface — correct immediately.
+	# Push above by a generous margin so the visual mesh (which can sit
+	# slightly higher than the analytic height at interpolated points)
+	# never shows the player clipping.
+	var push_to := ground_y + 0.25
+	_analytic_floor_corrections += 1
+	if _analytic_floor_corrections <= 20 or _analytic_floor_corrections % 100 == 0:
+		print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f, on_floor=%s) frame=%d" % [
+			_analytic_floor_corrections, global_position.y, push_to,
+			ground_y, str(is_on_floor()), Engine.get_frames_drawn()])
+	global_position.y = push_to
+	if velocity.y < 0.0:
+		velocity.y = 0.0
 
 
 func _handle_jump() -> void:
