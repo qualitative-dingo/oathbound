@@ -1133,26 +1133,6 @@ func is_zone_loaded(coord: Vector2i) -> bool:
 	return coord in _loaded_zones
 
 
-func get_speed_factor_at(world_pos: Vector3, move_dir: Vector3) -> float:
-	var dist := Vector2(world_pos.x, world_pos.z).length()
-	var boundary_fade := 1.0 - smoothstep(world_radius * 0.82, world_radius * 0.92, dist)
-	if boundary_fade < 1.0:
-		var to_center := -Vector2(world_pos.x, world_pos.z).normalized()
-		var move_h := Vector2(move_dir.x, move_dir.z)
-		if move_h.length_squared() > 0.001:
-			var toward_edge := move_h.normalized().dot(-to_center)
-			if toward_edge > 0.0:
-				boundary_fade = lerpf(boundary_fade, 1.0, 1.0 - toward_edge)
-
-	var look_dist := ZONE_SIZE * 2.0
-	var look_pos := world_pos + move_dir.normalized() * look_dist
-	var zone_ahead := world_to_zone(look_pos)
-	var zone_factor := 1.0
-	if zone_ahead not in _loaded_zones and zone_ahead not in _gen_in_flight:
-		zone_factor = 0.35
-
-	return maxf(boundary_fade * zone_factor, 0.15)
-
 
 func zone_to_world_center(coord: Vector2i) -> Vector3:
 	return Vector3(
