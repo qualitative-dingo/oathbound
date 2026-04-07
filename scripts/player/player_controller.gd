@@ -1620,6 +1620,12 @@ func _handle_flight(delta: float) -> void:
 	if Input.is_action_pressed(&"sprint"):
 		speed *= 2.0
 
+	if not _in_cave and move_dir.length_squared() > 0.001:
+		var wg_list := get_tree().get_nodes_in_group(&"world_generator")
+		if not wg_list.is_empty() and wg_list[0].has_method(&"get_speed_factor_at"):
+			var wp := wg_list[0].get_world_position(self)
+			speed *= wg_list[0].get_speed_factor_at(wp, move_dir)
+
 	velocity = Vector3.ZERO
 	global_position += move_dir * speed * delta
 	if not _in_cave:

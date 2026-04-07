@@ -235,6 +235,26 @@ func set_terrain_mods(mods: Dictionary) -> void:
 		_terrain_mods[key] = h
 
 
+func _enforce_world_boundary(delta: float) -> void:
+	var boundary_start := world_radius * 0.85
+	var boundary_hard := world_radius * 0.95
+	for p in _players:
+		if p.get("_in_cave"):
+			continue
+		var wp := get_world_position(p)
+		var dist := Vector2(wp.x, wp.z).length()
+		if dist < boundary_start:
+			continue
+		var push_t := smoothstep(boundary_start, boundary_hard, dist)
+		var push_dir := -Vector2(wp.x, wp.z).normalized()
+		var push_mag := lerpf(2.0, 40.0, push_t) * delta
+		p.global_position.x += push_dir.x * push_mag
+		p.global_position.z += push_dir.y * push_mag
+		if dist > boundary_hard:
+			var dir_3d := -Vector3(wp.x, 0.0, wp.z).normalized()
+			p.global_position += dir_3d * (dist - boundary_hard + 5.0) * 0.1
+
+
 func _check_origin_shift() -> void:
 	if _players.is_empty():
 		return
@@ -523,13 +543,15 @@ func _physics_process(delta: float) -> void:
 				p.global_position.y = ground + 0.5
 				p.velocity = Vector3.ZERO
 
+	_enforce_world_boundary(delta)
+
 	var t1 := Time.get_ticks_usec()
 	_any_flying = false
 	for p in _players:
 		if p.get(&"flight_mode"):
 			_any_flying = true
 			break
-	var effective_radius: int = (load_radius_zones + 1) if _any_flying else load_radius_zones
+	var effective_radius: int = (load_radius_zones + 2) if _any_flying else load_radius_zones
 
 	var cur_zones: Array[Vector2i] = []
 	for p in _players:
@@ -1109,6 +1131,27 @@ func world_to_zone(world_pos: Vector3) -> Vector2i:
 
 func is_zone_loaded(coord: Vector2i) -> bool:
 	return coord in _loaded_zones
+
+
+func get_speed_factor_at(world_pos: Vector3, move_dir: Vector3) -> float:
+	var dist := Vector2(world_pos.x, world_pos.z).length()
+	var boundary_fade := 1.0 - smoothstep(world_radius * 0.82, world_radius * 0.92, dist)
+	if boundary_fade < 1.0:
+		var to_center := -Vector2(world_pos.x, world_pos.z).normalized()
+		var move_h := Vector2(move_dir.x, move_dir.z)
+		if move_h.length_squared() > 0.001:
+			var toward_edge := move_h.normalized().dot(-to_center)
+			if toward_edge > 0.0:
+				boundary_fade = lerpf(boundary_fade, 1.0, 1.0 - toward_edge)
+
+	var look_dist := ZONE_SIZE * 2.0
+	var look_pos := world_pos + move_dir.normalized() * look_dist
+	var zone_ahead := world_to_zone(look_pos)
+	var zone_factor := 1.0
+	if zone_ahead not in _loaded_zones and zone_ahead not in _gen_in_flight:
+		zone_factor = 0.35
+
+	return maxf(boundary_fade * zone_factor, 0.15)
 
 
 func zone_to_world_center(coord: Vector2i) -> Vector3:
@@ -1726,7 +1769,7 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 		if p.get(&"flight_mode"):
 			any_flying = true
 			break
-	var effective_unload: float = float(unload_radius_zones + 1) if any_flying else float(unload_radius_zones)
+	var effective_unload: float = float(unload_radius_zones + 2) if any_flying else float(unload_radius_zones)
 	# When forcing aggressive unload, tighten the radius
 	if force_aggressive:
 		effective_unload = maxf(effective_unload - 1.0, float(load_radius_zones))
@@ -2305,8 +2348,8 @@ func _resize_water_plane() -> void:
 
 func set_render_distance(radius: int) -> void:
 	load_radius_zones = clampi(radius, 1, 5)
-	unload_radius_zones = load_radius_zones + 1
-	var fly_radius := load_radius_zones + 1
+	unload_radius_zones = load_radius_zones + 2
+	var fly_radius := load_radius_zones + 2
 	_max_loaded_zones = (2 * fly_radius + 1) ** 2 + 10
 	_resize_water_plane()
 
