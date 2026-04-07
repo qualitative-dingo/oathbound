@@ -1610,7 +1610,7 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 
 
 const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
-const _MAX_COLLISION_TOGGLES_PER_FRAME := 8  # Cap total collision toggles to avoid physics spikes (was 2, increased for faster loading)
+const _MAX_COLLISION_TOGGLES_PER_FRAME := 4
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
@@ -1666,6 +1666,12 @@ func _process_pending_zones() -> void:
 	_evict_terrain_cache()
 
 	# 2. Populate zone objects — budget-checked before EVERY phase so no single phase blows the frame
+	#    Sort by distance to closest player so nearby zones fill in first
+	if _populate_backlog.size() > 1:
+		var _sort_pz := world_to_zone(get_world_position(_players[0])) if not _players.is_empty() else Vector2i.ZERO
+		_populate_backlog.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return float((a["coord"] - _sort_pz).length_squared()) < float((b["coord"] - _sort_pz).length_squared())
+		)
 	while not _populate_backlog.is_empty():
 		if Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
 			break
