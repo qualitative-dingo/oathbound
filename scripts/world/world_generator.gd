@@ -1093,9 +1093,9 @@ func _trace_creek_paths() -> void:
 					var creek_y: float
 					if near_pool:
 						var pool_t := 1.0 - clampf((terrain_h - WATER_LEVEL - 0.15) / 0.35, 0.0, 1.0)
-						creek_y = lerpf(terrain_h + 0.25, WATER_LEVEL + 0.1, pool_t * pool_t)
+						creek_y = lerpf(terrain_h + 0.08, WATER_LEVEL + 0.1, pool_t * pool_t)
 					else:
-						creek_y = terrain_h + 0.25
+						creek_y = terrain_h + 0.08
 
 					if not points.is_empty():
 						var prev := points[points.size() - 1]
@@ -1180,8 +1180,9 @@ func _stamp_creek_bed() -> void:
 			for i in points.size():
 				var p := points[i]
 				var w := widths[i]
-				var radius := w + 2.0
-				var bed_h := p.y - 0.3
+				var radius := w + 3.0
+				var bed_center := p.y - 2.5
+				var inner_r := w * 0.85
 
 				var cx_min := int(floor((p.x - radius) / _CREEK_BED_CELL))
 				var cx_max := int(floor((p.x + radius) / _CREEK_BED_CELL))
@@ -1199,9 +1200,12 @@ func _stamp_creek_bed() -> void:
 						if dist_sq >= radius_sq:
 							continue
 						var dist := sqrt(dist_sq)
-						var t := 1.0 - clampf(dist / radius, 0.0, 1.0)
-						t = t * t
-						var carve_h := lerpf(bed_h + 1.5, bed_h, t)
+						var carve_h: float
+						if dist <= inner_r:
+							carve_h = bed_center
+						else:
+							var bank_t := clampf((dist - inner_r) / maxf(radius - inner_r, 0.01), 0.0, 1.0)
+							carve_h = lerpf(bed_center, p.y + 0.5, bank_t * bank_t)
 						var key := Vector2i(cx, cz)
 						if _creek_bed.has(key):
 							_creek_bed[key] = minf(_creek_bed[key] as float, carve_h)

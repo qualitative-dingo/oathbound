@@ -123,6 +123,10 @@ void fragment() {
 	float foam_shore_fade = smoothstep(0.0, 0.2, perturbed_depth);
 	ALPHA = max(final_col.a * shore_alpha, total_foam * foam_shore_fade * 0.85);
 
+	// Soft fade at mesh edges so the boundary is never a hard line
+	float edge_fade = smoothstep(0.0, 0.06, min(v_uv.x, 1.0 - v_uv.x));
+	ALPHA *= edge_fade;
+
 	ROUGHNESS = mix(0.1, 0.4, total_foam);
 	METALLIC = mix(0.05, 0.0, total_foam);
 	SPECULAR = mix(0.4, 0.15, total_foam);
