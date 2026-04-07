@@ -91,6 +91,10 @@ const _CREEK_SUBDIV := 14             # interpolation points between grid cells
 var _creek_segments: Dictionary = {}   # Vector2i -> Array[Dictionary]
 var _creek_shader_mat: ShaderMaterial
 
+# ─── Creek Bed Grid (sparse terrain carving matching creek mesh width) ────────
+const _CREEK_BED_CELL := 4.0
+var _creek_bed: Dictionary = {}        # Vector2i -> float (target bed height)
+
 # ─── Terrain Modifications (hoe / leveling) ──────────────────────────────────
 # Keyed by Vector2i grid coords (world pos quantized to TERRAIN_MOD_STEP).
 # Values are the target height (float).
@@ -557,14 +561,15 @@ func _physics_process(delta: float) -> void:
 	var cur_zones: Array[Vector2i] = []
 	for p in _players:
 		cur_zones.append(world_to_zone(get_world_position(p)))
-	if cur_zones != _last_player_zones or _any_flying:
+	if cur_zones != _last_player_zones:
 		_last_player_zones = cur_zones
 		for pz in cur_zones:
 			_queue_zones_around(pz, effective_radius)
+		_requeue_timer = 0.5 if _any_flying else 2.0
 	else:
 		_requeue_timer -= delta
 		if _requeue_timer <= 0.0:
-			_requeue_timer = 2.0
+			_requeue_timer = 0.5 if _any_flying else 2.0
 			for pz in cur_zones:
 				_queue_zones_around(pz, effective_radius)
 	var t2 := Time.get_ticks_usec()
@@ -818,6 +823,9 @@ func _compute_watershed() -> void:
 
 	# Step 7 — trace elevated creek paths for visual flowing-water strips
 	_trace_creek_paths()
+
+	# Step 8 — stamp creek bed grid for wide terrain carving
+	_stamp_creek_bed()
 
 
 func _trace_lake_outflows() -> void:
@@ -1111,8 +1119,8 @@ func _trace_creek_paths() -> void:
 					var lw_noise := _detail_noise.get_noise_2d(lwx * 1.5 + 13000.0, lwz * 1.5 + 13000.0)
 					last_w *= (0.75 + lw_noise * 0.5)
 					if not points.is_empty():
-						cum_dist += Vector3(lwx, lh + 0.25, lwz).distance_to(points[points.size() - 1])
-					points.append(Vector3(lwx, lh + 0.25, lwz))
+						cum_dist += Vector3(lwx, lh + 0.08, lwz).distance_to(points[points.size() - 1])
+					points.append(Vector3(lwx, lh + 0.08, lwz))
 					widths.append(last_w)
 					flow_uvs.append(cum_dist)
 
@@ -1161,6 +1169,44 @@ func _store_creek_segment(zone: Vector2i, points: PackedVector3Array, widths: Pa
 		"widths": seg_w,
 		"uvs": seg_uv,
 	})
+
+
+func _stamp_creek_bed() -> void:
+	_creek_bed.clear()
+	for zone_segs in _creek_segments.values():
+		for seg in zone_segs:
+			var points: PackedVector3Array = seg["points"]
+			var widths: PackedFloat32Array = seg["widths"]
+			for i in points.size():
+				var p := points[i]
+				var w := widths[i]
+				var radius := w + 2.0
+				var bed_h := p.y - 0.3
+
+				var cx_min := int(floor((p.x - radius) / _CREEK_BED_CELL))
+				var cx_max := int(floor((p.x + radius) / _CREEK_BED_CELL))
+				var cz_min := int(floor((p.z - radius) / _CREEK_BED_CELL))
+				var cz_max := int(floor((p.z + radius) / _CREEK_BED_CELL))
+				var radius_sq := radius * radius
+
+				for cx in range(cx_min, cx_max + 1):
+					for cz in range(cz_min, cz_max + 1):
+						var cell_wx := (float(cx) + 0.5) * _CREEK_BED_CELL
+						var cell_wz := (float(cz) + 0.5) * _CREEK_BED_CELL
+						var dx := cell_wx - p.x
+						var dz := cell_wz - p.z
+						var dist_sq := dx * dx + dz * dz
+						if dist_sq >= radius_sq:
+							continue
+						var dist := sqrt(dist_sq)
+						var t := 1.0 - clampf(dist / radius, 0.0, 1.0)
+						t = t * t
+						var carve_h := lerpf(bed_h + 1.5, bed_h, t)
+						var key := Vector2i(cx, cz)
+						if _creek_bed.has(key):
+							_creek_bed[key] = minf(_creek_bed[key] as float, carve_h)
+						else:
+							_creek_bed[key] = carve_h
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1415,6 +1461,28 @@ func get_height_at(x: float, z: float) -> float:
 	if center_dist < 80.0:
 		var flatten := 1.0 - smoothstep(0.0, 80.0, center_dist)
 		h = lerpf(h, 2.0, flatten)
+
+	# Creek bed grid carving — wide channels matching creek mesh footprints
+	if not _creek_bed.is_empty():
+		var cb_gx := x / _CREEK_BED_CELL
+		var cb_gz := z / _CREEK_BED_CELL
+		var cb_ix := int(floor(cb_gx))
+		var cb_iz := int(floor(cb_gz))
+		var cb_fx := cb_gx - float(cb_ix)
+		var cb_fz := cb_gz - float(cb_iz)
+		var _CB_NONE := 9999.0
+		var a: float = _creek_bed.get(Vector2i(cb_ix, cb_iz), _CB_NONE)
+		var b: float = _creek_bed.get(Vector2i(cb_ix + 1, cb_iz), _CB_NONE)
+		var c: float = _creek_bed.get(Vector2i(cb_ix, cb_iz + 1), _CB_NONE)
+		var d: float = _creek_bed.get(Vector2i(cb_ix + 1, cb_iz + 1), _CB_NONE)
+		if a < _CB_NONE or b < _CB_NONE or c < _CB_NONE or d < _CB_NONE:
+			a = minf(a, h)
+			b = minf(b, h)
+			c = minf(c, h)
+			d = minf(d, h)
+			var bed_h := lerpf(lerpf(a, b, cb_fx), lerpf(c, d, cb_fx), cb_fz)
+			if bed_h < h:
+				h = bed_h
 
 	return h
 
@@ -1719,10 +1787,10 @@ func _process_pending_zones() -> void:
 				finalized += 1
 
 	# 4. Submit new zone builds — stop if backlog is already large
-	var max_backlog := 16 if _any_flying else 8
+	var max_backlog := 10 if _any_flying else 6
 	if _finalize_backlog.size() + _gen_in_flight.size() > max_backlog:
 		return
-	var zones_this_frame := (MAX_ZONES_PER_FRAME * 2) if _any_flying else MAX_ZONES_PER_FRAME
+	var zones_this_frame := MAX_ZONES_PER_FRAME
 	var submitted := 0
 	while submitted < zones_this_frame and not _pending_zones.is_empty():
 		var coord: Vector2i = _pending_zones.pop_front()
@@ -2214,7 +2282,7 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 		for i in points.size():
 			var p := points[i]
-			var w := half_widths[i]
+			var w := half_widths[i] + 1.5
 			var uv_y := flow_uvs[i] * uv_scale
 
 			var flow_dir := tangents[i]
@@ -2222,17 +2290,8 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 			var local_p := p - zone_origin
 
-			var left_wx := p.x - perp.x * w
-			var left_wz := p.z - perp.y * w
-			var right_wx := p.x + perp.x * w
-			var right_wz := p.z + perp.y * w
-			var left_y := maxf(local_p.y, get_height_at(left_wx, left_wz) + 0.25)
-			var right_y := maxf(local_p.y, get_height_at(right_wx, right_wz) + 0.25)
-			if w > 5.0:
-				left_y = maxf(left_y, get_height_at(p.x - perp.x * w * 0.5, p.z - perp.y * w * 0.5) + 0.25)
-				right_y = maxf(right_y, get_height_at(p.x + perp.x * w * 0.5, p.z + perp.y * w * 0.5) + 0.25)
-			left_y = minf(left_y, local_p.y + 3.0)
-			right_y = minf(right_y, local_p.y + 3.0)
+			var left_y := local_p.y
+			var right_y := local_p.y
 
 			var left := Vector3(local_p.x - perp.x * w, left_y, local_p.z - perp.y * w)
 			var right := Vector3(local_p.x + perp.x * w, right_y, local_p.z + perp.y * w)
