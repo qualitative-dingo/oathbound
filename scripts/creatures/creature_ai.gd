@@ -427,6 +427,8 @@ func _apply_flying_hover(delta: float) -> void:
 var _terrain_clamp_cd: float = 0.0
 
 func _clamp_to_terrain() -> void:
+	if global_position.y < -100.0:
+		return
 	_terrain_clamp_cd -= get_physics_process_delta_time()
 	if _terrain_clamp_cd > 0.0:
 		return
@@ -453,6 +455,8 @@ func _clamp_to_terrain() -> void:
 var _water_avoid_cd: float = 0.0
 
 func _avoid_water() -> void:
+	if global_position.y < -100.0:
+		return
 	_water_avoid_cd -= get_physics_process_delta_time()
 	if _water_avoid_cd > 0.0:
 		return

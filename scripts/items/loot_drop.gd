@@ -189,6 +189,10 @@ static func _enforce_loot_cap() -> void:
 func _snap_to_ground() -> void:
 	_push_away_from_stumps()
 
+	if global_position.y < -100.0:
+		_grounded = true
+		return
+
 	_refresh_static_caches()
 	if not is_instance_valid(_s_cached_world_gen):
 		_grounded = true
