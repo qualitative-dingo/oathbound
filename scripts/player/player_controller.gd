@@ -751,7 +751,7 @@ func _on_chest_contents_received(chest_path: String, contents: Array) -> void:
 
 
 func _exit_tree() -> void:
-	if is_multiplayer_authority():
+	if multiplayer.has_multiplayer_peer() and is_multiplayer_authority():
 		if multiplayer.multiplayer_peer:
 			Inventory.unregister_inventory(multiplayer.get_unique_id())
 		if NetworkManager.is_connected_to_game():

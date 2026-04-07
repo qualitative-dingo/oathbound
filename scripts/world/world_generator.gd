@@ -983,12 +983,15 @@ func _trace_lake_outflows() -> void:
 
 
 func _ws_sample_accum(wx: float, wz: float) -> float:
-	if _ws_accum.is_empty():
+	if _ws_accum.is_empty() or _ws_dim < 2:
 		return 0.0
 	var gx: float = (wx + world_radius) / _WS_CELL
 	var gz: float = (wz + world_radius) / _WS_CELL
 	var ix: int = clampi(int(gx), 0, _ws_dim - 2)
 	var iz: int = clampi(int(gz), 0, _ws_dim - 2)
+	var max_idx := (iz + 1) * _ws_dim + ix + 1
+	if max_idx >= _ws_accum.size():
+		return 0.0
 	var fx: float = clampf(gx - float(ix), 0.0, 1.0)
 	var fz: float = clampf(gz - float(iz), 0.0, 1.0)
 	var a: float = _ws_accum[iz * _ws_dim + ix]
@@ -1820,11 +1823,10 @@ func _process_pending_zones() -> void:
 			if not parent:
 				remaining.append(col_shape)
 				continue
-			var zone_coord: Variant = parent.get_meta(&"zone_coord", null)
-			if zone_coord == null:
+			if not parent.has_meta(&"zone_coord"):
 				col_shape.disabled = false
 				continue
-			var zc: Vector2i = zone_coord as Vector2i
+			var zc: Vector2i = parent.get_meta(&"zone_coord") as Vector2i
 			var near_player := false
 			for pz in player_zones:
 				if absi(zc.x - pz.x) <= 1 and absi(zc.y - pz.y) <= 1:

@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode blend_mix, cull_back, diffuse_lambert_wrap;
+render_mode cull_back, diffuse_lambert_wrap;
 
 group_uniforms textures;
 uniform sampler2D tex_flat  : filter_linear_mipmap, repeat_enable;
