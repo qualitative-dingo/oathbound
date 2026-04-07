@@ -571,7 +571,7 @@ func _physics_process(delta: float) -> void:
 					continue
 				var wp := get_world_position(p)
 				var ground := get_height_at(wp.x, wp.z)
-				if p.global_position.y < ground - 3.0:
+				if p.global_position.y < ground - 1.5:
 					p.global_position.y = ground + 2.0
 					p.velocity = Vector3.ZERO
 					_clip_recovery_timer = 0.5

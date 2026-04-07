@@ -1519,13 +1519,21 @@ func _clamp_to_terrain() -> void:
 	var query := PhysicsRayQueryParameters3D.create(from, to, 1)
 	query.exclude = [get_rid()]
 	var result := space.intersect_ray(query)
-	if result.is_empty():
+	if not result.is_empty():
+		var surface_y: float = result["position"].y
+		var below_surface := surface_y - global_position.y
+		if below_surface > 3.0:
+			global_position.y = surface_y + 0.2
+			velocity = Vector3.ZERO
 		return
-	var surface_y: float = result["position"].y
-	var below_surface := surface_y - global_position.y
-	if below_surface > 3.0:
-		global_position.y = surface_y + 0.2
-		velocity = Vector3.ZERO
+
+	# Raycast empty (collision likely disabled) — use analytic height as fallback
+	var wg := _find_world_generator()
+	if wg:
+		var analytic_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
+		if global_position.y < analytic_y - 1.0:
+			global_position.y = analytic_y + 0.5
+			velocity.y = 0.0
 
 
 func _handle_jump() -> void:
@@ -11639,7 +11647,7 @@ func _apply_tripo_player_texture() -> void:
 		return
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = tex
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	for mi in _gltf_all_meshes:
 		mi.material_override = mat
 		mi.visible = true
