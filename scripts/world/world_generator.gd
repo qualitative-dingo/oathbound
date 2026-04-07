@@ -84,9 +84,9 @@ var _ws_flow: PackedInt32Array
 #     "uvs":    PackedFloat32Array }   -- cumulative UV distance for flow scroll
 const _CREEK_ACCUM_THRESH := 2.5
 const _CREEK_MIN_ELEV := 1.5          # min terrain height above WATER_LEVEL
-const _CREEK_MIN_WIDTH := 0.6
-const _CREEK_MAX_WIDTH := 3.5
-const _CREEK_DEPTH := 0.4             # how deep the channel is carved
+const _CREEK_MIN_WIDTH := 2.0
+const _CREEK_MAX_WIDTH := 40.0
+const _CREEK_DEPTH := 1.2             # how deep the channel is carved
 const _CREEK_SUBDIV := 14             # interpolation points between grid cells
 var _creek_segments: Dictionary = {}   # Vector2i -> Array[Dictionary]
 var _creek_shader_mat: ShaderMaterial
@@ -1056,7 +1056,7 @@ func _trace_creek_paths() -> void:
 
 					var terrain_h := get_height_at(wx, wz)
 					terrain_h = maxf(terrain_h, WATER_LEVEL + 0.3)
-					var creek_y := terrain_h + 0.15
+					var creek_y := terrain_h + 0.25
 
 					var acc := lerpf(a0, a1, t_val)
 					var norm_acc := clampf((acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
@@ -1090,8 +1090,8 @@ func _trace_creek_paths() -> void:
 					var lw_noise := _detail_noise.get_noise_2d(lwx * 1.5 + 13000.0, lwz * 1.5 + 13000.0)
 					last_w *= (0.75 + lw_noise * 0.5)
 					if not points.is_empty():
-						cum_dist += Vector3(lwx, lh + 0.15, lwz).distance_to(points[points.size() - 1])
-					points.append(Vector3(lwx, lh + 0.15, lwz))
+						cum_dist += Vector3(lwx, lh + 0.25, lwz).distance_to(points[points.size() - 1])
+					points.append(Vector3(lwx, lh + 0.25, lwz))
 					widths.append(last_w)
 					flow_uvs.append(cum_dist)
 
@@ -2208,8 +2208,19 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var perp := Vector2(-flow_dir.y, flow_dir.x)
 
 			var local_p := p - zone_origin
-			var left := Vector3(local_p.x - perp.x * w, local_p.y, local_p.z - perp.y * w)
-			var right := Vector3(local_p.x + perp.x * w, local_p.y, local_p.z + perp.y * w)
+
+			var left_wx := p.x - perp.x * w
+			var left_wz := p.z - perp.y * w
+			var right_wx := p.x + perp.x * w
+			var right_wz := p.z + perp.y * w
+			var left_y := maxf(local_p.y, get_height_at(left_wx, left_wz) + 0.25)
+			var right_y := maxf(local_p.y, get_height_at(right_wx, right_wz) + 0.25)
+			if w > 5.0:
+				left_y = maxf(left_y, get_height_at(p.x - perp.x * w * 0.5, p.z - perp.y * w * 0.5) + 0.25)
+				right_y = maxf(right_y, get_height_at(p.x + perp.x * w * 0.5, p.z + perp.y * w * 0.5) + 0.25)
+
+			var left := Vector3(local_p.x - perp.x * w, left_y, local_p.z - perp.y * w)
+			var right := Vector3(local_p.x + perp.x * w, right_y, local_p.z + perp.y * w)
 
 			# Compute proper surface normal from tangent and width direction
 			var tangent_3d := Vector3(flow_dir.x, 0.0, flow_dir.y)
