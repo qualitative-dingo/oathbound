@@ -240,6 +240,16 @@ func set_terrain_mods(mods: Dictionary) -> void:
 		_terrain_mods[key] = h
 
 
+func _is_zone_near_player(coord: Vector2i) -> bool:
+	for p in _players:
+		if p.get("_in_cave"):
+			continue
+		var pz := world_to_zone(get_world_position(p))
+		if absi(coord.x - pz.x) <= 1 and absi(coord.y - pz.y) <= 1:
+			return true
+	return false
+
+
 func _force_enable_player_zone_collision(wp: Vector3) -> void:
 	var zone_coord := world_to_zone(wp)
 	for dx in range(-1, 2):
@@ -2217,21 +2227,30 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 			zone_root.add_child(mi)
 		mi.visible = not _terrain_hidden
 
+		var near_player := _is_zone_near_player(coord)
 		if shape:
 			if col:
 				col.shape = shape
-				col.disabled = true
-				_deferred_collisions.append(col)
+				if near_player:
+					col.disabled = false
+				else:
+					col.disabled = true
+					_deferred_collisions.append(col)
 			else:
 				col = CollisionShape3D.new()
 				col.name = "TerrainCol"
 				col.shape = shape
-				col.disabled = true
-				_deferred_collisions.append(col)
+				if near_player:
+					col.disabled = false
+				else:
+					col.disabled = true
+					_deferred_collisions.append(col)
 				zone_root.add_child(col)
-		# Only add if not already parented (pool should orphan, but be safe)
 		if not zone_root.get_parent():
-			call_deferred(&"add_child", zone_root)
+			if near_player:
+				add_child(zone_root)
+			else:
+				call_deferred(&"add_child", zone_root)
 	else:
 		zone_root = StaticBody3D.new()
 		zone_root.name = "Zone_%d_%d" % [coord.x, coord.y]
@@ -2245,15 +2264,21 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 		mesh_instance.visible = not _terrain_hidden
 		var collision := CollisionShape3D.new()
 		collision.name = "TerrainCol"
+		var near_player := _is_zone_near_player(coord)
 		if shape:
 			collision.shape = shape
-			collision.disabled = true
-			_deferred_collisions.append(collision)
+			if near_player:
+				collision.disabled = false
+			else:
+				collision.disabled = true
+				_deferred_collisions.append(collision)
 		zone_root.add_child(mesh_instance)
 		zone_root.add_child(collision)
-		# Only add if not already parented
 		if not zone_root.get_parent():
-			call_deferred(&"add_child", zone_root)
+			if near_player:
+				add_child(zone_root)
+			else:
+				call_deferred(&"add_child", zone_root)
 
 	# Local position = world coords; parent (WorldGenerator) global_position handles origin shift
 	zone_root.position = Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE)
