@@ -137,7 +137,7 @@ static func get_blueberry_node() -> StaticBody3D:
 		var s := _blueberry_bushes.pop_back() as StaticBody3D
 		if is_instance_valid(s):
 			s.visible = true
-			s.collision_layer = 4
+			s.collision_layer = 32
 			s.process_mode = Node.PROCESS_MODE_INHERIT
 			_stats_reused += 1
 			return s

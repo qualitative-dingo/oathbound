@@ -573,7 +573,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 
 	var root := StaticBody3D.new()
 	root.name = "BlueberryBush"
-	root.collision_layer = 4  # Layer 4 only = raycast detection, no physics blocking
+	root.collision_layer = 32  # Layer 6: walk-through interactable (not in player collision_mask)
 	root.collision_mask = 0
 	root.add_to_group(&"interactables")
 	root.add_to_group(&"berry_bushes")
@@ -705,7 +705,7 @@ static func _create_blueberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 static func _create_lingonberry_bush(rng: RandomNumberGenerator) -> StaticBody3D:
 	var root := StaticBody3D.new()
 	root.name = "LingonberryBush"
-	root.collision_layer = 4
+	root.collision_layer = 32  # Walk-through interactable
 	root.collision_mask = 0
 
 	var sf := rng.randf_range(0.4, 0.55)

@@ -10416,7 +10416,7 @@ func _update_interact_prompt() -> void:
 		var ray_end := ray_origin + ray_dir * 20.0
 		var space := get_world_3d().direct_space_state
 		if space:
-			var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 4)
+			var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 4 | 32)
 			q.exclude = [get_rid()]
 			var hit := space.intersect_ray(q)
 			if not hit.is_empty():
