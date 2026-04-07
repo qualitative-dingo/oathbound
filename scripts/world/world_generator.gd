@@ -1295,9 +1295,9 @@ func _stamp_creek_bed() -> void:
 			for i in points.size():
 				var p := points[i]
 				var w := widths[i]
-				var radius := w + 2.0
-				var bed_center := p.y - 0.5
-				var inner_r := w * 0.8
+				var radius := w + 2.5
+				var bed_center := p.y - 1.2
+				var inner_r := w * 0.7
 
 				var cx_min := int(floor((p.x - radius) / _CREEK_BED_CELL))
 				var cx_max := int(floor((p.x + radius) / _CREEK_BED_CELL))
@@ -2156,16 +2156,14 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 ## indistinguishable for gameplay but much cheaper for the physics engine.
 func _build_collision_shape(coord: Vector2i) -> ConcavePolygonShape3D:
 	const COL_RES := MESH_RESOLUTION / 2
-	var origin_x: float = coord.x * ZONE_SIZE
-	var origin_z: float = coord.y * ZONE_SIZE
 	var step: float = ZONE_SIZE / COL_RES
 
 	var col_verts := PackedVector3Array()
 	col_verts.resize((COL_RES + 1) * (COL_RES + 1))
 	for cz in range(COL_RES + 1):
 		for cx in range(COL_RES + 1):
-			var wx := origin_x + cx * step
-			var wz := origin_z + cz * step
+			var wx := float(coord.x * COL_RES + cx) * step
+			var wz := float(coord.y * COL_RES + cz) * step
 			col_verts[cz * (COL_RES + 1) + cx] = Vector3(cx * step, get_height_at(wx, wz), cz * step)
 
 	var face_count := COL_RES * COL_RES * 2 * 3
@@ -2613,6 +2611,14 @@ func set_render_distance(radius: int) -> void:
 #  MESH BUILDING
 # ═══════════════════════════════════════════════════════════════════════════════
 
+## Canonical world coordinate — always produces the same float for the same
+## logical grid point regardless of which zone computes it.
+static func _canonical_wx(zone_x: int, grid_x: int) -> float:
+	return float(zone_x * MESH_RESOLUTION + grid_x) * (ZONE_SIZE / float(MESH_RESOLUTION))
+
+static func _canonical_wz(zone_y: int, grid_z: int) -> float:
+	return float(zone_y * MESH_RESOLUTION + grid_z) * (ZONE_SIZE / float(MESH_RESOLUTION))
+
 func _build_zone_mesh(coord: Vector2i) -> Array:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
@@ -2626,20 +2632,20 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 	var step: float = ZONE_SIZE / res
 	var w := res + 1
 
-	# First pass: sample heights into a flat array for fast lookup
+	# First pass: sample heights using canonical world coords for cross-zone consistency
 	var heights := PackedFloat32Array()
 	heights.resize(w * w)
 	for z in range(w):
 		for x in range(w):
-			var wx := origin_x + x * step
-			var wz := origin_z + z * step
+			var wx := _canonical_wx(coord.x, x)
+			var wz := _canonical_wz(coord.y, z)
 			heights[z * w + x] = get_height_at(wx, wz)
 
 	# Second pass: build vertices, UVs, colors using cached heights
 	for z in range(w):
 		for x in range(w):
-			var wx := origin_x + x * step
-			var wz := origin_z + z * step
+			var wx := _canonical_wx(coord.x, x)
+			var wz := _canonical_wz(coord.y, z)
 			var h := heights[z * w + x]
 			verts.append(Vector3(x * step, h, z * step))
 			uvs.append(Vector2(x as float / res, z as float / res))
@@ -2661,7 +2667,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			river_bank = clampf(river_bank, 0.0, 1.0)
 			colors.append(Color(path_f, brightness, river_bank))
 
-	# Third pass: compute normals — sample beyond zone edges for seamless boundaries
+	# Third pass: compute normals — use cache for interior, canonical coords at boundaries
 	for z in range(w):
 		for x in range(w):
 			var h_left: float
@@ -2671,23 +2677,24 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			if x > 0:
 				h_left = heights[z * w + (x - 1)]
 			else:
-				h_left = get_height_at(origin_x - step, origin_z + z * step)
+				h_left = get_height_at(_canonical_wx(coord.x, -1), _canonical_wz(coord.y, z))
 			if x < res:
 				h_right = heights[z * w + (x + 1)]
 			else:
-				h_right = get_height_at(origin_x + (res + 1) * step, origin_z + z * step)
+				h_right = get_height_at(_canonical_wx(coord.x, res + 1), _canonical_wz(coord.y, z))
 			if z > 0:
 				h_up = heights[(z - 1) * w + x]
 			else:
-				h_up = get_height_at(origin_x + x * step, origin_z - step)
+				h_up = get_height_at(_canonical_wx(coord.x, x), _canonical_wz(coord.y, -1))
 			if z < res:
 				h_down = heights[(z + 1) * w + x]
 			else:
-				h_down = get_height_at(origin_x + x * step, origin_z + (res + 1) * step)
+				h_down = get_height_at(_canonical_wx(coord.x, x), _canonical_wz(coord.y, res + 1))
 			var tangent_x := Vector3(2.0 * step, h_right - h_left, 0.0)
 			var tangent_z := Vector3(0.0, h_down - h_up, 2.0 * step)
 			normals.append(tangent_z.cross(tangent_x).normalized())
 
+	# Surface triangles
 	for z in range(res):
 		for x in range(res):
 			var i := z * (res + 1) + x
@@ -2697,6 +2704,76 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			indices.append(i + 1)
 			indices.append(i + res + 2)
 			indices.append(i + res + 1)
+
+	# Skirt geometry — thin vertical strips at zone edges prevent sub-pixel gaps
+	# between draw calls. Skirt verts duplicate the edge position but drop Y.
+	var skirt_drop := 8.0
+	var surface_count := verts.size()
+	# Add skirt vertices for all 4 edges
+	for z in range(w):
+		# Left edge (x=0)
+		var vi := z * w
+		verts.append(Vector3(verts[vi].x, verts[vi].y - skirt_drop, verts[vi].z))
+		normals.append(normals[vi])
+		uvs.append(Vector2(0.0, z as float / res))
+		colors.append(colors[vi])
+	for z in range(w):
+		# Right edge (x=res)
+		var vi := z * w + res
+		verts.append(Vector3(verts[vi].x, verts[vi].y - skirt_drop, verts[vi].z))
+		normals.append(normals[vi])
+		uvs.append(Vector2(1.0, z as float / res))
+		colors.append(colors[vi])
+	for x in range(w):
+		# Top edge (z=0)
+		var vi := x
+		verts.append(Vector3(verts[vi].x, verts[vi].y - skirt_drop, verts[vi].z))
+		normals.append(normals[vi])
+		uvs.append(Vector2(x as float / res, 0.0))
+		colors.append(colors[vi])
+	for x in range(w):
+		# Bottom edge (z=res)
+		var vi := res * w + x
+		verts.append(Vector3(verts[vi].x, verts[vi].y - skirt_drop, verts[vi].z))
+		normals.append(normals[vi])
+		uvs.append(Vector2(x as float / res, 1.0))
+		colors.append(colors[vi])
+
+	# Skirt triangle indices — connect edge verts to their dropped duplicates
+	var left_base := surface_count
+	var right_base := left_base + w
+	var top_base := right_base + w
+	var bottom_base := top_base + w
+	for z in range(res):
+		# Left skirt
+		var e0 := z * w
+		var e1 := (z + 1) * w
+		var s0 := left_base + z
+		var s1 := left_base + z + 1
+		indices.append(e0); indices.append(s0); indices.append(e1)
+		indices.append(s0); indices.append(s1); indices.append(e1)
+		# Right skirt
+		e0 = z * w + res
+		e1 = (z + 1) * w + res
+		s0 = right_base + z
+		s1 = right_base + z + 1
+		indices.append(e0); indices.append(e1); indices.append(s0)
+		indices.append(s0); indices.append(e1); indices.append(s1)
+	for x in range(res):
+		# Top skirt
+		var e0 := x
+		var e1 := x + 1
+		var s0 := top_base + x
+		var s1 := top_base + x + 1
+		indices.append(e0); indices.append(e1); indices.append(s0)
+		indices.append(s0); indices.append(e1); indices.append(s1)
+		# Bottom skirt
+		e0 = res * w + x
+		e1 = res * w + x + 1
+		s0 = bottom_base + x
+		s1 = bottom_base + x + 1
+		indices.append(e0); indices.append(s0); indices.append(e1)
+		indices.append(s0); indices.append(s1); indices.append(e1)
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)

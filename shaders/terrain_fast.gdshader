@@ -16,11 +16,13 @@ uniform vec3 origin_shift;
 uniform vec3 path_color : source_color = vec3(0.18, 0.11, 0.05);
 uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 
+varying vec3 v_world_pos;
 varying float v_path_mask;
 varying float v_brightness;
 varying float v_river_bank;
 
 void vertex() {
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
 	v_path_mask = COLOR.r;
 	v_brightness = COLOR.g;
 	v_river_bank = COLOR.b;
@@ -43,7 +45,7 @@ float vnoise_fast(vec2 p) {
 }
 
 void fragment() {
-	vec3 wpos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec3 wpos = v_world_pos;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float slope = 1.0 - abs(world_normal.y);
 
