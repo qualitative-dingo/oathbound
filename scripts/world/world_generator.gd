@@ -363,8 +363,8 @@ func get_sub_chunk_explore_fraction(zone_x: int, zone_z: int) -> float:
 
 
 func _ready() -> void:
-	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
-	Engine.max_fps = 60
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	Engine.max_fps = 0
 	_ZonePool.flush_all()
 	_ZonePopulator.reset_texture_cache()
 	_finalize_backlog.clear()
