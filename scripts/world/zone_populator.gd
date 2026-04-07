@@ -1764,7 +1764,7 @@ static func _scatter_grass(
 	var bushes := _get_berry_bushes_cached()
 	var transforms: Array[Transform3D] = []
 
-	const GRASS_COUNT := 2800
+	const GRASS_COUNT := 4760
 	for _i in GRASS_COUNT:
 		var lx := rng.randf_range(0.5, ZONE_SIZE - 0.5)
 		var lz := rng.randf_range(0.5, ZONE_SIZE - 0.5)

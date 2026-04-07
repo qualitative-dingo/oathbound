@@ -11,7 +11,7 @@ uniform float sun_angle_max : hint_range(0.0, 90.0) = 20.0;
 uniform float sun_curve : hint_range(0.0, 1.0) = 0.08;
 
 // Cloud look
-uniform float cloud_coverage : hint_range(0.0, 1.0) = 0.3;
+uniform float cloud_coverage : hint_range(0.0, 1.0) = 0.50;
 uniform float cloud_softness : hint_range(0.01, 0.5) = 0.12;
 uniform vec3 cloud_bright_color : source_color = vec3(1.0, 1.0, 1.0);
 uniform vec3 cloud_shadow_color : source_color = vec3(0.55, 0.58, 0.68);

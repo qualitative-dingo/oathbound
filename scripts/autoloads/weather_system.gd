@@ -19,7 +19,7 @@ var _cloud_parent: Node3D
 var _clouds: Array[MeshInstance3D] = []
 var _cloud_target_color := Color(1.0, 1.0, 1.0, 0.55)
 var _cloud_current_color := Color(1.0, 1.0, 1.0, 0.55)
-const CLOUD_COUNT := 18
+const CLOUD_COUNT := 30
 const CLOUD_Y := 80.0
 const CLOUD_SPREAD := 200.0
 var _cached_player: Node3D
