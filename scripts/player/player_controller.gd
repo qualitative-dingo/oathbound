@@ -1527,6 +1527,10 @@ func _clamp_to_terrain() -> void:
 	if surface_y == -999.0:
 		return
 	var below_surface := surface_y - global_position.y
+	if below_surface > 0.5:
+		global_position.y = surface_y + 1.5
+		velocity = Vector3.ZERO
+		return
 	# Don't snap upward when airborne - let gravity work
 	if not is_on_floor():
 		return

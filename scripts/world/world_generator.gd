@@ -540,8 +540,8 @@ func _physics_process(delta: float) -> void:
 				continue
 			var wp := get_world_position(p)
 			var ground := get_height_at(wp.x, wp.z)
-			if p.global_position.y < ground - 3.0:
-				p.global_position.y = ground + 0.5
+			if p.global_position.y < ground - 0.5:
+				p.global_position.y = ground + 2.0
 				p.velocity = Vector3.ZERO
 
 	_enforce_world_boundary(delta)
@@ -1048,14 +1048,17 @@ func _trace_creek_paths() -> void:
 					wx += seg_perp.x * lateral_offset * _WS_CELL * 0.18
 					wz += seg_perp.y * lateral_offset * _WS_CELL * 0.18
 
-					# Stop creek mesh when entering pool/lake areas
+					# Stop creek mesh when entering any water body
 					var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
 					if lake_n < -0.18:
 						entered_pool = true
-						break  # Creek enters pool - stop here, let pool water be visible
+						break
 
 					var terrain_h := get_height_at(wx, wz)
-					terrain_h = maxf(terrain_h, WATER_LEVEL + 0.3)
+					if terrain_h < WATER_LEVEL + 0.15:
+						entered_pool = true
+						break
+
 					var creek_y := terrain_h + 0.25
 
 					var acc := lerpf(a0, a1, t_val)
@@ -1074,16 +1077,14 @@ func _trace_creek_paths() -> void:
 					widths.append(w)
 					flow_uvs.append(cum_dist)
 
-			# Final point - only add if we haven't entered a pool
+			# Final point - only add if we haven't entered a pool/water body
 			if not entered_pool:
 				var last_g := raw_points[raw_points.size() - 1]
 				var lwx: float = -world_radius + last_g.x * _WS_CELL
 				var lwz: float = -world_radius + last_g.y * _WS_CELL
-				# Check if final point is in a pool
 				var final_lake_n := _continent_noise.get_noise_2d(lwx * 0.7 + 5000.0, lwz * 0.7 + 5000.0)
-				if final_lake_n >= -0.18:
-					var lh := get_height_at(lwx, lwz)
-					lh = maxf(lh, WATER_LEVEL + 0.3)
+				var lh := get_height_at(lwx, lwz)
+				if final_lake_n >= -0.18 and lh >= WATER_LEVEL + 0.15:
 					var last_acc := raw_accums[raw_accums.size() - 1]
 					var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 					var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
