@@ -1514,24 +1514,19 @@ func _clamp_to_terrain() -> void:
 	if not space:
 		return
 
-	var offsets := [Vector2(0,0), Vector2(0.35,0), Vector2(0,0.35)]
-	var surface_y := -999.0
-	for off in offsets:
-		var from := Vector3(global_position.x + off.x, global_position.y + 3.0, global_position.z + off.y)
-		var to := Vector3(global_position.x + off.x, global_position.y - 25.0, global_position.z + off.y)
-		var query := PhysicsRayQueryParameters3D.create(from, to, 1)
-		query.exclude = [get_rid()]
-		var result := space.intersect_ray(query)
-		if not result.is_empty():
-			surface_y = maxf(surface_y, result["position"].y)
-	if surface_y == -999.0:
+	var from := Vector3(global_position.x, global_position.y + 3.0, global_position.z)
+	var to := Vector3(global_position.x, global_position.y - 25.0, global_position.z)
+	var query := PhysicsRayQueryParameters3D.create(from, to, 1)
+	query.exclude = [get_rid()]
+	var result := space.intersect_ray(query)
+	if result.is_empty():
 		return
+	var surface_y: float = result["position"].y
 	var below_surface := surface_y - global_position.y
-	if below_surface > 0.5:
-		global_position.y = surface_y + 1.5
+	if below_surface > 2.0:
+		global_position.y = surface_y + 0.2
 		velocity = Vector3.ZERO
 		return
-	# Don't snap upward when airborne - let gravity work
 	if not is_on_floor():
 		return
 	var snap_threshold := 0.1 if _mounted else 0.3
