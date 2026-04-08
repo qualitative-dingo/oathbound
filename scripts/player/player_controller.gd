@@ -453,6 +453,9 @@ var _combat: Node
 var _building: PlayerBuilding
 var _inventory_ui: PlayerInventoryUI
 var _workbench_ui: PlayerWorkbenchUI
+var _shop_ui: PlayerShopUI
+var _shop_open: bool = false
+var _npc_progress: int = 0
 var _hud_module: PlayerHUD
 var _interaction: PlayerInteraction
 var _anim: PlayerAnimation
@@ -4003,6 +4006,9 @@ func _close_map() -> void:
 	_map_open = false
 	if _map_panel:
 		_map_panel.visible = false
+	for lbl in _map_marker_labels:
+		if is_instance_valid(lbl):
+			lbl.visible = false
 
 
 func _build_death_overlay(root: Control) -> void:
@@ -4082,6 +4088,11 @@ func _build_hud() -> void:
 	add_child(_workbench_ui)
 	_workbench_ui.pc = self
 	_workbench_ui.build_workbench_panel(_hud_root)
+	_shop_ui = PlayerShopUI.new()
+	_shop_ui.name = "PlayerShopUI"
+	add_child(_shop_ui)
+	_shop_ui.pc = self
+	_shop_ui.build_shop_panel(_hud_root)
 	_interaction.build_chest_panel(_hud_root)
 	_build_interaction_prompt(_hud_root)
 	_build_world_name_label(_hud_root)

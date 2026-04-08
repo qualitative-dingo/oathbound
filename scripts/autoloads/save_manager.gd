@@ -408,6 +408,18 @@ func _serialize_player(player: Node) -> Dictionary:
 	var wgs := get_tree().get_nodes_in_group(&"world_generator")
 	if not wgs.is_empty() and wgs[0].has_method(&"get_world_position"):
 		wp = wgs[0].get_world_position(p)
+	var map_markers_save: Array = []
+	var raw_markers: Array = p.get("_map_markers") if "_map_markers" in p else []
+	for m in raw_markers:
+		map_markers_save.append({
+			"id": str(m.get("id", "")),
+			"pos": {"x": (m["pos"] as Vector3).x, "y": (m["pos"] as Vector3).y, "z": (m["pos"] as Vector3).z},
+			"label": str(m.get("label", "")),
+		})
+	var learned_recipes_save: Array = []
+	var raw_recipes: Array = p.get("_learned_build_recipes") if "_learned_build_recipes" in p else []
+	for r in raw_recipes:
+		learned_recipes_save.append(str(r))
 	return {
 		"position": {"x": wp.x, "y": wp.y, "z": wp.z},
 		"rotation_y": p.rotation.y,
@@ -418,6 +430,9 @@ func _serialize_player(player: Node) -> Dictionary:
 		"base_strength": p.get("base_strength"),
 		"base_dexterity": p.get("base_dexterity"),
 		"base_vitality": p.get("base_vitality"),
+		"map_markers": map_markers_save,
+		"learned_build_recipes": learned_recipes_save,
+		"npc_progress": p.get("_npc_progress") if "_npc_progress" in p else 0,
 	}
 
 
@@ -458,6 +473,25 @@ func _deserialize_player(player: Node, data: Dictionary) -> void:
 		p.set("base_dexterity", int(data["base_dexterity"]))
 	if data.has("base_vitality"):
 		p.set("base_vitality", int(data["base_vitality"]))
+	if data.has("map_markers"):
+		var markers: Array[Dictionary] = []
+		for m in (data["map_markers"] as Array):
+			var mdict := m as Dictionary
+			var mpos: Dictionary = mdict.get("pos", {}) as Dictionary
+			markers.append({
+				"id": str(mdict.get("id", "")),
+				"pos": Vector3(float(mpos.get("x", 0)), float(mpos.get("y", 0)), float(mpos.get("z", 0))),
+				"label": str(mdict.get("label", "")),
+				"color": Color(1.0, 0.85, 0.3),
+			})
+		p.set("_map_markers", markers)
+	if data.has("learned_build_recipes"):
+		var recipes: Array[StringName] = []
+		for r in (data["learned_build_recipes"] as Array):
+			recipes.append(StringName(str(r)))
+		p.set("_learned_build_recipes", recipes)
+	if data.has("npc_progress"):
+		p.set("_npc_progress", int(data["npc_progress"]))
 
 
 func _serialize_inventory() -> Dictionary:

@@ -359,6 +359,8 @@ static func reset_texture_cache() -> void:
 	_cached_leaf_mats.clear()
 	_cached_flower_mats.clear()
 	_flower_types_table.clear()
+	_merchant_spawned = false
+	_signposts_spawned.clear()
 	print("[ZonePopulator] Texture cache reset - will reload on next use")
 
 
