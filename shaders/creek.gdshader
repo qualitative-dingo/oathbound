@@ -19,19 +19,22 @@ uniform float water_level = 0.0;
 
 uniform sampler2D DEPTH_TEXTURE : hint_depth_texture, filter_linear;
 
-float hash(vec2 p) {
-	float h = dot(p, vec2(127.1, 311.7));
-	return fract(sin(h) * 43758.5453);
+vec2 ghash(vec2 p) {
+	vec3 q = vec3(dot(p, vec2(127.1, 311.7)),
+	              dot(p, vec2(269.5, 183.3)),
+	              dot(p, vec2(419.2, 371.9)));
+	return normalize(fract(sin(q.xy) * 43758.5453) * 2.0 - 1.0);
 }
 
-float vnoise(vec2 p) {
+float gnoise(vec2 p) {
 	vec2 i = floor(p);
 	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(
-		mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-		mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
-		f.y);
+	vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	float d00 = dot(ghash(i), f);
+	float d10 = dot(ghash(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
+	float d01 = dot(ghash(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
+	float d11 = dot(ghash(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
+	return mix(mix(d00, d10, u.x), mix(d01, d11, u.x), u.y) * 0.5 + 0.5;
 }
 
 varying vec2 v_uv;
@@ -51,8 +54,8 @@ void vertex() {
 
 	// Noise-based ripple on world-space coords — irregular, organic displacement
 	vec2 rp = wpos.xz * 0.3 + vec2(TIME * speed * 0.8, TIME * speed * 0.5);
-	float ripple = (vnoise(rp) - 0.5) * ripple_strength * 2.0;
-	ripple += (vnoise(rp * 2.3 + vec2(71.0, 37.0)) - 0.5) * ripple_strength * 1.2;
+	float ripple = (gnoise(rp) - 0.5) * ripple_strength * 2.0;
+	ripple += (gnoise(rp * 2.3 + vec2(71.0, 37.0)) - 0.5) * ripple_strength * 1.2;
 	float ripple_fade = 1.0 - smoothstep(0.2, 0.6, v_slope);
 	VERTEX.y += ripple * ripple_fade;
 }
@@ -68,8 +71,8 @@ void fragment() {
 	vec2 flow_uv = vec2(v_uv.x, v_uv.y + scroll);
 
 	// Multi-octave noise for surface detail
-	float n1 = vnoise(flow_uv * ripple_scale * 2.0);
-	float n2 = vnoise(flow_uv * ripple_scale * 4.5 + vec2(50.0, 30.0));
+	float n1 = gnoise(flow_uv * ripple_scale * 2.0);
+	float n2 = gnoise(flow_uv * ripple_scale * 4.5 + vec2(50.0, 30.0));
 	float combined = n1 * 0.6 + n2 * 0.4;
 
 	// ── Depth sampling for terrain intersection ──
@@ -80,9 +83,9 @@ void fragment() {
 	float depth_diff = -world_depth_vec.z - (-VERTEX.z);
 
 	// ── Perturbed depth edge — organic, noisy shoreline (ported from water.gdshader) ──
-	float edge_noise = vnoise(world_pos.xz * 1.2) * 0.45
-	                 + vnoise(world_pos.xz * 2.7 + vec2(33.0, 77.0)) * 0.30
-	                 + vnoise(world_pos.xz * 6.1 + vec2(-19.0, 41.0)) * 0.15;
+	float edge_noise = gnoise(world_pos.xz * 1.2) * 0.45
+	                 + gnoise(world_pos.xz * 2.7 + vec2(33.0, 77.0)) * 0.30
+	                 + gnoise(world_pos.xz * 6.1 + vec2(-19.0, 41.0)) * 0.15;
 	float perturbed_depth = depth_diff + (edge_noise - 0.45) * 0.35;
 
 	// Hard cutoff: suppress water where terrain is clearly above
@@ -94,13 +97,13 @@ void fragment() {
 	// ── UV-based bank foam (mesh edges) ──
 	float edge_dist = min(v_uv.x, 1.0 - v_uv.x);
 	float uv_foam = 1.0 - smoothstep(0.0, foam_width, edge_dist);
-	uv_foam *= 0.5 + vnoise(flow_uv * 6.0 + vec2(TIME * 0.3, 0.0)) * 0.5;
+	uv_foam *= 0.5 + gnoise(flow_uv * 6.0 + vec2(TIME * 0.3, 0.0)) * 0.5;
 	uv_foam = smoothstep(0.2, 0.7, uv_foam);
 
 	// ── Depth-based terrain foam (any terrain intersection) ──
-	float foam_noise = vnoise(world_pos.xz * 1.8 + vec2(TIME * 0.25, TIME * 0.18));
-	float foam_noise2 = vnoise(world_pos.xz * 3.5 - vec2(TIME * 0.18, TIME * 0.35));
-	float foam_noise3 = vnoise(world_pos.xz * 0.9 + vec2(TIME * 0.08, -TIME * 0.12));
+	float foam_noise = gnoise(world_pos.xz * 1.8 + vec2(TIME * 0.25, TIME * 0.18));
+	float foam_noise2 = gnoise(world_pos.xz * 3.5 - vec2(TIME * 0.18, TIME * 0.35));
+	float foam_noise3 = gnoise(world_pos.xz * 0.9 + vec2(TIME * 0.08, -TIME * 0.12));
 	float foam_perturbed = depth_diff + (foam_noise3 - 0.5) * 0.06;
 	float depth_foam = 1.0 - smoothstep(0.02, depth_foam_width, foam_perturbed);
 	depth_foam *= step(-0.04, foam_perturbed);
@@ -111,8 +114,8 @@ void fragment() {
 	float total_foam = clamp(max(uv_foam, depth_foam_detail), 0.0, 1.0);
 
 	// Rapids foam on steep downhill sections — whitewater effect
-	float rapids_noise = vnoise(flow_uv * 8.0 + vec2(TIME * 1.5, TIME * 0.8));
-	float rapids_noise2 = vnoise(flow_uv * 14.0 - vec2(TIME * 0.9, TIME * 1.2));
+	float rapids_noise = gnoise(flow_uv * 8.0 + vec2(TIME * 1.5, TIME * 0.8));
+	float rapids_noise2 = gnoise(flow_uv * 14.0 - vec2(TIME * 0.9, TIME * 1.2));
 	float rapids = v_slope * (rapids_noise * 0.6 + rapids_noise2 * 0.4);
 	rapids = smoothstep(0.15, 0.5, rapids) * v_slope;
 	total_foam = clamp(max(total_foam, rapids), 0.0, 1.0);
@@ -157,9 +160,9 @@ void fragment() {
 	float ns = ripple_strength * 3.0;
 	float eps = 0.15;
 	vec2 np = v_world_xz * 0.4 + vec2(TIME * 0.6, TIME * 0.35);
-	float nc = vnoise(np) + vnoise(np * 2.7 + vec2(43.0, 91.0)) * 0.5;
-	float ndx = vnoise(np + vec2(eps, 0.0)) + vnoise((np + vec2(eps, 0.0)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
-	float ndz = vnoise(np + vec2(0.0, eps)) + vnoise((np + vec2(0.0, eps)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
+	float nc = gnoise(np) + gnoise(np * 2.7 + vec2(43.0, 91.0)) * 0.5;
+	float ndx = gnoise(np + vec2(eps, 0.0)) + gnoise((np + vec2(eps, 0.0)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
+	float ndz = gnoise(np + vec2(0.0, eps)) + gnoise((np + vec2(0.0, eps)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
 	float nx = (ndx - nc) / eps * ns;
 	float nz = (ndz - nc) / eps * ns;
 	NORMAL = normalize(NORMAL + vec3(nx, 0.0, nz));
