@@ -26,8 +26,8 @@ var _toggles: Dictionary = {
 	"world_map": true,
 	"fancy_terrain": true,
 	"terrain_visible": true,
-	"ssao": true,
-	"glow": true,
+	"ssao": false,
+	"glow": false,
 	"nearest_filter": false,
 }
 

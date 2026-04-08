@@ -1194,11 +1194,11 @@ func _trace_creek_paths() -> void:
 
 				var occ_key := Vector2i(int(floor(wx / OCC_CELL)), int(floor(wz / OCC_CELL)))
 				if occupied.has(occ_key) and not points.is_empty():
-					var step_adv := _WS_CELL / float(_CREEK_SUBDIV) * 0.25
+					var step_adv := _WS_CELL / float(_CREEK_SUBDIV) * 0.2
 					var last_w_occ := widths[widths.size() - 1] if not widths.is_empty() else 1.0
-					for ti in 4:
-						var tf := float(ti + 1) / 4.0
-						var tw := last_w_occ * (1.0 - tf)
+					for ti in 6:
+						var tf := float(ti + 1) / 6.0
+						var tw := last_w_occ * (1.0 - tf * tf)
 						wx += seg_dir.x * step_adv
 						wz += seg_dir.y * step_adv
 						var ty := get_height_at(wx, wz) + 0.08
