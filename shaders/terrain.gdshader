@@ -120,14 +120,27 @@ varying vec3 v_world_pos;
 varying float v_path_mask;
 varying float v_brightness;
 varying float v_river_bank;
-varying vec2 v_zone_uv;
+
+// Analytical rock bump — deterministic function of world XZ, so the gradient
+// is identical regardless of which zone mesh draws the fragment.
+// Uses the first 4 octaves (coarse-to-medium); fine grit and crack veins are
+// omitted because they contribute negligible visible bump at typical distances.
+float rock_bump_at(vec2 xz) {
+	float rn1 = vnoise(xz * 0.12 + vec2(311.0, 719.0));
+	float rn2 = vnoise(xz * 0.4  + vec2(853.0, 127.0));
+	float rn3 = vnoise(xz * 1.2  + vec2(491.0, 953.0));
+	float rn4 = vnoise(xz * 3.5  + vec2(137.0, 641.0));
+	return (rn1 - 0.5) * 0.22
+	     + (rn2 - 0.5) * 0.20
+	     + (rn3 - 0.5) * 0.18
+	     + (rn4 - 0.5) * 0.15;
+}
 
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
 	v_path_mask = COLOR.r;
 	v_brightness = COLOR.g;
 	v_river_bank = COLOR.b;
-	v_zone_uv = UV;
 }
 
 void fragment() {
@@ -254,33 +267,23 @@ void fragment() {
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
-	// Rock bump — coarse shapes + fine grit (grit lives HERE, not in albedo)
-	// dFdx/dFdy naturally fade high frequencies at distance = no aliasing
-	// Fade out near zone edges where dFdx/dFdy are discontinuous across draw calls
-	float zone_edge = min(min(v_zone_uv.x, 1.0 - v_zone_uv.x), min(v_zone_uv.y, 1.0 - v_zone_uv.y));
-	float bump_fade = smoothstep(0.0, 0.04, zone_edge);
-	if (rock_w > 0.01 && bump_fade > 0.001) {
-		float rn1 = vnoise(world_pos.xz * 0.12 + vec2(311.0, 719.0));
-		float rn2 = vnoise(world_pos.xz * 0.4 + vec2(853.0, 127.0));
-		float rn3 = vnoise(world_pos.xz * 1.2 + vec2(491.0, 953.0));
-		float rn4 = vnoise(world_pos.xz * 3.5 + vec2(137.0, 641.0));
-		float rn5 = vnoise(world_pos.xz * 9.0 + vec2(557.0, 283.0));
-		float rn6 = vnoise(world_pos.xz * 22.0 + vec2(731.0, 419.0));
-		// Crack vein ridges
-		float crack_b = vnoise(world_pos.xz * 0.07 + vec2(919.0, 137.0));
-		float vein_b = 1.0 - pow(abs(crack_b * 2.0 - 1.0), 0.35);
-		float rock_bump = (rn1 - 0.5) * 0.22
-		                + (rn2 - 0.5) * 0.20
-		                + (rn3 - 0.5) * 0.18
-		                + (rn4 - 0.5) * 0.15
-		                + (rn5 - 0.5) * 0.13
-		                + (rn6 - 0.5) * 0.08
-		                + vein_b * 0.04;
-		float bf = bump_fade * rock_w;
+	// Rock bump — analytical world-space central differences instead of dFdx/dFdy.
+	// This produces identical gradients on both sides of a zone boundary because
+	// the computation depends only on world position, not on screen-space pixels
+	// or which draw call renders the fragment.
+	if (rock_w > 0.01) {
+		float eps = 0.15;
+		float rb_px = rock_bump_at(world_pos.xz + vec2(eps, 0.0));
+		float rb_nx = rock_bump_at(world_pos.xz - vec2(eps, 0.0));
+		float rb_pz = rock_bump_at(world_pos.xz + vec2(0.0, eps));
+		float rb_nz = rock_bump_at(world_pos.xz - vec2(0.0, eps));
+		float inv_eps2 = 1.0 / (2.0 * eps);
+		float grad_x = (rb_px - rb_nx) * inv_eps2;
+		float grad_z = (rb_pz - rb_nz) * inv_eps2;
 		NORMAL = normalize(NORMAL + vec3(
-			dFdx(rock_bump) * 45.0 * bf,
+			grad_x * 45.0 * rock_w,
 			0.0,
-			dFdy(rock_bump) * 45.0 * bf
+			grad_z * 45.0 * rock_w
 		));
 	}
 }
