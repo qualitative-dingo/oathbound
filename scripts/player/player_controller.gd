@@ -199,6 +199,7 @@ var _on_stone_surface: bool = false
 var _last_footstep_frame: int = -1
 var _gltf_footstep_phase: float = 0.0
 var _footstep_timer: float = 0.0
+var _was_stepping: bool = false
 
 # River ambient audio
 var _river_ambient_player: AudioStreamPlayer
@@ -2443,12 +2444,18 @@ func _on_gallop_finished() -> void:
 func _tick_footstep_sfx(delta: float) -> void:
 	if not _footstep_player:
 		return
+	var has_input := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back").length_squared() > 0.01
+	if _auto_run:
+		has_input = true
 	var flat_speed := Vector2(velocity.x, velocity.z).length()
-	var want_stepping := not _mounted and flat_speed > 0.5 and is_on_floor() and not _is_swimming
+	var want_stepping := not _mounted and has_input and flat_speed > 0.3 and is_on_floor() and not _is_swimming
 	if not want_stepping:
 		_last_footstep_frame = -1
 		_gltf_footstep_phase = 0.0
 		_footstep_timer = 0.0
+		_was_stepping = false
+		if _footstep_player.playing:
+			_footstep_player.stop()
 		return
 
 	_on_stone_surface = _check_stone_surface()
@@ -2458,24 +2465,17 @@ func _tick_footstep_sfx(delta: float) -> void:
 		step_interval = lerpf(0.34, 0.28, clampf((flat_speed - walk_speed) / (sprint_speed - walk_speed), 0.0, 1.0))
 	else:
 		step_interval = lerpf(0.55, 0.42, clampf(flat_speed / walk_speed, 0.0, 1.0))
+
+	if not _was_stepping:
+		_was_stepping = true
+		_footstep_timer = 0.0
+		_play_footstep(is_running)
+		return
+
 	_footstep_timer += delta
 	if _footstep_timer >= step_interval:
 		_footstep_timer -= step_interval
 		_play_footstep(is_running)
-		return
-
-	if _is_run_animating and not _run_frames.is_empty():
-		var dir := _current_run_dir
-		if _run_frames.has(dir):
-			var frame_count: int = _run_frames[dir].size()
-			var step_frame_a: int = 0
-			var step_frame_b: int = frame_count / 2
-			var curr_frame := _run_frame_idx
-			var prev_frame := _last_footstep_frame
-			_last_footstep_frame = curr_frame
-			if prev_frame != curr_frame:
-				if curr_frame == step_frame_a or curr_frame == step_frame_b:
-					_play_footstep(is_running)
 
 
 func _play_footstep(is_running: bool) -> void:
