@@ -116,8 +116,11 @@ void fragment() {
 	// Rapids foam on steep downhill sections — whitewater effect
 	float rapids_noise = gnoise(flow_uv * 8.0 + vec2(TIME * 1.5, TIME * 0.8));
 	float rapids_noise2 = gnoise(flow_uv * 14.0 - vec2(TIME * 0.9, TIME * 1.2));
-	float rapids = v_slope * (rapids_noise * 0.6 + rapids_noise2 * 0.4);
-	rapids = smoothstep(0.15, 0.5, rapids) * v_slope;
+	float rapids_detail = rapids_noise * 0.6 + rapids_noise2 * 0.4;
+	// Steep slopes get dense, near-solid whitewater coverage
+	float rapids_base = smoothstep(0.2, 0.6, v_slope);
+	float rapids = mix(rapids_detail * v_slope, 0.7 + rapids_detail * 0.3, rapids_base);
+	rapids *= v_slope;
 	total_foam = clamp(max(total_foam, rapids), 0.0, 1.0);
 
 	// ── Water color with center darkening ──

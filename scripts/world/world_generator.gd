@@ -2743,7 +2743,8 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var raw_h := _get_raw_height_no_paths(p.x, p.z)
 			var t_excess := maxf(raw_h - p.y, 0.0)
 			var ridge_mesh_bonus := clampf(t_excess / 8.0, 0.0, 1.5) * 8.0
-			var w := half_widths[i] + 3.0 + ridge_mesh_bonus
+			var slope_narrow := 1.0 - clampf(slopes[i] / 0.8, 0.0, 0.6)
+			var w := (half_widths[i] + 3.0 + ridge_mesh_bonus) * slope_narrow
 
 			var uv_y := flow_uvs[i] * uv_scale
 
