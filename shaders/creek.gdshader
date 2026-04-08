@@ -46,10 +46,11 @@ void vertex() {
 	// Slope-scaled speed: flat = base, steep = up to 4x
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
-	// Subtle ripple displacement along flow direction
+	// Subtle ripple displacement — fade out on steep slopes to avoid visible ridges
 	float ripple = sin(UV.y * ripple_scale * 12.0 + TIME * speed * 4.0) * ripple_strength;
 	ripple += sin(UV.y * ripple_scale * 7.3 + UV.x * 3.0 + TIME * speed * 2.8) * ripple_strength * 0.6;
-	VERTEX.y += ripple;
+	float ripple_fade = 1.0 - smoothstep(0.2, 0.6, v_slope);
+	VERTEX.y += ripple * ripple_fade;
 }
 
 void fragment() {
@@ -105,6 +106,13 @@ void fragment() {
 	// Combine UV foam and depth foam
 	float total_foam = clamp(max(uv_foam, depth_foam_detail), 0.0, 1.0);
 
+	// Rapids foam on steep downhill sections — whitewater effect
+	float rapids_noise = vnoise(flow_uv * 8.0 + vec2(TIME * 1.5, TIME * 0.8));
+	float rapids_noise2 = vnoise(flow_uv * 14.0 - vec2(TIME * 0.9, TIME * 1.2));
+	float rapids = v_slope * (rapids_noise * 0.6 + rapids_noise2 * 0.4);
+	rapids = smoothstep(0.15, 0.5, rapids) * v_slope;
+	total_foam = clamp(max(total_foam, rapids), 0.0, 1.0);
+
 	// ── Water color with center darkening ──
 	float center = 1.0 - abs(v_uv.x * 2.0 - 1.0);
 	vec4 col = mix(water_color, deep_tint, center * 0.4);
@@ -133,6 +141,9 @@ void fragment() {
 	// Fade out creek mesh as it approaches water bodies
 	float water_fade = smoothstep(water_level - 1.2, water_level - 0.3, v_world_y);
 	ALPHA *= water_fade;
+
+	// Boost visibility on steep cascading sections
+	ALPHA = mix(ALPHA, max(ALPHA, 0.85), v_slope * 0.6);
 
 	ROUGHNESS = mix(0.1, 0.4, total_foam);
 	METALLIC = mix(0.05, 0.0, total_foam);

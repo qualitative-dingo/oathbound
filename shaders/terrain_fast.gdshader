@@ -111,6 +111,13 @@ void fragment() {
 	moss *= 1.0 - smoothstep(50.0, 90.0, wpos.y);
 	rock_col = mix(rock_col, vec3(0.15, 0.22, 0.10), moss);
 
+	// Moss in grass-to-rock transition band
+	float grass_w = 1.0 - rock_w;
+	float edge_band = grass_w * rock_w * 4.0;
+	float edge_moss_n = vnoise_fast(wpos.xz * 0.12 + vec2(350.0, 720.0));
+	float edge_moss = edge_band * smoothstep(0.35, 0.65, edge_moss_n) * 0.5;
+	rock_col = mix(rock_col, vec3(0.14, 0.20, 0.08), edge_moss);
+
 	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * v_brightness;
 	ground = mix(ground, bank_color, bm * (1.0 - rock_w));
 	ALBEDO = mix(ground, path_color, pm * (1.0 - rock_w));

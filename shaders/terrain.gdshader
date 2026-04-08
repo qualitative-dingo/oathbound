@@ -204,6 +204,11 @@ void fragment() {
 	float edge_band = grass_w * rock_w * 4.0;
 	vec3 edge_dirt = mix(col_slope * 0.6, col_rock, 0.5);
 
+	// Moss in the transition band — patchy green growth where grass meets rock
+	float edge_moss_noise = vnoise(world_pos.xz * 0.12 + vec2(350.0, 720.0));
+	float edge_moss = edge_band * smoothstep(0.35, 0.65, edge_moss_noise);
+	edge_dirt = mix(edge_dirt, vec3(0.14, 0.20, 0.08), edge_moss * 0.5);
+
 	// Subtle grass scatter at the very edge of flat areas
 	float scatter = vnoise(world_pos.xz * 0.35 + vec2(610.0, 390.0));
 	float scatter_mask = smoothstep(0.62, 0.80, scatter) * grass_w * 0.15;
