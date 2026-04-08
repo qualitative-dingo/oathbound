@@ -2566,6 +2566,7 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var perp := Vector2(-flow_dir.y, flow_dir.x)
 
 			var local_p := p - zone_origin
+			local_p.y -= 1.5
 
 			var left_wx := p.x - perp.x * w
 			var left_wz := p.z - perp.y * w

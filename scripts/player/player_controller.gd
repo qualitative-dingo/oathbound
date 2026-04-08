@@ -1557,8 +1557,8 @@ func _clamp_to_terrain() -> void:
 	var wg := _find_world_generator()
 	if wg:
 		var analytic_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
-		if global_position.y < analytic_y - 0.5:
-			global_position.y = analytic_y + 0.5
+		if global_position.y < analytic_y - 0.15:
+			global_position.y = analytic_y + 0.2
 			velocity.y = 0.0
 
 
@@ -1584,12 +1584,10 @@ func _enforce_analytic_floor() -> void:
 		return
 	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
 	var on_floor := is_on_floor()
-	# Tighter threshold when on floor (collision present but player embedded),
-	# looser when off floor (collision missing entirely).
-	var threshold := 0.35 if on_floor else 0.1
+	var threshold := 0.15 if on_floor else 0.05
 	if global_position.y >= ground_y - threshold:
 		return
-	var push_to := ground_y + 0.3
+	var push_to := ground_y + 0.15
 	_analytic_floor_corrections += 1
 	if _analytic_floor_corrections <= 20 or _analytic_floor_corrections % 100 == 0:
 		print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f, on_floor=%s) frame=%d" % [
