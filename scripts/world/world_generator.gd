@@ -1102,8 +1102,8 @@ func _trace_creek_paths() -> void:
 
 			var fd: int = _ws_flow[cidx]
 			if fd < 0:
-				if flat_bridges >= 8:
-					break
+			if flat_bridges >= 15:
+				break
 				var lowest_d := -1
 				var lowest_h := ch + 999.0
 				for d in 8:
@@ -1152,14 +1152,31 @@ func _trace_creek_paths() -> void:
 			cgx = nx
 			cgz = nz
 
-		# Force-extend: if the river ended above water, keep walking downhill
-		# until we reach a water body — rivers should never just stop mid-terrain
+		# Force-extend: if the river ended above water, keep walking toward water.
+		# Uses momentum to punch through mountain ridges (gorge carving) rather
+		# than wandering along the base.
 		var ext_wx: float = -world_radius + float(cgx) * _WS_CELL
 		var ext_wz: float = -world_radius + float(cgz) * _WS_CELL
 		if get_height_at(ext_wx, ext_wz) > WATER_LEVEL + 0.3 and raw_points.size() >= 2:
+			var mom_x := 0.0
+			var mom_z := 0.0
+			var mom_count: int = mini(raw_points.size(), 6)
+			for mi in range(raw_points.size() - mom_count, raw_points.size() - 1):
+				mom_x += raw_points[mi + 1].x - raw_points[mi].x
+				mom_z += raw_points[mi + 1].y - raw_points[mi].y
+			var mom_len := sqrt(mom_x * mom_x + mom_z * mom_z)
+			if mom_len > 0.001:
+				mom_x /= mom_len
+				mom_z /= mom_len
+
 			var ext_visited := {}
 			ext_visited[cgz * _ws_dim + cgx] = true
-			for _ext in 80:
+			var start_h := get_height_at(ext_wx, ext_wz)
+			for _ext in 120:
+				var cur_wx := -world_radius + float(cgx) * _WS_CELL
+				var cur_wz := -world_radius + float(cgz) * _WS_CELL
+				var cur_h := get_height_at(cur_wx, cur_wz)
+
 				var best_d := -1
 				var best_h := 99999.0
 				for d in 8:
@@ -1176,6 +1193,31 @@ func _trace_creek_paths() -> void:
 					if eh < best_h:
 						best_h = eh
 						best_d = d
+
+				# If all options are uphill and we have momentum, push through
+				if best_d >= 0 and best_h > cur_h + 1.0 and mom_len > 0.001:
+					var best_mom_d := -1
+					var best_dot := -2.0
+					for d in 8:
+						var enx: int = cgx + _D8X[d]
+						var enz: int = cgz + _D8Z[d]
+						if enx < 1 or enx >= _ws_dim - 1 or enz < 1 or enz >= _ws_dim - 1:
+							continue
+						var eid: int = enz * _ws_dim + enx
+						if ext_visited.has(eid):
+							continue
+						var dot := (float(_D8X[d]) * mom_x + float(_D8Z[d]) * mom_z)
+						if dot > best_dot:
+							best_dot = dot
+							best_mom_d = d
+					if best_mom_d >= 0 and best_dot > 0.2:
+						best_d = best_mom_d
+						var mnx: int = cgx + _D8X[best_d]
+						var mnz: int = cgz + _D8Z[best_d]
+						best_h = get_height_at(
+							-world_radius + float(mnx) * _WS_CELL,
+							-world_radius + float(mnz) * _WS_CELL)
+
 				if best_d < 0:
 					break
 				cgx += _D8X[best_d]
