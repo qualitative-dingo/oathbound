@@ -1152,6 +1152,41 @@ func _trace_creek_paths() -> void:
 			cgx = nx
 			cgz = nz
 
+		# Force-extend: if the river ended above water, keep walking downhill
+		# until we reach a water body — rivers should never just stop mid-terrain
+		var ext_wx: float = -world_radius + float(cgx) * _WS_CELL
+		var ext_wz: float = -world_radius + float(cgz) * _WS_CELL
+		if get_height_at(ext_wx, ext_wz) > WATER_LEVEL + 0.5 and raw_points.size() >= 2:
+			var ext_visited := {}
+			ext_visited[cgz * _ws_dim + cgx] = true
+			for _ext in 80:
+				var best_d := -1
+				var best_h := 99999.0
+				for d in 8:
+					var enx := cgx + _D8X[d]
+					var enz := cgz + _D8Z[d]
+					if enx < 1 or enx >= _ws_dim - 1 or enz < 1 or enz >= _ws_dim - 1:
+						continue
+					var eid := enz * _ws_dim + enx
+					if ext_visited.has(eid):
+						continue
+					var ewx := -world_radius + float(enx) * _WS_CELL
+					var ewz := -world_radius + float(enz) * _WS_CELL
+					var eh := get_height_at(ewx, ewz)
+					if eh < best_h:
+						best_h = eh
+						best_d = d
+				if best_d < 0:
+					break
+				cgx += _D8X[best_d]
+				cgz += _D8Z[best_d]
+				ext_visited[cgz * _ws_dim + cgx] = true
+				visited[cgz * _ws_dim + cgx] = true
+				raw_points.append(Vector2(float(cgx), float(cgz)))
+				raw_accums.append(raw_accums[raw_accums.size() - 1])
+				if best_h < WATER_LEVEL + 0.1:
+					break
+
 		if raw_points.size() < 2:
 			continue
 
@@ -2616,18 +2651,8 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var local_p := p - zone_origin
 			local_p.y -= 1.5
 
-			var left_wx := p.x - perp.x * w
-			var left_wz := p.z - perp.y * w
-			var right_wx := p.x + perp.x * w
-			var right_wz := p.z + perp.y * w
-
-			var left_terrain := get_height_at(left_wx, left_wz)
-			var right_terrain := get_height_at(right_wx, right_wz)
-			var left_y := WATER_LEVEL if left_terrain < WATER_LEVEL + 0.3 else local_p.y
-			var right_y := WATER_LEVEL if right_terrain < WATER_LEVEL + 0.3 else local_p.y
-
-			var left := Vector3(local_p.x - perp.x * w, left_y, local_p.z - perp.y * w)
-			var right := Vector3(local_p.x + perp.x * w, right_y, local_p.z + perp.y * w)
+			var left := Vector3(local_p.x - perp.x * w, local_p.y, local_p.z - perp.y * w)
+			var right := Vector3(local_p.x + perp.x * w, local_p.y, local_p.z + perp.y * w)
 
 			# Compute proper surface normal from tangent and width direction
 			var tangent_3d := Vector3(flow_dir.x, 0.0, flow_dir.y)
