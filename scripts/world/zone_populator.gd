@@ -1185,6 +1185,7 @@ static func populate_zone_phase(
 				_VillageGenerator.try_spawn_village(zone_root, coord, rng, origin_x, origin_z, height_func)
 			if coord == Vector2i(0, 0):
 				_VillageGenerator.force_spawn_village(zone_root, 20.0, 20.0, height_func)
+				_spawn_village_signpost(zone_root, 20.0, 20.0, origin_x, origin_z, height_func)
 
 		_try_spawn_merchant_camp(zone_root, coord, origin_x, origin_z, height_func)
 		_try_spawn_signposts(zone_root, coord, origin_x, origin_z, height_func)
@@ -1572,6 +1573,34 @@ static func _create_signpost(world_pos: Vector3, text: String, merchant_pos: Vec
 	post.rotation.y = atan2(-dir_to_merchant.x, -dir_to_merchant.y)
 
 	return post
+
+
+static func _spawn_village_signpost(
+	zone_root: Node3D,
+	village_wx: float,
+	village_wz: float,
+	origin_x: float,
+	origin_z: float,
+	height_func: Callable,
+) -> void:
+	var wg := _get_world_generator()
+	if not wg:
+		return
+	var merchant_pos: Vector3 = wg.get_merchant_world_pos()
+	if merchant_pos == Vector3.ZERO:
+		return
+	var dir_to_merchant := Vector2(merchant_pos.x - village_wx, merchant_pos.z - village_wz).normalized()
+	var sign_wx := village_wx + dir_to_merchant.x * 12.0
+	var sign_wz := village_wz + dir_to_merchant.y * 12.0
+	var sign_y: float = height_func.call(sign_wx, sign_wz)
+	var signpost := _create_signpost(
+		Vector3(sign_wx, sign_y, sign_wz),
+		"Trader Halvard -- follow this path",
+		merchant_pos,
+		height_func,
+	)
+	signpost.position = Vector3(sign_wx - origin_x, sign_y, sign_wz - origin_z)
+	zone_root.add_child(signpost)
 
 
 ## Legacy single-call populate for spawn area (runs synchronously)
