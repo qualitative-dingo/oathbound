@@ -56,7 +56,7 @@ fog_sun_scatter = 0.4
 fog_density = 0.0005
 fog_aerial_perspective = 0.7
 adjustment_enabled = true
-adjustment_contrast = 1.15
+adjustment_contrast = 1.0
 adjustment_saturation = 0.95
 
 [sub_resource type="LabelSettings" id="LabelSettings_1"]
@@ -74,12 +74,12 @@ environment = SubResource("Environment_1")
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=2094158486 groups=["sun"]]
 transform = Transform3D(0.866, -0.383, 0.322, 0, 0.643, 0.766, -0.5, -0.663, 0.557, 0, 20, 0)
 light_color = Color(1, 0.94, 0.84, 1)
-light_energy = 1.8
+light_energy = 1.1
 light_angular_distance = 1.0
 shadow_enabled = true
 shadow_bias = 0.02
 shadow_normal_bias = 2.0
-shadow_opacity = 0.75
+shadow_opacity = 0.10
 shadow_blur = 1.5
 directional_shadow_mode = 2
 directional_shadow_split_1 = 0.07
