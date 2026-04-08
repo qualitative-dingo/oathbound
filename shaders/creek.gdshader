@@ -37,18 +37,22 @@ float vnoise(vec2 p) {
 varying vec2 v_uv;
 varying float v_slope;
 varying float v_world_y;
+varying vec2 v_world_xz;
 
 void vertex() {
 	v_uv = UV;
 	v_slope = COLOR.r;
-	v_world_y = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
+	vec3 wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_world_y = wpos.y;
+	v_world_xz = wpos.xz;
 
 	// Slope-scaled speed: flat = base, steep = up to 4x
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
-	// Subtle ripple displacement — fade out on steep slopes to avoid visible ridges
-	float ripple = sin(UV.y * ripple_scale * 12.0 + TIME * speed * 4.0) * ripple_strength;
-	ripple += sin(UV.y * ripple_scale * 7.3 + UV.x * 3.0 + TIME * speed * 2.8) * ripple_strength * 0.6;
+	// Noise-based ripple on world-space coords — irregular, organic displacement
+	vec2 rp = wpos.xz * 0.3 + vec2(TIME * speed * 0.8, TIME * speed * 0.5);
+	float ripple = (vnoise(rp) - 0.5) * ripple_strength * 2.0;
+	ripple += (vnoise(rp * 2.3 + vec2(71.0, 37.0)) - 0.5) * ripple_strength * 1.2;
 	float ripple_fade = 1.0 - smoothstep(0.2, 0.6, v_slope);
 	VERTEX.y += ripple * ripple_fade;
 }
@@ -149,11 +153,14 @@ void fragment() {
 	METALLIC = mix(0.05, 0.0, total_foam);
 	SPECULAR = mix(0.4, 0.15, total_foam);
 
-	// ── Surface normal perturbation for ripples ──
-	float ns = ripple_strength * 2.0;
-	float nx = sin(flow_uv.y * 8.0 + flow_uv.x * 3.0 + TIME * 1.2) * ns
-	         + sin(flow_uv.y * 15.0 - flow_uv.x * 5.0 + TIME * 0.8) * ns * 0.5;
-	float nz = sin(flow_uv.x * 6.0 + flow_uv.y * 4.0 + TIME * 0.9) * ns
-	         + sin(flow_uv.x * 12.0 - flow_uv.y * 8.0 + TIME * 1.4) * ns * 0.5;
+	// ── Surface normal perturbation via noise central differences ──
+	float ns = ripple_strength * 3.0;
+	float eps = 0.15;
+	vec2 np = v_world_xz * 0.4 + vec2(TIME * 0.6, TIME * 0.35);
+	float nc = vnoise(np) + vnoise(np * 2.7 + vec2(43.0, 91.0)) * 0.5;
+	float ndx = vnoise(np + vec2(eps, 0.0)) + vnoise((np + vec2(eps, 0.0)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
+	float ndz = vnoise(np + vec2(0.0, eps)) + vnoise((np + vec2(0.0, eps)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
+	float nx = (ndx - nc) / eps * ns;
+	float nz = (ndz - nc) / eps * ns;
 	NORMAL = normalize(NORMAL + vec3(nx, 0.0, nz));
 }
