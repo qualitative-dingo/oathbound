@@ -376,6 +376,7 @@ var _debug_panel: Node  # DebugPanel (CanvasLayer)
 var _terrain_diag_label: Label
 var _terrain_diag_visible := false
 var _terrain_diag_last_surface_y := 0.0
+var _terrain_raycast_hit := false
 var _target_hud_panel: PanelContainer
 var _target_hud_name: Label
 var _target_hud_stars: Label
@@ -1566,6 +1567,7 @@ func _clamp_to_terrain() -> void:
 	query.exclude = [get_rid()]
 	var result := space.intersect_ray(query)
 	if not result.is_empty():
+		_terrain_raycast_hit = true
 		var surface_y: float = result["position"].y
 		var below_surface := surface_y - global_position.y
 		if below_surface > 0.05:
@@ -1574,6 +1576,7 @@ func _clamp_to_terrain() -> void:
 		return
 
 	# Raycast empty (collision likely disabled) — use analytic height as fallback
+	_terrain_raycast_hit = false
 	var wg := _find_world_generator()
 	if wg:
 		var analytic_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
@@ -1583,14 +1586,14 @@ func _clamp_to_terrain() -> void:
 
 
 func _pre_move_analytic_guard() -> void:
-	if _is_swimming or is_on_floor():
+	if _is_swimming or is_on_floor() or _terrain_raycast_hit:
 		return
 	var wg := _find_world_generator()
 	if not wg:
 		return
 	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
-	if global_position.y < ground_y - 0.1 and velocity.y < 0.0:
-		global_position.y = ground_y + 0.5
+	if global_position.y < ground_y - 0.15 and velocity.y < 0.0:
+		global_position.y = ground_y + 0.2
 		velocity.y = 0.0
 
 
@@ -1599,20 +1602,23 @@ var _analytic_floor_corrections := 0
 func _enforce_analytic_floor() -> void:
 	if _in_cave or flight_mode or _is_swimming:
 		return
+	# When the raycast found a collision surface, trust it — the analytic height
+	# can differ from the collision mesh by up to 0.5m due to half-res interpolation.
+	# Only use the analytic floor as a safety net when collision is absent.
+	if _terrain_raycast_hit:
+		return
 	var wg := _find_world_generator()
 	if not wg:
 		return
 	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
-	var on_floor := is_on_floor()
-	var threshold := 0.15 if on_floor else 0.05
-	if global_position.y >= ground_y - threshold:
+	if global_position.y >= ground_y - 0.15:
 		return
-	var push_to := ground_y + 0.15
+	var push_to := ground_y + 0.2
 	_analytic_floor_corrections += 1
 	if _analytic_floor_corrections <= 20 or _analytic_floor_corrections % 100 == 0:
-		print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f, on_floor=%s) frame=%d" % [
+		print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f) frame=%d" % [
 			_analytic_floor_corrections, global_position.y, push_to,
-			ground_y, str(on_floor), Engine.get_frames_drawn()])
+			ground_y, Engine.get_frames_drawn()])
 	global_position.y = push_to
 	if velocity.y < 0.0:
 		velocity.y = 0.0

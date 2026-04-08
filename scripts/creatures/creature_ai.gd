@@ -424,30 +424,37 @@ func _apply_flying_hover(delta: float) -> void:
 	velocity.y = (target_y - global_position.y) * 3.0
 
 
-var _terrain_clamp_cd: float = 0.0
-
 func _clamp_to_terrain() -> void:
 	if global_position.y < -100.0:
 		return
-	_terrain_clamp_cd -= get_physics_process_delta_time()
-	if _terrain_clamp_cd > 0.0:
-		return
-	_terrain_clamp_cd = 0.1
 
 	if not is_instance_valid(_cached_world_gen):
 		var wgs := get_tree().get_nodes_in_group(&"world_generator")
 		_cached_world_gen = wgs[0] if not wgs.is_empty() else null
 	if not _cached_world_gen or not _cached_world_gen.has_method(&"get_height_at_scene"):
 		return
+
+	# Raycast to find actual collision surface first
+	var space := get_world_3d().direct_space_state
+	if space:
+		var from := Vector3(global_position.x, global_position.y + 5.0, global_position.z)
+		var to := Vector3(global_position.x, global_position.y - 15.0, global_position.z)
+		var query := PhysicsRayQueryParameters3D.create(from, to, 1)
+		query.exclude = [get_rid()]
+		var result := space.intersect_ray(query)
+		if not result.is_empty():
+			var surface_y: float = result["position"].y
+			if global_position.y < surface_y - 0.1:
+				global_position.y = surface_y + 0.05
+				if velocity.y < 0.0:
+					velocity.y = 0.0
+			return
+
+	# Raycast missed (collision disabled) — use analytic height
 	var wg: Node = _cached_world_gen
-	var surface_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
-	var target_y := surface_y + 0.05
-	var diff := global_position.y - target_y
-	if diff < -2.0:
-		global_position.y = target_y
-		velocity.y = 0.0
-	elif diff < -0.15:
-		global_position.y = move_toward(global_position.y, target_y, 0.4)
+	var analytic_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
+	if global_position.y < analytic_y - 0.2:
+		global_position.y = analytic_y + 0.1
 		if velocity.y < 0.0:
 			velocity.y = 0.0
 
