@@ -1156,7 +1156,7 @@ func _trace_creek_paths() -> void:
 		# until we reach a water body — rivers should never just stop mid-terrain
 		var ext_wx: float = -world_radius + float(cgx) * _WS_CELL
 		var ext_wz: float = -world_radius + float(cgz) * _WS_CELL
-		if get_height_at(ext_wx, ext_wz) > WATER_LEVEL + 0.5 and raw_points.size() >= 2:
+		if get_height_at(ext_wx, ext_wz) > WATER_LEVEL + 0.3 and raw_points.size() >= 2:
 			var ext_visited := {}
 			ext_visited[cgz * _ws_dim + cgx] = true
 			for _ext in 80:
@@ -1258,7 +1258,7 @@ func _trace_creek_paths() -> void:
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
 				var terrain_h := get_height_at(wx, wz)
 				var near_pool := lake_n < -0.10 or terrain_h < WATER_LEVEL + 0.3
-				var in_pool := lake_n < -0.15 and terrain_h < WATER_LEVEL - 0.5
+				var in_pool := (lake_n < -0.15 and terrain_h < WATER_LEVEL - 0.5) or terrain_h < WATER_LEVEL + 0.2
 
 				if in_pool:
 					if not points.is_empty():
@@ -1295,14 +1295,40 @@ func _trace_creek_paths() -> void:
 				widths.append(w)
 				flow_uvs.append(cum_dist)
 
-		# Final point - only add if we haven't entered a pool/water body
-		if not entered_pool:
+		# Final point — force a pool transition if the endpoint is near water
+		if not entered_pool and points.size() >= 2:
 			var last_g := raw_points[raw_points.size() - 1]
 			var lwx: float = -world_radius + last_g.x * _WS_CELL
 			var lwz: float = -world_radius + last_g.y * _WS_CELL
-			var final_lake_n := _continent_noise.get_noise_2d(lwx * 0.7 + 5000.0, lwz * 0.7 + 5000.0)
 			var lh := get_height_at(lwx, lwz)
-			if final_lake_n >= -0.15 and lh >= WATER_LEVEL - 0.5:
+			if lh < WATER_LEVEL + 1.0:
+				# Close enough to water — add pool transition points
+				var last_y: float = points[points.size() - 1].y
+				var last_w: float = widths[widths.size() - 1] if not widths.is_empty() else 2.0
+				var drop_y := WATER_LEVEL + 0.05
+				var last_dir := Vector2.ZERO
+				if points.size() >= 2:
+					var pa := points[points.size() - 2]
+					var pb := points[points.size() - 1]
+					last_dir = Vector2(pb.x - pa.x, pb.z - pa.z).normalized()
+				if last_dir.length_squared() < 0.001:
+					last_dir = Vector2(1, 0)
+				var step_advance := _WS_CELL / float(_CREEK_SUBDIV) * 0.3
+				for ti in 4:
+					var tf := float(ti + 1) / 4.0
+					var ease_t := tf * tf
+					var ty := lerpf(last_y, drop_y, ease_t)
+					lwx += last_dir.x * step_advance
+					lwz += last_dir.y * step_advance
+					var tw := last_w * (1.0 + tf * 0.6)
+					if not points.is_empty():
+						cum_dist += Vector3(lwx, ty, lwz).distance_to(points[points.size() - 1])
+					points.append(Vector3(lwx, ty, lwz))
+					widths.append(tw)
+					flow_uvs.append(cum_dist)
+				entered_pool = true
+			else:
+				# Well above water — just add the final point
 				var last_acc := raw_accums[raw_accums.size() - 1]
 				var last_norm := clampf((last_acc - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 				var last_w := lerpf(_CREEK_MIN_WIDTH, _CREEK_MAX_WIDTH, last_norm) * 0.5
