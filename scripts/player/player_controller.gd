@@ -200,6 +200,7 @@ var _last_footstep_frame: int = -1
 var _gltf_footstep_phase: float = 0.0
 var _footstep_timer: float = 0.0
 var _was_stepping: bool = false
+var _step_grace_timer: float = 0.0
 
 # River ambient audio
 var _river_ambient_player: AudioStreamPlayer
@@ -2439,16 +2440,26 @@ func _tick_footstep_sfx(delta: float) -> void:
 	if _auto_run:
 		has_input = true
 	var flat_speed := Vector2(velocity.x, velocity.z).length()
-	var want_stepping := not _mounted and has_input and flat_speed > 0.3 and is_on_floor() and not _is_swimming
-	if not want_stepping:
-		_last_footstep_frame = -1
-		_gltf_footstep_phase = 0.0
+	var on_ground := is_on_floor()
+	var want_stepping := not _mounted and has_input and flat_speed > 0.3 and not _is_swimming
+
+	if not has_input:
 		_footstep_timer = 0.0
 		_was_stepping = false
+		_step_grace_timer = 0.0
 		if _footstep_player.playing:
 			_footstep_player.stop()
 		return
 
+	if not want_stepping or not on_ground:
+		_step_grace_timer += delta
+		if _step_grace_timer > 0.15:
+			_footstep_timer = 0.0
+			_was_stepping = false
+			_step_grace_timer = 0.0
+		return
+
+	_step_grace_timer = 0.0
 	_on_stone_surface = _check_stone_surface()
 	var is_running := flat_speed > walk_speed * 1.1
 	var step_interval: float
@@ -2465,7 +2476,7 @@ func _tick_footstep_sfx(delta: float) -> void:
 
 	_footstep_timer += delta
 	if _footstep_timer >= step_interval:
-		_footstep_timer -= step_interval
+		_footstep_timer = 0.0
 		_play_footstep(is_running)
 
 

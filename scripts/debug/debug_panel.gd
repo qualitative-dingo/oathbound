@@ -573,25 +573,33 @@ func _set_post_fx_strip(active: bool) -> void:
 	print("[DEBUG] post-FX strip = %s" % active)
 	var tree := get_tree()
 	var dnc: Node = tree.current_scene.get_node_or_null("DayNightCycle") if tree.current_scene else null
-	if dnc:
-		dnc.set("debug_post_fx_bypass", active)
-		if active:
+	if active:
+		if dnc:
+			dnc.set("debug_post_fx_bypass", true)
 			dnc.set("glow_override_enabled", false)
-		else:
-			dnc.set("glow_override_enabled", _toggles["glow"])
-	for node in tree.get_nodes_in_group(&"world_environment"):
-		if node is WorldEnvironment:
-			var env: Environment = (node as WorldEnvironment).environment
-			if not env:
-				continue
-			if active:
-				env.ssao_enabled = false
-				env.glow_enabled = false
-				env.adjustment_enabled = false
-			else:
-				env.adjustment_enabled = true
-				_apply_toggle("ssao", _toggles["ssao"])
-				_apply_toggle("glow", _toggles["glow"])
+		for node in tree.get_nodes_in_group(&"world_environment"):
+			if node is WorldEnvironment:
+				var env: Environment = (node as WorldEnvironment).environment
+				if env:
+					env.ssao_enabled = false
+					env.glow_enabled = false
+					env.adjustment_enabled = false
+		_toggles["ssao"] = false
+		_toggles["glow"] = false
+	else:
+		_toggles["ssao"] = true
+		_toggles["glow"] = true
+		if dnc:
+			dnc.set("debug_post_fx_bypass", false)
+			dnc.set("glow_override_enabled", true)
+		for node in tree.get_nodes_in_group(&"world_environment"):
+			if node is WorldEnvironment:
+				var env: Environment = (node as WorldEnvironment).environment
+				if env:
+					env.ssao_enabled = true
+					env.glow_enabled = true
+					env.adjustment_enabled = true
+	_refresh_checkboxes()
 
 
 func _deselect_all() -> void:
