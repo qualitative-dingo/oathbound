@@ -1720,15 +1720,15 @@ func _compute_merchant_position() -> void:
 func _compute_signpost_positions() -> void:
 	_merchant_signpost_positions.clear()
 	var dir := Vector2(_merchant_world_pos.x, _merchant_world_pos.z).normalized()
-	var fractions := [0.2, 0.5, 0.75]
+	var fractions: Array[float] = [0.2, 0.5, 0.75]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _seed_hash + 55556
-	for frac in fractions:
-		var base := dir * _merchant_world_pos.length() * frac
+	for frac: float in fractions:
+		var base: Vector2 = dir * _merchant_world_pos.length() * frac
 		var offset := Vector2(rng.randf_range(-30.0, 30.0), rng.randf_range(-30.0, 30.0))
-		var wx := base.x + offset.x
-		var wz := base.y + offset.y
-		var h := get_height_at(wx, wz)
+		var wx: float = base.x + offset.x
+		var wz: float = base.y + offset.y
+		var h: float = get_height_at(wx, wz)
 		if h < WATER_LEVEL + 0.5:
 			h = WATER_LEVEL + 1.0
 		_merchant_signpost_positions.append(Vector3(wx, h, wz))
