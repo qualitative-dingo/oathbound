@@ -428,7 +428,6 @@ func _enforce_post_fx_strip_env() -> void:
 			if env:
 				env.ssao_enabled = false
 				env.glow_enabled = false
-				env.fog_enabled = false
 				env.adjustment_enabled = false
 	var dnc: Node = tree.current_scene.get_node_or_null("DayNightCycle") if tree.current_scene else null
 	if dnc:
@@ -588,10 +587,8 @@ func _set_post_fx_strip(active: bool) -> void:
 			if active:
 				env.ssao_enabled = false
 				env.glow_enabled = false
-				env.fog_enabled = false
 				env.adjustment_enabled = false
 			else:
-				env.fog_enabled = true
 				env.adjustment_enabled = true
 				_apply_toggle("ssao", _toggles["ssao"])
 				_apply_toggle("glow", _toggles["glow"])
