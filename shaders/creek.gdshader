@@ -131,7 +131,7 @@ void fragment() {
 	ALPHA *= edge_fade;
 
 	// Fade out creek mesh as it approaches water bodies
-	float water_fade = smoothstep(water_level + 0.3, water_level + 1.8, v_world_y);
+	float water_fade = smoothstep(water_level + 0.05, water_level + 0.5, v_world_y);
 	ALPHA *= water_fade;
 
 	ROUGHNESS = mix(0.1, 0.4, total_foam);
