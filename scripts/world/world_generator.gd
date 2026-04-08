@@ -1924,13 +1924,30 @@ const _MAX_COLLISION_DISABLES_PER_FRAME := 4
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
 
-	# 0a. Fast-path: immediately enable ALL collision shapes near any player (no budget)
-	if not _deferred_collisions.is_empty() and not _players.is_empty():
-		var player_zones: Array[Vector2i] = []
-		for p in _players:
-			if p.get("_in_cave"):
-				continue
-			player_zones.append(world_to_zone(get_world_position(p)))
+	# 0-pre. Build player zone list (used by multiple steps below)
+	var player_zones: Array[Vector2i] = []
+	for p in _players:
+		if p.get("_in_cave"):
+			continue
+		player_zones.append(world_to_zone(get_world_position(p)))
+
+	# 0a. Guarantee: TerrainCol is ALWAYS enabled in the 3x3 grid around every player.
+	# This runs unconditionally every frame — no queue dependency.
+	for pz in player_zones:
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				var zc := pz + Vector2i(dx, dz)
+				var zone_node = _loaded_zones.get(zc)
+				if not zone_node:
+					continue
+				var tc = zone_node.get_node_or_null("TerrainCol")
+				if tc and tc.disabled:
+					tc.disabled = false
+					_deferred_collisions.erase(tc)
+					_deferred_disable_collisions.erase(tc)
+
+	# 0b. Fast-path: enable queued collision shapes near any player (no budget)
+	if not _deferred_collisions.is_empty():
 		var remaining: Array = []
 		for col_shape in _deferred_collisions:
 			if not is_instance_valid(col_shape):
@@ -1954,7 +1971,7 @@ func _process_pending_zones() -> void:
 				remaining.append(col_shape)
 		_deferred_collisions = remaining
 
-	# 0b. Process remaining collision shape toggles under budget
+	# 0c. Process remaining collision shape toggles under budget
 	var enables_this_frame := 0
 	while not _deferred_collisions.is_empty() and enables_this_frame < _MAX_COLLISION_ENABLES_PER_FRAME:
 		var col_shape = _deferred_collisions.pop_front()
@@ -1962,12 +1979,29 @@ func _process_pending_zones() -> void:
 			col_shape.disabled = false
 			enables_this_frame += 1
 
+	# 0d. Process deferred disables — skip any that are near a player
 	var disables_this_frame := 0
-	while not _deferred_disable_collisions.is_empty() and disables_this_frame < _MAX_COLLISION_DISABLES_PER_FRAME:
+	var disable_remaining: Array = []
+	while not _deferred_disable_collisions.is_empty():
 		var col_shape = _deferred_disable_collisions.pop_front()
-		if is_instance_valid(col_shape):
+		if not is_instance_valid(col_shape):
+			continue
+		var parent = col_shape.get_parent()
+		if parent and parent.has_meta(&"zone_coord"):
+			var zc: Vector2i = parent.get_meta(&"zone_coord") as Vector2i
+			var near := false
+			for pz in player_zones:
+				if absi(zc.x - pz.x) <= 1 and absi(zc.y - pz.y) <= 1:
+					near = true
+					break
+			if near:
+				continue
+		if disables_this_frame < _MAX_COLLISION_DISABLES_PER_FRAME:
 			col_shape.disabled = true
 			disables_this_frame += 1
+		else:
+			disable_remaining.append(col_shape)
+	_deferred_disable_collisions = disable_remaining
 
 	# 0.5. Apply completed terrain rebuilds (from terraform / hoe) - throttled
 	# Track if we assigned a terrain shape this frame (expensive ConcavePolygonShape3D)
