@@ -4426,7 +4426,7 @@ static func _scatter_water_plants(
 	var lily_count := 0
 	if lily_hash > 0.4:
 		var lily_d := (lily_hash - 0.4) / 0.6
-		lily_count = rng.randi_range(int(3.0 + lily_d * 10.0), int(8.0 + lily_d * 28.0))
+		lily_count = rng.randi_range(int(6.0 + lily_d * 20.0), int(16.0 + lily_d * 56.0))
 	for _i in lily_count:
 		var lx := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
