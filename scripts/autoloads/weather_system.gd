@@ -8,12 +8,12 @@ enum Weather { SUN, WIND, RAIN, STORM }
 signal weather_changed(new_weather: Weather)
 
 var current_weather: Weather = Weather.SUN
-var wind_intensity: float = 0.3
+var wind_intensity: float = 0.45
 
 var _timer: float = 0.0
 var _next_change: float = 120.0
 var _rng := RandomNumberGenerator.new()
-var _target_intensity: float = 0.3
+var _target_intensity: float = 0.45
 
 var _cloud_parent: Node3D
 var _clouds: Array[MeshInstance3D] = []
@@ -44,7 +44,7 @@ const WEATHER_DURATIONS := {
 }
 
 const WEATHER_WIND := {
-	Weather.SUN:   0.3,
+	Weather.SUN:   0.45,
 	Weather.WIND:  0.6,
 	Weather.RAIN:  0.6,
 	Weather.STORM: 1.0,

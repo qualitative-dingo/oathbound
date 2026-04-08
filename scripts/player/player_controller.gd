@@ -700,20 +700,20 @@ func _ready() -> void:
 
 
 func _setup_camera_fill_light() -> void:
-	var cam := get_node_or_null("CameraPivot/SpringArm3D/Camera3D") as Camera3D
-	var parent: Node3D = cam if cam else (_spring_arm if _spring_arm else null)
-	if not parent:
+	# OmniLight on the character itself for uniform wrap-around illumination.
+	# Prevents the directional sun from creating a silhouette at any angle.
+	if not _model:
 		return
-	var fill := SpotLight3D.new()
-	fill.name = "CharacterFillLight"
-	fill.light_energy = 1.0
-	fill.light_color = Color(1.0, 0.98, 0.94)
-	fill.spot_range = 40.0
-	fill.spot_angle = 50.0
-	fill.spot_angle_attenuation = 0.3
-	fill.shadow_enabled = false
-	fill.light_bake_mode = Light3D.BAKE_DISABLED
-	parent.add_child(fill)
+	var omni := OmniLight3D.new()
+	omni.name = "CharacterFillLight"
+	omni.light_energy = 0.7
+	omni.light_color = Color(1.0, 0.98, 0.95)
+	omni.omni_range = 4.0
+	omni.omni_attenuation = 1.5
+	omni.shadow_enabled = false
+	omni.light_bake_mode = Light3D.BAKE_DISABLED
+	omni.position = Vector3(0.0, 1.0, 0.0)
+	_model.add_child(omni)
 
 
 func _activate_camera() -> void:
