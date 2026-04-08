@@ -2887,7 +2887,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 				var cb_key := Vector2i(cb_ix, cb_iz)
 				if _creek_bed.has(cb_key):
 					var bed_h: float = _creek_bed[cb_key]
-					var creek_factor := clampf((h - bed_h) / 2.0, 0.0, 1.0)
+					var creek_factor := clampf(1.0 - (h - bed_h) / 2.0, 0.0, 1.0)
 					river_bank = maxf(river_bank, creek_factor)
 
 			river_bank = clampf(river_bank, 0.0, 1.0)
