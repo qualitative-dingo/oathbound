@@ -1575,20 +1575,24 @@ func _pre_move_analytic_guard() -> void:
 var _analytic_floor_corrections := 0
 
 func _enforce_analytic_floor() -> void:
-	if _in_cave or flight_mode or _is_swimming or is_on_floor():
+	if _in_cave or flight_mode or _is_swimming:
 		return
 	var wg := _find_world_generator()
 	if not wg:
 		return
 	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
-	if global_position.y >= ground_y - 0.1:
+	var on_floor := is_on_floor()
+	# Tighter threshold when on floor (collision present but player embedded),
+	# looser when off floor (collision missing entirely).
+	var threshold := 0.35 if on_floor else 0.1
+	if global_position.y >= ground_y - threshold:
 		return
-	var push_to := ground_y + 0.5
+	var push_to := ground_y + 0.3
 	_analytic_floor_corrections += 1
 	if _analytic_floor_corrections <= 20 or _analytic_floor_corrections % 100 == 0:
-		print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f) frame=%d" % [
+		print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f, on_floor=%s) frame=%d" % [
 			_analytic_floor_corrections, global_position.y, push_to,
-			ground_y, Engine.get_frames_drawn()])
+			ground_y, str(on_floor), Engine.get_frames_drawn()])
 	global_position.y = push_to
 	if velocity.y < 0.0:
 		velocity.y = 0.0
