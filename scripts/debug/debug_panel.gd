@@ -28,6 +28,7 @@ var _toggles: Dictionary = {
 	"terrain_visible": true,
 	"ssao": false,
 	"glow": false,
+	"shadows": true,
 	"nearest_filter": false,
 }
 
@@ -186,6 +187,7 @@ func _build_ui() -> void:
 	_add_toggle(left, "Terrain Visible", "terrain_visible")
 	_add_toggle(left, "SSAO", "ssao")
 	_add_toggle(left, "Glow", "glow")
+	_add_toggle(left, "Shadows", "shadows")
 	_add_toggle(left, "Pixel-Art Filter (nearest)", "nearest_filter")
 
 	var deselect_btn := _make_button("Disable ALL", Color(0.7, 0.15, 0.15))
@@ -394,6 +396,11 @@ func _apply_toggle(key: String, on: bool) -> void:
 				var env: Environment = (node as WorldEnvironment).environment
 				if env:
 					env.ssao_enabled = on
+
+	if key == "shadows":
+		for node in get_tree().get_nodes_in_group(&"sun"):
+			if node is DirectionalLight3D:
+				(node as DirectionalLight3D).shadow_enabled = on
 
 	if key == "glow":
 		var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree().current_scene else null

@@ -50,6 +50,8 @@ const WATER_LEVEL := 0.0
 
 var _theme_songs: Array[String] = []
 var _seed_hash: int
+var _merchant_world_pos: Vector3 = Vector3.ZERO
+var _merchant_signpost_positions: Array[Vector3] = []
 var _continent_noise: FastNoiseLite
 var _mountain_noise: FastNoiseLite
 var _mountain_broad_noise: FastNoiseLite
@@ -410,6 +412,7 @@ func _ready() -> void:
 	add_to_group(&"world_generator")
 	_init_noise_layers()
 	_compute_watershed()
+	_compute_merchant_position()
 	_init_biome_materials()
 	_init_water_material()
 	_init_creek_material()
@@ -1690,6 +1693,53 @@ func _determine_biome(zone: Vector2i) -> StringName:
 
 	_zone_biome_cache[zone] = biome
 	return biome
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  NPC PLACEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+func _compute_merchant_position() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _seed_hash + 55555
+	var target_dist := 800.0
+	for attempt in 24:
+		var angle := rng.randf_range(0.0, TAU)
+		var dist := rng.randf_range(target_dist * 0.8, target_dist * 1.2)
+		var wx := cos(angle) * dist
+		var wz := sin(angle) * dist
+		var h := get_height_at(wx, wz)
+		if h > WATER_LEVEL + 1.5 and h < 40.0:
+			_merchant_world_pos = Vector3(wx, h, wz)
+			break
+	if _merchant_world_pos == Vector3.ZERO:
+		_merchant_world_pos = Vector3(600.0, get_height_at(600.0, 200.0), 200.0)
+	_compute_signpost_positions()
+
+
+func _compute_signpost_positions() -> void:
+	_merchant_signpost_positions.clear()
+	var dir := Vector2(_merchant_world_pos.x, _merchant_world_pos.z).normalized()
+	var fractions := [0.2, 0.5, 0.75]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _seed_hash + 55556
+	for frac in fractions:
+		var base := dir * _merchant_world_pos.length() * frac
+		var offset := Vector2(rng.randf_range(-30.0, 30.0), rng.randf_range(-30.0, 30.0))
+		var wx := base.x + offset.x
+		var wz := base.y + offset.y
+		var h := get_height_at(wx, wz)
+		if h < WATER_LEVEL + 0.5:
+			h = WATER_LEVEL + 1.0
+		_merchant_signpost_positions.append(Vector3(wx, h, wz))
+
+
+func get_merchant_world_pos() -> Vector3:
+	return _merchant_world_pos
+
+
+func get_signpost_positions() -> Array[Vector3]:
+	return _merchant_signpost_positions
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

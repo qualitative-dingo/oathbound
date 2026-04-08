@@ -16,6 +16,7 @@ const _LootDrop := preload("res://scripts/items/loot_drop.gd")
 const _VillageGenerator := preload("res://scripts/world/village_generator.gd")
 const _FishIdle := preload("res://scripts/creatures/fish_idle.gd")
 const _ZonePool := preload("res://scripts/world/zone_pool.gd")
+const _MerchantNPC := preload("res://scripts/npcs/merchant_npc.gd")
 
 const ZONE_SIZE := 64.0
 const _MIN_LAND_Y := 0.5
@@ -1176,12 +1177,15 @@ static func populate_zone_phase(
 	var enemy_n := counts[3]
 
 	if phase == 0:
-		# ── Phase 0: villages + scatter trees ──
+		# ── Phase 0: villages + scatter trees + NPC camps ──
 		if not debug_skip_villages:
 			if biome == &"hearthlands":
 				_VillageGenerator.try_spawn_village(zone_root, coord, rng, origin_x, origin_z, height_func)
 			if coord == Vector2i(0, 0):
 				_VillageGenerator.force_spawn_village(zone_root, 20.0, 20.0, height_func)
+
+		_try_spawn_merchant_camp(zone_root, coord, origin_x, origin_z, height_func)
+		_try_spawn_signposts(zone_root, coord, origin_x, origin_z, height_func)
 
 		var structs := _get_structures_cached()
 		var scatter_n := int(tree_n * 0.4)
@@ -1427,6 +1431,145 @@ static func populate_zone_phase(
 	_scatter_creek_vegetation(zone_root, coord, rng, height_func)
 
 	return true
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MERCHANT & SIGNPOST SPAWNING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+static var _merchant_spawned := false
+static var _signposts_spawned: Dictionary = {}
+
+static func _try_spawn_merchant_camp(
+	zone_root: Node3D,
+	coord: Vector2i,
+	origin_x: float,
+	origin_z: float,
+	height_func: Callable,
+) -> void:
+	if _merchant_spawned:
+		return
+	var wg := _get_world_generator()
+	if not wg or not wg.has_method("get_merchant_world_pos"):
+		return
+	var merchant_pos: Vector3 = wg.get_merchant_world_pos()
+	if merchant_pos == Vector3.ZERO:
+		return
+	var zone_end_x := origin_x + ZONE_SIZE
+	var zone_end_z := origin_z + ZONE_SIZE
+	if merchant_pos.x < origin_x or merchant_pos.x >= zone_end_x:
+		return
+	if merchant_pos.z < origin_z or merchant_pos.z >= zone_end_z:
+		return
+	_merchant_spawned = true
+	var camp := _MerchantNPC.create_camp(merchant_pos, height_func)
+	var lx := merchant_pos.x - origin_x
+	var lz := merchant_pos.z - origin_z
+	var ground_y: float = height_func.call(merchant_pos.x, merchant_pos.z)
+	camp.position = Vector3(lx, ground_y, lz)
+	zone_root.add_child(camp)
+	if _DEBUG_LOG:
+		print("[ZONE] Spawned merchant camp at world (%.0f, %.0f)" % [merchant_pos.x, merchant_pos.z])
+
+
+static func _try_spawn_signposts(
+	zone_root: Node3D,
+	coord: Vector2i,
+	origin_x: float,
+	origin_z: float,
+	height_func: Callable,
+) -> void:
+	var wg := _get_world_generator()
+	if not wg or not wg.has_method("get_signpost_positions"):
+		return
+	var positions: Array = wg.get_signpost_positions()
+	var merchant_pos: Vector3 = wg.get_merchant_world_pos()
+	var zone_end_x := origin_x + ZONE_SIZE
+	var zone_end_z := origin_z + ZONE_SIZE
+
+	var sign_texts := [
+		"Trader Halvard -- camps nearby",
+		"Halvard's Trading Post -- follow the smoke",
+		"Supplies ahead. Almost there.",
+	]
+
+	for i in positions.size():
+		var sp: Vector3 = positions[i]
+		if _signposts_spawned.has(i):
+			continue
+		if sp.x < origin_x or sp.x >= zone_end_x:
+			continue
+		if sp.z < origin_z or sp.z >= zone_end_z:
+			continue
+		_signposts_spawned[i] = true
+		var text: String = sign_texts[i] if i < sign_texts.size() else "This way..."
+		var signpost := _create_signpost(sp, text, merchant_pos, height_func)
+		var lx := sp.x - origin_x
+		var lz := sp.z - origin_z
+		var ground_y: float = height_func.call(sp.x, sp.z)
+		signpost.position = Vector3(lx, ground_y, lz)
+		zone_root.add_child(signpost)
+		if _DEBUG_LOG:
+			print("[ZONE] Spawned signpost #%d at world (%.0f, %.0f)" % [i, sp.x, sp.z])
+
+
+static func _create_signpost(world_pos: Vector3, text: String, merchant_pos: Vector3, height_func: Callable) -> StaticBody3D:
+	var post := StaticBody3D.new()
+	post.name = "Signpost"
+	post.collision_layer = 4
+	post.collision_mask = 0
+	post.add_to_group(&"interactables")
+	post.add_to_group(&"signposts")
+	post.set_meta("sign_text", text)
+	post.set_meta("reveals_merchant", true)
+	post.set_meta("merchant_pos", merchant_pos)
+
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(0.3, 1.6, 0.3)
+	col.shape = shape
+	col.position = Vector3(0, 0.8, 0)
+	post.add_child(col)
+
+	var post_mat := StandardMaterial3D.new()
+	post_mat.albedo_color = Color(0.4, 0.28, 0.14)
+	post_mat.roughness = 0.9
+
+	var pole := MeshInstance3D.new()
+	var pole_mesh := CylinderMesh.new()
+	pole_mesh.height = 1.8
+	pole_mesh.top_radius = 0.06
+	pole_mesh.bottom_radius = 0.08
+	pole.mesh = pole_mesh
+	pole.material_override = post_mat
+	pole.position = Vector3(0, 0.9, 0)
+	post.add_child(pole)
+
+	var board := MeshInstance3D.new()
+	var board_mesh := BoxMesh.new()
+	board_mesh.size = Vector3(0.8, 0.35, 0.04)
+	board.mesh = board_mesh
+	board.material_override = post_mat
+	board.position = Vector3(0, 1.5, 0.06)
+	post.add_child(board)
+
+	var label := Label3D.new()
+	label.text = text
+	label.font_size = 24
+	label.pixel_size = 0.006
+	label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	label.no_depth_test = false
+	label.modulate = Color(0.9, 0.8, 0.5)
+	label.outline_modulate = Color(0, 0, 0, 0.8)
+	label.outline_size = 4
+	label.position = Vector3(0, 1.5, 0.1)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	post.add_child(label)
+
+	var dir_to_merchant := Vector2(merchant_pos.x - world_pos.x, merchant_pos.z - world_pos.z).normalized()
+	post.rotation.y = atan2(-dir_to_merchant.x, -dir_to_merchant.y)
+
+	return post
 
 
 ## Legacy single-call populate for spawn area (runs synchronously)

@@ -323,6 +323,8 @@ var _interact_cached_horses: Array[Node] = []
 var _interact_cached_rafts: Array[Node] = []
 var _interact_cached_cave_entrances: Array[Node] = []
 var _interact_cached_berry_bushes: Array[Node] = []
+var _interact_cached_npcs: Array[Node] = []
+var _interact_cached_signposts: Array[Node] = []
 const _INTERACT_CACHE_INTERVAL := 1.0
 
 func _refresh_interact_caches() -> void:
@@ -333,6 +335,8 @@ func _refresh_interact_caches() -> void:
 	_interact_cached_rafts = pc.get_tree().get_nodes_in_group(&"rafts")
 	_interact_cached_cave_entrances = pc.get_tree().get_nodes_in_group(&"cave_entrances")
 	_interact_cached_berry_bushes = pc.get_tree().get_nodes_in_group(&"berry_bushes")
+	_interact_cached_npcs = pc.get_tree().get_nodes_in_group(&"npcs")
+	_interact_cached_signposts = pc.get_tree().get_nodes_in_group(&"signposts")
 
 func update_interact_prompt() -> void:
 	if not pc._interact_prompt:
@@ -426,6 +430,29 @@ func update_interact_prompt() -> void:
 			var drop_id: StringName = bb3d.get_meta("drop_id", &"blueberry")
 			var berry_name := ItemDatabase.get_display_name(drop_id) if drop_id != &"" else "Berries"
 			closest_name = "Harvest %s" % berry_name
+
+	for npc in _interact_cached_npcs:
+		if not is_instance_valid(npc):
+			continue
+		var n3d := npc as Node3D
+		if not n3d or not n3d.is_inside_tree():
+			continue
+		var d := pp.distance_to(n3d.global_position)
+		if d < 3.5 and d < closest_dist:
+			closest_dist = d
+			var npc_name: String = str(n3d.get("display_name")) if "display_name" in n3d else "NPC"
+			closest_name = "Trade %s" % npc_name
+
+	for sp in _interact_cached_signposts:
+		if not is_instance_valid(sp):
+			continue
+		var s3d := sp as Node3D
+		if not s3d or not s3d.is_inside_tree():
+			continue
+		var d := pp.distance_to(s3d.global_position)
+		if d < 3.0 and d < closest_dist:
+			closest_dist = d
+			closest_name = "Read Sign"
 
 	var nearest_world_name := ""
 	var cam: Camera3D = pc._spring_arm.get_child(0) if pc._spring_arm.get_child_count() > 0 else null
@@ -607,6 +634,34 @@ func try_interact() -> void:
 		if pc.global_position.distance_to(wb3d.global_position) < 3.0:
 			pc._workbench_ui.open_workbench()
 			return
+
+	# Check NPCs (merchants)
+	for npc in pc.get_tree().get_nodes_in_group(&"npcs"):
+		var n3d := npc as Node3D
+		if not n3d:
+			continue
+		if pc.global_position.distance_to(n3d.global_position) < 3.5:
+			if n3d.has_method("interact"):
+				n3d.interact(pc)
+			return
+
+	# Check signposts
+	for sp in pc.get_tree().get_nodes_in_group(&"signposts"):
+		var s3d := sp as Node3D
+		if not s3d:
+			continue
+		if pc.global_position.distance_to(s3d.global_position) < 3.0:
+			_interact_signpost(s3d)
+			return
+
+
+func _interact_signpost(signpost: Node3D) -> void:
+	var text: String = str(signpost.get_meta("sign_text", "..."))
+	pc._show_speech([text], &"signpost")
+	if signpost.get_meta("reveals_merchant", false):
+		var merchant_pos: Vector3 = signpost.get_meta("merchant_pos", Vector3.ZERO) as Vector3
+		if merchant_pos != Vector3.ZERO:
+			pc._reveal_map_marker("merchant", merchant_pos, "Halvard")
 
 
 # ===================================================================

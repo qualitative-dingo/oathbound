@@ -1250,3 +1250,24 @@ func _register_defaults() -> void:
 		"recipe": [{"item_id": "wood", "amount": 20}],
 		"crafting_station": "workbench",
 	})
+
+	# --- Merchant-exclusive items ---
+	register_item(&"fishing_rod", {
+		"name": "Fishing Rod", "type": "tool", "stack_size": 1,
+		"description": "A sturdy rod for catching fish. Cast into water and wait for a bite.",
+		"icon": "res://textures/items/raw_fish.png",
+		"shop_price": 120,
+	})
+	register_item(&"large_chest_recipe", {
+		"name": "Large Chest Blueprint", "type": "consumable", "stack_size": 1,
+		"description": "A crafting schematic for a reinforced storage chest with double capacity. Use to learn the recipe.",
+		"icon": "res://textures/items/gold.png",
+		"shop_price": 200,
+		"teaches_build": &"large_chest",
+	})
+	register_item(&"merchant_bag", {
+		"name": "Merchant's Pouch", "type": "consumable", "stack_size": 1,
+		"description": "A small leather pouch from Halvard's stock. Contains a random assortment of useful materials.",
+		"icon": "res://textures/items/gold.png",
+		"shop_price": 50,
+	})

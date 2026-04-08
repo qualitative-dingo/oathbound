@@ -96,6 +96,7 @@ var _rally_cry_active: bool = false
 var _fortress_active: bool = false
 
 # Build mode (B key)
+var _learned_build_recipes: Array[StringName] = []
 var _build_mode: bool = false
 var _build_from_workbench: bool = false
 var _build_menu_open: bool = false
@@ -1539,7 +1540,7 @@ func _clamp_to_terrain() -> void:
 	if not space:
 		return
 
-	var from := Vector3(global_position.x, global_position.y + 3.0, global_position.z)
+	var from := Vector3(global_position.x, global_position.y + 10.0, global_position.z)
 	var to := Vector3(global_position.x, global_position.y - 25.0, global_position.z)
 	var query := PhysicsRayQueryParameters3D.create(from, to, 1)
 	query.exclude = [get_rid()]
@@ -1547,8 +1548,8 @@ func _clamp_to_terrain() -> void:
 	if not result.is_empty():
 		var surface_y: float = result["position"].y
 		var below_surface := surface_y - global_position.y
-		if below_surface > 0.3:
-			global_position.y = surface_y + 0.15
+		if below_surface > 0.05:
+			global_position.y = surface_y + 0.05
 			velocity = Vector3.ZERO
 		return
 
@@ -4211,6 +4212,7 @@ func _on_creature_killed_speech(creature_pos: Vector3) -> void:
 
 
 func _on_item_picked_up_speech(item_id: StringName, _amount: int) -> void:
+	_try_learn_recipe(item_id)
 	var parsed := ItemDatabase.parse_star_id(item_id)
 	if parsed["stars"] >= 5:
 		_show_speech(_LINES_FIVE_STAR, &"five_star")
@@ -6029,6 +6031,10 @@ const BUILD_RECIPES: Array[Dictionary] = [
 	{"id": &"chest", "name": "Chest", "tab": "Furniture",
 	 "cost": [{"item": &"wood", "amount": 10}],
 	 "mesh": "box", "color": Color(0.5, 0.35, 0.15), "size": Vector3(2.4, 1.8, 1.5)},
+	{"id": &"large_chest", "name": "Large Chest", "tab": "Furniture",
+	 "cost": [{"item": &"wood", "amount": 20}, {"item": &"iron_ore", "amount": 5}],
+	 "mesh": "box", "color": Color(0.55, 0.38, 0.18), "size": Vector3(3.2, 2.0, 1.8),
+	 "requires_recipe": true},
 	{"id": &"bed", "name": "Bed", "tab": "Furniture",
 	 "cost": [{"item": &"wood", "amount": 8}, {"item": &"leather", "amount": 4}],
 	 "mesh": "bed", "color": Color(0.5, 0.3, 0.2), "size": Vector3(1.2, 0.6, 2.2)},
@@ -6108,6 +6114,8 @@ func _refresh_build_menu() -> void:
 
 	for recipe: Dictionary in BUILD_RECIPES:
 		if recipe.get("tab", "Misc") as String != _build_current_tab:
+			continue
+		if recipe.get("requires_recipe", false) and not _learned_build_recipes.has(recipe["id"] as StringName):
 			continue
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
@@ -6432,7 +6440,7 @@ func _place_build() -> void:
 	var structure := StaticBody3D.new()
 	var _deferred_campfire := mesh_type == "campfire"
 	var _is_workbench := mesh_type == "workbench"
-	var _is_chest := build_id == &"chest"
+	var _is_chest := build_id == &"chest" or build_id == &"large_chest"
 	var _is_wall_torch := mesh_type == "wall_torch"
 	var _is_bed := mesh_type == "bed"
 	var _is_door := mesh_type == "door"
@@ -6600,7 +6608,7 @@ func _place_build() -> void:
 	var wss := _get_world_state_sync()
 	if wss and NetworkManager.is_connected_to_game():
 		var chest_contents: Array = []
-		if build_id == &"chest" and structure.has_meta("chest_contents"):
+		if (build_id == &"chest" or build_id == &"large_chest") and structure.has_meta("chest_contents"):
 			chest_contents = structure.get_meta("chest_contents", [])
 		var bld_wg := _find_world_generator()
 		var bld_wp := target_pos
@@ -6637,7 +6645,7 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 	var structure := StaticBody3D.new()
 	var is_campfire := mesh_type == "campfire"
 	var is_workbench := mesh_type == "workbench"
-	var is_chest := build_id == &"chest"
+	var is_chest := build_id == &"chest" or build_id == &"large_chest"
 	var is_wall_torch := mesh_type == "wall_torch"
 	var is_bed := mesh_type == "bed"
 	var is_door := mesh_type == "door"
@@ -6907,6 +6915,18 @@ func _get_build_recipe(build_id: StringName) -> Dictionary:
 		if recipe["id"] as StringName == build_id:
 			return recipe
 	return {}
+
+
+func _try_learn_recipe(item_id: StringName) -> void:
+	var data: Dictionary = ItemDatabase.get_item(item_id)
+	var teaches: StringName = data.get("teaches_build", &"") as StringName
+	if teaches == &"":
+		return
+	if _learned_build_recipes.has(teaches):
+		return
+	_learned_build_recipes.append(teaches)
+	Inventory.remove_item(item_id, 1)
+	_show_speech(["I've learned how to build a %s!" % data.get("name", "something")], &"recipe_learn")
 
 
 # -- Building material cache --------------------------------------------------
