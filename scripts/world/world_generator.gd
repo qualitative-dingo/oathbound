@@ -2509,7 +2509,7 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 		for i in points.size():
 			var p := points[i]
-			var w := half_widths[i] + 0.5
+			var w := half_widths[i] + 3.0
 			var uv_y := flow_uvs[i] * uv_scale
 
 			var flow_dir := tangents[i]
