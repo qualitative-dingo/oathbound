@@ -60,6 +60,8 @@ var _attack_cooldown: float = 0.0
 var _inventory_open: bool = false
 var _map_open: bool = false
 var _map_disabled: bool = false
+var _map_markers: Array[Dictionary] = []
+var _map_marker_labels: Array[Label] = []
 var _map_zoom: float = 40.0
 var _map_zoom_target: float = 40.0
 const MAP_ZOOM_MIN := 8.0
@@ -371,6 +373,9 @@ var _pause_resolutions: Array[Vector2i] = [
 	Vector2i(1920, 1080), Vector2i(2560, 1440), Vector2i(3840, 2160),
 ]
 var _debug_panel: Node  # DebugPanel (CanvasLayer)
+var _terrain_diag_label: Label
+var _terrain_diag_visible := false
+var _terrain_diag_last_surface_y := 0.0
 var _target_hud_panel: PanelContainer
 var _target_hud_name: Label
 var _target_hud_stars: Label
@@ -984,6 +989,10 @@ func _notification(what: int) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if _shop_open and (event.is_action_pressed(&"interact") or event.is_action_pressed(&"inventory") or event.is_action_pressed(&"quit_game") or event.is_action_pressed(&"ui_cancel")):
+		close_shop()
+		get_viewport().set_input_as_handled()
+		return
 	if _workbench_open and (event.is_action_pressed(&"interact") or event.is_action_pressed(&"inventory") or event.is_action_pressed(&"quit_game")):
 		_workbench_ui.close_workbench()
 		get_viewport().set_input_as_handled()
@@ -1024,6 +1033,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_debug_panel.toggle_panel()
 			get_viewport().set_input_as_handled()
 			return
+		if ke.physical_keycode == KEY_F4 and not ke.alt_pressed and not ke.meta_pressed:
+			_toggle_terrain_diag()
+			get_viewport().set_input_as_handled()
+			return
 
 	# Alt+F4 or Cmd+F4 always quits immediately
 	if event is InputEventKey and (event as InputEventKey).pressed:
@@ -1060,7 +1073,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _bow_drawing:
 			_cancel_bow_draw()
 			return
-		if _chest_open:
+		if _shop_open:
+			close_shop()
+		elif _chest_open:
 			_interaction.close_chest()
 		elif _workbench_open:
 			_workbench_ui.close_workbench()
@@ -1461,6 +1476,8 @@ func _physics_process(delta: float) -> void:
 		_interact_check_timer = 0.15
 		_interaction.update_interact_prompt()
 
+	_update_terrain_diag()
+
 	var _phys_ms := float(Time.get_ticks_usec() - _phys_t0) / 1000.0
 	_pc_proc_max_physics = maxf(_pc_proc_max_physics, _phys_ms)
 
@@ -1596,6 +1613,69 @@ func _enforce_analytic_floor() -> void:
 	global_position.y = push_to
 	if velocity.y < 0.0:
 		velocity.y = 0.0
+
+
+func _toggle_terrain_diag() -> void:
+	_terrain_diag_visible = not _terrain_diag_visible
+	if _terrain_diag_visible and not _terrain_diag_label:
+		var hud := get_node_or_null("HUD") as CanvasLayer
+		if not hud:
+			_terrain_diag_visible = false
+			return
+		_terrain_diag_label = Label.new()
+		_terrain_diag_label.name = "TerrainDiag"
+		_terrain_diag_label.position = Vector2(10, 10)
+		_terrain_diag_label.add_theme_font_size_override("font_size", 14)
+		_terrain_diag_label.add_theme_color_override("font_color", Color.WHITE)
+		_terrain_diag_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+		_terrain_diag_label.add_theme_constant_override("shadow_offset_x", 1)
+		_terrain_diag_label.add_theme_constant_override("shadow_offset_y", 1)
+		hud.add_child(_terrain_diag_label)
+	if _terrain_diag_label:
+		_terrain_diag_label.visible = _terrain_diag_visible
+
+
+func _update_terrain_diag() -> void:
+	if not _terrain_diag_visible or not _terrain_diag_label:
+		return
+	var wg := _find_world_generator()
+	var analytic_y := 0.0
+	var zone_col_state := "?"
+	if wg:
+		analytic_y = wg.get_height_at_scene(global_position.x, global_position.z)
+		var wp := wg.get_world_position(self)
+		var zc := wg.world_to_zone(wp)
+		var zone_node = wg._loaded_zones.get(zc)
+		if zone_node:
+			var tc = zone_node.get_node_or_null("TerrainCol")
+			if tc:
+				zone_col_state = "ON" if not tc.disabled else "OFF"
+			else:
+				zone_col_state = "MISSING"
+		else:
+			zone_col_state = "NO_ZONE"
+
+	var space := get_world_3d().direct_space_state
+	var ray_surface := "none"
+	if space:
+		var from := Vector3(global_position.x, global_position.y + 10.0, global_position.z)
+		var to := Vector3(global_position.x, global_position.y - 25.0, global_position.z)
+		var q := PhysicsRayQueryParameters3D.create(from, to, 1)
+		q.exclude = [get_rid()]
+		var r := space.intersect_ray(q)
+		if not r.is_empty():
+			_terrain_diag_last_surface_y = r["position"].y
+			ray_surface = "%.2f" % _terrain_diag_last_surface_y
+	var delta_analytic := global_position.y - analytic_y
+	var delta_surface := global_position.y - _terrain_diag_last_surface_y
+	var clipping := delta_analytic < -0.05 or delta_surface < -0.05
+	var status := " ** CLIPPING **" if clipping else ""
+	_terrain_diag_label.text = "Y=%.2f | analytic=%.2f (d=%.2f) | surface=%s (d=%.2f)\non_floor=%s | col=%s | vel_y=%.2f | corrections=%d%s" % [
+		global_position.y, analytic_y, delta_analytic,
+		ray_surface, delta_surface,
+		str(is_on_floor()), zone_col_state, velocity.y,
+		_analytic_floor_corrections, status]
+	_terrain_diag_label.add_theme_color_override("font_color", Color.RED if clipping else Color.WHITE)
 
 
 func _handle_jump() -> void:
@@ -6915,6 +6995,16 @@ func _get_build_recipe(build_id: StringName) -> Dictionary:
 	return {}
 
 
+func open_shop(merchant: Node3D) -> void:
+	if _shop_ui:
+		_shop_ui.open_shop(merchant)
+
+
+func close_shop() -> void:
+	if _shop_ui:
+		_shop_ui.close_shop()
+
+
 func _try_learn_recipe(item_id: StringName) -> void:
 	var data: Dictionary = ItemDatabase.get_item(item_id)
 	var teaches: StringName = data.get("teaches_build", &"") as StringName
@@ -8331,6 +8421,9 @@ func _refresh_map() -> void:
 	# -- Structure markers --
 	_draw_structure_markers(half_px, zones_per_pixel, zone_size)
 
+	# -- NPC map markers (Valheim-style, visible through fog) --
+	_draw_map_markers(half_px, zones_per_pixel, zone_size)
+
 	# -- Player marker - directional arrow --
 	_draw_player_arrow(half_px)
 
@@ -8391,6 +8484,70 @@ func _draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, 
 				var fy := px_y + dy
 				if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
 					_map_image.set_pixel(fx, fy, color)
+
+
+func _reveal_map_marker(marker_id: String, world_pos: Vector3, label_text: String) -> void:
+	for m in _map_markers:
+		if m.get("id", "") == marker_id:
+			return
+	_map_markers.append({
+		"id": marker_id,
+		"pos": world_pos,
+		"label": label_text,
+		"color": Color(1.0, 0.85, 0.3),
+	})
+	_show_speech(["I should mark this on my map... %s is out there somewhere." % label_text], &"map_reveal")
+
+
+func _draw_map_markers(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
+	for marker in _map_markers:
+		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
+		var col: Color = marker.get("color", Color.GOLD) as Color
+		_draw_map_dot(wpos, col, 4, half_px, zones_per_pixel, zone_size)
+		var ring_col := Color(col.r, col.g, col.b, 0.6)
+		for r in range(5, 7):
+			for dy in range(-r, r + 1):
+				for dx in range(-r, r + 1):
+					var dd := dx * dx + dy * dy
+					if dd >= (r - 1) * (r - 1) and dd <= r * r:
+						var dx_world := wpos.x - global_position.x
+						var dz_world := wpos.z - global_position.z
+						var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size)) + dx
+						var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size)) + dy
+						if px_x >= 0 and px_x < MAP_PX and px_y >= 0 and px_y < MAP_PX:
+							_map_image.set_pixel(px_x, px_y, ring_col)
+
+	_update_map_marker_labels(half_px, zones_per_pixel, zone_size)
+
+
+func _update_map_marker_labels(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
+	while _map_marker_labels.size() < _map_markers.size():
+		var lbl := Label.new()
+		lbl.add_theme_font_size_override("font_size", 13)
+		lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5))
+		lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+		lbl.add_theme_constant_override("shadow_offset_x", 1)
+		lbl.add_theme_constant_override("shadow_offset_y", 1)
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lbl.z_index = 100
+		if _map_texture_rect:
+			_map_texture_rect.get_parent().add_child(lbl)
+		_map_marker_labels.append(lbl)
+
+	for i in _map_markers.size():
+		var marker: Dictionary = _map_markers[i]
+		var lbl: Label = _map_marker_labels[i]
+		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
+		var dx_world := wpos.x - global_position.x
+		var dz_world := wpos.z - global_position.z
+		var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
+		var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
+		lbl.text = str(marker.get("label", ""))
+		lbl.position = Vector2(px_x + 8, px_y - 8)
+		lbl.visible = _map_open
+
+	for i in range(_map_markers.size(), _map_marker_labels.size()):
+		_map_marker_labels[i].visible = false
 
 
 func _biome_map_color(biome: StringName, micro: StringName = &"none") -> Color:
@@ -9112,6 +9269,10 @@ func _process(delta: float) -> void:
 		if _report_data_timer >= _REPORT_DATA_INTERVAL:
 			_report_data_timer = 0.0
 			_report_player_data_to_host()
+
+	if _shop_open and _shop_ui and _shop_ui._merchant_node:
+		if not is_instance_valid(_shop_ui._merchant_node) or global_position.distance_to(_shop_ui._merchant_node.global_position) > 5.0:
+			close_shop()
 
 	if _chest_open and _chest_node:
 		if global_position.distance_to(_chest_node.global_position) > 4.0:

@@ -341,7 +341,7 @@ func _refresh_interact_caches() -> void:
 func update_interact_prompt() -> void:
 	if not pc._interact_prompt:
 		return
-	if pc._inventory_open or pc._workbench_open or pc._build_menu_open or pc._build_mode or pc._terraform_mode or pc._chest_open or pc._map_open:
+	if pc._inventory_open or pc._workbench_open or pc._build_menu_open or pc._build_mode or pc._terraform_mode or pc._chest_open or pc._map_open or pc._shop_open:
 		pc._interact_prompt.visible = false
 		if pc._world_name_label:
 			pc._world_name_label.visible = false
