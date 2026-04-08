@@ -8490,8 +8490,10 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 func _draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
 	if zones_per_pixel < 0.001:
 		return
-	var dx_world := world_pos.x - global_position.x
-	var dz_world := world_pos.z - global_position.z
+	var wg := _find_world_generator()
+	var scene_pos := wg.world_to_scene_pos(world_pos) if wg else world_pos
+	var dx_world := scene_pos.x - global_position.x
+	var dz_world := scene_pos.z - global_position.z
 	var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
 	var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
 	for dy in range(-radius, radius + 1):
@@ -8517,20 +8519,22 @@ func _reveal_map_marker(marker_id: String, world_pos: Vector3, label_text: Strin
 
 
 func _draw_map_markers(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
+	var wg := _find_world_generator()
 	for marker in _map_markers:
 		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
 		var col: Color = marker.get("color", Color.GOLD) as Color
 		_draw_map_dot(wpos, col, 4, half_px, zones_per_pixel, zone_size)
+		var scene_pos := wg.world_to_scene_pos(wpos) if wg else wpos
 		var ring_col := Color(col.r, col.g, col.b, 0.6)
 		for r in range(5, 7):
 			for dy in range(-r, r + 1):
 				for dx in range(-r, r + 1):
 					var dd := dx * dx + dy * dy
 					if dd >= (r - 1) * (r - 1) and dd <= r * r:
-						var dx_world := wpos.x - global_position.x
-						var dz_world := wpos.z - global_position.z
-						var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size)) + dx
-						var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size)) + dy
+						var dx_w := scene_pos.x - global_position.x
+						var dz_w := scene_pos.z - global_position.z
+						var px_x := half_px + roundi(dx_w / (zones_per_pixel * zone_size)) + dx
+						var px_y := half_px + roundi(dz_w / (zones_per_pixel * zone_size)) + dy
 						if px_x >= 0 and px_x < MAP_PX and px_y >= 0 and px_y < MAP_PX:
 							_map_image.set_pixel(px_x, px_y, ring_col)
 
@@ -8551,12 +8555,14 @@ func _update_map_marker_labels(half_px: int, zones_per_pixel: float, zone_size: 
 			_map_texture_rect.get_parent().add_child(lbl)
 		_map_marker_labels.append(lbl)
 
+	var wg := _find_world_generator()
 	for i in _map_markers.size():
 		var marker: Dictionary = _map_markers[i]
 		var lbl: Label = _map_marker_labels[i]
 		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
-		var dx_world := wpos.x - global_position.x
-		var dz_world := wpos.z - global_position.z
+		var scene_pos := wg.world_to_scene_pos(wpos) if wg else wpos
+		var dx_world := scene_pos.x - global_position.x
+		var dz_world := scene_pos.z - global_position.z
 		var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
 		var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
 		lbl.text = str(marker.get("label", ""))
