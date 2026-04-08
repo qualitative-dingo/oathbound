@@ -897,11 +897,11 @@ func _compute_watershed() -> void:
 				continue
 			var give := src_acc * 0.4
 			for d in 8:
-				var snx := gx2 + _D8X[d]
-				var snz := gz2 + _D8Z[d]
+				var snx: int = gx2 + int(_D8X[d])
+				var snz: int = gz2 + int(_D8Z[d])
 				if snx < 0 or snx >= _ws_dim or snz < 0 or snz >= _ws_dim:
 					continue
-				var nidx2 := snz * _ws_dim + snx
+				var nidx2: int = snz * _ws_dim + snx
 				spread[nidx2] = maxf(spread[nidx2], give)
 	_ws_accum = spread
 
