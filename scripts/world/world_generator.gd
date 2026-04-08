@@ -879,6 +879,32 @@ func _compute_watershed() -> void:
 			if in_deg[nidx] == 0:
 				queue.append(nidx)
 
+	# Step 4b — lateral accumulation spreading
+	# D8 flow produces 1-cell-wide channels; bilinear interpolation between a
+	# river cell and its low-accum neighbor can drop below the carving threshold,
+	# leaving terrain uncarved in the middle of rivers.  Spread a fraction of
+	# high-accum cells to their immediate neighbors so the carving footprint
+	# matches the visual river width.
+	var spread := PackedFloat32Array()
+	spread.resize(n)
+	for i in n:
+		spread[i] = _ws_accum[i]
+	for gz2 in range(1, _ws_dim - 1):
+		for gx2 in range(1, _ws_dim - 1):
+			var sidx := gz2 * _ws_dim + gx2
+			var src_acc := _ws_accum[sidx]
+			if src_acc < _WS_RIVER_THRESH:
+				continue
+			var give := src_acc * 0.4
+			for d in 8:
+				var snx := gx2 + _D8X[d]
+				var snz := gz2 + _D8Z[d]
+				if snx < 0 or snx >= _ws_dim or snz < 0 or snz >= _ws_dim:
+					continue
+				var nidx2 := snz * _ws_dim + snx
+				spread[nidx2] = maxf(spread[nidx2], give)
+	_ws_accum = spread
+
 	# Step 5 — store flow directions for creek path tracing
 	_ws_flow = flow
 
@@ -1222,10 +1248,14 @@ func _trace_creek_paths() -> void:
 					break
 				cgx += _D8X[best_d]
 				cgz += _D8Z[best_d]
-				ext_visited[cgz * _ws_dim + cgx] = true
-				visited[cgz * _ws_dim + cgx] = true
+				var ext_idx := cgz * _ws_dim + cgx
+				ext_visited[ext_idx] = true
+				visited[ext_idx] = true
+				var carry_acc: float = raw_accums[raw_accums.size() - 1]
 				raw_points.append(Vector2(float(cgx), float(cgz)))
-				raw_accums.append(raw_accums[raw_accums.size() - 1])
+				raw_accums.append(carry_acc)
+				if ext_idx < _ws_accum.size():
+					_ws_accum[ext_idx] = maxf(_ws_accum[ext_idx], carry_acc)
 				if best_h < WATER_LEVEL + 0.1:
 					break
 
@@ -1465,10 +1495,13 @@ func _stamp_creek_bed() -> void:
 
 				var raw_h := _get_raw_height_no_paths(p.x, p.z)
 				var terrain_excess := maxf(raw_h - p.y, 0.0)
+				var local_accum := _ws_sample_accum(p.x, p.z)
 
 				var ridge_bonus := clampf(terrain_excess / 8.0, 0.0, 1.5) * 8.0
 				var radius := w + 3.0 + ridge_bonus
-				var bed_center := p.y - _CREEK_DEPTH - minf(terrain_excess * 0.15, 2.0)
+				var bed_center := p.y - _CREEK_DEPTH - terrain_excess * 0.4
+				if local_accum > _WS_RIVER_THRESH:
+					bed_center = minf(bed_center, WATER_LEVEL - 0.5)
 				var inner_r := w * 0.75 + ridge_bonus * 0.4
 
 				var cx_min := int(floor((p.x - radius) / _CREEK_BED_CELL))
@@ -1728,6 +1761,11 @@ func get_height_at(x: float, z: float) -> float:
 				var norm_acc := clampf((effective_accum - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 				var channel_w_factor := lerpf(0.3, 1.0, norm_acc)
 				h -= _CREEK_DEPTH * creek_t * channel_w_factor
+				if effective_accum > _WS_RIVER_THRESH:
+					var river_t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_THRESH * 3.0, effective_accum)
+					var river_floor := WATER_LEVEL - lerpf(0.5, _CREEK_DEPTH, river_t)
+					if h > river_floor:
+						h = lerpf(h, river_floor, creek_t * river_t)
 		else:
 			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum)
 			if bank_t > 0.0:
