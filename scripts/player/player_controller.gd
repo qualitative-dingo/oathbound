@@ -1554,54 +1554,41 @@ func _clamp_to_terrain() -> void:
 	# Raycast empty (collision likely disabled) — use analytic height as fallback
 	var wg := _find_world_generator()
 	if wg:
-		var analytic_y := _sample_max_ground(wg)
-		if global_position.y < analytic_y - 0.02:
-			global_position.y = analytic_y + 0.25
+		var analytic_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
+		if global_position.y < analytic_y - 0.5:
+			global_position.y = analytic_y + 0.5
 			velocity.y = 0.0
 
 
-func _sample_max_ground(wg: WorldGenerator) -> float:
-	var px := global_position.x
-	var pz := global_position.z
-	var h := wg.get_height_at_scene(px, pz)
-	const OFF := 1.4
-	h = maxf(h, wg.get_height_at_scene(px + OFF, pz))
-	h = maxf(h, wg.get_height_at_scene(px - OFF, pz))
-	h = maxf(h, wg.get_height_at_scene(px, pz + OFF))
-	h = maxf(h, wg.get_height_at_scene(px, pz - OFF))
-	return h
-
 func _pre_move_analytic_guard() -> void:
-	if _is_swimming:
+	if _is_swimming or is_on_floor():
 		return
 	var wg := _find_world_generator()
 	if not wg:
 		return
-	var ground_y := _sample_max_ground(wg)
-	if global_position.y < ground_y - 0.02:
-		global_position.y = ground_y + 0.25
-		velocity.y = 0.0
-	elif global_position.y < ground_y + 0.1 and velocity.y < 0.0:
+	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
+	if global_position.y < ground_y - 0.1 and velocity.y < 0.0:
+		global_position.y = ground_y + 0.5
 		velocity.y = 0.0
 
 
 var _analytic_floor_corrections := 0
 
 func _enforce_analytic_floor() -> void:
-	if _in_cave or flight_mode or _is_swimming:
+	if _in_cave or flight_mode or _is_swimming or is_on_floor():
 		return
 	var wg := _find_world_generator()
 	if not wg:
 		return
-	var ground_y := _sample_max_ground(wg)
-	if global_position.y >= ground_y - 0.02:
+	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
+	if global_position.y >= ground_y - 0.1:
 		return
-	var push_to := ground_y + 0.25
+	var push_to := ground_y + 0.5
 	_analytic_floor_corrections += 1
 	if _analytic_floor_corrections <= 20 or _analytic_floor_corrections % 100 == 0:
-		print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f, on_floor=%s) frame=%d" % [
+		print("[ANALYTIC FLOOR] #%d corrected Y=%.2f → %.2f (ground=%.2f) frame=%d" % [
 			_analytic_floor_corrections, global_position.y, push_to,
-			ground_y, str(is_on_floor()), Engine.get_frames_drawn()])
+			ground_y, Engine.get_frames_drawn()])
 	global_position.y = push_to
 	if velocity.y < 0.0:
 		velocity.y = 0.0
