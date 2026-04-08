@@ -2881,15 +2881,6 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 				var lake_shore := smoothstep(-0.10, -0.30, lake_n)
 				river_bank = maxf(river_bank, lake_shore)
 
-			if not _creek_bed.is_empty():
-				var cb_ix := int(floor(wx / _CREEK_BED_CELL))
-				var cb_iz := int(floor(wz / _CREEK_BED_CELL))
-				var cb_key := Vector2i(cb_ix, cb_iz)
-				if _creek_bed.has(cb_key):
-					var bed_h: float = _creek_bed[cb_key]
-					var creek_factor := clampf(1.0 - (h - bed_h) / 2.0, 0.0, 1.0)
-					river_bank = maxf(river_bank, creek_factor)
-
 			river_bank = clampf(river_bank, 0.0, 1.0)
 			colors.append(Color(path_f, brightness, river_bank))
 
