@@ -1553,11 +1553,22 @@ func _clamp_to_terrain() -> void:
 	# Raycast empty (collision likely disabled) — use analytic height as fallback
 	var wg := _find_world_generator()
 	if wg:
-		var analytic_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
-		if global_position.y < analytic_y - 1.0:
-			global_position.y = analytic_y + 0.5
+		var analytic_y := _sample_max_ground(wg)
+		if global_position.y < analytic_y - 0.02:
+			global_position.y = analytic_y + 0.25
 			velocity.y = 0.0
 
+
+func _sample_max_ground(wg: WorldGenerator) -> float:
+	var px := global_position.x
+	var pz := global_position.z
+	var h := wg.get_height_at_scene(px, pz)
+	const OFF := 1.4
+	h = maxf(h, wg.get_height_at_scene(px + OFF, pz))
+	h = maxf(h, wg.get_height_at_scene(px - OFF, pz))
+	h = maxf(h, wg.get_height_at_scene(px, pz + OFF))
+	h = maxf(h, wg.get_height_at_scene(px, pz - OFF))
+	return h
 
 func _pre_move_analytic_guard() -> void:
 	if _is_swimming:
@@ -1565,7 +1576,7 @@ func _pre_move_analytic_guard() -> void:
 	var wg := _find_world_generator()
 	if not wg:
 		return
-	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
+	var ground_y := _sample_max_ground(wg)
 	if global_position.y < ground_y - 0.02:
 		global_position.y = ground_y + 0.25
 		velocity.y = 0.0
@@ -1581,13 +1592,9 @@ func _enforce_analytic_floor() -> void:
 	var wg := _find_world_generator()
 	if not wg:
 		return
-	var ground_y: float = wg.get_height_at_scene(global_position.x, global_position.z)
+	var ground_y := _sample_max_ground(wg)
 	if global_position.y >= ground_y - 0.02:
 		return
-	# Player is below the analytic terrain surface — correct immediately.
-	# Push above by a generous margin so the visual mesh (which can sit
-	# slightly higher than the analytic height at interpolated points)
-	# never shows the player clipping.
 	var push_to := ground_y + 0.25
 	_analytic_floor_corrections += 1
 	if _analytic_floor_corrections <= 20 or _analytic_floor_corrections % 100 == 0:

@@ -581,6 +581,10 @@ func _physics_process(delta: float) -> void:
 					continue
 				var wp := get_world_position(p)
 				var ground := get_height_at(wp.x, wp.z)
+				ground = maxf(ground, get_height_at(wp.x + 1.4, wp.z))
+				ground = maxf(ground, get_height_at(wp.x - 1.4, wp.z))
+				ground = maxf(ground, get_height_at(wp.x, wp.z + 1.4))
+				ground = maxf(ground, get_height_at(wp.x, wp.z - 1.4))
 				if p.global_position.y < ground - 0.5:
 					p.global_position.y = ground + 0.5
 					p.velocity = Vector3.ZERO
