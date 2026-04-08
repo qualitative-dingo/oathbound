@@ -86,7 +86,7 @@ const _CREEK_ACCUM_THRESH := 2.5
 const _CREEK_MIN_ELEV := 1.5          # min terrain height above WATER_LEVEL
 const _CREEK_MIN_WIDTH := 2.0
 const _CREEK_MAX_WIDTH := 33.2
-const _CREEK_DEPTH := 1.2             # how deep the channel is carved
+const _CREEK_DEPTH := 2.5             # how deep the channel is carved
 const _CREEK_SUBDIV := 14             # interpolation points between grid cells
 var _creek_segments: Dictionary = {}   # Vector2i -> Array[Dictionary]
 var _creek_shader_mat: ShaderMaterial
@@ -1095,14 +1095,15 @@ func _trace_creek_paths() -> void:
 			raw_points.append(Vector2(float(cgx), float(cgz)))
 			raw_accums.append(_ws_accum[cidx])
 
-			var ch: float = _ws_heights[cidx]
+			var ch_wx: float = -world_radius + float(cgx) * _WS_CELL
+			var ch_wz: float = -world_radius + float(cgz) * _WS_CELL
+			var ch: float = get_height_at(ch_wx, ch_wz)
 			if ch < WATER_LEVEL + 0.1:
 				break
 
 			var fd: int = _ws_flow[cidx]
 			if fd < 0:
-				# Bridge flat spots: find lowest neighbor and continue (limited)
-				if flat_bridges >= 3:
+				if flat_bridges >= 8:
 					break
 				var lowest_d := -1
 				var lowest_h := ch + 999.0
@@ -1116,9 +1117,32 @@ func _trace_creek_paths() -> void:
 						lowest_h = bh
 						lowest_d = d
 				if lowest_d < 0:
-					break
-				cgx += _D8X[lowest_d]
-				cgz += _D8Z[lowest_d]
+					var best_dx := 0
+					var best_dz := 0
+					var best_far_h := ch + 999.0
+					for fz in range(-2, 3):
+						for fx in range(-2, 3):
+							if fx == 0 and fz == 0:
+								continue
+							var fnx := cgx + fx
+							var fnz := cgz + fz
+							if fnx < 1 or fnx >= _ws_dim - 1 or fnz < 1 or fnz >= _ws_dim - 1:
+								continue
+							var fid := fnz * _ws_dim + fnx
+							if visited.has(fid):
+								continue
+							var fh: float = _ws_heights[fid]
+							if fh < best_far_h:
+								best_far_h = fh
+								best_dx = fx
+								best_dz = fz
+					if best_far_h >= ch + 999.0:
+						break
+					cgx += best_dx
+					cgz += best_dz
+				else:
+					cgx += _D8X[lowest_d]
+					cgz += _D8Z[lowest_d]
 				flat_bridges += 1
 				continue
 			flat_bridges = 0
@@ -1174,6 +1198,19 @@ func _trace_creek_paths() -> void:
 
 				var occ_key := Vector2i(int(floor(wx / OCC_CELL)), int(floor(wz / OCC_CELL)))
 				if occupied.has(occ_key) and not points.is_empty():
+					var step_adv := _WS_CELL / float(_CREEK_SUBDIV) * 0.25
+					var last_w_occ := widths[widths.size() - 1] if not widths.is_empty() else 1.0
+					for ti in 4:
+						var tf := float(ti + 1) / 4.0
+						var tw := last_w_occ * (1.0 - tf)
+						wx += seg_dir.x * step_adv
+						wz += seg_dir.y * step_adv
+						var ty := get_height_at(wx, wz) + 0.08
+						if not points.is_empty():
+							cum_dist += Vector3(wx, ty, wz).distance_to(points[points.size() - 1])
+						points.append(Vector3(wx, ty, wz))
+						widths.append(tw)
+						flow_uvs.append(cum_dist)
 					entered_pool = true
 					break
 
@@ -1187,7 +1224,7 @@ func _trace_creek_paths() -> void:
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
 				var terrain_h := get_height_at(wx, wz)
 				var near_pool := lake_n < -0.10 or terrain_h < WATER_LEVEL + 0.3
-				var in_pool := lake_n < -0.15 or terrain_h < WATER_LEVEL - 0.5
+				var in_pool := lake_n < -0.15 and terrain_h < WATER_LEVEL - 0.5
 
 				if in_pool:
 					if not points.is_empty():
@@ -1323,9 +1360,9 @@ func _stamp_creek_bed() -> void:
 			for i in points.size():
 				var p := points[i]
 				var w := widths[i]
-				var radius := w + 2.5
-				var bed_center := p.y - 1.2
-				var inner_r := w * 0.7
+				var radius := w + 3.0
+				var bed_center := p.y - _CREEK_DEPTH
+				var inner_r := w * 0.75
 
 				var cx_min := int(floor((p.x - radius) / _CREEK_BED_CELL))
 				var cx_max := int(floor((p.x + radius) / _CREEK_BED_CELL))
@@ -1348,7 +1385,7 @@ func _stamp_creek_bed() -> void:
 							carve_h = bed_center
 						else:
 							var bank_t := clampf((dist - inner_r) / maxf(radius - inner_r, 0.01), 0.0, 1.0)
-							carve_h = lerpf(bed_center, p.y + 0.3, bank_t * bank_t)
+							carve_h = lerpf(bed_center, p.y + 0.5, bank_t * bank_t * bank_t)
 						var key := Vector2i(cx, cz)
 						if _creek_bed.has(key):
 							_creek_bed[key] = minf(_creek_bed[key] as float, carve_h)
@@ -2690,6 +2727,15 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
 				var lake_shore := smoothstep(-0.10, -0.30, lake_n)
 				river_bank = maxf(river_bank, lake_shore)
+
+			if not _creek_bed.is_empty():
+				var cb_ix := int(floor(wx / _CREEK_BED_CELL))
+				var cb_iz := int(floor(wz / _CREEK_BED_CELL))
+				var cb_key := Vector2i(cb_ix, cb_iz)
+				if _creek_bed.has(cb_key):
+					var bed_h: float = _creek_bed[cb_key]
+					var creek_factor := clampf((h - bed_h) / 2.0, 0.0, 1.0)
+					river_bank = maxf(river_bank, creek_factor)
 
 			river_bank = clampf(river_bank, 0.0, 1.0)
 			colors.append(Color(path_f, brightness, river_bank))
