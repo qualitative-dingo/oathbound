@@ -77,7 +77,10 @@ void fragment() {
 	bl = bl * bl * bl * bl;
 	bl /= (bl.x + bl.y + bl.z + 0.0001);
 
-	vec3 rock_col = vec3(0.26, 0.27, 0.30);
+	// Height-based base tone: mossy-dark at base, neutral mid, lighter peaks
+	float height_t = smoothstep(10.0, 80.0, wpos.y);
+	vec3 rock_col = mix(vec3(0.22, 0.24, 0.20), vec3(0.26, 0.27, 0.30), height_t);
+	rock_col = mix(rock_col, vec3(0.35, 0.36, 0.38), smoothstep(60.0, 120.0, wpos.y));
 
 	// Regional bias — whole mountains lighter or darker
 	float reg_x = vnoise_fast(wpos.zy * 0.002 + vec2(1337.0, 42.0));
@@ -100,6 +103,13 @@ void fragment() {
 	// Low-frequency grain only
 	float grain_lo = vnoise_fast(wpos.xz * 0.15 + vec2(200.0, 400.0));
 	rock_col *= 0.88 + grain_lo * 0.24;
+
+	// Moss/lichen on upward-facing rock (fades at altitude)
+	float upface = smoothstep(0.4, 0.7, world_normal.y) * rock_w;
+	float moss_n = vnoise_fast(wpos.xz * 0.08 + vec2(600.0, 200.0));
+	float moss = upface * smoothstep(0.3, 0.6, moss_n) * 0.3;
+	moss *= 1.0 - smoothstep(50.0, 90.0, wpos.y);
+	rock_col = mix(rock_col, vec3(0.15, 0.22, 0.10), moss);
 
 	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * v_brightness;
 	ground = mix(ground, bank_color, bm * (1.0 - rock_w));

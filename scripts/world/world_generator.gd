@@ -94,7 +94,7 @@ var _creek_segments: Dictionary = {}   # Vector2i -> Array[Dictionary]
 var _creek_shader_mat: ShaderMaterial
 
 # ─── Creek Bed Grid (sparse terrain carving matching creek mesh width) ────────
-const _CREEK_BED_CELL := 4.0
+const _CREEK_BED_CELL := 2.0
 var _creek_bed: Dictionary = {}        # Vector2i -> float (target bed height)
 
 # ─── Terrain Modifications (hoe / leveling) ──────────────────────────────────
@@ -1420,9 +1420,14 @@ func _stamp_creek_bed() -> void:
 			for i in points.size():
 				var p := points[i]
 				var w := widths[i]
-				var radius := w + 3.0
-				var bed_center := p.y - _CREEK_DEPTH
-				var inner_r := w * 0.75
+
+				var raw_h := _get_raw_height_no_paths(p.x, p.z)
+				var terrain_excess := maxf(raw_h - p.y, 0.0)
+
+				var ridge_bonus := clampf(terrain_excess / 8.0, 0.0, 1.5) * 8.0
+				var radius := w + 3.0 + ridge_bonus
+				var bed_center := p.y - _CREEK_DEPTH - minf(terrain_excess * 0.15, 2.0)
+				var inner_r := w * 0.75 + ridge_bonus * 0.4
 
 				var cx_min := int(floor((p.x - radius) / _CREEK_BED_CELL))
 				var cx_max := int(floor((p.x + radius) / _CREEK_BED_CELL))
@@ -2654,7 +2659,11 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 		for i in points.size():
 			var p := points[i]
-			var w := half_widths[i] + 3.0
+
+			var raw_h := _get_raw_height_no_paths(p.x, p.z)
+			var t_excess := maxf(raw_h - p.y, 0.0)
+			var ridge_mesh_bonus := clampf(t_excess / 8.0, 0.0, 1.5) * 8.0
+			var w := half_widths[i] + 3.0 + ridge_mesh_bonus
 
 			var uv_y := flow_uvs[i] * uv_scale
 

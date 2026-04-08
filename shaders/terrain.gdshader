@@ -64,7 +64,13 @@ vec3 rock_color(vec3 wpos, vec3 wnorm, float steepness) {
 	bl = pow(bl, vec3(4.0));
 	bl /= (bl.x + bl.y + bl.z + 0.0001);
 
-	vec3 col = rock_color_base;
+	// Height-based base tone: mossy-dark at base, neutral mid, lighter peaks
+	float height_t = smoothstep(10.0, 80.0, wpos.y);
+	vec3 low_rock = vec3(0.22, 0.24, 0.20);
+	vec3 mid_rock = rock_color_base;
+	vec3 peak_rock = vec3(0.35, 0.36, 0.38);
+	vec3 col = mix(low_rock, mid_rock, height_t);
+	col = mix(col, peak_rock, smoothstep(60.0, 120.0, wpos.y));
 
 	// ── Regional bias — shifts whole mountains lighter or darker ──
 	float region = tri_noise(wpos, bl, 0.002, vec2(1337.0, 42.0));
@@ -95,6 +101,16 @@ vec3 rock_color(vec3 wpos, vec3 wnorm, float steepness) {
 	float dark_fac = 1.0 - clamp(luma / 0.3, 0.0, 1.0);
 	col += vec3(0.07, 0.07, 0.06) * vein * dark_fac;
 
+	// ── Moss/lichen on upward-facing rock surfaces ──
+	float upface = smoothstep(0.4, 0.7, wnorm.y);
+	float moss_noise = vnoise(wpos.xz * 0.08 + vec2(600.0, 200.0));
+	float moss_detail = vnoise(wpos.xz * 0.3 + vec2(150.0, 830.0));
+	float moss = upface * smoothstep(0.3, 0.6, moss_noise) * 0.3;
+	moss *= (0.7 + moss_detail * 0.6);
+	// Moss fades at high altitude (too cold/exposed)
+	moss *= 1.0 - smoothstep(50.0, 90.0, wpos.y);
+	col = mix(col, vec3(0.15, 0.22, 0.10), moss);
+
 	return col;
 }
 
@@ -123,17 +139,16 @@ varying float v_river_bank;
 
 // Analytical rock bump — deterministic function of world XZ, so the gradient
 // is identical regardless of which zone mesh draws the fragment.
-// Uses the first 4 octaves (coarse-to-medium); fine grit and crack veins are
-// omitted because they contribute negligible visible bump at typical distances.
 float rock_bump_at(vec2 xz) {
-	float rn1 = vnoise(xz * 0.12 + vec2(311.0, 719.0));
-	float rn2 = vnoise(xz * 0.4  + vec2(853.0, 127.0));
-	float rn3 = vnoise(xz * 1.2  + vec2(491.0, 953.0));
-	float rn4 = vnoise(xz * 3.5  + vec2(137.0, 641.0));
-	return (rn1 - 0.5) * 0.22
-	     + (rn2 - 0.5) * 0.20
-	     + (rn3 - 0.5) * 0.18
-	     + (rn4 - 0.5) * 0.15;
+	float base = (vnoise(xz * 0.12 + vec2(311.0, 719.0)) - 0.5) * 0.22
+	           + (vnoise(xz * 0.4  + vec2(853.0, 127.0)) - 0.5) * 0.20
+	           + (vnoise(xz * 1.2  + vec2(491.0, 953.0)) - 0.5) * 0.18
+	           + (vnoise(xz * 3.5  + vec2(137.0, 641.0)) - 0.5) * 0.15
+	           + (vnoise(xz * 9.0  + vec2(557.0, 283.0)) - 0.5) * 0.13
+	           + (vnoise(xz * 22.0 + vec2(731.0, 419.0)) - 0.5) * 0.08;
+	float crack = vnoise(xz * 0.07 + vec2(919.0, 137.0));
+	float vein = 1.0 - pow(abs(crack * 2.0 - 1.0), 0.35);
+	return base + vein * 0.04;
 }
 
 void vertex() {
@@ -174,7 +189,7 @@ void fragment() {
 	// Derive all visual slope signals from noise-driven rock_w to avoid triangle edges
 	float slope_path_fade = grass_w;
 	float steep_override = rock_w;
-	float blend_power = mix(8.0, 2.0, rock_w);
+	float blend_power = mix(8.0, 6.0, rock_w);
 	vec3 blend = abs(world_normal);
 	blend = pow(blend, vec3(blend_power));
 	blend /= (blend.x + blend.y + blend.z + 0.0001);
@@ -267,10 +282,7 @@ void fragment() {
 	AO = 1.0 - ao_mask * 2.0;
 	AO_LIGHT_AFFECT = 0.5;
 
-	// Rock bump — analytical world-space central differences instead of dFdx/dFdy.
-	// This produces identical gradients on both sides of a zone boundary because
-	// the computation depends only on world position, not on screen-space pixels
-	// or which draw call renders the fragment.
+	// Rock bump — analytical world-space central differences (no zone boundary seams)
 	if (rock_w > 0.01) {
 		float eps = 0.15;
 		float rb_px = rock_bump_at(world_pos.xz + vec2(eps, 0.0));
@@ -280,10 +292,11 @@ void fragment() {
 		float inv_eps2 = 1.0 / (2.0 * eps);
 		float grad_x = (rb_px - rb_nx) * inv_eps2;
 		float grad_z = (rb_pz - rb_nz) * inv_eps2;
-		NORMAL = normalize(NORMAL + vec3(
-			grad_x * 45.0 * rock_w,
-			0.0,
-			grad_z * 45.0 * rock_w
-		));
+
+		float view_dist = length(VERTEX);
+		float bump_lod = 1.0 - smoothstep(30.0, 120.0, view_dist);
+		float bump_str = 3.0 * rock_w * bump_lod;
+
+		NORMAL = normalize(NORMAL + vec3(grad_x * bump_str, 0.0, grad_z * bump_str));
 	}
 }
