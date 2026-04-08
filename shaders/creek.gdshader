@@ -68,7 +68,7 @@ void fragment() {
 
 	// Scrolling UV along the flow direction (V axis = along creek)
 	float scroll = TIME * speed;
-	vec2 flow_uv = vec2(v_uv.x, v_uv.y + scroll);
+	vec2 flow_uv = vec2(v_uv.x, v_uv.y - scroll);
 
 	// Multi-octave noise for surface detail
 	float n1 = gnoise(flow_uv * ripple_scale * 2.0);
