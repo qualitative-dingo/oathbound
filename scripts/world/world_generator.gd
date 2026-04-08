@@ -1102,8 +1102,8 @@ func _trace_creek_paths() -> void:
 
 			var fd: int = _ws_flow[cidx]
 			if fd < 0:
-			if flat_bridges >= 15:
-				break
+				if flat_bridges >= 15:
+					break
 				var lowest_d := -1
 				var lowest_h := ch + 999.0
 				for d in 8:
