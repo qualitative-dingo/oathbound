@@ -1163,11 +1163,11 @@ func _trace_creek_paths() -> void:
 				var best_d := -1
 				var best_h := 99999.0
 				for d in 8:
-					var enx := cgx + _D8X[d]
-					var enz := cgz + _D8Z[d]
+					var enx: int = cgx + _D8X[d]
+					var enz: int = cgz + _D8Z[d]
 					if enx < 1 or enx >= _ws_dim - 1 or enz < 1 or enz >= _ws_dim - 1:
 						continue
-					var eid := enz * _ws_dim + enx
+					var eid: int = enz * _ws_dim + enx
 					if ext_visited.has(eid):
 						continue
 					var ewx := -world_radius + float(enx) * _WS_CELL
