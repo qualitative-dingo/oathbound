@@ -150,10 +150,11 @@ static func create_camp(pos: Vector3, height_func: Callable) -> Node3D:
 
 	for child in camp.get_children():
 		if child is Node3D and child != npc:
-			var cx := pos.x + child.position.x
-			var cz := pos.z + child.position.z
+			var c3d := child as Node3D
+			var cx: float = pos.x + c3d.position.x
+			var cz: float = pos.z + c3d.position.z
 			var cy: float = height_func.call(cx, cz)
-			child.position.y = cy - ground_y
+			c3d.position.y = cy - ground_y
 
 	return camp
 
