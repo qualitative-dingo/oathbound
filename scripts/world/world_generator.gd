@@ -2903,8 +2903,11 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 				surface_normal = -surface_normal
 
 			var slope_factor := clampf(slopes[i] / 1.0, 0.0, 1.0)
-			var col_surface := Color(slope_factor, 1.0, 1.0, 1.0)
-			var col_skirt := Color(slope_factor, 0.0, 1.0, 1.0)
+			var fd := flow_dir.normalized()
+			var fd_b := fd.x * 0.5 + 0.5
+			var fd_a := fd.y * 0.5 + 0.5
+			var col_surface := Color(slope_factor, 1.0, fd_b, fd_a)
+			var col_skirt := Color(slope_factor, 0.0, fd_b, fd_a)
 
 			# 4 verts per cross-section: left_bottom, left_top, right_top, right_bottom
 			verts.append(left_bottom)

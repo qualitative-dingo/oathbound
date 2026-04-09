@@ -42,11 +42,13 @@ varying float v_slope;
 varying float v_world_y;
 varying vec2 v_world_xz;
 varying float v_surface;
+varying vec2 v_flow_dir;
 
 void vertex() {
 	v_uv = UV;
 	v_slope = COLOR.r;
 	v_surface = COLOR.g;
+	v_flow_dir = vec2(COLOR.b * 2.0 - 1.0, COLOR.a * 2.0 - 1.0);
 	vec3 wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_world_y = wpos.y;
 	v_world_xz = wpos.xz;
@@ -55,7 +57,7 @@ void vertex() {
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
 	// Noise-based ripple — only on surface verts, not skirt walls
-	vec2 rp = wpos.xz * 0.3 + vec2(TIME * speed * 0.8, TIME * speed * 0.5);
+	vec2 rp = wpos.xz * 0.3 + v_flow_dir * TIME * speed * 2.0;
 	float ripple = (gnoise(rp) - 0.5) * ripple_strength * 2.0;
 	ripple += (gnoise(rp * 2.3 + vec2(71.0, 37.0)) - 0.5) * ripple_strength * 1.2;
 	float ripple_fade = 1.0 - smoothstep(0.2, 0.6, v_slope);
@@ -68,14 +70,18 @@ void fragment() {
 	// Slope-scaled speed for consistent vertex/fragment animation
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
-	// Scrolling UV along the flow direction (V axis = along creek)
-	float scroll = TIME * speed;
-	vec2 flow_uv = vec2(v_uv.x, v_uv.y - scroll);
+	// World-space flow scrolling — patterns move in actual downhill direction
+	vec2 flow_offset = v_flow_dir * TIME * speed * 3.0;
+	vec2 flow_uv = v_world_xz * 0.15 + flow_offset;
 
 	// Multi-octave noise for surface detail with directional streaks
+	vec2 perp_dir = vec2(-v_flow_dir.y, v_flow_dir.x);
 	float n1 = gnoise(flow_uv * ripple_scale * 2.0);
 	float n2 = gnoise(flow_uv * ripple_scale * 4.5 + vec2(50.0, 30.0));
-	float streak = gnoise(vec2(flow_uv.x * ripple_scale * 6.0, flow_uv.y * ripple_scale * 0.8));
+	// Directional streaks elongated along the flow direction
+	vec2 streak_uv = vec2(dot(v_world_xz, perp_dir) * 6.0, dot(v_world_xz, v_flow_dir) * 0.8) * ripple_scale
+	               + vec2(0.0, TIME * speed * 2.0);
+	float streak = gnoise(streak_uv);
 	float combined = n1 * 0.45 + n2 * 0.25 + streak * 0.3;
 
 	// ── Depth sampling for terrain intersection ──
@@ -170,7 +176,7 @@ void fragment() {
 	// ── Surface normal perturbation via noise central differences (surface only) ──
 	float ns = ripple_strength * 3.0 * v_surface;
 	float eps = 0.15;
-	vec2 np = v_world_xz * 0.4 + vec2(TIME * 0.6, TIME * 0.35);
+	vec2 np = v_world_xz * 0.4 + v_flow_dir * TIME * flow_speed * 1.5;
 	float nc = gnoise(np) + gnoise(np * 2.7 + vec2(43.0, 91.0)) * 0.5;
 	float ndx = gnoise(np + vec2(eps, 0.0)) + gnoise((np + vec2(eps, 0.0)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
 	float ndz = gnoise(np + vec2(0.0, eps)) + gnoise((np + vec2(0.0, eps)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
