@@ -173,7 +173,8 @@ func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h:
 	for zone_coord: Vector2i in affected_zones:
 		rebuild_zone(zone_coord)
 
-	_notify_water_terrain_changed(world_x, world_z, radius)
+	# Water physics notification — disabled until propagation is tuned
+	#_notify_water_terrain_changed(world_x, world_z, radius)
 
 var _rebuild_ready_queue: Array = []
 
@@ -926,8 +927,8 @@ func _compute_watershed() -> void:
 	# Step 8 — stamp creek bed grid for wide terrain carving
 	_stamp_creek_bed()
 
-	# Step 9 — register creek points as permanent water sources
-	_register_water_sources()
+	# Step 9 — water physics source registration — disabled until propagation is tuned
+	#_register_water_sources()
 
 
 func _register_water_sources() -> void:
@@ -2257,9 +2258,9 @@ func _process_pending_zones() -> void:
 	# Track if we assigned a terrain shape this frame (expensive ConcavePolygonShape3D)
 	var terrain_shape_assigned := _apply_rebuild_results()
 
-	# 0.6. Water physics simulation (throttled cellular propagation)
-	_simulate_water()
-	_rebuild_dirty_water_meshes()
+	# 0.6. Water physics simulation — disabled until propagation is tuned
+	#_simulate_water()
+	#_rebuild_dirty_water_meshes()
 
 	# 1. Collect completed background builds — cap per frame to prevent burst spikes
 	# PERF: Reduced from 4 to 2 to spread work across more frames
@@ -2693,8 +2694,8 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 	# Build creek/river strip meshes for this zone
 	_build_creek_meshes_for_zone(zone_root, coord)
 
-	# Build water physics mesh for this zone
-	_build_water_mesh_for_zone(zone_root, coord)
+	# Water physics mesh — disabled until propagation is properly tuned
+	#_build_water_mesh_for_zone(zone_root, coord)
 
 	# Queue object spawning for the NEXT frame to keep this frame light
 	var micro := _determine_microbiome(coord)
