@@ -3056,6 +3056,23 @@ func _build_mountain_pool_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			if pool_level < -900.0:
 				continue
 
+			# Skip if any part of this quad overlaps creek bed cells
+			if not _creek_bed.is_empty():
+				var cb_x0 := int(floor(wx / _CREEK_BED_CELL)) - 1
+				var cb_x1 := int(ceil((wx + step) / _CREEK_BED_CELL)) + 1
+				var cb_z0 := int(floor(wz / _CREEK_BED_CELL)) - 1
+				var cb_z1 := int(ceil((wz + step) / _CREEK_BED_CELL)) + 1
+				var near_creek := false
+				for cbx in range(cb_x0, cb_x1 + 1):
+					for cbz in range(cb_z0, cb_z1 + 1):
+						if _creek_bed.has(Vector2i(cbx, cbz)):
+							near_creek = true
+							break
+					if near_creek:
+						break
+				if near_creek:
+					continue
+
 			# All 4 corners must be below pool level
 			var corners_ok := true
 			for ci in 4:

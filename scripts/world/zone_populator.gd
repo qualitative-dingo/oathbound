@@ -2019,7 +2019,7 @@ static func _scatter_grass(
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
 	var transforms: Array[Transform3D] = []
-	const _RG_GRASS_REJECT := _RG_WATER | _RG_STRUCTURE
+	const _RG_GRASS_REJECT := _RG_WATER | _RG_STRUCTURE | _RG_PATH | _RG_DIRT
 
 	const GRASS_CELL := 0.325
 	var cell_x0 := int(floor(origin_x / GRASS_CELL))
@@ -2048,11 +2048,8 @@ static func _scatter_grass(
 				continue
 
 			var h5 := _grass_cell_hash(gcx, gcz, 4)
-			var d1 := sin(wx * 0.08 + wz * 0.06 + 31.7) * 0.5 + 0.5
-			var d2 := sin(wx * 0.05 - wz * 0.09 + 74.3) * 0.5 + 0.5
-			var d3 := sin(wx * 0.13 + wz * 0.03 - 15.9) * 0.5 + 0.5
-			var density := (d1 + d2 + d3) / 3.0
-			var keep := lerpf(0.50, 1.0, density)
+			var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
+			var keep := lerpf(0.78, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
 			if h5 > keep:
 				continue
 
@@ -2062,6 +2059,12 @@ static func _scatter_grass(
 				continue
 			if sn.y < 0.70:
 				continue
+
+			if ground_y > 25.0:
+				var altitude_thin := smoothstep(25.0, 60.0, ground_y)
+				var altitude_keep := lerpf(1.0, 0.30, altitude_thin)
+				if _grass_cell_hash(gcx, gcz, 5) > altitude_keep:
+					continue
 
 			var scale_val := 0.4 + h3 * 0.45
 			var rot := h4 * TAU
