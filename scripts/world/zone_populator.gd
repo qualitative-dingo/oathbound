@@ -2013,7 +2013,7 @@ static func _scatter_grass(
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
 	var transforms: Array[Transform3D] = []
-	const _RG_GRASS_REJECT := _RG_PATH | _RG_DIRT | _RG_WATER | _RG_STRUCTURE | _RG_BUSH
+	const _RG_GRASS_REJECT := _RG_WATER | _RG_STRUCTURE
 
 	const GRASS_CELL := 0.325
 	var cell_x0 := int(floor(origin_x / GRASS_CELL))
@@ -2047,19 +2047,19 @@ static func _scatter_grass(
 			if tier_n >= 0.75:
 				keep = 1.0
 			elif tier_n >= 0.50:
-				keep = 0.50
+				keep = 0.70
 			elif tier_n >= 0.25:
-				keep = 0.25
+				keep = 0.45
 			else:
-				keep = 0.10
+				keep = 0.20
 			if h5 > keep:
 				continue
 
 			var sn := _hg_snap_and_normal(wx, wz)
 			var ground_y := sn.x
-			if ground_y < _MIN_LAND_Y or ground_y > 20.0:
+			if ground_y < _MIN_LAND_Y or ground_y > 120.0:
 				continue
-			if sn.y < 0.90:
+			if sn.y < 0.85:
 				continue
 			if _hg_is_steep_edge(wx, wz, ground_y):
 				continue
