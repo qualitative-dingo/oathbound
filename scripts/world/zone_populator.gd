@@ -1890,56 +1890,78 @@ static func _scatter_flowers(
 
 		var water_only := fi == 3 or fi == 5
 		var transforms: Array[Transform3D] = []
-		for _i in count:
-			var lx := rng.randf_range(1.0, ZONE_SIZE - 1.0)
-			var lz := rng.randf_range(1.0, ZONE_SIZE - 1.0)
-			var wx := origin_x + lx
-			var wz := origin_z + lz
 
-			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
-			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
-			if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH | _RG_STRUCTURE) != 0:
-				continue
+		const FLOWER_CELL := 3.0
+		var fc_x0 := int(floor(origin_x / FLOWER_CELL))
+		var fc_z0 := int(floor(origin_z / FLOWER_CELL))
+		var fc_x1 := int(ceil((origin_x + ZONE_SIZE) / FLOWER_CELL))
+		var fc_z1 := int(ceil((origin_z + ZONE_SIZE) / FLOWER_CELL))
+		var fc_total := (fc_x1 - fc_x0) * (fc_z1 - fc_z0)
+		var accept_thresh := float(count) / float(fc_total) * 2.5
+		var salt_base := 100 + fi * 10
 
-			var density := _vegetation_density_noise(wx, wz)
-			if density < 0.22:
-				continue
-
-			var sn := _hg_snap_and_normal(wx, wz)
-			var ground_y := sn.x
-			if ground_y < _MIN_LAND_Y or ground_y > 22.0:
-				continue
-			if sn.y < 0.95:
-				continue
-			var _fhc := sn.x
-			if absf(_fhc - _hg_sample(wx + 2.0, wz)) > 1.5 \
-					or absf(_fhc - _hg_sample(wx - 2.0, wz)) > 1.5 \
-					or absf(_fhc - _hg_sample(wx, wz + 2.0)) > 1.5 \
-					or absf(_fhc - _hg_sample(wx, wz - 2.0)) > 1.5:
-				continue
-			if water_only:
-				if ground_y > _WATER_LEVEL + 3.0:
+		for gcz in range(fc_z0, fc_z1):
+			for gcx in range(fc_x0, fc_x1):
+				var h0 := _grass_cell_hash(gcx, gcz, salt_base)
+				if h0 > accept_thresh:
 					continue
-				var near_water := false
-				for probe_r in [2.0, 4.0, 6.0]:
-					for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
-							Vector2(0.707, 0.707), Vector2(-0.707, 0.707),
-							Vector2(0.707, -0.707), Vector2(-0.707, -0.707)]:
-						if _hg_sample(wx + d.x * probe_r, wz + d.y * probe_r) < _WATER_LEVEL + 0.1:
-							near_water = true
+				var h1 := _grass_cell_hash(gcx, gcz, salt_base + 1)
+				var h2 := _grass_cell_hash(gcx, gcz, salt_base + 2)
+				var h3 := _grass_cell_hash(gcx, gcz, salt_base + 3)
+				var h4 := _grass_cell_hash(gcx, gcz, salt_base + 4)
+
+				var wx := (float(gcx) + 0.05 + h1 * 0.9) * FLOWER_CELL
+				var wz := (float(gcz) + 0.05 + h2 * 0.9) * FLOWER_CELL
+				var lx := wx - origin_x
+				var lz := wz - origin_z
+
+				if lx < 0.0 or lx >= ZONE_SIZE or lz < 0.0 or lz >= ZONE_SIZE:
+					continue
+
+				var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
+				var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
+				if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH | _RG_STRUCTURE) != 0:
+					continue
+
+				var density := _vegetation_density_noise(wx, wz)
+				if density < 0.22:
+					continue
+
+				var sn := _hg_snap_and_normal(wx, wz)
+				var ground_y := sn.x
+				if ground_y < _MIN_LAND_Y or ground_y > 22.0:
+					continue
+				if sn.y < 0.95:
+					continue
+				var _fhc := sn.x
+				if absf(_fhc - _hg_sample(wx + 2.0, wz)) > 1.5 \
+						or absf(_fhc - _hg_sample(wx - 2.0, wz)) > 1.5 \
+						or absf(_fhc - _hg_sample(wx, wz + 2.0)) > 1.5 \
+						or absf(_fhc - _hg_sample(wx, wz - 2.0)) > 1.5:
+					continue
+				if water_only:
+					if ground_y > _WATER_LEVEL + 3.0:
+						continue
+					var near_water := false
+					for probe_r in [2.0, 4.0, 6.0]:
+						for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
+								Vector2(0.707, 0.707), Vector2(-0.707, 0.707),
+								Vector2(0.707, -0.707), Vector2(-0.707, -0.707)]:
+							if _hg_sample(wx + d.x * probe_r, wz + d.y * probe_r) < _WATER_LEVEL + 0.1:
+								near_water = true
+								break
+						if near_water:
 							break
-					if near_water:
-						break
-				if not near_water:
-					continue
+					if not near_water:
+						continue
 
-			var scale := rng.randf_range(scale_min, scale_max)
-			var rot := rng.randf_range(0.0, TAU)
-			var sx := quad_w * scale
-			var sy := quad_h * scale
-			var sz := quad_w * scale
-			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
-			transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+				var scale_val := scale_min + h3 * (scale_max - scale_min)
+				var rot := h4 * TAU
+				var sx := quad_w * scale_val
+				var sy := quad_h * scale_val
+				var sz := quad_w * scale_val
+				var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+				transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
 
 		if transforms.is_empty():
 			continue
