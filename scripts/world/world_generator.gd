@@ -2883,8 +2883,9 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var right_wz := p.z + perp.y * w
 			var left_terrain_y := get_height_at(left_wx, left_wz) - zone_origin.y - 0.3
 			var right_terrain_y := get_height_at(right_wx, right_wz) - zone_origin.y - 0.3
-			var left_bottom_y := minf(local_p.y, left_terrain_y)
-			var right_bottom_y := minf(local_p.y, right_terrain_y)
+			var fixed_bottom := local_p.y - _CREEK_DEPTH
+			var left_bottom_y := minf(fixed_bottom, left_terrain_y)
+			var right_bottom_y := minf(fixed_bottom, right_terrain_y)
 
 			var left_bottom := Vector3(left_top.x, left_bottom_y, left_top.z)
 			var right_bottom := Vector3(right_top.x, right_bottom_y, right_top.z)
