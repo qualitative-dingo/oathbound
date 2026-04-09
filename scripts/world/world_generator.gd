@@ -941,10 +941,6 @@ func _register_water_sources() -> void:
 				var p := points[i]
 				var key := _terrain_mod_key(p.x, p.z)
 				_water_sources[key] = p.y
-				if not _water_grid.has(key) or _water_grid[key] < p.y:
-					_water_grid[key] = p.y
-				if not _water_frontier.has(key):
-					_water_frontier.append(key)
 
 
 func _simulate_water() -> void:
@@ -2959,8 +2955,10 @@ func _build_water_mesh_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
 	var uvs := PackedVector2Array()
+	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 	var vert_idx := 0
+	var flat_color := Color(0.0, 1.0, 1.0, 1.0)
 
 	for gz in range(gz_min, gz_max):
 		for gx in range(gx_min, gx_max):
@@ -2984,6 +2982,7 @@ func _build_water_mesh_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			verts.append(Vector3(lx, ly, lz + s))
 			for _n in 4:
 				norms.append(Vector3.UP)
+				colors.append(flat_color)
 			uvs.append(Vector2(0, 0))
 			uvs.append(Vector2(1, 0))
 			uvs.append(Vector2(1, 1))
@@ -3004,6 +3003,7 @@ func _build_water_mesh_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = norms
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = indices
 
 	var arr_mesh := ArrayMesh.new()
