@@ -953,7 +953,7 @@ func _simulate_water() -> void:
 	var processed := 0
 	var next_frontier: Array[Vector2i] = []
 	while processed < WATER_SIM_CELLS_PER_FRAME and not _water_frontier.is_empty():
-		var cell := _water_frontier.pop_back()
+		var cell: Vector2i = _water_frontier.pop_back()
 		processed += 1
 		if not _water_grid.has(cell):
 			continue
