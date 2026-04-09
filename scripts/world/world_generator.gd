@@ -96,6 +96,7 @@ var _creek_shader_mat: ShaderMaterial
 # ─── Creek Bed Grid (sparse terrain carving matching creek mesh width) ────────
 const _CREEK_BED_CELL := 2.0
 var _creek_bed: Dictionary = {}        # Vector2i -> float (target bed height)
+var _creek_water_surface: Dictionary = {} # Vector2i -> float (water surface h at cell)
 
 # ─── Terrain Modifications (hoe / leveling) ──────────────────────────────────
 # Keyed by Vector2i grid coords (world pos quantized to TERRAIN_MOD_STEP).

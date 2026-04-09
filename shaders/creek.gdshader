@@ -70,16 +70,20 @@ void fragment() {
 	// Slope-scaled speed for consistent vertex/fragment animation
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
-	// World-space flow scrolling — patterns move in actual downhill direction
-	vec2 flow_offset = v_flow_dir * TIME * speed * 0.4;
-	vec2 flow_uv = v_world_xz * 0.15 + flow_offset;
+	// Slope-aware surface coordinates: on steep sections, the vertical drop
+	// contributes to the along-flow axis so streaks and patterns run downhill.
+	vec2 perp_dir = vec2(-v_flow_dir.y, v_flow_dir.x);
+	float surf_along = dot(v_world_xz, v_flow_dir) - v_world_y * v_slope;
+	float surf_perp = dot(v_world_xz, perp_dir);
+
+	// Flow scrolling in surface-aligned coordinates
+	vec2 flow_uv = vec2(surf_perp, surf_along) * 0.15 + vec2(0.0, TIME * speed * 0.4);
 
 	// Multi-octave noise for surface detail with directional streaks
-	vec2 perp_dir = vec2(-v_flow_dir.y, v_flow_dir.x);
 	float n1 = gnoise(flow_uv * ripple_scale * 2.0);
 	float n2 = gnoise(flow_uv * ripple_scale * 4.5 + vec2(50.0, 30.0));
 	// Directional streaks elongated along the flow direction
-	vec2 streak_uv = vec2(dot(v_world_xz, perp_dir) * 6.0, dot(v_world_xz, v_flow_dir) * 0.8) * ripple_scale
+	vec2 streak_uv = vec2(surf_perp * 6.0, surf_along * 0.8) * ripple_scale
 	               + vec2(0.0, TIME * speed * 0.5);
 	float streak = gnoise(streak_uv);
 	float combined = n1 * 0.45 + n2 * 0.25 + streak * 0.3;
@@ -176,7 +180,7 @@ void fragment() {
 	// ── Surface normal perturbation via noise central differences (surface only) ──
 	float ns = ripple_strength * 3.0 * v_surface;
 	float eps = 0.15;
-	vec2 np = v_world_xz * 0.4 + v_flow_dir * TIME * flow_speed * 1.5;
+	vec2 np = vec2(surf_perp, surf_along) * 0.4 + vec2(0.0, TIME * flow_speed * 1.5);
 	float nc = gnoise(np) + gnoise(np * 2.7 + vec2(43.0, 91.0)) * 0.5;
 	float ndx = gnoise(np + vec2(eps, 0.0)) + gnoise((np + vec2(eps, 0.0)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
 	float ndz = gnoise(np + vec2(0.0, eps)) + gnoise((np + vec2(0.0, eps)) * 2.7 + vec2(43.0, 91.0)) * 0.5;
