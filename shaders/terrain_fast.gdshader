@@ -11,6 +11,7 @@ uniform float texture_scale : hint_range(0.01, 4.0) = 0.5;
 uniform vec3 tint_color : source_color = vec3(1.0, 1.0, 1.0);
 uniform float slope_start : hint_range(0.0, 1.0) = 0.08;
 uniform float cliff_start : hint_range(0.0, 1.0) = 0.30;
+uniform float min_rock_altitude : hint_range(0.0, 50.0) = 15.0;
 
 uniform vec3 origin_shift;
 uniform vec3 path_color : source_color = vec3(0.18, 0.11, 0.05);
@@ -66,6 +67,10 @@ void fragment() {
 	// In the transition zone, noise determines grass vs rock
 	float rock_w = mix(noise_rock, 1.0, definitely_rock);
 	rock_w *= (1.0 - definitely_grass);
+	float altitude_gate = smoothstep(min_rock_altitude - 5.0, min_rock_altitude + 10.0, wpos.y);
+	altitude_gate = max(altitude_gate, smoothstep(0.5, 0.7, slope));
+	altitude_gate = max(altitude_gate, v_river_bank * 0.5);
+	rock_w *= altitude_gate;
 
 	float pm = smoothstep(0.2, 0.7, v_path_mask);
 	float bm = smoothstep(0.1, 0.6, v_river_bank);

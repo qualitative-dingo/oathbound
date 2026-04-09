@@ -3194,6 +3194,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
+	var macro_grads := PackedVector2Array()
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 
@@ -3267,9 +3268,10 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			var tangent_z := Vector3(0.0, h_down - h_up, 2.0 * step)
 			normals.append(tangent_z.cross(tangent_x).normalized())
 
-	# Fourth pass: macro slope from wide-stencil height sampling.
-	# Used for material gates instead of per-vertex normals — the 16m stencil
-	# smooths over zone boundaries so C0 interpolation junctions are imperceptible.
+	# Fourth pass: macro gradient from wide-stencil height sampling.
+	# Stored in UV2 so the shader can reconstruct a zone-boundary-continuous
+	# normal for triplanar blending. The 16m stencil smooths over boundaries.
+	macro_grads.resize(w * w)
 	const MACRO_R := 8.0
 	for z in range(w):
 		for x in range(w):
@@ -3281,6 +3283,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			var hd := get_height_at(wx, wz + MACRO_R)
 			var gx := (hr - hl) / (2.0 * MACRO_R)
 			var gz := (hd - hu) / (2.0 * MACRO_R)
+			macro_grads[z * w + x] = Vector2(gx, gz)
 			colors[z * w + x].g = clampf(sqrt(gx * gx + gz * gz), 0.0, 1.0)
 
 	# Surface triangles
@@ -3305,6 +3308,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 		verts.append(Vector3(verts[vi].x, verts[vi].y - skirt_drop, verts[vi].z))
 		normals.append(normals[vi])
 		uvs.append(Vector2(0.0, z as float / res))
+		macro_grads.append(macro_grads[vi])
 		colors.append(colors[vi])
 	for z in range(w):
 		# Right edge (x=res)
@@ -3312,6 +3316,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 		verts.append(Vector3(verts[vi].x, verts[vi].y - skirt_drop, verts[vi].z))
 		normals.append(normals[vi])
 		uvs.append(Vector2(1.0, z as float / res))
+		macro_grads.append(macro_grads[vi])
 		colors.append(colors[vi])
 	for x in range(w):
 		# Top edge (z=0)
@@ -3319,6 +3324,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 		verts.append(Vector3(verts[vi].x, verts[vi].y - skirt_drop, verts[vi].z))
 		normals.append(normals[vi])
 		uvs.append(Vector2(x as float / res, 0.0))
+		macro_grads.append(macro_grads[vi])
 		colors.append(colors[vi])
 	for x in range(w):
 		# Bottom edge (z=res)
@@ -3326,6 +3332,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 		verts.append(Vector3(verts[vi].x, verts[vi].y - skirt_drop, verts[vi].z))
 		normals.append(normals[vi])
 		uvs.append(Vector2(x as float / res, 1.0))
+		macro_grads.append(macro_grads[vi])
 		colors.append(colors[vi])
 
 	# Skirt triangle indices — connect edge verts to their dropped duplicates
@@ -3369,6 +3376,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = macro_grads
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = indices
 	return arrays
