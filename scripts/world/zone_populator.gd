@@ -2058,11 +2058,9 @@ static func _scatter_grass(
 
 			var sn := _hg_snap_and_normal(wx, wz)
 			var ground_y := sn.x
-			if ground_y < _MIN_LAND_Y or ground_y > 120.0:
+			if ground_y < 0.1 or ground_y > 120.0:
 				continue
-			if sn.y < 0.85:
-				continue
-			if _hg_is_steep_edge(wx, wz, ground_y):
+			if sn.y < 0.70:
 				continue
 
 			var scale_val := 0.4 + h3 * 0.45
