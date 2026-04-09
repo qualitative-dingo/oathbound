@@ -97,7 +97,6 @@ var _creek_shader_mat: ShaderMaterial
 const _CREEK_BED_CELL := 2.0
 var _creek_bed: Dictionary = {}        # Vector2i -> float (target bed height)
 var _creek_water_surface: Dictionary = {} # Vector2i -> float (water surface h at cell)
-var _creek_flow_dir: Dictionary = {}      # Vector2i -> Vector2 (XZ flow direction)
 
 # ─── Terrain Modifications (hoe / leveling) ──────────────────────────────────
 # Keyed by Vector2i grid coords (world pos quantized to TERRAIN_MOD_STEP).
@@ -1610,8 +1609,6 @@ func _store_creek_segment(zone: Vector2i, points: PackedVector3Array, widths: Pa
 
 func _stamp_creek_bed() -> void:
 	_creek_bed.clear()
-	_creek_water_surface.clear()
-	_creek_flow_dir.clear()
 	for zone_segs in _creek_segments.values():
 		for seg in zone_segs:
 			var points: PackedVector3Array = seg["points"]
@@ -1619,12 +1616,6 @@ func _stamp_creek_bed() -> void:
 			for i in points.size():
 				var p := points[i]
 				var w := widths[i]
-
-				var fdir := Vector2.ZERO
-				if i + 1 < points.size():
-					fdir = Vector2(points[i + 1].x - p.x, points[i + 1].z - p.z).normalized()
-				elif i > 0:
-					fdir = Vector2(p.x - points[i - 1].x, p.z - points[i - 1].z).normalized()
 
 				var raw_h := _get_raw_height_no_paths(p.x, p.z)
 				var terrain_excess := maxf(raw_h - p.y, 0.0)
@@ -1642,7 +1633,6 @@ func _stamp_creek_bed() -> void:
 				var cz_min := int(floor((p.z - radius) / _CREEK_BED_CELL))
 				var cz_max := int(floor((p.z + radius) / _CREEK_BED_CELL))
 				var radius_sq := radius * radius
-				var water_h := p.y
 
 				for cx in range(cx_min, cx_max + 1):
 					for cz in range(cz_min, cz_max + 1):
@@ -1665,9 +1655,6 @@ func _stamp_creek_bed() -> void:
 							_creek_bed[key] = minf(_creek_bed[key] as float, carve_h)
 						else:
 							_creek_bed[key] = carve_h
-						if not _creek_water_surface.has(key) or water_h > (_creek_water_surface[key] as float):
-							_creek_water_surface[key] = water_h
-							_creek_flow_dir[key] = fdir
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2748,9 +2735,6 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 	# Build creek/river strip meshes for this zone
 	_build_creek_meshes_for_zone(zone_root, coord)
 
-	# Fill carved channel crevices the ribbon mesh misses
-	_build_creek_fill_for_zone(zone_root, coord)
-
 	# Build mountain-top lake water surfaces
 	_build_mountain_pool_for_zone(zone_root, coord)
 
@@ -3124,95 +3108,6 @@ func _build_mountain_pool_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 	mi.mesh = arr_mesh
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	zone_root.add_child(mi)
-
-
-func _build_creek_fill_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
-	if _creek_water_surface.is_empty():
-		return
-
-	var zone_wx := coord.x * ZONE_SIZE
-	var zone_wz := coord.y * ZONE_SIZE
-	var zone_origin := Vector3(zone_wx, 0.0, zone_wz)
-	var step := _CREEK_BED_CELL
-
-	var cx_min := int(floor(zone_wx / step))
-	var cx_max := int(ceil((zone_wx + ZONE_SIZE) / step))
-	var cz_min := int(floor(zone_wz / step))
-	var cz_max := int(ceil((zone_wz + ZONE_SIZE) / step))
-
-	var verts := PackedVector3Array()
-	var norms := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var colors := PackedColorArray()
-	var indices := PackedInt32Array()
-	var vert_idx := 0
-
-	for cz in range(cz_min, cz_max):
-		for cx in range(cx_min, cx_max):
-			var key := Vector2i(cx, cz)
-			if not _creek_water_surface.has(key):
-				continue
-
-			var water_h: float = _creek_water_surface[key] as float
-			if water_h < WATER_LEVEL + 0.5:
-				continue
-
-			var cell_wx := (float(cx) + 0.5) * step
-			var cell_wz := (float(cz) + 0.5) * step
-			var terrain_h := get_height_at(cell_wx, cell_wz)
-			if terrain_h >= water_h - 0.15:
-				continue
-
-			var fdir: Vector2 = _creek_flow_dir.get(key, Vector2(1, 0)) as Vector2
-			var fd_b := fdir.x * 0.5 + 0.5
-			var fd_a := fdir.y * 0.5 + 0.5
-			var col := Color(0.0, 1.0, fd_b, fd_a)
-
-			var lx := cell_wx - step * 0.5 - zone_origin.x
-			var lz := cell_wz - step * 0.5 - zone_origin.z
-			var ly := water_h - zone_origin.y - 1.5
-
-			var s := step
-			verts.append(Vector3(lx, ly, lz))
-			verts.append(Vector3(lx + s, ly, lz))
-			verts.append(Vector3(lx + s, ly, lz + s))
-			verts.append(Vector3(lx, ly, lz + s))
-			for _n in 4:
-				norms.append(Vector3.UP)
-				colors.append(col)
-			uvs.append(Vector2(0.5, 0.0))
-			uvs.append(Vector2(0.5, 0.0))
-			uvs.append(Vector2(0.5, 1.0))
-			uvs.append(Vector2(0.5, 1.0))
-			indices.append(vert_idx)
-			indices.append(vert_idx + 1)
-			indices.append(vert_idx + 2)
-			indices.append(vert_idx)
-			indices.append(vert_idx + 2)
-			indices.append(vert_idx + 3)
-			vert_idx += 4
-
-	if verts.is_empty():
-		return
-
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_NORMAL] = norms
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_COLOR] = colors
-	arrays[Mesh.ARRAY_INDEX] = indices
-
-	var arr_mesh := ArrayMesh.new()
-	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	if _creek_shader_mat:
-		arr_mesh.surface_set_material(0, _creek_shader_mat)
-
-	var fill_mi := MeshInstance3D.new()
-	fill_mi.name = "CreekFill"
-	fill_mi.mesh = arr_mesh
-	fill_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	zone_root.add_child(fill_mi)
 
 
 func _build_water_mesh_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
