@@ -4149,6 +4149,376 @@ static func _try_spawn_cave(
 	entrance.position = entrance_pos
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GOBLIN CAMP SPAWNING (mountain-top POIs)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+const _GOBLIN_CAMP_LOOT_MATERIALS: Array[Dictionary] = [
+	{"id": &"gold", "min": 3, "max": 10},
+	{"id": &"bone", "min": 2, "max": 5},
+	{"id": &"flint", "min": 2, "max": 6},
+	{"id": &"leather", "min": 2, "max": 5},
+	{"id": &"iron_ore", "min": 1, "max": 4},
+	{"id": &"copper_ore", "min": 2, "max": 6},
+	{"id": &"resin", "min": 2, "max": 4},
+	{"id": &"ember_stone", "min": 1, "max": 2},
+]
+
+const _GOBLIN_CAMP_LOOT_GEAR: Array[StringName] = [
+	&"stone_sword", &"stone_axe", &"stone_pickaxe", &"crude_bow",
+	&"bronze_sword", &"bronze_mace", &"iron_sword",
+	&"leather_vest", &"leather_pants", &"leather_boots",
+	&"chain_chest", &"chain_legs", &"chain_boots",
+	&"wood_shield", &"reinforced_shield",
+]
+
+const _GOBLIN_CAMP_GEAR_AFFIX_SLOT: Dictionary = {
+	&"stone_sword": "sword", &"stone_axe": "axe", &"stone_pickaxe": "pickaxe",
+	&"crude_bow": "bow", &"bronze_sword": "sword", &"bronze_mace": "mace",
+	&"iron_sword": "sword", &"leather_vest": "chest", &"leather_pants": "legs",
+	&"leather_boots": "feet", &"chain_chest": "chest", &"chain_legs": "legs",
+	&"chain_boots": "feet", &"wood_shield": "shield", &"reinforced_shield": "shield",
+}
+
+const _GOBLIN_CAMP_STAR_WEIGHTS: Array[float] = [0.20, 0.25, 0.25, 0.20, 0.10]
+
+
+static func _try_spawn_goblin_camp(
+	zone_root: Node3D,
+	coord: Vector2i,
+	rng: RandomNumberGenerator,
+	origin_x: float,
+	origin_z: float,
+	height_func: Callable,
+) -> void:
+	var cx := origin_x + ZONE_SIZE * 0.5
+	var cz := origin_z + ZONE_SIZE * 0.5
+	var center_h := float(height_func.call(cx, cz))
+	if center_h < 8.0:
+		return
+
+	var peak_x := cx
+	var peak_z := cz
+	var peak_h := center_h
+	var step := ZONE_SIZE * 0.25
+	var offsets: PackedFloat64Array = [-1.0, 0.0, 1.0]
+	for sx: float in offsets:
+		for sz: float in offsets:
+			var px := cx + sx * step
+			var pz := cz + sz * step
+			var ph := float(height_func.call(px, pz))
+			if ph > peak_h:
+				peak_h = ph
+				peak_x = px
+				peak_z = pz
+
+	if peak_h < 10.0:
+		return
+
+	var is_local_max := true
+	for angle_i: int in 8:
+		var angle := float(angle_i) * TAU / 8.0
+		var sx := peak_x + cos(angle) * 8.0
+		var sz := peak_z + sin(angle) * 8.0
+		if float(height_func.call(sx, sz)) > peak_h + 0.5:
+			is_local_max = false
+			break
+	if not is_local_max:
+		return
+
+	var camp_root := Node3D.new()
+	camp_root.name = "GoblinCamp"
+	camp_root.add_to_group(&"structures")
+	var local_x := peak_x - origin_x
+	var local_z := peak_z - origin_z
+	camp_root.position = Vector3(local_x, peak_h, local_z)
+	zone_root.add_child(camp_root)
+
+	_build_goblin_hut(camp_root, rng)
+	_build_goblin_campfire(camp_root, rng)
+	_build_goblin_camp_chest(camp_root, rng)
+
+	var goblin_count := rng.randi_range(3, 5)
+	for gi in goblin_count:
+		var angle := rng.randf_range(0, TAU)
+		var radius := rng.randf_range(3.0, 8.0)
+		var gx := peak_x + cos(angle) * radius
+		var gz := peak_z + sin(angle) * radius
+		var gy := float(height_func.call(gx, gz))
+		if gy < 3.0:
+			continue
+		var goblin := _create_enemy(&"hearthlands", rng, &"goblin")
+		if goblin:
+			zone_root.add_child(goblin)
+			goblin.position = Vector3(gx - origin_x, gy + 0.1, gz - origin_z)
+
+
+static func _build_goblin_hut(camp_root: Node3D, rng: RandomNumberGenerator) -> void:
+	var hut := Node3D.new()
+	hut.name = "GoblinHut"
+	hut.add_to_group(&"structures")
+
+	var floor_size := Vector3(4.0, 0.15, 4.0)
+	var floor_mi := MeshInstance3D.new()
+	var floor_mesh := BoxMesh.new()
+	floor_mesh.size = floor_size
+	floor_mi.mesh = floor_mesh
+	var floor_mat := StandardMaterial3D.new()
+	floor_mat.albedo_color = Color(0.35, 0.25, 0.12)
+	floor_mat.roughness = 0.95
+	floor_mi.set_surface_override_material(0, floor_mat)
+	floor_mi.position.y = floor_size.y * 0.5
+	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	hut.add_child(floor_mi)
+
+	var wall_h := 2.2
+	var wall_thick := 0.15
+	var hw := floor_size.x * 0.5
+	var hd := floor_size.z * 0.5
+	var wall_mat := StandardMaterial3D.new()
+	wall_mat.albedo_color = Color(0.30, 0.22, 0.10)
+	wall_mat.roughness = 0.9
+
+	var wall_data := [
+		{"size": Vector3(floor_size.x, wall_h, wall_thick), "pos": Vector3(0, wall_h * 0.5 + floor_size.y, -hd)},
+		{"size": Vector3(floor_size.x, wall_h, wall_thick), "pos": Vector3(0, wall_h * 0.5 + floor_size.y, hd)},
+		{"size": Vector3(wall_thick, wall_h, floor_size.z), "pos": Vector3(-hw, wall_h * 0.5 + floor_size.y, 0)},
+		{"size": Vector3(wall_thick, wall_h, floor_size.z), "pos": Vector3(hw, wall_h * 0.5 + floor_size.y, 0)},
+	]
+	for wd: Dictionary in wall_data:
+		var wall_mi := MeshInstance3D.new()
+		var wall_mesh := BoxMesh.new()
+		wall_mesh.size = wd["size"] as Vector3
+		wall_mi.mesh = wall_mesh
+		wall_mi.set_surface_override_material(0, wall_mat)
+		wall_mi.position = wd["pos"] as Vector3
+		wall_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		hut.add_child(wall_mi)
+
+	var roof_mi := MeshInstance3D.new()
+	var roof_mesh := BoxMesh.new()
+	roof_mesh.size = Vector3(floor_size.x + 0.6, 0.12, floor_size.z + 0.6)
+	roof_mi.mesh = roof_mesh
+	var roof_mat := StandardMaterial3D.new()
+	roof_mat.albedo_color = Color(0.28, 0.18, 0.08)
+	roof_mat.roughness = 0.95
+	roof_mi.set_surface_override_material(0, roof_mat)
+	roof_mi.position.y = floor_size.y + wall_h + 0.06
+	roof_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	hut.add_child(roof_mi)
+
+	var col := CollisionShape3D.new()
+	var col_shape := BoxShape3D.new()
+	col_shape.size = Vector3(floor_size.x, wall_h + floor_size.y, floor_size.z)
+	col.shape = col_shape
+	col.position.y = (wall_h + floor_size.y) * 0.5
+	hut.add_child(col)
+
+	hut.position = Vector3(0, 0, 0)
+	hut.rotation.y = rng.randf_range(0, TAU)
+	camp_root.add_child(hut)
+
+
+static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator) -> void:
+	var fire := Node3D.new()
+	fire.name = "GoblinCampfire"
+	fire.add_to_group(&"structures")
+	fire.add_to_group(&"campfires")
+
+	var log_mat := StandardMaterial3D.new()
+	log_mat.albedo_color = Color(0.3, 0.2, 0.1)
+	log_mat.roughness = 0.9
+
+	for i in 4:
+		var log_mi := MeshInstance3D.new()
+		var lm := CylinderMesh.new()
+		lm.height = 0.7
+		lm.top_radius = 0.05
+		lm.bottom_radius = 0.07
+		log_mi.mesh = lm
+		log_mi.material_override = log_mat
+		log_mi.rotation.z = deg_to_rad(75.0)
+		log_mi.rotation.y = deg_to_rad(i * 90.0 + rng.randf_range(-10, 10))
+		log_mi.position = Vector3(cos(deg_to_rad(i * 90.0)) * 0.12, 0.08, sin(deg_to_rad(i * 90.0)) * 0.12)
+		log_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		fire.add_child(log_mi)
+
+	var stone_mat := StandardMaterial3D.new()
+	stone_mat.albedo_color = Color(0.35, 0.32, 0.28)
+	stone_mat.roughness = 0.9
+	for i in 8:
+		var stone := MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = rng.randf_range(0.08, 0.14)
+		sphere.height = sphere.radius * rng.randf_range(1.2, 1.8)
+		sphere.radial_segments = 4
+		sphere.rings = 2
+		stone.mesh = sphere
+		stone.material_override = stone_mat
+		var sa := float(i) * TAU / 8.0 + rng.randf_range(-0.15, 0.15)
+		stone.position = Vector3(cos(sa) * 0.4, sphere.height * 0.3, sin(sa) * 0.4)
+		stone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		fire.add_child(stone)
+
+	var fire_light := OmniLight3D.new()
+	fire_light.light_color = Color(1.0, 0.6, 0.2)
+	fire_light.light_energy = 6.0
+	fire_light.omni_range = 15.0
+	fire_light.omni_attenuation = 1.2
+	fire_light.shadow_enabled = false
+	fire_light.position = Vector3(0, 0.5, 0)
+	fire.add_child(fire_light)
+
+	var ember_mi := MeshInstance3D.new()
+	var ember_quad := QuadMesh.new()
+	ember_quad.size = Vector2(0.4, 0.4)
+	ember_quad.orientation = PlaneMesh.FACE_Y
+	ember_mi.mesh = ember_quad
+	ember_mi.position.y = 0.03
+	ember_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var ember_shader := load("res://shaders/ember_glow.gdshader") as Shader
+	if ember_shader:
+		var emat := ShaderMaterial.new()
+		emat.shader = ember_shader
+		emat.set_shader_parameter("color_hot", Color(1.0, 0.55, 0.05))
+		emat.set_shader_parameter("color_cool", Color(0.4, 0.08, 0.0))
+		emat.set_shader_parameter("pulse_speed", 1.2)
+		emat.set_shader_parameter("noise_scale", 6.0)
+		emat.set_shader_parameter("brightness", 3.0)
+		ember_mi.material_override = emat
+	else:
+		var fallback_mat := StandardMaterial3D.new()
+		fallback_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		fallback_mat.albedo_color = Color(1.0, 0.4, 0.05)
+		fallback_mat.emission_enabled = true
+		fallback_mat.emission = Color(1.0, 0.4, 0.05)
+		fallback_mat.emission_energy_multiplier = 3.0
+		ember_mi.material_override = fallback_mat
+	fire.add_child(ember_mi)
+
+	var angle := rng.randf_range(0, TAU)
+	var dist := rng.randf_range(5.0, 7.0)
+	fire.position = Vector3(cos(angle) * dist, 0, sin(angle) * dist)
+	camp_root.add_child(fire)
+
+
+static func _build_goblin_camp_chest(camp_root: Node3D, rng: RandomNumberGenerator) -> void:
+	var chest := StaticBody3D.new()
+	chest.name = "GoblinChest"
+	chest.collision_layer = 4
+	chest.collision_mask = 0
+	chest.add_to_group(&"interactables")
+	chest.add_to_group(&"chests")
+	chest.set_meta("build_id", &"chest")
+
+	var sz := Vector3(1.92, 1.44, 1.2)
+
+	var is_locked := rng.randf() < 0.15
+	chest.set_meta("is_locked", is_locked)
+
+	var contents := _fill_goblin_camp_chest(rng, is_locked)
+	chest.set_meta("chest_contents", contents)
+
+	var max_stars := VillageGenerator._get_chest_max_stars(contents)
+	var chest_color := ItemDatabase.get_rarity_color(max_stars) if max_stars > 0 else Color(0.5, 0.4, 0.2)
+
+	if is_locked:
+		_build_locked_chest_visual(chest, sz, chest_color)
+	else:
+		PlayerBuilding.build_chest_visual(chest, sz)
+
+	VillageGenerator._add_chest_rarity_sheen(chest, contents, sz)
+
+	var col := CollisionShape3D.new()
+	var box_col := BoxShape3D.new()
+	box_col.size = sz
+	col.shape = box_col
+	col.position.y = sz.y * 0.5
+	chest.add_child(col)
+
+	chest.position = Vector3(1.5, 0, 0)
+	chest.rotation.y = PI * 0.5
+	camp_root.add_child(chest)
+
+
+static func _build_locked_chest_visual(structure: Node3D, sz: Vector3, tint: Color) -> void:
+	PlayerBuilding.build_chest_visual(structure, sz)
+
+	var body_node: MeshInstance3D = null
+	for child in structure.get_children():
+		if child is MeshInstance3D and child.name == "Body":
+			body_node = child as MeshInstance3D
+			break
+	if body_node:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(tint.r * 0.6, tint.g * 0.6, tint.b * 0.6)
+		mat.roughness = 0.7
+		mat.metallic = 0.2
+		body_node.set_surface_override_material(0, mat)
+
+	var lock_mi := MeshInstance3D.new()
+	lock_mi.name = "LockIcon"
+	var lock_mesh := BoxMesh.new()
+	lock_mesh.size = Vector3(0.15, 0.2, 0.08)
+	lock_mi.mesh = lock_mesh
+	var lock_mat := StandardMaterial3D.new()
+	lock_mat.albedo_color = Color(0.7, 0.55, 0.1)
+	lock_mat.metallic = 0.6
+	lock_mat.roughness = 0.3
+	lock_mi.set_surface_override_material(0, lock_mat)
+	lock_mi.position = Vector3(0.0, sz.y * 0.8, sz.z * 0.5 + 0.05)
+	lock_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	structure.add_child(lock_mi)
+
+
+static func _fill_goblin_camp_chest(rng: RandomNumberGenerator, is_locked: bool) -> Array:
+	var slots: Array = []
+	slots.resize(32)
+	for i in 32:
+		slots[i] = {}
+
+	var pool := _GOBLIN_CAMP_LOOT_MATERIALS.duplicate()
+	for si in range(pool.size() - 1, 0, -1):
+		var sj := rng.randi_range(0, si)
+		var tmp: Dictionary = pool[si]
+		pool[si] = pool[sj]
+		pool[sj] = tmp
+
+	var mat_count := rng.randi_range(2, 4)
+	for i in mini(mat_count, pool.size()):
+		var entry: Dictionary = pool[i]
+		slots[i] = {"item_id": entry["id"], "count": rng.randi_range(entry["min"], entry["max"])}
+
+	var gear_count := 1 + (1 if is_locked else 0)
+	for gi in gear_count:
+		var gear_id: StringName = _GOBLIN_CAMP_LOOT_GEAR[rng.randi_range(0, _GOBLIN_CAMP_LOOT_GEAR.size() - 1)]
+		var stars := _roll_goblin_camp_star(rng)
+		if stars > 0:
+			var affixes: Array[StringName] = []
+			var affix_rolls: Dictionary = {}
+			if stars >= 2:
+				var slot_key: String = _GOBLIN_CAMP_GEAR_AFFIX_SLOT.get(gear_id, "")
+				if slot_key != "":
+					affixes = ItemDatabase.roll_affixes(stars, slot_key)
+					affix_rolls = ItemDatabase.roll_affix_magnitudes(affixes)
+			gear_id = ItemDatabase.make_star_id(gear_id, stars, affixes, affix_rolls)
+		var slot_idx := mat_count + gi
+		if slot_idx < 32:
+			slots[slot_idx] = {"item_id": gear_id, "count": 1}
+
+	return slots
+
+
+static func _roll_goblin_camp_star(rng: RandomNumberGenerator) -> int:
+	var roll := rng.randf()
+	var cumulative := 0.0
+	for i in _GOBLIN_CAMP_STAR_WEIGHTS.size():
+		cumulative += _GOBLIN_CAMP_STAR_WEIGHTS[i]
+		if roll < cumulative:
+			return i + 1
+	return 5
+
+
 static func _get_saved_horses() -> Array:
 	var tree := Engine.get_main_loop() as SceneTree
 	if not tree:
