@@ -2019,19 +2019,19 @@ static func _scatter_grass(
 			if _rg_data[rgz * _RG_RES + rgx] & _RG_GRASS_REJECT != 0:
 				continue
 
-			var veg_d := _vegetation_density_noise(wx, wz)
-			if veg_d < 0.18:
-				var h5 := _grass_cell_hash(gcx, gcz, 4)
-				var tier_n := _fbm2(wx * 0.025 + 500.0, wz * 0.025 + 300.0)
-				var keep: float
-				if tier_n < 0.333:
-					keep = 0.10
-				elif tier_n < 0.666:
-					keep = 0.25
-				else:
-					keep = 0.50
-				if h5 > keep:
-					continue
+			var h5 := _grass_cell_hash(gcx, gcz, 4)
+			var tier_n := _fbm2(wx * 0.02 + 500.0, wz * 0.02 + 300.0)
+			var keep: float
+			if tier_n >= 0.75:
+				keep = 1.0
+			elif tier_n >= 0.50:
+				keep = 0.50
+			elif tier_n >= 0.25:
+				keep = 0.25
+			else:
+				keep = 0.10
+			if h5 > keep:
+				continue
 
 			var sn := _hg_snap_and_normal(wx, wz)
 			var ground_y := sn.x

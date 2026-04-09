@@ -1302,6 +1302,8 @@ func _physics_process(delta: float) -> void:
 				name, str(global_position), _sync_diag_count, anim_info])
 		return
 
+	RenderingServer.global_shader_parameter_set(&"player_world_position", global_position)
+
 	var wants_block := Input.is_action_pressed(&"block") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _inventory_open
 	var _bow_slot_item: StringName = Inventory.get_equipped("bow")
 	var _has_bow_equipped := _bow_slot_item != &""

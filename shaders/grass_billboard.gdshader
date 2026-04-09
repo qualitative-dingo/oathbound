@@ -11,7 +11,10 @@ uniform float wind_turbulence : hint_range(0.0, 5.0) = 0.8;
 uniform int atlas_columns : hint_range(1, 8) = 1;
 uniform float density_near : hint_range(0.0, 32.0) = 16.0;
 uniform float density_far : hint_range(0.0, 64.0) = 32.0;
+uniform float player_push_radius : hint_range(0.0, 4.0) = 1.8;
+uniform float player_push_strength : hint_range(0.0, 3.0) = 1.2;
 global uniform float leaf_wind_multiplier;
+global uniform vec3 player_world_position;
 
 varying vec3 world_pos;
 varying flat int tex_index;
@@ -62,6 +65,18 @@ void vertex() {
 
 	VERTEX.x += (wave_x + flutter_x * wm) * sway;
 	VERTEX.z += (wave_z + flutter_z * wm) * sway * 0.7;
+
+	// Player proximity — bend grass away from the player's feet
+	vec2 to_player = world_pos.xz - player_world_position.xz;
+	float player_dist = length(to_player);
+	float push = 1.0 - smoothstep(0.0, player_push_radius, player_dist);
+	push *= push * height_factor * player_push_strength;
+	if (player_dist > 0.01) {
+		vec2 push_dir = to_player / player_dist;
+		VERTEX.x += push_dir.x * push;
+		VERTEX.z += push_dir.y * push;
+		VERTEX.y -= push * 0.3;
+	}
 }
 
 void fragment() {
