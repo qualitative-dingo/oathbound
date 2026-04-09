@@ -8423,7 +8423,7 @@ func _refresh_map() -> void:
 					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
 					col = water_shallow.lerp(water_col, depth)
 				else:
-					col = _biome_map_color(biome, micro)
+					col = _biome_map_color(biome, micro, zh)
 					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
 					col = Color(
 						clampf(col.r * bright, 0.0, 1.0),
@@ -8481,6 +8481,8 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 	for node in get_tree().get_nodes_in_group(&"structures"):
 		var n3d := node as Node3D
 		if not n3d:
+			continue
+		if n3d.is_in_group(&"village"):
 			continue
 		_draw_map_dot(n3d.global_position, marker_col, 2, half_px, zones_per_pixel, zone_size)
 

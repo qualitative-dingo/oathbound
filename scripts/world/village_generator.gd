@@ -260,6 +260,7 @@ static func _place_hut(parent: Node3D, pos: Vector3, yaw: float, var_idx: int, r
 	anchor.position = pos
 	anchor.rotation.y = yaw
 	anchor.add_to_group(&"structures")
+	anchor.add_to_group(&"village")
 	anchor.set_meta("footprint_radius", maxf(w, d) * 0.5 + 2.0)
 	parent.add_child(anchor)
 
@@ -399,6 +400,7 @@ static func _make_building_body(build_id: StringName) -> StaticBody3D:
 	body.collision_layer = 8
 	body.collision_mask = 1
 	body.add_to_group(&"structures")
+	body.add_to_group(&"village")
 	body.set_meta("build_id", build_id)
 	return body
 
@@ -719,6 +721,7 @@ static func _place_hero_asset(parent: Node3D, pos: Vector3, rng: RandomNumberGen
 		(instance as Node3D).rotation.y = rng.randf_range(0, TAU)
 		(instance as Node3D).scale = Vector3.ONE * 1.5
 		(instance as Node3D).add_to_group(&"structures")
+		(instance as Node3D).add_to_group(&"village")
 	parent.add_child(instance)
 
 
@@ -734,4 +737,5 @@ static func _place_hero_fallback(parent: Node3D, pos: Vector3, rng: RandomNumber
 	pillar.position = pos + Vector3(0, 1.1, 0)
 	pillar.rotation.z = rng.randf_range(-0.05, 0.05)
 	pillar.add_to_group(&"structures")
+	pillar.add_to_group(&"village")
 	parent.add_child(pillar)

@@ -1126,13 +1126,16 @@ func refresh_minimap() -> void:
 				var depth := clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0)
 				col = water_shallow.lerp(water_col, depth)
 			else:
+				var biome: StringName
+				var micro: StringName
 				if biome_cache.has(zone_coord):
-					col = biome_cache[zone_coord] as Color
+					biome = biome_cache.get(zone_coord, &"hearthlands") as StringName
+					micro = &"none"
 				else:
-					var biome: StringName = wg._determine_biome(zone_coord)
-					var micro := wg.get_microbiome_at_zone(zone_coord)
-					col = biome_map_color(biome, micro)
-					biome_cache[zone_coord] = col
+					biome = wg._determine_biome(zone_coord)
+					micro = wg.get_microbiome_at_zone(zone_coord)
+					biome_cache[zone_coord] = biome
+				col = biome_map_color(biome, micro, h)
 				var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
 				col = Color(
 					clampf(col.r * bright, 0.0, 1.0),
@@ -1407,8 +1410,8 @@ func refresh_map() -> void:
 					var h := wg.get_height_at(world_x, world_z)
 					col = water_shallow.lerp(water_col, clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0))
 				else:
-					col = biome_map_color(biome, micro)
 					var h := wg.get_height_at(world_x, world_z)
+					col = biome_map_color(biome, micro, h)
 					var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
 					col = Color(
 						clampf(col.r * bright, 0.0, 1.0),
@@ -1461,6 +1464,8 @@ func draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: flo
 		var n3d := node as Node3D
 		if not n3d:
 			continue
+		if n3d.is_in_group(&"village"):
+			continue
 		draw_map_dot(n3d.global_position, marker_col, 2, half_px, zones_per_pixel, zone_size)
 
 	for node in pc.get_tree().get_nodes_in_group(&"cave_entrances"):
@@ -1486,7 +1491,12 @@ func draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, z
 					pc._map_image.set_pixel(fx, fy, color)
 
 
-func biome_map_color(biome: StringName, micro: StringName = &"none") -> Color:
+func biome_map_color(biome: StringName, micro: StringName = &"none", height: float = 0.0) -> Color:
+	if height > 25.0:
+		var rock_t := clampf((height - 25.0) / 35.0, 0.0, 1.0)
+		var grass_col := Color(0.45, 0.52, 0.32)
+		var stone_col := Color(0.52, 0.50, 0.45)
+		return grass_col.lerp(stone_col, rock_t)
 	if biome == &"hearthlands" and micro != &"none":
 		match micro:
 			&"meadow":        return Color(0.42, 0.62, 0.28)

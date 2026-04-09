@@ -2651,7 +2651,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	var branch_r_frac: float
 
 	if is_birch:
-		branch_count = rng.randi_range(6, 10)
+		branch_count = rng.randi_range(12, 20)
 		branch_zone_lo = 0.25
 		branch_zone_hi = 0.70
 		branch_len_frac_lo = 0.14
@@ -2660,7 +2660,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		branch_tilt_hi = 55.0
 		branch_r_frac = 0.55
 	elif is_oak:
-		branch_count = rng.randi_range(8, 12)
+		branch_count = rng.randi_range(16, 24)
 		branch_zone_lo = 0.20
 		branch_zone_hi = 0.65
 		branch_len_frac_lo = 0.175
@@ -2669,7 +2669,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		branch_tilt_hi = 45.0
 		branch_r_frac = 0.65
 	else:
-		branch_count = rng.randi_range(6, 10)
+		branch_count = rng.randi_range(12, 20)
 		branch_zone_lo = 0.25
 		branch_zone_hi = 0.68
 		branch_len_frac_lo = 0.154
@@ -2739,9 +2739,9 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 			var pt_in_root := branch_basis * pt + branch_pos
 			leaf_anchor_positions.append(pt_in_root)
 
-		var sub_count := rng.randi_range(1, 2)
+		var sub_count := rng.randi_range(2, 3)
 		for si in sub_count:
-			var sub_t := rng.randf_range(0.5, 0.7)
+			var sub_t := rng.randf_range(0.4, 0.75)
 			var sub_len := branch_len * rng.randf_range(0.35, 0.50)
 			var sub_r := b_base_r * 0.3
 			var sub_arc := sub_len * rng.randf_range(0.20, 0.45)
@@ -2749,7 +2749,8 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 			var sub_tilt_deg := tilt_deg + rng.randf_range(10.0, 25.0)
 			var sub_tilt_rad := deg_to_rad(sub_tilt_deg)
 
-			var sub_mesh := _build_branch_mesh(sub_r, sub_len, sub_arc, rng)
+			var sub_bend := _make_bend_params(sub_len, rng)
+			var sub_mesh := _build_branch_mesh(sub_r, sub_len, sub_arc, rng, sub_bend)
 
 			var sub_dir := Vector3(
 				cos(sub_angle) * cos(sub_tilt_rad),
@@ -2772,6 +2773,41 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 				sub_len * sin(sub_tilt_rad) + sub_arc,
 				sin(sub_angle) * sub_len * 0.7 * cos(sub_tilt_rad))
 			leaf_anchor_positions.append(sub_attach_in_root + sub_tip_offset)
+
+			# Tertiary twigs branching off each sub-branch
+			var twig_count := rng.randi_range(1, 2)
+			for ti in twig_count:
+				var tw_t := rng.randf_range(0.45, 0.85)
+				var tw_len := sub_len * rng.randf_range(0.30, 0.45)
+				var tw_r := sub_r * 0.35
+				var tw_arc := tw_len * rng.randf_range(0.15, 0.40)
+				var tw_angle := sub_angle + rng.randf_range(-1.0, 1.0)
+				var tw_tilt_deg := sub_tilt_deg + rng.randf_range(5.0, 20.0)
+				var tw_tilt_rad := deg_to_rad(tw_tilt_deg)
+
+				var tw_mesh := _build_branch_mesh(tw_r, tw_len, tw_arc, rng)
+
+				var tw_dir := Vector3(
+					cos(tw_angle) * cos(tw_tilt_rad),
+					sin(tw_tilt_rad),
+					sin(tw_angle) * cos(tw_tilt_rad)).normalized()
+				var tw_up := Vector3.UP
+				if absf(tw_dir.dot(tw_up)) > 0.95:
+					tw_up = Vector3.FORWARD
+				var tw_right := tw_dir.cross(tw_up).normalized()
+				var tw_fwd := tw_right.cross(tw_dir).normalized()
+
+				var tw_attach := _sample_branch_curve(tw_t, sub_len, sub_arc, sub_bend)
+				var tw_basis := Basis(tw_right, tw_dir, tw_fwd)
+				var tw_xform := sub_xform * Transform3D(tw_basis, tw_attach)
+				merge_st.append_from(tw_mesh, 0, tw_xform)
+
+				var tw_world_attach := sub_basis * tw_attach
+				var tw_tip := Vector3(
+					cos(tw_angle) * tw_len * 0.6 * cos(tw_tilt_rad),
+					tw_len * sin(tw_tilt_rad) + tw_arc,
+					sin(tw_angle) * tw_len * 0.6 * cos(tw_tilt_rad))
+				leaf_anchor_positions.append(sub_attach_in_root + tw_world_attach + tw_tip)
 
 	merge_st.generate_normals()
 	var trunk_mi := MeshInstance3D.new()
