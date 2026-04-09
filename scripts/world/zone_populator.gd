@@ -2073,7 +2073,7 @@ static func _scatter_grass(
 			var scale_val := 0.4 + h3 * 0.45
 			var rot := h4 * TAU
 			var sx := 2.4 * scale_val
-			var sy := 2.8 * scale_val
+			var sy := 1.96 * scale_val
 			var sz := 2.4 * scale_val
 			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
 			transforms.append(Transform3D(basis, Vector3(lx, ground_y - 0.04, lz)))

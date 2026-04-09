@@ -201,8 +201,7 @@ func _bg_rebuild_zone(coord: Vector2i) -> void:
 
 
 func _apply_rebuild_results() -> bool:
-	# PERF: Only process ONE terrain rebuild per frame to avoid physics spikes
-	# Returns true if a ConcavePolygonShape3D was assigned (expensive operation)
+	# Apply completed terrain rebuilds (from terraform / hoe)
 	_gen_mutex.lock()
 	if _rebuild_ready_queue.is_empty():
 		_gen_mutex.unlock()
@@ -213,7 +212,7 @@ func _apply_rebuild_results() -> bool:
 	var coord: Vector2i = item["coord"]
 	_gen_in_flight.erase(coord)
 	var arrays: Array = item["arrays"]
-	var shape: ConcavePolygonShape3D = item["shape"]
+	var shape: HeightMapShape3D = item["shape"]
 	_terrain_mesh_cache[coord] = arrays
 	_terrain_shape_cache[coord] = shape
 
@@ -236,9 +235,11 @@ func _apply_rebuild_results() -> bool:
 	var col := zone_node.get_node_or_null("TerrainCol") as CollisionShape3D
 	if col and shape:
 		col.shape = shape
+		col.position = Vector3(ZONE_SIZE / 2.0, 0.0, ZONE_SIZE / 2.0)
+		col.scale = Vector3(ZONE_SIZE / float(MESH_RESOLUTION / 2), 1.0, ZONE_SIZE / float(MESH_RESOLUTION / 2))
 		col.disabled = true
-		_deferred_collisions.append(col)  # Queue for gradual enabling
-		return true  # Shape was assigned - skip other terrain shape work this frame
+		_deferred_collisions.append(col)
+		return false
 	return false
 
 func get_terrain_mods() -> Dictionary:
@@ -349,9 +350,9 @@ var _global_water_plane: MeshInstance3D
 var _last_explore_pos := Vector3(INF, INF, INF)
 var _zone_water_cache: Dictionary = {}
 
-# Terrain mesh cache: avoids rebuilding ArrayMesh + ConcavePolygonShape3D on zone revisit
+# Terrain mesh cache: avoids rebuilding ArrayMesh + HeightMapShape3D on zone revisit
 var _terrain_mesh_cache: Dictionary = {}  # Vector2i → Array (mesh arrays)
-var _terrain_shape_cache: Dictionary = {}  # Vector2i → ConcavePolygonShape3D
+var _terrain_shape_cache: Dictionary = {}  # Vector2i → HeightMapShape3D
 const _MAX_TERRAIN_CACHE := 100
 
 # Threaded zone generation
@@ -2061,7 +2062,7 @@ func _generate_spawn_area() -> void:
 				_finalize_zone(coord, arrays, shape)
 	# Only enable the CENTER spawn zone's terrain collision immediately (player needs to stand)
 	# Leave surrounding zones' terrain in the deferred queue for gradual enabling
-	# This prevents a massive physics spike from enabling 9+ ConcavePolygonShape3D at once
+	# This prevents a burst from enabling 9+ terrain collision shapes at once
 	var center_zone_root = _loaded_zones.get(spawn_zone)
 	if center_zone_root:
 		var center_col = center_zone_root.get_node_or_null("TerrainCol")
@@ -2297,9 +2298,8 @@ func _process_pending_zones() -> void:
 			disable_remaining.append(col_shape)
 	_deferred_disable_collisions = disable_remaining
 
-	# 0.5. Apply completed terrain rebuilds (from terraform / hoe) - throttled
-	# Track if we assigned a terrain shape this frame (expensive ConcavePolygonShape3D)
-	var terrain_shape_assigned := _apply_rebuild_results()
+	# 0.5. Apply completed terrain rebuilds (from terraform / hoe)
+	_apply_rebuild_results()
 
 	# 0.6. Water physics simulation — disabled until propagation is tuned
 	#_simulate_water()
@@ -2368,11 +2368,10 @@ func _process_pending_zones() -> void:
 		pitem["phase"] = phase + 1
 
 	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
-	# PERF: Only 1 terrain shape assignment per frame total (rebuild OR finalize, not both)
-	# ConcavePolygonShape3D assignment is extremely expensive (mesh cooking)
-	var max_finalize := 0 if terrain_shape_assigned else 1
+	# HeightMapShape3D is cheap to assign — allow multiple finalizations per frame
+	var max_finalize := 4
 	var finalized := 0
-	if max_finalize > 0 and Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
+	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
 		while not _finalize_backlog.is_empty() and finalized < max_finalize:
 			if finalized > 0 and Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
 				break
@@ -2398,7 +2397,7 @@ func _process_pending_zones() -> void:
 			continue
 		if _terrain_mesh_cache.has(coord):
 			var cached_arrays: Array = _terrain_mesh_cache[coord]
-			var cached_shape: ConcavePolygonShape3D = _terrain_shape_cache.get(coord)
+			var cached_shape: HeightMapShape3D = _terrain_shape_cache.get(coord)
 			_finalize_backlog.append({"coord": coord, "arrays": cached_arrays, "shape": cached_shape})
 			submitted += 1
 			continue
@@ -2633,7 +2632,7 @@ func _bg_build_zone(coord: Vector2i) -> void:
 
 
 ## Main-thread only: creates scene nodes from pre-computed mesh data + shape.
-func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D) -> void:
+func _finalize_zone(coord: Vector2i, arrays: Array, shape: HeightMapShape3D) -> void:
 	if coord in _loaded_zones:
 		return
 	var biome := _determine_biome(coord)
