@@ -5247,7 +5247,7 @@ func _refresh_minimap() -> void:
 				else:
 					var biome: StringName = wg._determine_biome(zone_coord)
 					var micro := wg.get_microbiome_at_zone(zone_coord)
-					col = _biome_map_color(biome, micro)
+					col = _biome_map_color(biome, micro, zh)
 					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
 					col = Color(
 						clampf(col.r * bright, 0.0, 1.0),
@@ -8577,7 +8577,12 @@ func _update_map_marker_labels(half_px: int, zones_per_pixel: float, zone_size: 
 		_map_marker_labels[i].visible = false
 
 
-func _biome_map_color(biome: StringName, micro: StringName = &"none") -> Color:
+func _biome_map_color(biome: StringName, micro: StringName = &"none", height: float = 0.0) -> Color:
+	if height > 25.0:
+		var rock_t := clampf((height - 25.0) / 35.0, 0.0, 1.0)
+		var grass_col := Color(0.45, 0.52, 0.32)
+		var stone_col := Color(0.52, 0.50, 0.45)
+		return grass_col.lerp(stone_col, rock_t)
 	if biome == &"hearthlands" and micro != &"none":
 		match micro:
 			&"meadow":        return Color(0.42, 0.62, 0.28)

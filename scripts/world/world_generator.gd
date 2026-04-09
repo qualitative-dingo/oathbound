@@ -759,13 +759,23 @@ func _init_noise_layers() -> void:
 #  WATERSHED COMPUTATION — runs once at startup
 # ═══════════════════════════════════════════════════════════════════════════════
 
+## Sample the broad mountain mask with a guaranteed region near spawn.
+func _sample_broad_mountain(wx: float, wz: float) -> float:
+	var broad := _mountain_broad_noise.get_noise_2d(wx, wz)
+	var spawn_mtn_dist := Vector2(wx - 300.0, wz - 250.0).length()
+	return maxf(broad, smoothstep(280.0, 60.0, spawn_mtn_dist))
+
+
 ## Gate fine-detail mountain value by the broad (base-octave) mountain mask.
 ## Returns 0 where there's no large-scale mountain region, preserving the full
 ## value inside established mountain chains.
 func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
+	var spawn_mtn_dist := Vector2(wx - 300.0, wz - 250.0).length()
+	var spawn_mtn_boost := smoothstep(280.0, 60.0, spawn_mtn_dist) * 0.5
+	mountain_raw = maxf(mountain_raw, spawn_mtn_boost)
 	if mountain_raw <= 0.0:
 		return 0.0
-	var broad := _mountain_broad_noise.get_noise_2d(wx, wz)
+	var broad := _sample_broad_mountain(wx, wz)
 	var breadth := smoothstep(0.20, 0.50, broad)
 	return mountain_raw * breadth
 
@@ -773,7 +783,7 @@ func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
 ## How strongly this point belongs to a large mountain region (0..1).
 ## Used to scale peak height so isolated features stay short.
 func _mountain_breadth(wx: float, wz: float) -> float:
-	var broad := _mountain_broad_noise.get_noise_2d(wx, wz)
+	var broad := _sample_broad_mountain(wx, wz)
 	return smoothstep(0.20, 0.50, broad)
 
 
@@ -2862,8 +2872,9 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 
 			var raw_h := _get_raw_height_no_paths(p.x, p.z)
 			var t_excess := maxf(raw_h - p.y, 0.0)
-			var ridge_mesh_bonus := clampf(t_excess / 8.0, 0.0, 1.5) * 8.0
-			var slope_narrow := 1.0 - clampf(slopes[i] / 0.8, 0.0, 0.6)
+			var steep_suppress := 1.0 - clampf(slopes[i] / 0.5, 0.0, 1.0)
+			var ridge_mesh_bonus := clampf(t_excess / 8.0, 0.0, 1.5) * 8.0 * steep_suppress
+			var slope_narrow := 1.0 - clampf(slopes[i] / 0.5, 0.0, 0.85)
 			var w := (half_widths[i] + 3.0 + ridge_mesh_bonus) * slope_narrow
 
 			var uv_y := flow_uvs[i] * uv_scale
@@ -2883,7 +2894,8 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var right_wz := p.z + perp.y * w
 			var left_terrain_y := get_height_at(left_wx, left_wz) - zone_origin.y - 0.3
 			var right_terrain_y := get_height_at(right_wx, right_wz) - zone_origin.y - 0.3
-			var fixed_bottom := local_p.y - _CREEK_DEPTH
+			var skirt_depth := _CREEK_DEPTH * (1.0 - clampf(slopes[i] / 0.6, 0.0, 0.8))
+			var fixed_bottom := local_p.y - skirt_depth
 			var left_bottom_y := minf(fixed_bottom, left_terrain_y)
 			var right_bottom_y := minf(fixed_bottom, right_terrain_y)
 
