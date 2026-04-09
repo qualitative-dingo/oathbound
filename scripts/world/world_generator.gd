@@ -2601,37 +2601,24 @@ func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
 					sub.visible = new_lod == 0
 
 
-## Build a half-resolution ConcavePolygonShape3D for terrain collision.
-## Uses MESH_RESOLUTION/2 grid (24x24) — 4x fewer triangles than the visual mesh,
-## indistinguishable for gameplay but much cheaper for the physics engine.
-func _build_collision_shape(coord: Vector2i) -> ConcavePolygonShape3D:
+## Build a half-resolution HeightMapShape3D for terrain collision.
+## Uses MESH_RESOLUTION/2 grid (25x25 samples) — much cheaper than ConcavePolygonShape3D
+## because the physics server uses direct grid lookup instead of BVH cooking.
+func _build_collision_shape(coord: Vector2i) -> HeightMapShape3D:
 	const COL_RES := MESH_RESOLUTION / 2
+	var w := COL_RES + 1
 	var step: float = ZONE_SIZE / COL_RES
-
-	var col_verts := PackedVector3Array()
-	col_verts.resize((COL_RES + 1) * (COL_RES + 1))
-	for cz in range(COL_RES + 1):
-		for cx in range(COL_RES + 1):
+	var map_data := PackedFloat32Array()
+	map_data.resize(w * w)
+	for cz in range(w):
+		for cx in range(w):
 			var wx := float(coord.x * COL_RES + cx) * step
 			var wz := float(coord.y * COL_RES + cz) * step
-			col_verts[cz * (COL_RES + 1) + cx] = Vector3(cx * step, get_height_at(wx, wz), cz * step)
-
-	var face_count := COL_RES * COL_RES * 2 * 3
-	var faces := PackedVector3Array()
-	faces.resize(face_count)
-	var fi := 0
-	for cz in range(COL_RES):
-		for cx in range(COL_RES):
-			var i := cz * (COL_RES + 1) + cx
-			faces[fi] = col_verts[i];             fi += 1
-			faces[fi] = col_verts[i + 1];         fi += 1
-			faces[fi] = col_verts[i + COL_RES + 1]; fi += 1
-			faces[fi] = col_verts[i + 1];         fi += 1
-			faces[fi] = col_verts[i + COL_RES + 2]; fi += 1
-			faces[fi] = col_verts[i + COL_RES + 1]; fi += 1
-
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(faces)
+			map_data[cz * w + cx] = get_height_at(wx, wz)
+	var shape := HeightMapShape3D.new()
+	shape.map_width = w
+	shape.map_depth = w
+	shape.map_data = map_data
 	return shape
 
 
@@ -2676,9 +2663,12 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 		mi.visible = not _terrain_hidden
 
 		var near_player := _is_zone_near_player(coord)
+		const _HM_STEP := ZONE_SIZE / float(MESH_RESOLUTION / 2)
 		if shape:
 			if col:
 				col.shape = shape
+				col.position = Vector3(ZONE_SIZE / 2.0, 0.0, ZONE_SIZE / 2.0)
+				col.scale = Vector3(_HM_STEP, 1.0, _HM_STEP)
 				if near_player:
 					col.disabled = false
 				else:
@@ -2688,6 +2678,8 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 				col = CollisionShape3D.new()
 				col.name = "TerrainCol"
 				col.shape = shape
+				col.position = Vector3(ZONE_SIZE / 2.0, 0.0, ZONE_SIZE / 2.0)
+				col.scale = Vector3(_HM_STEP, 1.0, _HM_STEP)
 				if near_player:
 					col.disabled = false
 				else:
@@ -2715,6 +2707,8 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 		var near_player := _is_zone_near_player(coord)
 		if shape:
 			collision.shape = shape
+			collision.position = Vector3(ZONE_SIZE / 2.0, 0.0, ZONE_SIZE / 2.0)
+			collision.scale = Vector3(ZONE_SIZE / float(MESH_RESOLUTION / 2), 1.0, ZONE_SIZE / float(MESH_RESOLUTION / 2))
 			if near_player:
 				collision.disabled = false
 			else:
