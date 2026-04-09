@@ -2662,12 +2662,12 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: HeightMapShape3D) -> 
 		mi.visible = not _terrain_hidden
 
 		var near_player := _is_zone_near_player(coord)
-		const _HM_STEP := ZONE_SIZE / float(MESH_RESOLUTION / 2)
+		var hm_step := ZONE_SIZE / float(MESH_RESOLUTION / 2)
 		if shape:
 			if col:
 				col.shape = shape
 				col.position = Vector3(ZONE_SIZE / 2.0, 0.0, ZONE_SIZE / 2.0)
-				col.scale = Vector3(_HM_STEP, 1.0, _HM_STEP)
+				col.scale = Vector3(hm_step, 1.0, hm_step)
 				if near_player:
 					col.disabled = false
 				else:
@@ -2678,7 +2678,7 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: HeightMapShape3D) -> 
 				col.name = "TerrainCol"
 				col.shape = shape
 				col.position = Vector3(ZONE_SIZE / 2.0, 0.0, ZONE_SIZE / 2.0)
-				col.scale = Vector3(_HM_STEP, 1.0, _HM_STEP)
+				col.scale = Vector3(hm_step, 1.0, hm_step)
 				if near_player:
 					col.disabled = false
 				else:
