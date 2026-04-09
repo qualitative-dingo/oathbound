@@ -1775,6 +1775,14 @@ func _mountain_pool_surface(x: float, z: float) -> float:
 	var raw_h := _get_raw_height_no_paths(x, z)
 	if raw_h <= 3.0:
 		return -999.0
+	# Skip areas near river channels
+	if not _creek_bed.is_empty():
+		var cb_ix := int(floor(x / _CREEK_BED_CELL))
+		var cb_iz := int(floor(z / _CREEK_BED_CELL))
+		for dx in range(-2, 3):
+			for dz in range(-2, 3):
+				if _creek_bed.has(Vector2i(cb_ix + dx, cb_iz + dz)):
+					return -999.0
 	var valley_n := _valley_pool_noise.get_noise_2d(x, z)
 	if valley_n >= -0.25:
 		return -999.0
@@ -3041,11 +3049,19 @@ func _build_mountain_pool_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 		for gx in range(gx_min, gx_max):
 			var wx := float(gx) * step
 			var wz := float(gz) * step
-			var pool_level := _mountain_pool_surface(wx, wz)
+			var pool_level := _mountain_pool_surface(wx + step * 0.5, wz + step * 0.5)
 			if pool_level < -900.0:
 				continue
-			var terrain_h := get_height_at(wx, wz)
-			if terrain_h >= pool_level - 0.1:
+
+			# All 4 corners must be below pool level
+			var corners_ok := true
+			for ci in 4:
+				var cx := wx + (step if ci == 1 or ci == 2 else 0.0)
+				var cz := wz + (step if ci == 2 or ci == 3 else 0.0)
+				if get_height_at(cx, cz) >= pool_level - 0.3:
+					corners_ok = false
+					break
+			if not corners_ok:
 				continue
 
 			var lx := wx - zone_origin.x
