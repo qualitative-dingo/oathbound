@@ -2042,16 +2042,10 @@ static func _scatter_grass(
 				continue
 
 			var h5 := _grass_cell_hash(gcx, gcz, 4)
-			var tier_n := _fbm2(wx * 0.02 + 500.0, wz * 0.02 + 300.0)
-			var keep: float
-			if tier_n >= 0.75:
-				keep = 1.0
-			elif tier_n >= 0.50:
-				keep = 0.70
-			elif tier_n >= 0.25:
-				keep = 0.45
-			else:
-				keep = 0.20
+			var warp_x := _fbm2(wx * 0.03 + 700.0, wz * 0.03 + 900.0) * 30.0
+			var warp_z := _fbm2(wx * 0.03 + 200.0, wz * 0.03 + 400.0) * 30.0
+			var density := _fbm2((wx + warp_x) * 0.015 + 500.0, (wz + warp_z) * 0.015 + 300.0)
+			var keep := lerpf(0.15, 1.0, density * density)
 			if h5 > keep:
 				continue
 
