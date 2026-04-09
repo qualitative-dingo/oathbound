@@ -103,6 +103,14 @@ var _creek_bed: Dictionary = {}        # Vector2i -> float (target bed height)
 const TERRAIN_MOD_STEP := ZONE_SIZE / MESH_RESOLUTION  # ~1.33m per grid cell
 var _terrain_mods: Dictionary = {}
 
+# ─── Water Physics Grid (Minecraft-style cellular water simulation) ───────────
+# Sparse grid aligned with TERRAIN_MOD_STEP. Values are water surface heights.
+var _water_grid: Dictionary = {}          # Vector2i -> float (water surface h)
+var _water_sources: Dictionary = {}       # Vector2i -> float (permanent source h)
+var _water_frontier: Array[Vector2i] = [] # cells queued for propagation
+var _water_dirty_zones: Dictionary = {}   # zones needing water mesh rebuild
+const WATER_SIM_CELLS_PER_FRAME := 200
+
 # ─── Floating Origin ──────────────────────────────────────────────────────────
 # Periodically re-centers the scene around the player so the GPU always works
 # with small coordinate values.  Prevents precision/performance degradation at
@@ -135,7 +143,6 @@ const TERRAFORM_MAX_DELTA := 8.0
 const TERRAFORM_MIN_HEIGHT := WATER_LEVEL + 2.0
 
 func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h: float) -> void:
-	target_h = maxf(target_h, TERRAFORM_MIN_HEIGHT)
 	var affected_zones: Dictionary = {}
 	var steps := ceili(radius / TERRAIN_MOD_STEP)
 	var cx := roundi(world_x / TERRAIN_MOD_STEP)
@@ -158,13 +165,15 @@ func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h:
 			var ideal_h := lerpf(existing_h, target_h, blend)
 			var delta := ideal_h - existing_h
 			delta = clampf(delta, -TERRAFORM_MAX_DELTA, TERRAFORM_MAX_DELTA)
-			var new_h := maxf(existing_h + delta, TERRAFORM_MIN_HEIGHT)
+			var new_h := existing_h + delta
 			_terrain_mods[key] = new_h
 			var zone := Vector2i(floori(wx / ZONE_SIZE), floori(wz / ZONE_SIZE))
 			affected_zones[zone] = true
 
 	for zone_coord: Vector2i in affected_zones:
 		rebuild_zone(zone_coord)
+
+	_notify_water_terrain_changed(world_x, world_z, radius)
 
 var _rebuild_ready_queue: Array = []
 
@@ -916,6 +925,113 @@ func _compute_watershed() -> void:
 
 	# Step 8 — stamp creek bed grid for wide terrain carving
 	_stamp_creek_bed()
+
+	# Step 9 — register creek points as permanent water sources
+	_register_water_sources()
+
+
+func _register_water_sources() -> void:
+	_water_grid.clear()
+	_water_sources.clear()
+	_water_frontier.clear()
+	for zone_segs in _creek_segments.values():
+		for seg in zone_segs:
+			var points: PackedVector3Array = seg["points"]
+			for i in range(0, points.size(), 3):
+				var p := points[i]
+				var key := _terrain_mod_key(p.x, p.z)
+				_water_sources[key] = p.y
+				if not _water_grid.has(key) or _water_grid[key] < p.y:
+					_water_grid[key] = p.y
+				if not _water_frontier.has(key):
+					_water_frontier.append(key)
+
+
+func _simulate_water() -> void:
+	if _water_frontier.is_empty():
+		return
+	var processed := 0
+	var next_frontier: Array[Vector2i] = []
+	while processed < WATER_SIM_CELLS_PER_FRAME and not _water_frontier.is_empty():
+		var cell := _water_frontier.pop_back()
+		processed += 1
+		if not _water_grid.has(cell):
+			continue
+		var water_h: float = _water_grid[cell]
+		var wx := float(cell.x) * TERRAIN_MOD_STEP
+		var wz := float(cell.y) * TERRAIN_MOD_STEP
+		var terrain_h := get_height_at(wx, wz)
+		if water_h <= terrain_h:
+			continue
+
+		var neighbors := [
+			Vector2i(cell.x + 1, cell.y),
+			Vector2i(cell.x - 1, cell.y),
+			Vector2i(cell.x, cell.y + 1),
+			Vector2i(cell.x, cell.y - 1),
+		]
+		for nb in neighbors:
+			var nbx := float(nb.x) * TERRAIN_MOD_STEP
+			var nbz := float(nb.y) * TERRAIN_MOD_STEP
+			var nb_terrain := get_height_at(nbx, nbz)
+			var nb_water: float = _water_grid.get(nb, nb_terrain)
+			if water_h > nb_water + 0.05:
+				var transfer := minf((water_h - nb_water) * 0.25, water_h - terrain_h)
+				var new_level := maxf(nb_water + transfer, nb_terrain)
+				_water_grid[nb] = new_level
+				next_frontier.append(nb)
+				var zone := Vector2i(floori(nbx / ZONE_SIZE), floori(nbz / ZONE_SIZE))
+				_water_dirty_zones[zone] = true
+
+		if _water_sources.has(cell):
+			_water_grid[cell] = maxf(_water_grid[cell], float(_water_sources[cell]))
+
+		var zone := Vector2i(floori(wx / ZONE_SIZE), floori(wz / ZONE_SIZE))
+		_water_dirty_zones[zone] = true
+
+	_water_frontier.append_array(next_frontier)
+
+
+func _notify_water_terrain_changed(world_x: float, world_z: float, radius: float) -> void:
+	var steps := ceili(radius / TERRAIN_MOD_STEP) + 2
+	var cx := roundi(world_x / TERRAIN_MOD_STEP)
+	var cz := roundi(world_z / TERRAIN_MOD_STEP)
+	var r_sq := (radius + TERRAIN_MOD_STEP * 2.0) * (radius + TERRAIN_MOD_STEP * 2.0)
+	for dz in range(-steps, steps + 1):
+		for dx in range(-steps, steps + 1):
+			var gx := cx + dx
+			var gz := cz + dz
+			var wx := float(gx) * TERRAIN_MOD_STEP
+			var wz := float(gz) * TERRAIN_MOD_STEP
+			var dist_sq := (wx - world_x) * (wx - world_x) + (wz - world_z) * (wz - world_z)
+			if dist_sq > r_sq:
+				continue
+			var key := Vector2i(gx, gz)
+			var terrain_h := get_height_at(wx, wz)
+			if _water_grid.has(key):
+				_water_frontier.append(key)
+			else:
+				for nb in [Vector2i(gx+1,gz), Vector2i(gx-1,gz), Vector2i(gx,gz+1), Vector2i(gx,gz-1)]:
+					if _water_grid.has(nb):
+						_water_frontier.append(nb)
+
+
+func get_water_level_at(x: float, z: float) -> float:
+	var key := _terrain_mod_key(x, z)
+	if _water_grid.has(key):
+		return float(_water_grid[key])
+	return get_height_at(x, z)
+
+
+func get_water_grid() -> Dictionary:
+	return _water_grid
+
+
+func set_water_grid(data: Dictionary) -> void:
+	_water_grid = data
+	for key: Vector2i in _water_grid:
+		if not _water_sources.has(key):
+			_water_frontier.append(key)
 
 
 func _trace_lake_outflows() -> void:
@@ -2145,6 +2261,10 @@ func _process_pending_zones() -> void:
 	# Track if we assigned a terrain shape this frame (expensive ConcavePolygonShape3D)
 	var terrain_shape_assigned := _apply_rebuild_results()
 
+	# 0.6. Water physics simulation (throttled cellular propagation)
+	_simulate_water()
+	_rebuild_dirty_water_meshes()
+
 	# 1. Collect completed background builds — cap per frame to prevent burst spikes
 	# PERF: Reduced from 4 to 2 to spread work across more frames
 	const _MAX_READY_PER_FRAME := 2
@@ -2577,6 +2697,9 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 	# Build creek/river strip meshes for this zone
 	_build_creek_meshes_for_zone(zone_root, coord)
 
+	# Build water physics mesh for this zone
+	_build_water_mesh_for_zone(zone_root, coord)
+
 	# Queue object spawning for the NEXT frame to keep this frame light
 	var micro := _determine_microbiome(coord)
 	# Clear any stale backlog entries for this coord before adding new one
@@ -2821,6 +2944,107 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 		zone_root.add_child(mi)
 
 		_spawn_waterfall_particles(zone_root, points, zone_origin)
+
+
+func _build_water_mesh_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
+	var zone_wx := coord.x * ZONE_SIZE
+	var zone_wz := coord.y * ZONE_SIZE
+	var zone_origin := Vector3(zone_wx, 0.0, zone_wz)
+	var step := TERRAIN_MOD_STEP
+	var gx_min := roundi(zone_wx / step)
+	var gx_max := roundi((zone_wx + ZONE_SIZE) / step)
+	var gz_min := roundi(zone_wz / step)
+	var gz_max := roundi((zone_wz + ZONE_SIZE) / step)
+
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var vert_idx := 0
+
+	for gz in range(gz_min, gz_max):
+		for gx in range(gx_min, gx_max):
+			var key := Vector2i(gx, gz)
+			if not _water_grid.has(key):
+				continue
+			var water_h: float = _water_grid[key]
+			var wx := float(gx) * step
+			var wz := float(gz) * step
+			var terrain_h := get_height_at(wx, wz)
+			if water_h <= terrain_h + 0.1:
+				continue
+			var lx := wx - zone_origin.x
+			var lz := wz - zone_origin.z
+			var ly := water_h - zone_origin.y
+
+			var s := step
+			verts.append(Vector3(lx, ly, lz))
+			verts.append(Vector3(lx + s, ly, lz))
+			verts.append(Vector3(lx + s, ly, lz + s))
+			verts.append(Vector3(lx, ly, lz + s))
+			for _n in 4:
+				norms.append(Vector3.UP)
+			uvs.append(Vector2(0, 0))
+			uvs.append(Vector2(1, 0))
+			uvs.append(Vector2(1, 1))
+			uvs.append(Vector2(0, 1))
+			indices.append(vert_idx)
+			indices.append(vert_idx + 1)
+			indices.append(vert_idx + 2)
+			indices.append(vert_idx)
+			indices.append(vert_idx + 2)
+			indices.append(vert_idx + 3)
+			vert_idx += 4
+
+	if verts.is_empty():
+		return
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = norms
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+
+	var arr_mesh := ArrayMesh.new()
+	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	if _creek_shader_mat:
+		arr_mesh.surface_set_material(0, _creek_shader_mat)
+
+	var mi := MeshInstance3D.new()
+	mi.name = "WaterPhysics"
+	mi.mesh = arr_mesh
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	zone_root.add_child(mi)
+
+
+func _rebuild_dirty_water_meshes() -> void:
+	if _water_dirty_zones.is_empty():
+		return
+	var rebuilt := 0
+	for zone_coord: Vector2i in _water_dirty_zones:
+		if rebuilt >= 2:
+			break
+		if not _loaded_zones.has(zone_coord):
+			continue
+		var zone_root: Node3D = _loaded_zones[zone_coord]
+		for child in zone_root.get_children():
+			if child.name == "WaterPhysics":
+				child.queue_free()
+				break
+		_build_water_mesh_for_zone(zone_root, zone_coord)
+		rebuilt += 1
+	if rebuilt > 0:
+		var done_zones: Array[Vector2i] = []
+		var count := 0
+		for z: Vector2i in _water_dirty_zones:
+			if count >= rebuilt:
+				break
+			if _loaded_zones.has(z):
+				done_zones.append(z)
+				count += 1
+		for z in done_zones:
+			_water_dirty_zones.erase(z)
 
 
 func _spawn_waterfall_particles(zone_root: Node3D, points: PackedVector3Array, zone_origin: Vector3) -> void:

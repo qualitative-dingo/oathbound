@@ -70,10 +70,11 @@ void fragment() {
 	float scroll = TIME * speed;
 	vec2 flow_uv = vec2(v_uv.x, v_uv.y - scroll);
 
-	// Multi-octave noise for surface detail
+	// Multi-octave noise for surface detail with directional streaks
 	float n1 = gnoise(flow_uv * ripple_scale * 2.0);
 	float n2 = gnoise(flow_uv * ripple_scale * 4.5 + vec2(50.0, 30.0));
-	float combined = n1 * 0.6 + n2 * 0.4;
+	float streak = gnoise(vec2(flow_uv.x * ripple_scale * 6.0, flow_uv.y * ripple_scale * 0.8));
+	float combined = n1 * 0.45 + n2 * 0.25 + streak * 0.3;
 
 	// ── Depth sampling for terrain intersection ──
 	float depth_raw = texture(DEPTH_TEXTURE, SCREEN_UV).r;

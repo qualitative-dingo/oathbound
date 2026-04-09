@@ -459,15 +459,22 @@ func _spawn_building(entry: Dictionary) -> void:
 func get_world_state_for_save() -> Dictionary:
 	var wg := _find_world_generator()
 	var terrain_mods_serialized: Dictionary = {}
+	var water_grid_serialized: Dictionary = {}
 	if wg:
 		var raw_mods: Dictionary = wg.get_terrain_mods()
 		for key: Vector2i in raw_mods:
 			terrain_mods_serialized["%d,%d" % [key.x, key.y]] = raw_mods[key]
+		var raw_water: Dictionary = wg.get_water_grid()
+		var water_sources: Dictionary = wg._water_sources
+		for key: Vector2i in raw_water:
+			if not water_sources.has(key):
+				water_grid_serialized["%d,%d" % [key.x, key.y]] = raw_water[key]
 	return {
 		"destroyed": _destroyed_objects.duplicate(),
 		"buildings": _placed_buildings.duplicate(),
 		"horses": _collect_horse_positions(),
 		"terrain_mods": terrain_mods_serialized,
+		"water_grid": water_grid_serialized,
 	}
 
 
@@ -492,6 +499,16 @@ func apply_world_state_from_save(data: Dictionary) -> void:
 				if parts.size() == 2:
 					restored[Vector2i(int(parts[0]), int(parts[1]))] = float(raw[key_str])
 			wg.set_terrain_mods(restored)
+	if data.has("water_grid"):
+		var wg2 := _find_world_generator()
+		if wg2:
+			var raw_w: Dictionary = data["water_grid"]
+			var restored_w: Dictionary = {}
+			for key_str: String in raw_w:
+				var parts := key_str.split(",")
+				if parts.size() == 2:
+					restored_w[Vector2i(int(parts[0]), int(parts[1]))] = float(raw_w[key_str])
+			wg2.set_water_grid(restored_w)
 	_apply_mutations()
 
 

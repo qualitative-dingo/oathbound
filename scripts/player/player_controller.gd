@@ -107,6 +107,7 @@ var _build_selected: StringName = &""
 var _build_rotation: float = 0.0
 # Terraform mode (H key)
 var _terraform_mode: bool = false
+var _terraform_raise: bool = false
 var _hoe_indicator: MeshInstance3D
 var _hoe_height_line: MeshInstance3D
 const HOE_RADIUS := 3.0
@@ -1207,9 +1208,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		_toggle_terraform_mode()
 		return
 
-	# Middle-click -> salvage structure (available in build or terraform state)
+	# Middle-click -> toggle raise/lower in terraform, salvage in build mode
 	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_MIDDLE and (event as InputEventMouseButton).pressed:
-		if (_build_mode or _build_menu_open or _terraform_mode) and not _inventory_open:
+		if _terraform_mode and not _inventory_open:
+			_terraform_raise = not _terraform_raise
+			var mode_name := "Raise" if _terraform_raise else "Lower"
+			_show_hint_text(mode_name + " ground mode")
+			_refresh_control_hints()
+			return
+		if (_build_mode or _build_menu_open) and not _inventory_open:
 			_try_salvage_structure()
 			return
 
@@ -7717,8 +7724,9 @@ func _refresh_control_hints() -> void:
 		hints.append(["[MMB]", "Salvage"])
 		hints.append(["[B / Esc]", "Exit build mode"])
 	elif _terraform_mode:
-		hints.append(["[LMB]", "Flatten ground"])
-		hints.append(["[MMB]", "Salvage"])
+		var mode_label := "Raise ground" if _terraform_raise else "Lower ground"
+		hints.append(["[LMB]", mode_label])
+		hints.append(["[MMB]", "Toggle Raise/Lower"])
 		hints.append(["[H / Esc]", "Exit terraform mode"])
 	else:
 		_control_hints_box.visible = false
@@ -9591,8 +9599,12 @@ func _try_hoe_use() -> void:
 		return
 	var world_hit := wg.get_world_position_vec(hit_pos)
 
-	var player_world := wg.get_world_position(self)
-	var target_h := wg.get_height_at(player_world.x, player_world.z)
+	var current_h := wg.get_height_at(world_hit.x, world_hit.z)
+	var target_h: float
+	if _terraform_raise:
+		target_h = current_h + 2.0
+	else:
+		target_h = current_h - 2.0
 
 	wg.flatten_terrain_to(world_hit.x, world_hit.z, HOE_RADIUS, target_h)
 
@@ -9611,6 +9623,7 @@ func _toggle_terraform_mode() -> void:
 
 func _exit_terraform_mode() -> void:
 	_terraform_mode = false
+	_terraform_raise = false
 	if _hoe_indicator and is_instance_valid(_hoe_indicator):
 		_hoe_indicator.visible = false
 	if _hoe_height_line and is_instance_valid(_hoe_height_line):
