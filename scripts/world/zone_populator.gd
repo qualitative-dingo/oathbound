@@ -1991,7 +1991,7 @@ static func _scatter_grass(
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
 	var transforms: Array[Transform3D] = []
-	const _RG_VEG_REJECT := _RG_DENSITY_LOW | _RG_PATH | _RG_DIRT | _RG_WATER | _RG_STRUCTURE | _RG_BUSH
+	const _RG_GRASS_REJECT := _RG_PATH | _RG_DIRT | _RG_WATER | _RG_STRUCTURE | _RG_BUSH
 
 	const GRASS_CELL := 0.325
 	var cell_x0 := int(floor(origin_x / GRASS_CELL))
@@ -2016,8 +2016,22 @@ static func _scatter_grass(
 
 			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
-			if _rg_data[rgz * _RG_RES + rgx] & _RG_VEG_REJECT != 0:
+			if _rg_data[rgz * _RG_RES + rgx] & _RG_GRASS_REJECT != 0:
 				continue
+
+			var veg_d := _vegetation_density_noise(wx, wz)
+			if veg_d < 0.18:
+				var h5 := _grass_cell_hash(gcx, gcz, 4)
+				var tier_n := _fbm2(wx * 0.025 + 500.0, wz * 0.025 + 300.0)
+				var keep: float
+				if tier_n < 0.333:
+					keep = 0.10
+				elif tier_n < 0.666:
+					keep = 0.25
+				else:
+					keep = 0.50
+				if h5 > keep:
+					continue
 
 			var sn := _hg_snap_and_normal(wx, wz)
 			var ground_y := sn.x
