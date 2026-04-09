@@ -112,7 +112,7 @@ static func _hg_sample(wx: float, wz: float) -> float:
 	return h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
 
 static func _hg_snap_and_normal(wx: float, wz: float) -> Vector2:
-	const STEP := ZONE_SIZE / 32.0
+	const STEP := ZONE_SIZE / 48.0
 	var gx := floorf(wx / STEP) * STEP
 	var gz := floorf(wz / STEP) * STEP
 	var fx := (wx - gx) / STEP

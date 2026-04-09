@@ -2726,6 +2726,9 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: ConcavePolygonShape3D
 	# Build creek/river strip meshes for this zone
 	_build_creek_meshes_for_zone(zone_root, coord)
 
+	# Build mountain-top lake water surfaces
+	_build_mountain_pool_for_zone(zone_root, coord)
+
 	# Water physics mesh — disabled until propagation is properly tuned
 	#_build_water_mesh_for_zone(zone_root, coord)
 
