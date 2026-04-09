@@ -17,6 +17,13 @@ const _HORSE_WALK_FRAME_DURATION := 0.14
 const _HORSE_RUN_FRAME_DURATION := 0.09
 const _SIT_IDLE_FRAME_DURATION := 0.12
 
+const UNLOCK_HOLD_TIME := 1.5
+
+var _unlock_progress: float = 0.0
+var _unlock_target: Node3D = null
+var _unlock_bar: ProgressBar = null
+var _unlock_bar_container: PanelContainer = null
+
 
 # ===================================================================
 # CHEST
@@ -98,6 +105,130 @@ func close_chest() -> void:
 	if pc._minimap_biome_label:
 		pc._minimap_biome_label.visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+# ===================================================================
+# CHEST UNLOCK
+# ===================================================================
+
+func _has_oathsword_equipped() -> bool:
+	var equipped := Inventory.get_all_equipped()
+	for slot_name in equipped:
+		var item_id: StringName = equipped[slot_name] as StringName
+		if item_id == &"" or item_id == &"fists":
+			continue
+		var parsed := ItemDatabase.parse_star_id(item_id)
+		if parsed.get("base", &"") == &"god_sword":
+			return true
+	return false
+
+
+func _try_unlock_chest(chest_node: Node3D) -> void:
+	if _has_oathsword_equipped():
+		chest_node.set_meta("is_locked", false)
+		AudioManager.play_sfx("ui_click", -6.0)
+		if NetworkManager.is_server() or not NetworkManager.is_connected_to_game():
+			open_chest(chest_node)
+		return
+
+	if not Inventory.has_item_any_star(&"chest_key"):
+		AudioManager.play_sfx("ui_click", -8.0)
+		return
+
+	if _unlock_target == chest_node and _unlock_progress > 0.0:
+		return
+	_unlock_target = chest_node
+	_unlock_progress = 0.0
+	_show_unlock_bar()
+
+
+func _show_unlock_bar() -> void:
+	_hide_unlock_bar()
+	if not pc._hud_root:
+		return
+	_unlock_bar_container = PanelContainer.new()
+	_unlock_bar_container.name = "UnlockBarContainer"
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.06, 0.04, 0.85)
+	style.border_color = Color(0.5, 0.38, 0.2)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(6)
+	style.set_content_margin_all(8)
+	_unlock_bar_container.add_theme_stylebox_override("panel", style)
+	_unlock_bar_container.set_anchors_preset(Control.PRESET_CENTER)
+	_unlock_bar_container.offset_left = -120
+	_unlock_bar_container.offset_right = 120
+	_unlock_bar_container.offset_top = 60
+	_unlock_bar_container.offset_bottom = 100
+	_unlock_bar_container.z_index = 80
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+
+	var label := Label.new()
+	label.text = "Unlocking..."
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color(0.9, 0.8, 0.5))
+	vbox.add_child(label)
+
+	_unlock_bar = ProgressBar.new()
+	_unlock_bar.custom_minimum_size = Vector2(220, 12)
+	_unlock_bar.max_value = 1.0
+	_unlock_bar.value = 0.0
+	_unlock_bar.show_percentage = false
+	var bg_style := StyleBoxFlat.new()
+	bg_style.bg_color = Color(0.1, 0.1, 0.1, 0.8)
+	bg_style.set_corner_radius_all(3)
+	_unlock_bar.add_theme_stylebox_override("background", bg_style)
+	var fill_style := StyleBoxFlat.new()
+	fill_style.bg_color = Color(0.85, 0.65, 0.15, 0.9)
+	fill_style.set_corner_radius_all(3)
+	_unlock_bar.add_theme_stylebox_override("fill", fill_style)
+	vbox.add_child(_unlock_bar)
+
+	_unlock_bar_container.add_child(vbox)
+	pc._hud_root.add_child(_unlock_bar_container)
+
+
+func _hide_unlock_bar() -> void:
+	if _unlock_bar_container and is_instance_valid(_unlock_bar_container):
+		_unlock_bar_container.queue_free()
+	_unlock_bar_container = null
+	_unlock_bar = null
+
+
+func cancel_unlock() -> void:
+	_unlock_target = null
+	_unlock_progress = 0.0
+	_hide_unlock_bar()
+
+
+func tick_unlock(delta: float) -> void:
+	if _unlock_target == null:
+		return
+	if not is_instance_valid(_unlock_target):
+		cancel_unlock()
+		return
+	if pc.global_position.distance_to(_unlock_target.global_position) > 3.5:
+		cancel_unlock()
+		return
+	if not Input.is_action_pressed(&"interact"):
+		cancel_unlock()
+		return
+
+	_unlock_progress += delta
+	if _unlock_bar and is_instance_valid(_unlock_bar):
+		_unlock_bar.value = clampf(_unlock_progress / UNLOCK_HOLD_TIME, 0.0, 1.0)
+
+	if _unlock_progress >= UNLOCK_HOLD_TIME:
+		var chest := _unlock_target
+		Inventory.remove_item_any_star(&"chest_key", 1)
+		chest.set_meta("is_locked", false)
+		cancel_unlock()
+		AudioManager.play_sfx("ui_click", -4.0)
+		if NetworkManager.is_server() or not NetworkManager.is_connected_to_game():
+			open_chest(chest)
 
 
 func refresh_chest_ui() -> void:
@@ -387,7 +518,10 @@ func update_interact_prompt() -> void:
 		var d := pp.distance_to(ch3d.global_position)
 		if d < closest_dist:
 			closest_dist = d
-			closest_name = "Chest"
+			if ch3d.get_meta("is_locked", false):
+				closest_name = "Unlock Chest"
+			else:
+				closest_name = "Chest"
 
 	if pc._on_raft:
 		closest_name = "Dismount Raft"
@@ -593,6 +727,9 @@ func try_interact() -> void:
 		if not ch3d:
 			continue
 		if pc.global_position.distance_to(ch3d.global_position) < 3.0:
+			if ch3d.get_meta("is_locked", false):
+				_try_unlock_chest(ch3d)
+				return
 			if NetworkManager.is_server() or not NetworkManager.is_connected_to_game():
 				open_chest(ch3d)
 			else:

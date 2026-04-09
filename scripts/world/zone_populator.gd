@@ -1377,6 +1377,8 @@ static func populate_zone_phase(
 		if biome == &"hearthlands":
 			_try_spawn_cave(zone_root, coord, rng, origin_x, origin_z, height_func)
 
+		_try_spawn_goblin_camp(zone_root, coord, rng, origin_x, origin_z, height_func)
+
 		if not debug_skip_horses:
 			var _has_saved_horses := not _get_saved_horses().is_empty()
 			if biome == &"hearthlands":
@@ -2042,10 +2044,10 @@ static func _scatter_grass(
 				continue
 
 			var h5 := _grass_cell_hash(gcx, gcz, 4)
-			var warp_x := _fbm2(wx * 0.03 + 700.0, wz * 0.03 + 900.0) * 30.0
-			var warp_z := _fbm2(wx * 0.03 + 200.0, wz * 0.03 + 400.0) * 30.0
-			var density := _fbm2((wx + warp_x) * 0.015 + 500.0, (wz + warp_z) * 0.015 + 300.0)
-			var keep := lerpf(0.15, 1.0, density * density)
+			var warp_x := _fbm2(wx * 0.03 + 700.0, wz * 0.03 + 900.0) * 15.0
+			var warp_z := _fbm2(wx * 0.03 + 200.0, wz * 0.03 + 400.0) * 15.0
+			var density := _fbm2((wx + warp_x) * 0.045 + 500.0, (wz + warp_z) * 0.045 + 300.0)
+			var keep := lerpf(0.35, 1.0, density)
 			if h5 > keep:
 				continue
 
@@ -3956,6 +3958,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 				{"id": &"flint", "min": 1, "max": 2, "chance": 0.5},
 			], "rare": [
 				{"id": &"gold", "min": 1, "max": 3, "chance": 0.40, "no_stars": true},
+				{"id": &"chest_key", "min": 1, "max": 1, "chance": 0.08, "no_stars": true},
 			]}
 		&"orc_brute":
 			return {"normal": [
@@ -3964,6 +3967,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 			], "rare": [
 				{"id": &"gold", "min": 2, "max": 6, "chance": 0.50, "no_stars": true},
 				{"id": &"ancient_bone", "min": 1, "max": 1, "chance": 0.06},
+				{"id": &"chest_key", "min": 1, "max": 1, "chance": 0.10, "no_stars": true},
 			]}
 		&"ghoul":
 			return {"normal": [
@@ -3972,6 +3976,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 				{"id": &"gold", "min": 1, "max": 4, "chance": 0.35, "no_stars": true},
 				{"id": &"trophy_skeleton", "min": 1, "max": 1, "chance": 0.08},
 				{"id": &"ancient_bone", "min": 1, "max": 1, "chance": 0.05},
+				{"id": &"chest_key", "min": 1, "max": 1, "chance": 0.07, "no_stars": true},
 			]}
 		&"fire_imp":
 			return {"normal": [
@@ -3980,6 +3985,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 			], "rare": [
 				{"id": &"gold", "min": 2, "max": 5, "chance": 0.40, "no_stars": true},
 				{"id": &"ember_stone", "min": 1, "max": 1, "chance": 0.08},
+				{"id": &"chest_key", "min": 1, "max": 1, "chance": 0.07, "no_stars": true},
 			]}
 		&"frost_wraith":
 			return {"normal": [
@@ -3988,6 +3994,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 			], "rare": [
 				{"id": &"gold", "min": 1, "max": 5, "chance": 0.35, "no_stars": true},
 				{"id": &"frost_shard", "min": 1, "max": 1, "chance": 0.08},
+				{"id": &"chest_key", "min": 1, "max": 1, "chance": 0.07, "no_stars": true},
 			]}
 		&"cyclops":
 			return {"normal": [
@@ -3996,6 +4003,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 			], "rare": [
 				{"id": &"gold", "min": 5, "max": 12, "chance": 0.55, "no_stars": true},
 				{"id": &"ancient_bone", "min": 1, "max": 2, "chance": 0.10},
+				{"id": &"chest_key", "min": 1, "max": 1, "chance": 0.12, "no_stars": true},
 			]}
 		&"minotaur":
 			return {"normal": [
@@ -4006,6 +4014,7 @@ static func _creature_loot_for(kind: StringName) -> Dictionary:
 				{"id": &"gold", "min": 4, "max": 10, "chance": 0.50, "no_stars": true},
 				{"id": &"ancient_bone", "min": 1, "max": 1, "chance": 0.08},
 				{"id": &"thick_hide", "min": 1, "max": 2, "chance": 0.06},
+				{"id": &"chest_key", "min": 1, "max": 1, "chance": 0.10, "no_stars": true},
 			]}
 		_:
 			return {"normal": [{"id": &"bone", "min": 1, "max": 1, "chance": 0.5}], "rare": []}

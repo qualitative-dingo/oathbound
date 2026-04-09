@@ -9291,6 +9291,7 @@ func _process(delta: float) -> void:
 		_fps_label.text = "%d FPS" % Engine.get_frames_per_second()
 
 	_tick_equip_progress(delta)
+	_interaction.tick_unlock(delta)
 	if _hud_module:
 		_hud_module.update_chat_fade(self, delta)
 	_check_speech_triggers(delta)

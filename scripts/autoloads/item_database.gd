@@ -1270,3 +1270,8 @@ func _register_defaults() -> void:
 		"icon": "res://textures/items/gold.png",
 		"shop_price": 50,
 	})
+	register_item(&"chest_key", {
+		"name": "Chest Key", "type": "material", "stack_size": 20,
+		"description": "A crude iron key found on slain creatures. Used to unlock locked chests.",
+		"icon": "res://textures/items/iron_sword.png",
+	})

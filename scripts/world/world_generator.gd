@@ -622,7 +622,7 @@ func _physics_process(delta: float) -> void:
 		if p.get(&"flight_mode"):
 			_any_flying = true
 			break
-	var effective_radius: int = (load_radius_zones + 2) if _any_flying else load_radius_zones
+	var effective_radius: int = load_radius_zones
 
 	var cur_zones: Array[Vector2i] = []
 	for p in _players:
@@ -631,11 +631,11 @@ func _physics_process(delta: float) -> void:
 		_last_player_zones = cur_zones
 		for pz in cur_zones:
 			_queue_zones_around(pz, effective_radius)
-		_requeue_timer = 0.5 if _any_flying else 2.0
+		_requeue_timer = 2.0
 	else:
 		_requeue_timer -= delta
 		if _requeue_timer <= 0.0:
-			_requeue_timer = 0.5 if _any_flying else 2.0
+			_requeue_timer = 2.0
 			for pz in cur_zones:
 				_queue_zones_around(pz, effective_radius)
 	var t2 := Time.get_ticks_usec()
@@ -2376,7 +2376,7 @@ func _process_pending_zones() -> void:
 				finalized += 1
 
 	# 4. Submit new zone builds — stop if backlog is already large
-	var max_backlog := 10 if _any_flying else 6
+	var max_backlog := 6
 	if _finalize_backlog.size() + _gen_in_flight.size() > max_backlog:
 		return
 	var zones_this_frame := MAX_ZONES_PER_FRAME
@@ -2440,7 +2440,7 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 		if p.get(&"flight_mode"):
 			any_flying = true
 			break
-	var effective_unload: float = float(unload_radius_zones + 2) if any_flying else float(unload_radius_zones)
+	var effective_unload: float = float(unload_radius_zones)
 	# When forcing aggressive unload, tighten the radius
 	if force_aggressive:
 		effective_unload = maxf(effective_unload - 1.0, float(load_radius_zones))
@@ -3271,8 +3271,7 @@ func _resize_water_plane() -> void:
 func set_render_distance(radius: int) -> void:
 	load_radius_zones = clampi(radius, 1, 5)
 	unload_radius_zones = load_radius_zones + 2
-	var fly_radius := load_radius_zones + 2
-	_max_loaded_zones = (2 * fly_radius + 1) ** 2 + 10
+	_max_loaded_zones = (2 * unload_radius_zones + 1) ** 2 + 10
 	_resize_water_plane()
 
 
