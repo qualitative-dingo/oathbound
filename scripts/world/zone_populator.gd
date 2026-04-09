@@ -1962,6 +1962,15 @@ static func _scatter_flowers(
 		zone_root.add_child(mmi)
 
 
+static func _grass_cell_hash(cx: int, cz: int, salt: int) -> float:
+	var n: int = (cx + 7919) * 374761393 + (cz + 7207) * 668265263 + (salt + 3571) * 1274126177
+	n = (n >> 13) ^ n
+	n = n % 1000000007
+	if n < 0:
+		n += 1000000007
+	return float(n) / 1000000007.0
+
+
 static func _scatter_grass(
 	zone_root: Node3D,
 	coord: Vector2i,
@@ -1984,34 +1993,48 @@ static func _scatter_grass(
 	var transforms: Array[Transform3D] = []
 	const _RG_VEG_REJECT := _RG_DENSITY_LOW | _RG_PATH | _RG_DIRT | _RG_WATER | _RG_STRUCTURE | _RG_BUSH
 
-	const GRASS_COUNT := 9520
-	for _i in GRASS_COUNT:
-		var lx := rng.randf_range(0.5, ZONE_SIZE - 0.5)
-		var lz := rng.randf_range(0.5, ZONE_SIZE - 0.5)
-		var wx := origin_x + lx
-		var wz := origin_z + lz
+	const GRASS_CELL := 0.325
+	var cell_x0 := int(floor(origin_x / GRASS_CELL))
+	var cell_z0 := int(floor(origin_z / GRASS_CELL))
+	var cell_x1 := int(ceil((origin_x + ZONE_SIZE) / GRASS_CELL))
+	var cell_z1 := int(ceil((origin_z + ZONE_SIZE) / GRASS_CELL))
 
-		var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
-		var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
-		if _rg_data[rgz * _RG_RES + rgx] & _RG_VEG_REJECT != 0:
-			continue
+	for gcz in range(cell_z0, cell_z1):
+		for gcx in range(cell_x0, cell_x1):
+			var h1 := _grass_cell_hash(gcx, gcz, 0)
+			var h2 := _grass_cell_hash(gcx, gcz, 1)
+			var h3 := _grass_cell_hash(gcx, gcz, 2)
+			var h4 := _grass_cell_hash(gcx, gcz, 3)
 
-		var sn := _hg_snap_and_normal(wx, wz)
-		var ground_y := sn.x
-		if ground_y < _MIN_LAND_Y or ground_y > 20.0:
-			continue
-		if sn.y < 0.90:
-			continue
-		if _hg_is_steep_edge(wx, wz, ground_y):
-			continue
+			var wx := (float(gcx) + 0.05 + h1 * 0.9) * GRASS_CELL
+			var wz := (float(gcz) + 0.05 + h2 * 0.9) * GRASS_CELL
+			var lx := wx - origin_x
+			var lz := wz - origin_z
 
-		var scale := rng.randf_range(0.4, 0.85)
-		var rot := rng.randf_range(0.0, TAU)
-		var sx := 2.4 * scale
-		var sy := 2.8 * scale
-		var sz := 2.4 * scale
-		var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
-		transforms.append(Transform3D(basis, Vector3(lx, ground_y - 0.04, lz)))
+			if lx < 0.0 or lx >= ZONE_SIZE or lz < 0.0 or lz >= ZONE_SIZE:
+				continue
+
+			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
+			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
+			if _rg_data[rgz * _RG_RES + rgx] & _RG_VEG_REJECT != 0:
+				continue
+
+			var sn := _hg_snap_and_normal(wx, wz)
+			var ground_y := sn.x
+			if ground_y < _MIN_LAND_Y or ground_y > 20.0:
+				continue
+			if sn.y < 0.90:
+				continue
+			if _hg_is_steep_edge(wx, wz, ground_y):
+				continue
+
+			var scale_val := 0.4 + h3 * 0.45
+			var rot := h4 * TAU
+			var sx := 2.4 * scale_val
+			var sy := 2.8 * scale_val
+			var sz := 2.4 * scale_val
+			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+			transforms.append(Transform3D(basis, Vector3(lx, ground_y - 0.04, lz)))
 
 	if transforms.is_empty():
 		return
