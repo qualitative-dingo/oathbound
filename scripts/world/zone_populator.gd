@@ -1984,7 +1984,7 @@ static func _scatter_grass(
 	var transforms: Array[Transform3D] = []
 	const _RG_VEG_REJECT := _RG_DENSITY_LOW | _RG_PATH | _RG_DIRT | _RG_WATER | _RG_STRUCTURE | _RG_BUSH
 
-	const GRASS_COUNT := 4760
+	const GRASS_COUNT := 9520
 	for _i in GRASS_COUNT:
 		var lx := rng.randf_range(0.5, ZONE_SIZE - 0.5)
 		var lz := rng.randf_range(0.5, ZONE_SIZE - 0.5)
