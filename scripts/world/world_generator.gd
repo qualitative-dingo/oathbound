@@ -1776,12 +1776,14 @@ func _mountain_pool_surface(x: float, z: float) -> float:
 	var raw_h := _get_raw_height_no_paths(x, z)
 	if raw_h <= 3.0:
 		return -999.0
-	# Skip areas near river channels
+	# Skip areas near river channels — check both creek bed grid and watershed flow
+	if _ws_sample_accum(x, z) > _CREEK_ACCUM_THRESH * 0.3:
+		return -999.0
 	if not _creek_bed.is_empty():
 		var cb_ix := int(floor(x / _CREEK_BED_CELL))
 		var cb_iz := int(floor(z / _CREEK_BED_CELL))
-		for dx in range(-2, 3):
-			for dz in range(-2, 3):
+		for dx in range(-3, 4):
+			for dz in range(-3, 4):
 				if _creek_bed.has(Vector2i(cb_ix + dx, cb_iz + dz)):
 					return -999.0
 	var valley_n := _valley_pool_noise.get_noise_2d(x, z)
