@@ -2044,10 +2044,11 @@ static func _scatter_grass(
 				continue
 
 			var h5 := _grass_cell_hash(gcx, gcz, 4)
-			var warp_x := _fbm2(wx * 0.03 + 700.0, wz * 0.03 + 900.0) * 15.0
-			var warp_z := _fbm2(wx * 0.03 + 200.0, wz * 0.03 + 400.0) * 15.0
-			var density := _fbm2((wx + warp_x) * 0.045 + 500.0, (wz + warp_z) * 0.045 + 300.0)
-			var keep := lerpf(0.35, 1.0, density)
+			var d1 := sin(wx * 0.08 + wz * 0.06 + 31.7) * 0.5 + 0.5
+			var d2 := sin(wx * 0.05 - wz * 0.09 + 74.3) * 0.5 + 0.5
+			var d3 := sin(wx * 0.13 + wz * 0.03 - 15.9) * 0.5 + 0.5
+			var density := (d1 + d2 + d3) / 3.0
+			var keep := lerpf(0.50, 1.0, density)
 			if h5 > keep:
 				continue
 
