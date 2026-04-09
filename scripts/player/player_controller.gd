@@ -698,7 +698,6 @@ func _ready() -> void:
 	_build_hud()
 	if _spring_arm:
 		_spring_arm.spring_length = min_zoom + 0.85 * (max_zoom - min_zoom)
-	_setup_camera_fill_light()
 	# Delay camera activation and terrain snap by one frame to let the scene tree settle
 	call_deferred("_activate_camera")
 	call_deferred("_snap_to_terrain")
@@ -709,23 +708,6 @@ func _ready() -> void:
 	GameEvents.creature_killed.connect(_on_creature_killed_speech)
 	if NetworkManager.is_connected_to_game():
 		NetworkManager.chest_contents_received.connect(_on_chest_contents_received)
-
-
-func _setup_camera_fill_light() -> void:
-	# OmniLight on the character itself for uniform wrap-around illumination.
-	# Prevents the directional sun from creating a silhouette at any angle.
-	if not _model:
-		return
-	var omni := OmniLight3D.new()
-	omni.name = "CharacterFillLight"
-	omni.light_energy = 0.7
-	omni.light_color = Color(1.0, 0.98, 0.95)
-	omni.omni_range = 4.0
-	omni.omni_attenuation = 1.5
-	omni.shadow_enabled = false
-	omni.light_bake_mode = Light3D.BAKE_DISABLED
-	omni.position = Vector3(0.0, 1.0, 0.0)
-	_model.add_child(omni)
 
 
 func _activate_camera() -> void:
@@ -2094,6 +2076,7 @@ func _setup_player_sprite() -> void:
 		_collect_mesh_instances(_player_sprite, _gltf_all_meshes)
 		for mi in _gltf_all_meshes:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_disable_shadow_receive(mi)
 		if is_tripo_barbarian:
 			_apply_tripo_player_texture()
 		elif is_lowpoly_viking:
@@ -8011,6 +7994,17 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	_building.build_campfire_visual(structure, sz)
 
 
+func _disable_shadow_receive(mi: MeshInstance3D) -> void:
+	if not mi.mesh:
+		return
+	for surf_idx in mi.mesh.get_surface_count():
+		var mat := mi.get_active_material(surf_idx)
+		if mat is BaseMaterial3D:
+			var m := mat.duplicate() as BaseMaterial3D
+			m.set_flag(BaseMaterial3D.FLAG_DONT_RECEIVE_SHADOWS, true)
+			mi.set_surface_override_material(surf_idx, m)
+
+
 func _disable_structure_shadows(node: Node) -> void:
 	if node is MeshInstance3D:
 		var mi := node as MeshInstance3D
@@ -12548,6 +12542,7 @@ func _update_equipped_weapon_model() -> void:
 			_draw_weapon()
 		for mi in _get_all_mesh_instances(_equipped_weapon_node):
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_disable_shadow_receive(mi)
 			if mi.mesh:
 				for si in mi.mesh.get_surface_count():
 					var mat := mi.get_active_material(si)
