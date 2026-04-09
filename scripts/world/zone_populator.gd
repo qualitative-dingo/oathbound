@@ -4229,6 +4229,21 @@ static func _try_spawn_goblin_camp(
 	if not is_local_max:
 		return
 
+	# Flatness check: sample 12 points at the hut footprint radius (~15m).
+	# Reject if any point drops more than 3m below the peak (mountain edge).
+	var flat_ok := true
+	for fi: int in 12:
+		var fa := float(fi) * TAU / 12.0
+		for fr: float in [8.0, 15.0]:
+			var fh := float(height_func.call(peak_x + cos(fa) * fr, peak_z + sin(fa) * fr))
+			if peak_h - fh > 3.0:
+				flat_ok = false
+				break
+		if not flat_ok:
+			break
+	if not flat_ok:
+		return
+
 	var camp_root := Node3D.new()
 	camp_root.name = "GoblinCamp"
 	camp_root.add_to_group(&"structures")
@@ -4241,10 +4256,10 @@ static func _try_spawn_goblin_camp(
 	_build_goblin_campfire(camp_root, rng)
 	_build_goblin_camp_chest(camp_root, rng)
 
-	var goblin_count := rng.randi_range(3, 5)
+	var goblin_count := 10
 	for gi in goblin_count:
 		var angle := rng.randf_range(0, TAU)
-		var radius := rng.randf_range(3.0, 8.0)
+		var radius := rng.randf_range(10.0, 25.0)
 		var gx := peak_x + cos(angle) * radius
 		var gz := peak_z + sin(angle) * radius
 		var gy := float(height_func.call(gx, gz))
@@ -4257,30 +4272,28 @@ static func _try_spawn_goblin_camp(
 
 
 static func _build_goblin_hut(camp_root: Node3D, rng: RandomNumberGenerator) -> void:
+	PlayerBuilding.ensure_building_materials()
+	var wood_mat: StandardMaterial3D = PlayerBuilding._bmat_wood
+	var thatch_mat: StandardMaterial3D = PlayerBuilding._bmat_thatch
+
 	var hut := Node3D.new()
 	hut.name = "GoblinHut"
 	hut.add_to_group(&"structures")
 
-	var floor_size := Vector3(4.0, 0.15, 4.0)
+	var floor_size := Vector3(20.0, 0.75, 20.0)
 	var floor_mi := MeshInstance3D.new()
 	var floor_mesh := BoxMesh.new()
 	floor_mesh.size = floor_size
 	floor_mi.mesh = floor_mesh
-	var floor_mat := StandardMaterial3D.new()
-	floor_mat.albedo_color = Color(0.35, 0.25, 0.12)
-	floor_mat.roughness = 0.95
-	floor_mi.set_surface_override_material(0, floor_mat)
+	floor_mi.set_surface_override_material(0, wood_mat)
 	floor_mi.position.y = floor_size.y * 0.5
 	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	hut.add_child(floor_mi)
 
-	var wall_h := 2.2
-	var wall_thick := 0.15
+	var wall_h := 11.0
+	var wall_thick := 0.75
 	var hw := floor_size.x * 0.5
 	var hd := floor_size.z * 0.5
-	var wall_mat := StandardMaterial3D.new()
-	wall_mat.albedo_color = Color(0.30, 0.22, 0.10)
-	wall_mat.roughness = 0.9
 
 	var wall_data := [
 		{"size": Vector3(floor_size.x, wall_h, wall_thick), "pos": Vector3(0, wall_h * 0.5 + floor_size.y, -hd)},
@@ -4293,20 +4306,17 @@ static func _build_goblin_hut(camp_root: Node3D, rng: RandomNumberGenerator) -> 
 		var wall_mesh := BoxMesh.new()
 		wall_mesh.size = wd["size"] as Vector3
 		wall_mi.mesh = wall_mesh
-		wall_mi.set_surface_override_material(0, wall_mat)
+		wall_mi.set_surface_override_material(0, wood_mat)
 		wall_mi.position = wd["pos"] as Vector3
 		wall_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		hut.add_child(wall_mi)
 
 	var roof_mi := MeshInstance3D.new()
 	var roof_mesh := BoxMesh.new()
-	roof_mesh.size = Vector3(floor_size.x + 0.6, 0.12, floor_size.z + 0.6)
+	roof_mesh.size = Vector3(floor_size.x + 3.0, 0.6, floor_size.z + 3.0)
 	roof_mi.mesh = roof_mesh
-	var roof_mat := StandardMaterial3D.new()
-	roof_mat.albedo_color = Color(0.28, 0.18, 0.08)
-	roof_mat.roughness = 0.95
-	roof_mi.set_surface_override_material(0, roof_mat)
-	roof_mi.position.y = floor_size.y + wall_h + 0.06
+	roof_mi.set_surface_override_material(0, thatch_mat)
+	roof_mi.position.y = floor_size.y + wall_h + 0.3
 	roof_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	hut.add_child(roof_mi)
 
@@ -4323,61 +4333,64 @@ static func _build_goblin_hut(camp_root: Node3D, rng: RandomNumberGenerator) -> 
 
 
 static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator) -> void:
+	const S := 7.0
 	var fire := Node3D.new()
 	fire.name = "GoblinCampfire"
 	fire.add_to_group(&"structures")
 	fire.add_to_group(&"campfires")
 
-	var log_mat := StandardMaterial3D.new()
-	log_mat.albedo_color = Color(0.3, 0.2, 0.1)
-	log_mat.roughness = 0.9
-
-	for i in 4:
-		var log_mi := MeshInstance3D.new()
-		var lm := CylinderMesh.new()
-		lm.height = 0.7
-		lm.top_radius = 0.05
-		lm.bottom_radius = 0.07
-		log_mi.mesh = lm
-		log_mi.material_override = log_mat
-		log_mi.rotation.z = deg_to_rad(75.0)
-		log_mi.rotation.y = deg_to_rad(i * 90.0 + rng.randf_range(-10, 10))
-		log_mi.position = Vector3(cos(deg_to_rad(i * 90.0)) * 0.12, 0.08, sin(deg_to_rad(i * 90.0)) * 0.12)
-		log_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		fire.add_child(log_mi)
-
 	var stone_mat := StandardMaterial3D.new()
-	stone_mat.albedo_color = Color(0.35, 0.32, 0.28)
-	stone_mat.roughness = 0.9
-	for i in 8:
+	stone_mat.albedo_color = Color(0.45, 0.42, 0.38)
+	stone_mat.roughness = 0.92
+	for i in 14:
 		var stone := MeshInstance3D.new()
 		var sphere := SphereMesh.new()
-		sphere.radius = rng.randf_range(0.08, 0.14)
+		sphere.radius = rng.randf_range(0.4, 0.7) * S
 		sphere.height = sphere.radius * rng.randf_range(1.2, 1.8)
-		sphere.radial_segments = 4
-		sphere.rings = 2
+		sphere.radial_segments = 6
+		sphere.rings = 3
 		stone.mesh = sphere
 		stone.material_override = stone_mat
-		var sa := float(i) * TAU / 8.0 + rng.randf_range(-0.15, 0.15)
-		stone.position = Vector3(cos(sa) * 0.4, sphere.height * 0.3, sin(sa) * 0.4)
+		var sa := float(i) * TAU / 14.0 + rng.randf_range(-0.15, 0.15)
+		stone.position = Vector3(cos(sa) * 2.8 * S, sphere.height * 0.3, sin(sa) * 2.8 * S)
 		stone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		fire.add_child(stone)
 
-	var fire_light := OmniLight3D.new()
-	fire_light.light_color = Color(1.0, 0.6, 0.2)
-	fire_light.light_energy = 6.0
-	fire_light.omni_range = 15.0
-	fire_light.omni_attenuation = 1.2
-	fire_light.shadow_enabled = false
-	fire_light.position = Vector3(0, 0.5, 0)
-	fire.add_child(fire_light)
+	var log_mat := StandardMaterial3D.new()
+	log_mat.albedo_color = Color(0.35, 0.22, 0.10)
+	log_mat.roughness = 1.0
+	log_mat.emission_enabled = true
+	log_mat.emission = Color(0.5, 0.1, 0.0)
+	log_mat.emission_energy_multiplier = 0.6
+	for i in 8:
+		var log_mi := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = rng.randf_range(0.2, 0.35) * S
+		cyl.bottom_radius = rng.randf_range(0.35, 0.55) * S
+		cyl.height = rng.randf_range(2.5, 4.0) * S
+		cyl.radial_segments = 6
+		cyl.rings = 2
+		log_mi.mesh = cyl
+		log_mi.material_override = log_mat
+		var la := float(i) * TAU / 8.0 + rng.randf_range(-0.25, 0.25)
+		var tilt := rng.randf_range(0.35, 0.55)
+		var outward := rng.randf_range(0.8, 1.4) * S
+		var inward_dir := Vector3(-cos(la), 0.0, -sin(la))
+		var lean_y := (Vector3.UP * cos(tilt) + inward_dir * sin(tilt)).normalized()
+		var ref := Vector3.FORWARD if absf(lean_y.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT
+		var lean_x := lean_y.cross(ref).normalized()
+		var lean_z := lean_x.cross(lean_y).normalized()
+		log_mi.basis = Basis(lean_x, lean_y, lean_z)
+		log_mi.position = Vector3(cos(la) * outward, cyl.height * 0.35, sin(la) * outward)
+		log_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		fire.add_child(log_mi)
 
 	var ember_mi := MeshInstance3D.new()
 	var ember_quad := QuadMesh.new()
-	ember_quad.size = Vector2(0.4, 0.4)
+	ember_quad.size = Vector2(3.5 * S, 3.5 * S)
 	ember_quad.orientation = PlaneMesh.FACE_Y
 	ember_mi.mesh = ember_quad
-	ember_mi.position.y = 0.03
+	ember_mi.position.y = 0.2
 	ember_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var ember_shader := load("res://shaders/ember_glow.gdshader") as Shader
 	if ember_shader:
@@ -4390,17 +4403,95 @@ static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator
 		emat.set_shader_parameter("brightness", 3.0)
 		ember_mi.material_override = emat
 	else:
-		var fallback_mat := StandardMaterial3D.new()
-		fallback_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		fallback_mat.albedo_color = Color(1.0, 0.4, 0.05)
-		fallback_mat.emission_enabled = true
-		fallback_mat.emission = Color(1.0, 0.4, 0.05)
-		fallback_mat.emission_energy_multiplier = 3.0
-		ember_mi.material_override = fallback_mat
+		var fb := StandardMaterial3D.new()
+		fb.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		fb.albedo_color = Color(1.0, 0.4, 0.05)
+		fb.emission_enabled = true
+		fb.emission = Color(1.0, 0.4, 0.05)
+		fb.emission_energy_multiplier = 3.0
+		ember_mi.material_override = fb
 	fire.add_child(ember_mi)
 
+	var fire_shader := load("res://shaders/fire_flame.gdshader") as Shader
+	if fire_shader:
+		var inner := MeshInstance3D.new()
+		inner.name = "InnerFlame"
+		var ic := CylinderMesh.new()
+		ic.top_radius = 0.5 * S
+		ic.bottom_radius = 0.5 * S
+		ic.height = 2.0 * S
+		ic.radial_segments = 12
+		ic.rings = 8
+		inner.mesh = ic
+		inner.position.y = 0.4
+		inner.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var imat := ShaderMaterial.new()
+		imat.shader = fire_shader
+		imat.set_shader_parameter("top_radius", 0.10 * S)
+		imat.set_shader_parameter("bottom_radius", 0.2 * S)
+		imat.set_shader_parameter("center_radius", 0.22 * S)
+		imat.set_shader_parameter("center_position", 0.5)
+		imat.set_shader_parameter("cylinder_height", 0.75 * S)
+		imat.set_shader_parameter("bottom_curve", 0.6)
+		imat.set_shader_parameter("vibrate_amplitude", 0.012 * S)
+		imat.set_shader_parameter("vibrate_frequency", 100.0)
+		imat.set_shader_parameter("speed", 3.0)
+		imat.set_shader_parameter("noise_scale", 3.5)
+		imat.set_shader_parameter("brightness", 0.95)
+		imat.set_shader_parameter("cutoff_base", 0.18)
+		imat.set_shader_parameter("band_steps", 5.0)
+		imat.set_shader_parameter("color_core", Color(1.0, 1.0, 0.9))
+		imat.set_shader_parameter("color_mid", Color(1.0, 0.7, 0.15))
+		imat.set_shader_parameter("color_outer", Color(1.0, 0.35, 0.04))
+		imat.set_shader_parameter("color_edge", Color(0.7, 0.12, 0.0))
+		inner.material_override = imat
+		fire.add_child(inner)
+
+		var outer := MeshInstance3D.new()
+		outer.name = "OuterFlame"
+		var oc := CylinderMesh.new()
+		oc.top_radius = 0.5 * S
+		oc.bottom_radius = 0.5 * S
+		oc.height = 2.0 * S
+		oc.radial_segments = 10
+		oc.rings = 6
+		outer.mesh = oc
+		outer.position.y = 0.2
+		outer.scale = Vector3(1.1, 1.05, 1.1)
+		outer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var omat := ShaderMaterial.new()
+		omat.shader = fire_shader
+		omat.set_shader_parameter("top_radius", 0.22 * S)
+		omat.set_shader_parameter("bottom_radius", 0.25 * S)
+		omat.set_shader_parameter("center_radius", 0.34 * S)
+		omat.set_shader_parameter("center_position", 0.55)
+		omat.set_shader_parameter("cylinder_height", 0.68 * S)
+		omat.set_shader_parameter("bottom_curve", 0.6)
+		omat.set_shader_parameter("vibrate_amplitude", 0.024 * S)
+		omat.set_shader_parameter("vibrate_frequency", 50.0)
+		omat.set_shader_parameter("speed", 2.0)
+		omat.set_shader_parameter("noise_scale", 4.0)
+		omat.set_shader_parameter("brightness", 0.75)
+		omat.set_shader_parameter("cutoff_base", 0.14)
+		omat.set_shader_parameter("band_steps", 4.0)
+		omat.set_shader_parameter("color_core", Color(1.0, 0.8, 0.25))
+		omat.set_shader_parameter("color_mid", Color(1.0, 0.4, 0.06))
+		omat.set_shader_parameter("color_outer", Color(0.75, 0.15, 0.0))
+		omat.set_shader_parameter("color_edge", Color(0.3, 0.04, 0.0))
+		outer.material_override = omat
+		fire.add_child(outer)
+
+	var fire_light := OmniLight3D.new()
+	fire_light.light_color = Color(1.0, 0.6, 0.2)
+	fire_light.light_energy = 14.0
+	fire_light.omni_range = 45.0
+	fire_light.omni_attenuation = 1.2
+	fire_light.shadow_enabled = false
+	fire_light.position = Vector3(0, 3.5, 0)
+	fire.add_child(fire_light)
+
 	var angle := rng.randf_range(0, TAU)
-	var dist := rng.randf_range(5.0, 7.0)
+	var dist := rng.randf_range(18.0, 24.0)
 	fire.position = Vector3(cos(angle) * dist, 0, sin(angle) * dist)
 	camp_root.add_child(fire)
 
