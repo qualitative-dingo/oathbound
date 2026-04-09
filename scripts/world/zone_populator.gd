@@ -2599,7 +2599,8 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	var is_palm := false
 	var is_oak := tname == "Oak"
 
-	var sf := rng.randf_range(0.7, 1.3)
+	var height_tiers := [0.7, 0.8, 0.9, 1.0]
+	var sf: float = height_tiers[rng.randi_range(0, 3)]
 	var wsf := rng.randf_range(0.9, 1.1)
 
 	# ── Trunk ──
@@ -2610,31 +2611,31 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	var num_roots: int
 
 	if is_birch:
-		trunk_h = 40.5 * sf
+		trunk_h = 81.0 * sf
 		trunk_bot_r = 0.63 * sf * wsf
 		trunk_top_r = 0.28 * sf * wsf
 		bark_mat = _mat_birch_bark
 		num_roots = 3
 	elif is_pine:
-		trunk_h = 45.6 * sf
+		trunk_h = 91.2 * sf
 		trunk_bot_r = 0.77 * sf * wsf
 		trunk_top_r = 0.245 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 3
 	elif is_willow:
-		trunk_h = 30.45 * sf
+		trunk_h = 60.9 * sf
 		trunk_bot_r = 0.91 * sf * wsf
 		trunk_top_r = 0.49 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 4
 	elif is_palm:
-		trunk_h = 35.55 * sf
+		trunk_h = 71.1 * sf
 		trunk_bot_r = 0.595 * sf * wsf
 		trunk_top_r = 0.35 * sf * wsf
 		bark_mat = _mat_bark
 		num_roots = 2
 	else:
-		trunk_h = 38.1 * sf
+		trunk_h = 76.2 * sf
 		trunk_bot_r = 0.84 * sf * wsf
 		trunk_top_r = 0.35 * sf * wsf
 		bark_mat = _mat_bark
@@ -2651,7 +2652,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	var branch_r_frac: float
 
 	if is_birch:
-		branch_count = rng.randi_range(12, 20)
+		branch_count = int(rng.randi_range(12, 20) * sf)
 		branch_zone_lo = 0.25
 		branch_zone_hi = 0.70
 		branch_len_frac_lo = 0.14
@@ -2660,7 +2661,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		branch_tilt_hi = 55.0
 		branch_r_frac = 0.55
 	elif is_oak:
-		branch_count = rng.randi_range(16, 24)
+		branch_count = int(rng.randi_range(16, 24) * sf)
 		branch_zone_lo = 0.20
 		branch_zone_hi = 0.65
 		branch_len_frac_lo = 0.175
@@ -2669,7 +2670,7 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 		branch_tilt_hi = 45.0
 		branch_r_frac = 0.65
 	else:
-		branch_count = rng.randi_range(12, 20)
+		branch_count = int(rng.randi_range(12, 20) * sf)
 		branch_zone_lo = 0.25
 		branch_zone_hi = 0.68
 		branch_len_frac_lo = 0.154
@@ -2865,32 +2866,32 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	if is_birch:
 		canopy_spread = 6.05 * sf * wsf
 		canopy_base_y = trunk_h * 0.28
-		plane_count = rng.randi_range(64, 88)
+		plane_count = int(rng.randi_range(64, 88) * sf)
 		plane_size_base = 6.0 * sf * wsf
 	elif is_pine:
 		canopy_spread = 4.4 * sf * wsf
 		canopy_base_y = trunk_h * 0.2
-		plane_count = rng.randi_range(36, 52)
+		plane_count = int(rng.randi_range(36, 52) * sf)
 		plane_size_base = 5.0 * sf * wsf
 	elif is_willow:
 		canopy_spread = 7.7 * sf * wsf
 		canopy_base_y = trunk_h * 0.35
-		plane_count = rng.randi_range(36, 48)
+		plane_count = int(rng.randi_range(36, 48) * sf)
 		plane_size_base = 7.5 * sf * wsf
 	elif is_palm:
 		canopy_spread = 5.5 * sf * wsf
 		canopy_base_y = trunk_h * 0.7
-		plane_count = rng.randi_range(20, 28)
+		plane_count = int(rng.randi_range(20, 28) * sf)
 		plane_size_base = 7.0 * sf * wsf
 	elif is_oak:
 		canopy_spread = 6.6 * sf * wsf
 		canopy_base_y = trunk_h * 0.20
-		plane_count = rng.randi_range(96, 144)
+		plane_count = int(rng.randi_range(96, 144) * sf)
 		plane_size_base = 6.5 * sf * wsf
 	else:
 		canopy_spread = 6.6 * sf * wsf
 		canopy_base_y = trunk_h * 0.25
-		plane_count = rng.randi_range(32, 48)
+		plane_count = int(rng.randi_range(32, 48) * sf)
 		plane_size_base = 6.5 * sf * wsf
 
 	# Canopy must always extend above trunk top with overshoot
