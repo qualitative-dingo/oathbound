@@ -3220,29 +3220,33 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			river_bank = clampf(river_bank, 0.0, 1.0)
 			colors.append(Color(path_f, 1.0, river_bank))
 
-	# Third pass: compute normals — use cache for interior, canonical coords at boundaries
+	# Third pass: compute normals.
+	# Boundary vertices (on any zone edge) use get_height_at for ALL four
+	# neighbors so that adjacent zones produce bit-identical normals at shared
+	# vertices — avoids float32-cache vs float64-fresh precision mismatches.
 	for z in range(w):
 		for x in range(w):
+			var on_edge := (x == 0 or x == res or z == 0 or z == res)
 			var h_left: float
 			var h_right: float
 			var h_up: float
 			var h_down: float
-			if x > 0:
+			if x > 0 and not on_edge:
 				h_left = heights[z * w + (x - 1)]
 			else:
-				h_left = get_height_at(_canonical_wx(coord.x, -1), _canonical_wz(coord.y, z))
-			if x < res:
+				h_left = get_height_at(_canonical_wx(coord.x, x - 1), _canonical_wz(coord.y, z))
+			if x < res and not on_edge:
 				h_right = heights[z * w + (x + 1)]
 			else:
-				h_right = get_height_at(_canonical_wx(coord.x, res + 1), _canonical_wz(coord.y, z))
-			if z > 0:
+				h_right = get_height_at(_canonical_wx(coord.x, x + 1), _canonical_wz(coord.y, z))
+			if z > 0 and not on_edge:
 				h_up = heights[(z - 1) * w + x]
 			else:
-				h_up = get_height_at(_canonical_wx(coord.x, x), _canonical_wz(coord.y, -1))
-			if z < res:
+				h_up = get_height_at(_canonical_wx(coord.x, x), _canonical_wz(coord.y, z - 1))
+			if z < res and not on_edge:
 				h_down = heights[(z + 1) * w + x]
 			else:
-				h_down = get_height_at(_canonical_wx(coord.x, x), _canonical_wz(coord.y, res + 1))
+				h_down = get_height_at(_canonical_wx(coord.x, x), _canonical_wz(coord.y, z + 1))
 			var tangent_x := Vector3(2.0 * step, h_right - h_left, 0.0)
 			var tangent_z := Vector3(0.0, h_down - h_up, 2.0 * step)
 			normals.append(tangent_z.cross(tangent_x).normalized())
