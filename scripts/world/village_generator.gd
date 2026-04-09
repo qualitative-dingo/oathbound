@@ -8,7 +8,7 @@ const MAX_HUTS := 12
 const CHEST_CHANCE := 0.333
 const VILLAGE_RADIUS_MIN := 17.0
 const VILLAGE_RADIUS_MAX := 34.0
-const MIN_HEIGHT := 1.0
+const MIN_HEIGHT := 2.5
 
 const WALL_W := 3.6
 const WALL_H := 5.0
@@ -123,7 +123,7 @@ static func try_spawn_village(
 		var hx := cx + cos(angle) * radius
 		var hz := cz + sin(angle) * radius
 		var hh := ZonePopulator._snap_height_to_mesh(hx, hz, height_func)
-		if hh < 0.5:
+		if hh < 2.0:
 			continue
 
 		var var_idx := rng.randi_range(0, HUT_VARIATIONS.size() - 1)
@@ -189,8 +189,8 @@ static func force_spawn_village(
 		var hx := world_x + cos(angle) * radius
 		var hz := world_z + sin(angle) * radius
 		var hh := ZonePopulator._snap_height_to_mesh(hx, hz, height_func)
-		if hh < 0.3:
-			hh = ch
+		if hh < 1.5:
+			hh = maxf(ch, 2.0)
 
 		var var_idx := rng.randi_range(0, HUT_VARIATIONS.size() - 1)
 		var v: Dictionary = HUT_VARIATIONS[var_idx]

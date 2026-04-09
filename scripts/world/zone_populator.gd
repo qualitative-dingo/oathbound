@@ -4137,6 +4137,8 @@ static func _try_spawn_cave(
 	var entrance_wx := peak_x + best_dir.x * 5.0
 	var entrance_wz := peak_z + best_dir.z * 5.0
 	var entrance_h := _hg_snap_height(entrance_wx, entrance_wz)
+	if entrance_h < _WATER_LEVEL + 1.5:
+		return
 
 	var entrance_pos := Vector3(
 		entrance_wx - origin_x,
