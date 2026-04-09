@@ -1461,9 +1461,9 @@ func _physics_process(delta: float) -> void:
 				var lp := loot.global_position
 				var dx := px - lp.x
 				var dz := pz - lp.z
-			if dx * dx + dz * dz < 7.23:
-				var dy := py - lp.y
-				if dx * dx + dy * dy + dz * dz < 7.23:
+				if dx * dx + dz * dz < 7.23:
+					var dy := py - lp.y
+					if dx * dx + dy * dy + dz * dz < 7.23:
 						loot.pickup(self)
 
 	_interact_check_timer -= delta
