@@ -2020,7 +2020,7 @@ static func _scatter_grass(
 
 	var transforms: Array[Transform3D] = []
 
-	const GRASS_CELL := 0.325
+	const GRASS_CELL := 0.46
 	var cell_x0 := int(floor(origin_x / GRASS_CELL))
 	var cell_z0 := int(floor(origin_z / GRASS_CELL))
 	var cell_x1 := int(ceil((origin_x + ZONE_SIZE) / GRASS_CELL))
