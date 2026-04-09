@@ -135,7 +135,7 @@ uniform vec3 origin_shift;
 
 varying vec3 v_world_pos;
 varying float v_path_mask;
-varying float v_macro_slope;
+varying vec3 v_macro_normal;
 varying float v_river_bank;
 
 // Analytical rock bump — deterministic function of world XZ, so the gradient
@@ -155,15 +155,14 @@ float rock_bump_at(vec2 xz) {
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
 	v_path_mask = COLOR.r;
-	v_macro_slope = COLOR.g;
+	vec2 mg = UV2;
+	v_macro_normal = normalize(vec3(-mg.x, 1.0, -mg.y));
 	v_river_bank = COLOR.b;
 }
 
 void fragment() {
 	vec3 world_pos = v_world_pos;
-	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
-
-	float slope = v_macro_slope;
+	float slope = 1.0 - v_macro_normal.y;
 
 	// Noise-driven rock pattern (world-space, independent of mesh normals)
 	vec2 warp_a = vec2(
@@ -195,14 +194,14 @@ void fragment() {
 	float slope_path_fade = grass_w;
 	float steep_override = rock_w;
 	float blend_power = mix(8.0, 6.0, rock_w);
-	vec3 blend = abs(world_normal);
+	vec3 blend = abs(v_macro_normal);
 	blend = pow(blend, vec3(blend_power));
 	blend /= (blend.x + blend.y + blend.z + 0.0001);
 
 	vec3 col_flat  = triplanar(tex_flat,  world_pos, blend, texture_scale);
 
 	// Valheim-style patchy rock — used for ALL non-grass terrain
-	vec3 col_rock = rock_color(world_pos, world_normal, steep_override);
+	vec3 col_rock = rock_color(world_pos, v_macro_normal, steep_override);
 
 	// Dirt edge where grass meets rock (muddy transition at boundaries)
 	vec3 col_slope = triplanar(tex_slope, world_pos, blend, texture_scale);

@@ -19,13 +19,14 @@ uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 
 varying vec3 v_world_pos;
 varying float v_path_mask;
-varying float v_macro_slope;
+varying vec3 v_macro_normal;
 varying float v_river_bank;
 
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
 	v_path_mask = COLOR.r;
-	v_macro_slope = COLOR.g;
+	vec2 mg = UV2;
+	v_macro_normal = normalize(vec3(-mg.x, 1.0, -mg.y));
 	v_river_bank = COLOR.b;
 }
 
@@ -47,8 +48,7 @@ float vnoise_fast(vec2 p) {
 
 void fragment() {
 	vec3 wpos = v_world_pos;
-	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	float slope = v_macro_slope;
+	float slope = 1.0 - v_macro_normal.y;
 
 	// Noise-driven rock pattern (world-space, independent of mesh normals)
 	float warp_n = vnoise_fast(wpos.xz * 0.012 + vec2(430.0, 170.0));
@@ -78,7 +78,7 @@ void fragment() {
 	vec3 grass_col = vec3(0.10, 0.28, 0.07) * tint_color;
 
 	// Cohesive rock — patches in albedo, no high-freq grain
-	vec3 bl = abs(world_normal);
+	vec3 bl = abs(v_macro_normal);
 	bl = bl * bl * bl * bl;
 	bl /= (bl.x + bl.y + bl.z + 0.0001);
 
@@ -110,7 +110,7 @@ void fragment() {
 	rock_col *= 0.88 + grain_lo * 0.24;
 
 	// Moss/lichen on upward-facing rock (fades at altitude)
-	float upface = smoothstep(0.4, 0.7, world_normal.y) * rock_w;
+	float upface = smoothstep(0.4, 0.7, v_macro_normal.y) * rock_w;
 	float moss_n = vnoise_fast(wpos.xz * 0.08 + vec2(600.0, 200.0));
 	float moss = upface * smoothstep(0.3, 0.6, moss_n) * 0.3;
 	moss *= 1.0 - smoothstep(50.0, 90.0, wpos.y);
