@@ -9607,6 +9607,7 @@ func _try_hoe_use() -> void:
 
 	wg.flatten_terrain_to(world_hit.x, world_hit.z, HOE_RADIUS, target_h)
 
+	var player_world := wg.get_world_position(self)
 	var new_h := wg.get_height_at(player_world.x, player_world.z)
 	var scene_terrain_y := new_h - wg.origin_shift.y
 	if global_position.y < scene_terrain_y + 0.1:
