@@ -18,13 +18,11 @@ uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 
 varying vec3 v_world_pos;
 varying float v_path_mask;
-varying float v_brightness;
 varying float v_river_bank;
 
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
 	v_path_mask = COLOR.r;
-	v_brightness = COLOR.g;
 	v_river_bank = COLOR.b;
 }
 
@@ -118,7 +116,10 @@ void fragment() {
 	float edge_moss = edge_band * smoothstep(0.35, 0.65, edge_moss_n) * 0.5;
 	rock_col = mix(rock_col, vec3(0.14, 0.20, 0.08), edge_moss);
 
-	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * v_brightness;
+	float micro_n = vnoise_fast(wpos.xz * 0.06 + vec2(9000.0, 9000.0));
+	float micro_brightness = 0.92 + (micro_n - 0.5) * 0.24;
+	micro_brightness = mix(micro_brightness, max(micro_brightness, 0.92), rock_w);
+	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * micro_brightness;
 	ground = mix(ground, bank_color, bm * (1.0 - rock_w));
 	ALBEDO = mix(ground, path_color, pm * (1.0 - rock_w));
 	ROUGHNESS = mix(mix(0.85, 0.85, rock_w), 0.7, pm * (1.0 - rock_w));

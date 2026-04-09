@@ -41,10 +41,12 @@ varying vec2 v_uv;
 varying float v_slope;
 varying float v_world_y;
 varying vec2 v_world_xz;
+varying float v_surface;
 
 void vertex() {
 	v_uv = UV;
 	v_slope = COLOR.r;
+	v_surface = COLOR.g;
 	vec3 wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_world_y = wpos.y;
 	v_world_xz = wpos.xz;
@@ -52,12 +54,12 @@ void vertex() {
 	// Slope-scaled speed: flat = base, steep = up to 4x
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
-	// Noise-based ripple on world-space coords — irregular, organic displacement
+	// Noise-based ripple — only on surface verts, not skirt walls
 	vec2 rp = wpos.xz * 0.3 + vec2(TIME * speed * 0.8, TIME * speed * 0.5);
 	float ripple = (gnoise(rp) - 0.5) * ripple_strength * 2.0;
 	ripple += (gnoise(rp * 2.3 + vec2(71.0, 37.0)) - 0.5) * ripple_strength * 1.2;
 	float ripple_fade = 1.0 - smoothstep(0.2, 0.6, v_slope);
-	VERTEX.y += ripple * ripple_fade;
+	VERTEX.y += ripple * ripple_fade * v_surface;
 }
 
 void fragment() {
@@ -139,15 +141,20 @@ void fragment() {
 	final_col.rgb = mix(final_col.rgb, sky_tint.rgb, fresnel * 0.3);
 	final_col.a = mix(final_col.a, 0.85, fresnel * 0.4);
 
+	// Skirt portions: darken toward deep underwater look, make opaque
+	float skirt_t = 1.0 - v_surface;
+	final_col.rgb = mix(final_col.rgb, deep_tint.rgb * 0.7, skirt_t);
+	final_col.a = mix(final_col.a, 0.92, skirt_t);
+
 	ALBEDO = final_col.rgb;
 
 	// ── Alpha: max of water alpha and foam alpha for stronger shoreline visibility ──
 	float foam_shore_fade = smoothstep(0.0, 0.2, perturbed_depth);
 	ALPHA = max(final_col.a * shore_alpha, total_foam * foam_shore_fade * 0.85);
 
-	// Soft fade at mesh edges so the boundary is never a hard line
+	// Soft fade at mesh edges — only on surface, skirt stays opaque at edges
 	float edge_fade = smoothstep(0.0, 0.06, min(v_uv.x, 1.0 - v_uv.x));
-	ALPHA *= edge_fade;
+	ALPHA = mix(ALPHA * edge_fade, final_col.a, skirt_t);
 
 	// Fade out creek mesh as it approaches water bodies
 	float water_fade = smoothstep(water_level - 1.2, water_level - 0.3, v_world_y);
@@ -160,8 +167,8 @@ void fragment() {
 	METALLIC = mix(0.05, 0.0, total_foam);
 	SPECULAR = mix(0.4, 0.15, total_foam);
 
-	// ── Surface normal perturbation via noise central differences ──
-	float ns = ripple_strength * 3.0;
+	// ── Surface normal perturbation via noise central differences (surface only) ──
+	float ns = ripple_strength * 3.0 * v_surface;
 	float eps = 0.15;
 	vec2 np = v_world_xz * 0.4 + vec2(TIME * 0.6, TIME * 0.35);
 	float nc = gnoise(np) + gnoise(np * 2.7 + vec2(43.0, 91.0)) * 0.5;

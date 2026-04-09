@@ -2874,13 +2874,24 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var local_p := p - zone_origin
 			local_p.y -= 1.5
 
-			var left := Vector3(local_p.x - perp.x * w, local_p.y, local_p.z - perp.y * w)
-			var right := Vector3(local_p.x + perp.x * w, local_p.y, local_p.z + perp.y * w)
+			var left_top := Vector3(local_p.x - perp.x * w, local_p.y, local_p.z - perp.y * w)
+			var right_top := Vector3(local_p.x + perp.x * w, local_p.y, local_p.z + perp.y * w)
+
+			var left_wx := p.x - perp.x * w
+			var left_wz := p.z - perp.y * w
+			var right_wx := p.x + perp.x * w
+			var right_wz := p.z + perp.y * w
+			var left_terrain_y := get_height_at(left_wx, left_wz) - zone_origin.y - 0.3
+			var right_terrain_y := get_height_at(right_wx, right_wz) - zone_origin.y - 0.3
+			var left_bottom_y := minf(local_p.y, left_terrain_y)
+			var right_bottom_y := minf(local_p.y, right_terrain_y)
+
+			var left_bottom := Vector3(left_top.x, left_bottom_y, left_top.z)
+			var right_bottom := Vector3(right_top.x, right_bottom_y, right_top.z)
 
 			# Compute proper surface normal from tangent and width direction
 			var tangent_3d := Vector3(flow_dir.x, 0.0, flow_dir.y)
 			var width_dir := Vector3(perp.x, 0.0, perp.y)
-			# Account for slope in tangent
 			if i < points.size() - 1:
 				tangent_3d.y = (points[i + 1].y - p.y) / maxf(Vector2(points[i + 1].x - p.x, points[i + 1].z - p.z).length(), 0.01)
 			elif i > 0:
@@ -2890,29 +2901,54 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			if surface_normal.y < 0:
 				surface_normal = -surface_normal
 
-			# R channel = slope factor (0 = flat, 1 = steep 45deg+)
 			var slope_factor := clampf(slopes[i] / 1.0, 0.0, 1.0)
-			var col := Color(slope_factor, 1.0, 1.0, 1.0)
+			var col_surface := Color(slope_factor, 1.0, 1.0, 1.0)
+			var col_skirt := Color(slope_factor, 0.0, 1.0, 1.0)
 
-			verts.append(left)
-			verts.append(right)
+			# 4 verts per cross-section: left_bottom, left_top, right_top, right_bottom
+			verts.append(left_bottom)
+			verts.append(left_top)
+			verts.append(right_top)
+			verts.append(right_bottom)
 			norms.append(surface_normal)
 			norms.append(surface_normal)
-			mesh_uvs.append(Vector2(0.0, uv_y))
-			mesh_uvs.append(Vector2(1.0, uv_y))
-			colors.append(col)
-			colors.append(col)
+			norms.append(surface_normal)
+			norms.append(surface_normal)
+			mesh_uvs.append(Vector2(0.02, uv_y))
+			mesh_uvs.append(Vector2(0.10, uv_y))
+			mesh_uvs.append(Vector2(0.90, uv_y))
+			mesh_uvs.append(Vector2(0.98, uv_y))
+			colors.append(col_skirt)
+			colors.append(col_surface)
+			colors.append(col_surface)
+			colors.append(col_skirt)
 
 			if i > 0:
-				var base := (i - 1) * 2
-				indices.append(base)
-				indices.append(base + 1)
-				indices.append(base + 2)
-				indices.append(base + 1)
-				indices.append(base + 3)
-				indices.append(base + 2)
+				var prev := (i - 1) * 4
+				var curr := i * 4
+				# Left skirt wall
+				indices.append(prev + 0)
+				indices.append(prev + 1)
+				indices.append(curr + 0)
+				indices.append(prev + 1)
+				indices.append(curr + 1)
+				indices.append(curr + 0)
+				# Surface
+				indices.append(prev + 1)
+				indices.append(prev + 2)
+				indices.append(curr + 1)
+				indices.append(prev + 2)
+				indices.append(curr + 2)
+				indices.append(curr + 1)
+				# Right skirt wall
+				indices.append(prev + 2)
+				indices.append(prev + 3)
+				indices.append(curr + 2)
+				indices.append(prev + 3)
+				indices.append(curr + 3)
+				indices.append(curr + 2)
 
-		if verts.size() < 4:
+		if verts.size() < 8:
 			continue
 
 		var arrays := []
@@ -3169,8 +3205,6 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			verts.append(Vector3(x * step, h, z * step))
 			uvs.append(Vector2(x as float / res, z as float / res))
 
-			var cn := _color_noise.get_noise_2d(wx, wz)
-			var brightness := 0.92 + cn * 0.12
 			var path_f := _ZonePopulator.get_path_factor(wx, wz)
 
 			var bw1 := _detail_noise.get_noise_2d(wx * 0.06 + 4000.0, wz * 0.06 + 4000.0) * 18.0 if _detail_noise else 0.0
@@ -3184,7 +3218,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 				river_bank = maxf(river_bank, lake_shore)
 
 			river_bank = clampf(river_bank, 0.0, 1.0)
-			colors.append(Color(path_f, brightness, river_bank))
+			colors.append(Color(path_f, 1.0, river_bank))
 
 	# Third pass: compute normals — use cache for interior, canonical coords at boundaries
 	for z in range(w):

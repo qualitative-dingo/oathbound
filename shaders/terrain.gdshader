@@ -134,7 +134,6 @@ uniform vec3 origin_shift;
 
 varying vec3 v_world_pos;
 varying float v_path_mask;
-varying float v_brightness;
 varying float v_river_bank;
 
 // Analytical rock bump — deterministic function of world XZ, so the gradient
@@ -154,7 +153,6 @@ float rock_bump_at(vec2 xz) {
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
 	v_path_mask = COLOR.r;
-	v_brightness = COLOR.g;
 	v_river_bank = COLOR.b;
 }
 
@@ -273,8 +271,11 @@ void fragment() {
 	// Biome tint on grass only — rock stays untinted
 	float tint_strength = grass_w;
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
-	// Reduce v_brightness effect on rock so it doesn't crush the pattern contrast
-	float vb = mix(v_brightness, max(v_brightness, 0.92), cliff_w);
+	// Micro-variation computed from world-space noise (replaces per-vertex brightness
+	// which caused C0-continuous gradient discontinuities at zone boundaries).
+	float micro_n = vnoise(world_pos.xz * 0.06 + vec2(9000.0, 9000.0));
+	float vb = 0.92 + (micro_n - 0.5) * 0.24;
+	vb = mix(vb, max(vb, 0.92), cliff_w);
 	ALBEDO = albedo * final_tint * vb;
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
