@@ -429,7 +429,7 @@ var _map_fog_noise: FastNoiseLite
 
 const MINIMAP_PX := 180
 const MINIMAP_RING := 5
-var _minimap_zoom: float = 6.0
+var _minimap_zoom: float = MINIMAP_ZOOM_MAX
 const MINIMAP_ZOOM_MIN := 3.0
 const MINIMAP_ZOOM_MAX := 20.0
 const MINIMAP_ZOOM_STEP := 1.5
@@ -5217,6 +5217,8 @@ func _refresh_minimap() -> void:
 	var world_radius_map := _minimap_zoom * zone_size
 	var meters_per_lo_pixel := world_radius_map / float(half_lo)
 
+	var biome_cache: Dictionary = {}
+
 	for ly in _MINIMAP_LO:
 		for lx in _MINIMAP_LO:
 			var idx := ly * _MINIMAP_LO + lx
@@ -5230,33 +5232,35 @@ func _refresh_minimap() -> void:
 
 			var world_x := player_pos.x + float(lx - half_lo) * meters_per_lo_pixel
 			var world_z := player_pos.z + float(ly - half_lo) * meters_per_lo_pixel
-			var zone_coord := Vector2i(
-				floori(world_x / zone_size),
-				floori(world_z / zone_size))
 
+			var h := wg.get_height_at(world_x, world_z)
 			var col: Color
-			if _minimap_zone_color_cache.has(zone_coord):
-				col = _minimap_zone_color_cache[zone_coord] as Color
+			if h < wg.WATER_LEVEL:
+				var depth := clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0)
+				col = water_shallow.lerp(water_col, depth)
 			else:
-				var zx := (float(zone_coord.x) + 0.5) * zone_size
-				var zz := (float(zone_coord.y) + 0.5) * zone_size
-				var zh := wg.get_height_at(zx, zz)
-				if zh < wg.WATER_LEVEL:
-					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
-					col = water_shallow.lerp(water_col, depth)
+				var zone_coord := Vector2i(
+					floori(world_x / zone_size),
+					floori(world_z / zone_size))
+				var biome: StringName
+				var micro: StringName
+				if biome_cache.has(zone_coord):
+					var cached: Array = biome_cache[zone_coord]
+					biome = cached[0] as StringName
+					micro = cached[1] as StringName
 				else:
-					var biome: StringName = wg._determine_biome(zone_coord)
-					var micro := wg.get_microbiome_at_zone(zone_coord)
-					col = _biome_map_color(biome, micro, zh)
-					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
-					col = Color(
-						clampf(col.r * bright, 0.0, 1.0),
-						clampf(col.g * bright, 0.0, 1.0),
-						clampf(col.b * bright, 0.0, 1.0))
-				_minimap_zone_color_cache[zone_coord] = col
+					biome = wg._determine_biome(zone_coord)
+					micro = wg.get_microbiome_at_zone(zone_coord)
+					biome_cache[zone_coord] = [biome, micro]
+				col = _biome_map_color(biome, micro, h)
+				var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
+				col = Color(
+					clampf(col.r * bright, 0.0, 1.0),
+					clampf(col.g * bright, 0.0, 1.0),
+					clampf(col.b * bright, 0.0, 1.0))
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
-	_draw_arrow_on_image(_minimap_lo_image, _MINIMAP_LO / 2, 0.52)
+	_draw_arrow_on_image(_minimap_lo_image, _MINIMAP_LO / 2, 1.0)
 
 	_minimap_image_tex.set_image(_minimap_lo_image)
 	if _minimap_tex_rect.texture != _minimap_image_tex:
@@ -9338,7 +9342,7 @@ func _process(delta: float) -> void:
 	var _pc_tmm := Time.get_ticks_usec()
 	if not _minimap_paused:
 		_minimap_refresh_timer += delta
-		var refresh_interval := 0.8 if velocity.length_squared() > 1.0 else 2.0
+		var refresh_interval := 0.3
 		if _minimap_needs_refresh or _minimap_refresh_timer >= refresh_interval:
 			_minimap_refresh_timer = 0.0
 			_refresh_minimap()
