@@ -940,11 +940,11 @@ static func _gen_leaf_tex_oak() -> ImageTexture:
 	img.fill(Color(0, 0, 0, 0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 70201
-	for _i in 35:
+	for _i in 55:
 		var cx := rng.randi_range(7, sz - 8)
 		var cy := rng.randi_range(7, sz - 8)
 		var lobes := rng.randi_range(3, 5)
-		var base_r := rng.randi_range(3, 5)
+		var base_r := rng.randi_range(3, 6)
 		var bri := rng.randf_range(0.65, 1.0)
 		_paint_ellipse(img, cx, cy, base_r, base_r + 1, bri, rng)
 		for _l in lobes:
@@ -952,8 +952,8 @@ static func _gen_leaf_tex_oak() -> ImageTexture:
 			var dist := rng.randf_range(2.0, 4.0)
 			var lx := cx + roundi(cos(angle) * dist)
 			var ly := cy + roundi(sin(angle) * dist)
-			_paint_ellipse(img, lx, ly, rng.randi_range(2, 4), rng.randi_range(2, 4), bri * rng.randf_range(0.85, 1.0), rng)
-	_punch_holes(img, 10, rng)
+			_paint_ellipse(img, lx, ly, rng.randi_range(2, 5), rng.randi_range(2, 5), bri * rng.randf_range(0.85, 1.0), rng)
+	_punch_holes(img, 5, rng)
 	return ImageTexture.create_from_image(img)
 
 
@@ -963,14 +963,14 @@ static func _gen_leaf_tex_birch() -> ImageTexture:
 	img.fill(Color(0, 0, 0, 0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 81432
-	for _i in 55:
+	for _i in 80:
 		var cx := rng.randi_range(4, sz - 5)
 		var cy := rng.randi_range(4, sz - 5)
 		var bri := rng.randf_range(0.6, 1.0)
-		var rx := rng.randi_range(2, 4)
-		var ry := rng.randi_range(2, 5)
+		var rx := rng.randi_range(2, 5)
+		var ry := rng.randi_range(2, 6)
 		_paint_ellipse(img, cx, cy, rx, ry, bri, rng)
-	_punch_holes(img, 16, rng)
+	_punch_holes(img, 8, rng)
 	return ImageTexture.create_from_image(img)
 
 
@@ -980,7 +980,7 @@ static func _gen_leaf_tex_pine() -> ImageTexture:
 	img.fill(Color(0, 0, 0, 0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 93156
-	for _i in 60:
+	for _i in 90:
 		var cx := rng.randi_range(3, sz - 4)
 		var cy := rng.randi_range(3, sz - 4)
 		var bri := rng.randf_range(0.55, 0.95)
@@ -993,7 +993,7 @@ static func _gen_leaf_tex_pine() -> ImageTexture:
 				img.set_pixel(px, py, Color(bri, bri, bri, 1.0))
 				if px + 1 < sz:
 					img.set_pixel(px + 1, py, Color(bri * 0.85, bri * 0.85, bri * 0.85, 1.0))
-	_punch_holes(img, 8, rng)
+	_punch_holes(img, 4, rng)
 	return ImageTexture.create_from_image(img)
 
 
@@ -1003,7 +1003,7 @@ static func _gen_leaf_tex_willow() -> ImageTexture:
 	img.fill(Color(0, 0, 0, 0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 42871
-	for _i in 45:
+	for _i in 70:
 		var cx := rng.randi_range(4, sz - 5)
 		var cy := rng.randi_range(3, sz - 8)
 		var bri := rng.randf_range(0.6, 1.0)
@@ -1018,7 +1018,7 @@ static func _gen_leaf_tex_willow() -> ImageTexture:
 				img.set_pixel(px - 1, py, Color(bri * 0.7, bri * 0.7, bri * 0.7, 0.7))
 			if px + 1 < sz and py < sz and py >= 0:
 				img.set_pixel(px + 1, py, Color(bri * 0.7, bri * 0.7, bri * 0.7, 0.7))
-	_punch_holes(img, 6, rng)
+	_punch_holes(img, 3, rng)
 	return ImageTexture.create_from_image(img)
 
 
@@ -1028,7 +1028,7 @@ static func _gen_leaf_tex_palm() -> ImageTexture:
 	img.fill(Color(0, 0, 0, 0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 58923
-	for _i in 12:
+	for _i in 18:
 		var cx := rng.randi_range(20, sz - 20)
 		var cy := rng.randi_range(8, 20)
 		var angle := rng.randf_range(0, TAU)
@@ -1047,7 +1047,7 @@ static func _gen_leaf_tex_palm() -> ImageTexture:
 				var fy := py + roundi(float(dw) * cos(angle + PI * 0.5))
 				if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
 					img.set_pixel(fx, fy, Color(bri, bri, bri, 1.0))
-	_punch_holes(img, 4, rng)
+	_punch_holes(img, 2, rng)
 	return ImageTexture.create_from_image(img)
 
 
@@ -1057,14 +1057,14 @@ static func _gen_leaf_tex_generic() -> ImageTexture:
 	img.fill(Color(0, 0, 0, 0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 33517
-	for _i in 40:
+	for _i in 65:
 		var cx := rng.randi_range(6, sz - 7)
 		var cy := rng.randi_range(6, sz - 7)
-		var rx := rng.randi_range(3, 6)
-		var ry := rng.randi_range(3, 6)
+		var rx := rng.randi_range(3, 7)
+		var ry := rng.randi_range(3, 7)
 		var bri := rng.randf_range(0.65, 1.0)
 		_paint_ellipse(img, cx, cy, rx, ry, bri, rng)
-	_punch_holes(img, 10, rng)
+	_punch_holes(img, 5, rng)
 	return ImageTexture.create_from_image(img)
 
 
@@ -2860,33 +2860,33 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 	if is_birch:
 		canopy_spread = 6.05 * sf * wsf
 		canopy_base_y = trunk_h * 0.28
-		plane_count = int(rng.randi_range(64, 88) * sf)
-		plane_size_base = 6.0 * sf * wsf
+		plane_count = int(rng.randi_range(130, 180) * sf)
+		plane_size_base = 7.0 * sf * wsf
 	elif is_pine:
 		canopy_spread = 4.4 * sf * wsf
 		canopy_base_y = trunk_h * 0.2
-		plane_count = int(rng.randi_range(36, 52) * sf)
-		plane_size_base = 5.0 * sf * wsf
+		plane_count = int(rng.randi_range(72, 105) * sf)
+		plane_size_base = 5.8 * sf * wsf
 	elif is_willow:
 		canopy_spread = 7.7 * sf * wsf
 		canopy_base_y = trunk_h * 0.35
-		plane_count = int(rng.randi_range(36, 48) * sf)
-		plane_size_base = 7.5 * sf * wsf
+		plane_count = int(rng.randi_range(72, 100) * sf)
+		plane_size_base = 8.5 * sf * wsf
 	elif is_palm:
 		canopy_spread = 5.5 * sf * wsf
 		canopy_base_y = trunk_h * 0.7
-		plane_count = int(rng.randi_range(20, 28) * sf)
-		plane_size_base = 7.0 * sf * wsf
+		plane_count = int(rng.randi_range(40, 56) * sf)
+		plane_size_base = 8.0 * sf * wsf
 	elif is_oak:
 		canopy_spread = 6.6 * sf * wsf
 		canopy_base_y = trunk_h * 0.20
-		plane_count = int(rng.randi_range(96, 144) * sf)
-		plane_size_base = 6.5 * sf * wsf
+		plane_count = int(rng.randi_range(190, 290) * sf)
+		plane_size_base = 7.5 * sf * wsf
 	else:
 		canopy_spread = 6.6 * sf * wsf
 		canopy_base_y = trunk_h * 0.25
-		plane_count = int(rng.randi_range(32, 48) * sf)
-		plane_size_base = 6.5 * sf * wsf
+		plane_count = int(rng.randi_range(65, 100) * sf)
+		plane_size_base = 7.5 * sf * wsf
 
 	# Canopy must always extend above trunk top with overshoot
 	var canopy_overshoot := 3.25 * sf

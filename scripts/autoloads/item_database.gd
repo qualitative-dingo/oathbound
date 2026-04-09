@@ -27,7 +27,6 @@ const AFFIXES: Dictionary = {
 	# ── Axe affixes (woodcutting) ────────────────────────────────────────
 	# min/max = the actual value range; description uses %s for the displayed value
 	&"lumberjack":      {"name": "Lumberjack",      "slot": "axe", "tier": 1, "min": 0.30, "max": 0.50, "fmt": "+%.0f%% wood drops from trees", "pct": true, "description": "+40% wood drops from trees"},
-	&"splitter":        {"name": "Splitter",         "slot": "axe", "tier": 1, "min": 0.22, "max": 0.38, "fmt": "Trees fall %.0f%% faster", "pct": true, "description": "Trees fall 30% faster"},
 	&"deep_cut":        {"name": "Deep Cut",         "slot": "axe", "tier": 1, "description": "Trees take 1 fewer hit to fell"},
 	&"bark_stripper":   {"name": "Bark Stripper",    "slot": "axe", "tier": 1, "min": 0.18, "max": 0.32, "fmt": "%.0f%% chance to get bonus resin from trees", "pct": true, "description": "25% chance to get bonus resin from trees"},
 	&"double_yield":    {"name": "Double Yield",     "slot": "axe", "tier": 2, "min": 0.07, "max": 0.13, "fmt": "%.0f%% chance to double wood drops", "pct": true, "description": "10% chance to double wood drops"},

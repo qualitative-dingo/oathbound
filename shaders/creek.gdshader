@@ -71,7 +71,7 @@ void fragment() {
 	float speed = flow_speed * (0.5 + v_slope * 3.5);
 
 	// World-space flow scrolling — patterns move in actual downhill direction
-	vec2 flow_offset = v_flow_dir * TIME * speed * 3.0;
+	vec2 flow_offset = v_flow_dir * TIME * speed * 0.4;
 	vec2 flow_uv = v_world_xz * 0.15 + flow_offset;
 
 	// Multi-octave noise for surface detail with directional streaks
@@ -80,7 +80,7 @@ void fragment() {
 	float n2 = gnoise(flow_uv * ripple_scale * 4.5 + vec2(50.0, 30.0));
 	// Directional streaks elongated along the flow direction
 	vec2 streak_uv = vec2(dot(v_world_xz, perp_dir) * 6.0, dot(v_world_xz, v_flow_dir) * 0.8) * ripple_scale
-	               + vec2(0.0, TIME * speed * 2.0);
+	               + vec2(0.0, TIME * speed * 0.5);
 	float streak = gnoise(streak_uv);
 	float combined = n1 * 0.45 + n2 * 0.25 + streak * 0.3;
 

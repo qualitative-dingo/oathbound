@@ -241,8 +241,8 @@ Items can roll 0-5 stars, affecting stats and enabling affixes:
 
 Equipment with 2+ stars rolls random affixes from a pool specific to their item type. Each affix has a roll range (min-max) determining its magnitude. Tier 2 affixes have half the roll weight.
 
-### Axe Affixes (10)
-Lumberjack (+40% wood), Splitter (30% faster tree fall), Deep Cut (-1 hit to fell), Bark Stripper (25% bonus resin), Double Yield (10% double wood), Timber Cleave (hit 3 trees), Frenzied Chop (25% windfury), Master Woodsman (+2 star rerolls), Rapid Chop (+12% speed), Ancient Grove (20% rare materials)
+### Axe Affixes (9)
+Lumberjack (+40% wood), Deep Cut (-1 hit to fell), Bark Stripper (25% bonus resin), Double Yield (10% double wood), Timber Cleave (hit 3 trees), Frenzied Chop (25% windfury), Master Woodsman (+2 star rerolls), Rapid Chop (+12% speed), Ancient Grove (20% rare materials)
 
 ### Pickaxe Affixes (10)
 Prospector (+40% stone), Vein Finder (30% bonus ore), Frenzied Mining (25% windfury), Stone Breaker (-1 hit), Efficient Miner (-20% stamina), Rich Vein (10% double stone), Master Miner (+2 star rerolls), Quick Strike (+12% speed), Ore Seeker (+30% copper), Deep Earth (20% rare materials)

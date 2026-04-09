@@ -1769,6 +1769,28 @@ func _sample_terrain_concavity(x: float, z: float, _mountain_val: float) -> floa
 	return (avg_neighbors - h_c) / maxf(h_c, 1.0)
 
 
+func _mountain_pool_surface(x: float, z: float) -> float:
+	if not _valley_pool_noise:
+		return -999.0
+	var raw_h := _get_raw_height_no_paths(x, z)
+	if raw_h <= 3.0:
+		return -999.0
+	var valley_n := _valley_pool_noise.get_noise_2d(x, z)
+	if valley_n >= -0.25:
+		return -999.0
+	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
+	var valley_concavity := _sample_terrain_concavity(x, z, mountain)
+	if valley_concavity <= 0.3:
+		return -999.0
+	var pool_t := smoothstep(-0.25, -0.5, valley_n) * smoothstep(0.3, 0.6, valley_concavity)
+	if pool_t <= 0.0:
+		return -999.0
+	var pool_floor := lerpf(raw_h, raw_h - 4.0, pool_t)
+	pool_floor = maxf(pool_floor, WATER_LEVEL - 2.0)
+	var carved_h := lerpf(raw_h, pool_floor, pool_t * 0.7)
+	return lerpf(raw_h, carved_h, 0.5)
+
+
 func _get_raw_height_no_paths(x: float, z: float) -> float:
 	if not _continent_noise:
 		return WATER_LEVEL
@@ -2874,8 +2896,8 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var t_excess := maxf(raw_h - p.y, 0.0)
 			var steep_suppress := 1.0 - clampf(slopes[i] / 0.5, 0.0, 1.0)
 			var ridge_mesh_bonus := clampf(t_excess / 8.0, 0.0, 1.5) * 8.0 * steep_suppress
-			var slope_narrow := 1.0 - clampf(slopes[i] / 0.5, 0.0, 0.85)
-			var w := (half_widths[i] + 3.0 + ridge_mesh_bonus) * slope_narrow
+			var slope_narrow := 1.0 - clampf(slopes[i] / 0.7, 0.0, 0.7)
+			var w := maxf((half_widths[i] + 3.0 + ridge_mesh_bonus) * slope_narrow, 1.5)
 
 			var uv_y := flow_uvs[i] * uv_scale
 
@@ -2883,7 +2905,7 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var perp := Vector2(-flow_dir.y, flow_dir.x)
 
 			var local_p := p - zone_origin
-			local_p.y -= 1.5
+			local_p.y -= lerpf(1.5, 0.3, clampf(slopes[i] / 0.6, 0.0, 1.0))
 
 			var left_top := Vector3(local_p.x - perp.x * w, local_p.y, local_p.z - perp.y * w)
 			var right_top := Vector3(local_p.x + perp.x * w, local_p.y, local_p.z + perp.y * w)
@@ -2993,6 +3015,79 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 		zone_root.add_child(mi)
 
 		_spawn_waterfall_particles(zone_root, points, zone_origin)
+
+
+func _build_mountain_pool_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
+	var zone_wx := coord.x * ZONE_SIZE
+	var zone_wz := coord.y * ZONE_SIZE
+	var zone_origin := Vector3(zone_wx, 0.0, zone_wz)
+	var step := 4.0
+
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var indices := PackedInt32Array()
+	var vert_idx := 0
+
+	var gx_min := int(floor(zone_wx / step))
+	var gx_max := int(ceil((zone_wx + ZONE_SIZE) / step))
+	var gz_min := int(floor(zone_wz / step))
+	var gz_max := int(ceil((zone_wz + ZONE_SIZE) / step))
+
+	for gz in range(gz_min, gz_max):
+		for gx in range(gx_min, gx_max):
+			var wx := float(gx) * step
+			var wz := float(gz) * step
+			var pool_level := _mountain_pool_surface(wx, wz)
+			if pool_level < -900.0:
+				continue
+			var terrain_h := get_height_at(wx, wz)
+			if terrain_h >= pool_level - 0.1:
+				continue
+
+			var lx := wx - zone_origin.x
+			var lz := wz - zone_origin.z
+			var ly := pool_level - zone_origin.y
+
+			var s := step
+			verts.append(Vector3(lx, ly, lz))
+			verts.append(Vector3(lx + s, ly, lz))
+			verts.append(Vector3(lx + s, ly, lz + s))
+			verts.append(Vector3(lx, ly, lz + s))
+			for _n in 4:
+				norms.append(Vector3.UP)
+			uvs.append(Vector2(wx * 0.1, wz * 0.1))
+			uvs.append(Vector2((wx + s) * 0.1, wz * 0.1))
+			uvs.append(Vector2((wx + s) * 0.1, (wz + s) * 0.1))
+			uvs.append(Vector2(wx * 0.1, (wz + s) * 0.1))
+			indices.append(vert_idx)
+			indices.append(vert_idx + 1)
+			indices.append(vert_idx + 2)
+			indices.append(vert_idx)
+			indices.append(vert_idx + 2)
+			indices.append(vert_idx + 3)
+			vert_idx += 4
+
+	if verts.is_empty():
+		return
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = norms
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_INDEX] = indices
+
+	var arr_mesh := ArrayMesh.new()
+	arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	if _water_shader_mat:
+		arr_mesh.surface_set_material(0, _water_shader_mat)
+
+	var mi := MeshInstance3D.new()
+	mi.name = "MountainPool"
+	mi.mesh = arr_mesh
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	zone_root.add_child(mi)
 
 
 func _build_water_mesh_for_zone(zone_root: Node3D, coord: Vector2i) -> void:

@@ -10528,7 +10528,7 @@ func _fell_tree(node: Node3D, override_angle: float = NAN, can_domino: bool = tr
 	fall_tween.set_trans(Tween.TRANS_QUART)
 
 	node.rotation.y = fall_angle
-	var fall_duration := (1.17 * (1.0 - _affix_val(&"splitter"))) if _has_affix(&"splitter") else 1.17
+	var fall_duration := 1.17
 	fall_tween.tween_property(node, "rotation:x", deg_to_rad(-85.0), fall_duration)
 
 	var fall_dir := Vector3(-sin(fall_angle), 0.0, -cos(fall_angle))
