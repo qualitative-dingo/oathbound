@@ -2019,7 +2019,6 @@ static func _scatter_grass(
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
 	var transforms: Array[Transform3D] = []
-	const _RG_GRASS_REJECT := _RG_WATER | _RG_STRUCTURE
 
 	const GRASS_CELL := 0.325
 	var cell_x0 := int(floor(origin_x / GRASS_CELL))
@@ -2045,12 +2044,14 @@ static func _scatter_grass(
 			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
 			var rg_flags := _rg_data[rgz * _RG_RES + rgx]
-			if rg_flags & _RG_GRASS_REJECT != 0:
+			if rg_flags & _RG_STRUCTURE != 0:
 				continue
 
 			var h5 := _grass_cell_hash(gcx, gcz, 4)
 			var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
 			var keep := lerpf(0.78, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
+			if rg_flags & _RG_WATER != 0:
+				keep *= 0.45
 			if rg_flags & _RG_PATH != 0:
 				keep *= 0.35
 			if h5 > keep:
