@@ -134,6 +134,7 @@ uniform vec3 origin_shift;
 
 varying vec3 v_world_pos;
 varying float v_path_mask;
+varying float v_macro_slope;
 varying float v_river_bank;
 
 // Analytical rock bump — deterministic function of world XZ, so the gradient
@@ -153,6 +154,7 @@ float rock_bump_at(vec2 xz) {
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
 	v_path_mask = COLOR.r;
+	v_macro_slope = COLOR.g;
 	v_river_bank = COLOR.b;
 }
 
@@ -160,7 +162,7 @@ void fragment() {
 	vec3 world_pos = v_world_pos;
 	vec3 world_normal = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 
-	float slope = 1.0 - abs(world_normal.y);
+	float slope = v_macro_slope;
 
 	// Noise-driven rock pattern (world-space, independent of mesh normals)
 	vec2 warp_a = vec2(
@@ -172,12 +174,12 @@ void fragment() {
 	                   + vnoise(world_pos.xz * 0.15 + vec2(53.0, 97.0)) * 0.1;
 	float noise_rock = smoothstep(0.40, 0.60, rock_pattern);
 
-	// Perturb slope with world-space noise so gate boundaries follow noise, not triangle edges
-	float gate_perturb = (rock_pattern - 0.5) * 0.25;
-	float slope_g = slope + gate_perturb * 0.35;  // mild perturbation for grass gate
-	float slope_r = slope + gate_perturb;          // stronger perturbation for rock gate
-	float definitely_grass = smoothstep(slope_start + 0.05, max(slope_start - 0.03, 0.0), slope_g);
-	float definitely_rock  = smoothstep(slope_start + 0.20, slope_start + 0.55, slope_r);
+	// Perturb slope with world-space noise so gate boundaries follow noise, not zone edges
+	float gate_perturb = (rock_pattern - 0.5) * 0.45;
+	float slope_g = slope + gate_perturb * 0.55;
+	float slope_r = slope + gate_perturb * 1.3;
+	float definitely_grass = smoothstep(slope_start + 0.12, max(slope_start - 0.06, 0.0), slope_g);
+	float definitely_rock  = smoothstep(slope_start + 0.30, slope_start + 0.65, slope_r);
 
 	// In the transition zone, noise determines grass vs rock
 	float rock_w = mix(noise_rock, 1.0, definitely_rock);

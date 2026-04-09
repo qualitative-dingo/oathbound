@@ -3255,6 +3255,22 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			var tangent_z := Vector3(0.0, h_down - h_up, 2.0 * step)
 			normals.append(tangent_z.cross(tangent_x).normalized())
 
+	# Fourth pass: macro slope from wide-stencil height sampling.
+	# Used for material gates instead of per-vertex normals — the 16m stencil
+	# smooths over zone boundaries so C0 interpolation junctions are imperceptible.
+	const MACRO_R := 8.0
+	for z in range(w):
+		for x in range(w):
+			var wx := _canonical_wx(coord.x, x)
+			var wz := _canonical_wz(coord.y, z)
+			var hl := get_height_at(wx - MACRO_R, wz)
+			var hr := get_height_at(wx + MACRO_R, wz)
+			var hu := get_height_at(wx, wz - MACRO_R)
+			var hd := get_height_at(wx, wz + MACRO_R)
+			var gx := (hr - hl) / (2.0 * MACRO_R)
+			var gz := (hd - hu) / (2.0 * MACRO_R)
+			colors[z * w + x].g = clampf(sqrt(gx * gx + gz * gz), 0.0, 1.0)
+
 	# Surface triangles
 	for z in range(res):
 		for x in range(res):

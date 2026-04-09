@@ -46,7 +46,10 @@ static func _return_to_pool(label: DamageNumber) -> void:
 	if _pool.size() >= _POOL_SIZE:
 		label.queue_free()
 		return
+	for child in label.get_children():
+		child.queue_free()
 	label.visible = false
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var parent := label.get_parent()
 	if parent:
 		parent.remove_child(label)
