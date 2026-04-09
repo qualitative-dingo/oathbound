@@ -69,6 +69,10 @@ static func _get_world_generator() -> Node:
 		return null
 	return nodes[0]
 
+# ─── Goblin camp positions (world XZ) for minimum distance enforcement ────────
+static var _goblin_camp_positions: Array[Vector2] = []
+const _GOBLIN_CAMP_MIN_DIST := 120.0
+
 # ─── Zone height grid (pre-computed to avoid per-blade noise calls) ───────────
 const _HG_RES := 48
 const _HG_PAD := 2        # extra cells on each side for slope/cliff checks near zone edges
@@ -4197,7 +4201,7 @@ static func _try_spawn_goblin_camp(
 	var cx := origin_x + ZONE_SIZE * 0.5
 	var cz := origin_z + ZONE_SIZE * 0.5
 	var center_h := float(height_func.call(cx, cz))
-	if center_h < 8.0:
+	if center_h < 20.0:
 		return
 
 	var peak_x := cx
@@ -4215,7 +4219,7 @@ static func _try_spawn_goblin_camp(
 				peak_x = px
 				peak_z = pz
 
-	if peak_h < 10.0:
+	if peak_h < 25.0:
 		return
 
 	var is_local_max := true
@@ -4243,6 +4247,12 @@ static func _try_spawn_goblin_camp(
 			break
 	if not flat_ok:
 		return
+
+	var camp_pos_2d := Vector2(peak_x, peak_z)
+	for existing: Vector2 in _goblin_camp_positions:
+		if camp_pos_2d.distance_to(existing) < _GOBLIN_CAMP_MIN_DIST:
+			return
+	_goblin_camp_positions.append(camp_pos_2d)
 
 	var camp_root := Node3D.new()
 	camp_root.name = "GoblinCamp"
@@ -4295,11 +4305,17 @@ static func _build_goblin_hut(camp_root: Node3D, rng: RandomNumberGenerator) -> 
 	var hw := floor_size.x * 0.5
 	var hd := floor_size.z * 0.5
 
+	var door_w := 4.0
+	var door_h := 5.5
+	var half_front := (floor_size.x - door_w) * 0.5
+
 	var wall_data := [
 		{"size": Vector3(floor_size.x, wall_h, wall_thick), "pos": Vector3(0, wall_h * 0.5 + floor_size.y, -hd)},
-		{"size": Vector3(floor_size.x, wall_h, wall_thick), "pos": Vector3(0, wall_h * 0.5 + floor_size.y, hd)},
 		{"size": Vector3(wall_thick, wall_h, floor_size.z), "pos": Vector3(-hw, wall_h * 0.5 + floor_size.y, 0)},
 		{"size": Vector3(wall_thick, wall_h, floor_size.z), "pos": Vector3(hw, wall_h * 0.5 + floor_size.y, 0)},
+		{"size": Vector3(half_front, wall_h, wall_thick), "pos": Vector3(-(half_front + door_w) * 0.5, wall_h * 0.5 + floor_size.y, hd)},
+		{"size": Vector3(half_front, wall_h, wall_thick), "pos": Vector3((half_front + door_w) * 0.5, wall_h * 0.5 + floor_size.y, hd)},
+		{"size": Vector3(door_w, wall_h - door_h, wall_thick), "pos": Vector3(0, door_h + (wall_h - door_h) * 0.5 + floor_size.y, hd)},
 	]
 	for wd: Dictionary in wall_data:
 		var wall_mi := MeshInstance3D.new()
@@ -4333,26 +4349,26 @@ static func _build_goblin_hut(camp_root: Node3D, rng: RandomNumberGenerator) -> 
 
 
 static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator) -> void:
-	const S := 7.0
 	var fire := Node3D.new()
 	fire.name = "GoblinCampfire"
 	fire.add_to_group(&"structures")
 	fire.add_to_group(&"campfires")
+	fire.scale = Vector3(5.0, 5.0, 5.0)
 
 	var stone_mat := StandardMaterial3D.new()
 	stone_mat.albedo_color = Color(0.45, 0.42, 0.38)
 	stone_mat.roughness = 0.92
-	for i in 14:
+	for i in 10:
 		var stone := MeshInstance3D.new()
 		var sphere := SphereMesh.new()
-		sphere.radius = rng.randf_range(0.4, 0.7) * S
+		sphere.radius = rng.randf_range(0.08, 0.14)
 		sphere.height = sphere.radius * rng.randf_range(1.2, 1.8)
 		sphere.radial_segments = 6
 		sphere.rings = 3
 		stone.mesh = sphere
 		stone.material_override = stone_mat
-		var sa := float(i) * TAU / 14.0 + rng.randf_range(-0.15, 0.15)
-		stone.position = Vector3(cos(sa) * 2.8 * S, sphere.height * 0.3, sin(sa) * 2.8 * S)
+		var sa := float(i) * TAU / 10.0 + rng.randf_range(-0.15, 0.15)
+		stone.position = Vector3(cos(sa) * 0.4, sphere.height * 0.3, sin(sa) * 0.4)
 		stone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		fire.add_child(stone)
 
@@ -4362,35 +4378,35 @@ static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator
 	log_mat.emission_enabled = true
 	log_mat.emission = Color(0.5, 0.1, 0.0)
 	log_mat.emission_energy_multiplier = 0.6
-	for i in 8:
+	for i in 6:
 		var log_mi := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
-		cyl.top_radius = rng.randf_range(0.2, 0.35) * S
-		cyl.bottom_radius = rng.randf_range(0.35, 0.55) * S
-		cyl.height = rng.randf_range(2.5, 4.0) * S
-		cyl.radial_segments = 6
+		cyl.top_radius = rng.randf_range(0.04, 0.06)
+		cyl.bottom_radius = rng.randf_range(0.06, 0.09)
+		cyl.height = rng.randf_range(0.45, 0.65)
+		cyl.radial_segments = 5
 		cyl.rings = 2
 		log_mi.mesh = cyl
 		log_mi.material_override = log_mat
-		var la := float(i) * TAU / 8.0 + rng.randf_range(-0.25, 0.25)
-		var tilt := rng.randf_range(0.35, 0.55)
-		var outward := rng.randf_range(0.8, 1.4) * S
+		var la := float(i) * TAU / 6.0 + rng.randf_range(-0.2, 0.2)
+		var tilt := rng.randf_range(0.4, 0.55)
+		var outward := rng.randf_range(0.18, 0.25)
 		var inward_dir := Vector3(-cos(la), 0.0, -sin(la))
 		var lean_y := (Vector3.UP * cos(tilt) + inward_dir * sin(tilt)).normalized()
 		var ref := Vector3.FORWARD if absf(lean_y.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT
 		var lean_x := lean_y.cross(ref).normalized()
 		var lean_z := lean_x.cross(lean_y).normalized()
 		log_mi.basis = Basis(lean_x, lean_y, lean_z)
-		log_mi.position = Vector3(cos(la) * outward, cyl.height * 0.35, sin(la) * outward)
+		log_mi.position = Vector3(cos(la) * outward, cyl.height * 0.4, sin(la) * outward)
 		log_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		fire.add_child(log_mi)
 
 	var ember_mi := MeshInstance3D.new()
 	var ember_quad := QuadMesh.new()
-	ember_quad.size = Vector2(3.5 * S, 3.5 * S)
+	ember_quad.size = Vector2(0.55, 0.55)
 	ember_quad.orientation = PlaneMesh.FACE_Y
 	ember_mi.mesh = ember_quad
-	ember_mi.position.y = 0.2
+	ember_mi.position.y = 0.04
 	ember_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var ember_shader := load("res://shaders/ember_glow.gdshader") as Shader
 	if ember_shader:
@@ -4417,23 +4433,23 @@ static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator
 		var inner := MeshInstance3D.new()
 		inner.name = "InnerFlame"
 		var ic := CylinderMesh.new()
-		ic.top_radius = 0.5 * S
-		ic.bottom_radius = 0.5 * S
-		ic.height = 2.0 * S
+		ic.top_radius = 0.5
+		ic.bottom_radius = 0.5
+		ic.height = 2.0
 		ic.radial_segments = 12
 		ic.rings = 8
 		inner.mesh = ic
-		inner.position.y = 0.4
+		inner.position.y = 0.08
 		inner.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var imat := ShaderMaterial.new()
 		imat.shader = fire_shader
-		imat.set_shader_parameter("top_radius", 0.10 * S)
-		imat.set_shader_parameter("bottom_radius", 0.2 * S)
-		imat.set_shader_parameter("center_radius", 0.22 * S)
+		imat.set_shader_parameter("top_radius", 0.10)
+		imat.set_shader_parameter("bottom_radius", 0.2)
+		imat.set_shader_parameter("center_radius", 0.22)
 		imat.set_shader_parameter("center_position", 0.5)
-		imat.set_shader_parameter("cylinder_height", 0.75 * S)
+		imat.set_shader_parameter("cylinder_height", 0.75)
 		imat.set_shader_parameter("bottom_curve", 0.6)
-		imat.set_shader_parameter("vibrate_amplitude", 0.012 * S)
+		imat.set_shader_parameter("vibrate_amplitude", 0.012)
 		imat.set_shader_parameter("vibrate_frequency", 100.0)
 		imat.set_shader_parameter("speed", 3.0)
 		imat.set_shader_parameter("noise_scale", 3.5)
@@ -4450,24 +4466,24 @@ static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator
 		var outer := MeshInstance3D.new()
 		outer.name = "OuterFlame"
 		var oc := CylinderMesh.new()
-		oc.top_radius = 0.5 * S
-		oc.bottom_radius = 0.5 * S
-		oc.height = 2.0 * S
+		oc.top_radius = 0.5
+		oc.bottom_radius = 0.5
+		oc.height = 2.0
 		oc.radial_segments = 10
 		oc.rings = 6
 		outer.mesh = oc
-		outer.position.y = 0.2
+		outer.position.y = 0.04
 		outer.scale = Vector3(1.1, 1.05, 1.1)
 		outer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var omat := ShaderMaterial.new()
 		omat.shader = fire_shader
-		omat.set_shader_parameter("top_radius", 0.22 * S)
-		omat.set_shader_parameter("bottom_radius", 0.25 * S)
-		omat.set_shader_parameter("center_radius", 0.34 * S)
+		omat.set_shader_parameter("top_radius", 0.22)
+		omat.set_shader_parameter("bottom_radius", 0.25)
+		omat.set_shader_parameter("center_radius", 0.34)
 		omat.set_shader_parameter("center_position", 0.55)
-		omat.set_shader_parameter("cylinder_height", 0.68 * S)
+		omat.set_shader_parameter("cylinder_height", 0.68)
 		omat.set_shader_parameter("bottom_curve", 0.6)
-		omat.set_shader_parameter("vibrate_amplitude", 0.024 * S)
+		omat.set_shader_parameter("vibrate_amplitude", 0.024)
 		omat.set_shader_parameter("vibrate_frequency", 50.0)
 		omat.set_shader_parameter("speed", 2.0)
 		omat.set_shader_parameter("noise_scale", 4.0)
@@ -4483,15 +4499,15 @@ static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator
 
 	var fire_light := OmniLight3D.new()
 	fire_light.light_color = Color(1.0, 0.6, 0.2)
-	fire_light.light_energy = 14.0
-	fire_light.omni_range = 45.0
+	fire_light.light_energy = 8.0
+	fire_light.omni_range = 30.0
 	fire_light.omni_attenuation = 1.2
 	fire_light.shadow_enabled = false
-	fire_light.position = Vector3(0, 3.5, 0)
+	fire_light.position = Vector3(0, 0.5, 0)
 	fire.add_child(fire_light)
 
 	var angle := rng.randf_range(0, TAU)
-	var dist := rng.randf_range(18.0, 24.0)
+	var dist := rng.randf_range(16.0, 20.0)
 	fire.position = Vector3(cos(angle) * dist, 0, sin(angle) * dist)
 	camp_root.add_child(fire)
 
