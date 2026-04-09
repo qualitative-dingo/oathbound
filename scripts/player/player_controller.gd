@@ -1461,9 +1461,9 @@ func _physics_process(delta: float) -> void:
 				var lp := loot.global_position
 				var dx := px - lp.x
 				var dz := pz - lp.z
-				if dx * dx + dz * dz < 4.28:
-					var dy := py - lp.y
-					if dx * dx + dy * dy + dz * dz < 4.28:
+			if dx * dx + dz * dz < 7.23:
+				var dy := py - lp.y
+				if dx * dx + dy * dy + dz * dz < 7.23:
 						loot.pickup(self)
 
 	_interact_check_timer -= delta
@@ -10886,7 +10886,7 @@ func _try_interact() -> void:
 				return
 
 	var best_loot: Node3D
-	var best_dist := 3.45
+	var best_dist := 4.49
 	var my_peer_e := multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 0
 	for node in get_tree().get_nodes_in_group(&"loot"):
 		var loot := node as Node3D

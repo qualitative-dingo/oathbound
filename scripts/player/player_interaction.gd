@@ -683,7 +683,7 @@ func try_interact() -> void:
 				return
 
 	var best_loot: Node3D
-	var best_dist := 3.45
+	var best_dist := 4.49
 	for node in pc.get_tree().get_nodes_in_group(&"loot"):
 		var loot := node as Node3D
 		if not loot:
