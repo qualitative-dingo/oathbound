@@ -1212,9 +1212,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_MIDDLE and (event as InputEventMouseButton).pressed:
 		if _terraform_mode and not _inventory_open:
 			_terraform_raise = not _terraform_raise
-			var mode_name := "Raise" if _terraform_raise else "Lower"
-			_show_hint_text(mode_name + " ground mode")
 			_refresh_control_hints()
+			AudioManager.play_sfx("ui_click", -10.0)
 			return
 		if (_build_mode or _build_menu_open) and not _inventory_open:
 			_try_salvage_structure()
