@@ -173,6 +173,7 @@ const _RG_PATH := 4
 const _RG_WATER := 8
 const _RG_STRUCTURE := 16
 const _RG_BUSH := 32
+const _RG_RIVER := 64
 static var _rg_data := PackedByteArray()
 static var _rg_coord := Vector2i(-999999, -999999)
 
@@ -198,6 +199,8 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 				var accum: float = wg._ws_sample_accum(wx, wz)
 				if accum > 1.5:
 					flags |= _RG_WATER
+				if accum >= 2.5:
+					flags |= _RG_RIVER
 			_rg_data[idx] = flags
 
 	var os := origin_shift
@@ -2044,7 +2047,7 @@ static func _scatter_grass(
 			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
 			var rg_flags := _rg_data[rgz * _RG_RES + rgx]
-			if rg_flags & _RG_STRUCTURE != 0:
+			if rg_flags & (_RG_STRUCTURE | _RG_RIVER) != 0:
 				continue
 
 			var h5 := _grass_cell_hash(gcx, gcz, 4)
