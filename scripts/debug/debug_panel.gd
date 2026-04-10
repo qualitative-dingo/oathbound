@@ -15,6 +15,7 @@ var _toggles: Dictionary = {
 	"trees": true,
 	"rocks": true,
 	"blueberries": true,
+	"grass": true,
 	"flowers": true,
 	"creatures": true,
 	"villages": true,
@@ -174,6 +175,7 @@ func _build_ui() -> void:
 	_add_toggle(left, "Trees", "trees")
 	_add_toggle(left, "Rocks (harvestable)", "rocks")
 	_add_toggle(left, "Blueberry Bushes", "blueberries")
+	_add_toggle(left, "Grass", "grass")
 	_add_toggle(left, "Flowers", "flowers")
 	_add_toggle(left, "Creatures", "creatures")
 	_add_toggle(left, "Villages / Structures", "villages")
@@ -352,6 +354,8 @@ func _apply_toggle(key: String, on: bool) -> void:
 				pop_cls.set("debug_skip_rocks", not on)
 			"blueberries":
 				pop_cls.set("debug_skip_saplings", not on)
+			"grass":
+				pop_cls.set("debug_skip_grass", not on)
 			"flowers":
 				pop_cls.set("debug_skip_flowers", not on)
 			"creatures":
@@ -477,8 +481,22 @@ func _toggle_existing(key: String, on: bool) -> void:
 		"horses":
 			for node in tree.get_nodes_in_group(&"horses"):
 				_set_node_active(node, on)
+		"grass":
+			_set_grass_visible(on)
 		"terrain_col":
 			_toggle_by_name("TerrainCol", on)
+
+
+func _set_grass_visible(on: bool) -> void:
+	var wg_nodes := get_tree().get_nodes_in_group(&"world_generator")
+	if wg_nodes.is_empty():
+		return
+	for zone in wg_nodes[0].get_children():
+		if not zone is Node3D:
+			continue
+		for child in zone.get_children():
+			if child is MultiMeshInstance3D and child.name == "GrassClump":
+				child.visible = on
 
 
 func _set_node_active(node: Node, on: bool) -> void:
