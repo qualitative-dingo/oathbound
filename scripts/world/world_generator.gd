@@ -3021,7 +3021,7 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		zone_root.add_child(mi)
 
-		_spawn_waterfall_particles(zone_root, points, zone_origin)
+		_spawn_waterfall_particles(zone_root, points, half_widths, zone_origin)
 
 
 func _build_mountain_pool_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
@@ -3227,7 +3227,7 @@ func _rebuild_dirty_water_meshes() -> void:
 			_water_dirty_zones.erase(z)
 
 
-func _spawn_waterfall_particles(zone_root: Node3D, points: PackedVector3Array, zone_origin: Vector3) -> void:
+func _spawn_waterfall_particles(zone_root: Node3D, points: PackedVector3Array, widths: PackedFloat32Array, zone_origin: Vector3) -> void:
 	for i in range(1, points.size()):
 		var prev := points[i - 1]
 		var curr := points[i]
@@ -3236,48 +3236,65 @@ func _spawn_waterfall_particles(zone_root: Node3D, points: PackedVector3Array, z
 		if dx < 0.01:
 			continue
 		var slope_val := dy / dx
-		if slope_val < 0.15 or dy < 0.8:
+		if slope_val < 0.10 or dy < 0.5:
 			continue
+
+		var seg_w := 1.0
+		if widths.size() > 0:
+			var w0: float = widths[mini(i - 1, widths.size() - 1)]
+			var w1: float = widths[mini(i, widths.size() - 1)]
+			seg_w = (w0 + w1) * 0.5
 
 		var mid := (prev + curr) * 0.5
 		var local := mid - zone_origin
 
+		var amount := clampi(int(16 + dy * 8), 16, 80)
+		var lifetime := clampf(0.7 + dy * 0.15, 0.7, 2.5)
+		var vel_max := clampf(3.0 + slope_val * 6.0, 3.0, 12.0)
+		var vel_min := vel_max * 0.4
+		var emit_x := clampf(seg_w * 0.4, 0.5, 4.0)
+		var quad_sz := clampf(0.12 + dy * 0.04, 0.12, 0.5)
+		var grav_y := lerpf(-5.0, -12.0, clampf(slope_val, 0.0, 1.0))
+		var aabb_h := maxf(6.0, dy * 2.0 + 4.0)
+
 		var particles := GPUParticles3D.new()
 		particles.name = "Waterfall"
-		particles.amount = 16
-		particles.lifetime = 0.7
+		particles.amount = amount
+		particles.lifetime = lifetime
 		particles.explosiveness = 0.1
 		particles.randomness = 0.4
-		particles.visibility_aabb = AABB(Vector3(-2, -3, -2), Vector3(4, 6, 4))
+		particles.visibility_aabb = AABB(
+			Vector3(-emit_x - 2.0, -aabb_h * 0.5, -emit_x - 2.0),
+			Vector3((emit_x + 2.0) * 2.0, aabb_h, (emit_x + 2.0) * 2.0))
 
 		var mat := ParticleProcessMaterial.new()
 		mat.direction = Vector3(0, -1, 0)
-		mat.spread = 25.0
-		mat.initial_velocity_min = 1.5
-		mat.initial_velocity_max = 3.0
-		mat.gravity = Vector3(0, -5.0, 0)
+		mat.spread = lerpf(25.0, 15.0, clampf(slope_val, 0.0, 1.0))
+		mat.initial_velocity_min = vel_min
+		mat.initial_velocity_max = vel_max
+		mat.gravity = Vector3(0, grav_y, 0)
 		mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-		mat.emission_box_extents = Vector3(0.5, 0.1, 0.5)
-		mat.scale_min = 0.06
-		mat.scale_max = 0.14
+		mat.emission_box_extents = Vector3(emit_x, 0.2, emit_x * 0.3)
+		mat.scale_min = quad_sz * 0.5
+		mat.scale_max = quad_sz * 1.2
 		mat.damping_min = 1.0
-		mat.damping_max = 2.0
-		mat.color = Color(0.85, 0.9, 0.88, 0.7)
+		mat.damping_max = 3.0
+		mat.color = Color(0.85, 0.92, 0.90, 0.75)
 		var alpha_curve := CurveTexture.new()
 		var curve := Curve.new()
-		curve.add_point(Vector2(0.0, 0.8))
-		curve.add_point(Vector2(0.5, 0.6))
+		curve.add_point(Vector2(0.0, 0.9))
+		curve.add_point(Vector2(0.4, 0.7))
 		curve.add_point(Vector2(1.0, 0.0))
 		alpha_curve.curve = curve
 		mat.alpha_curve = alpha_curve
 		particles.process_material = mat
 
 		var quad := QuadMesh.new()
-		quad.size = Vector2(0.12, 0.12)
+		quad.size = Vector2(quad_sz, quad_sz)
 		var draw_mat := StandardMaterial3D.new()
 		draw_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		draw_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		draw_mat.albedo_color = Color(0.9, 0.95, 0.92, 0.75)
+		draw_mat.albedo_color = Color(0.92, 0.96, 0.94, 0.8)
 		draw_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		draw_mat.vertex_color_use_as_albedo = true
 		quad.material = draw_mat
@@ -3285,6 +3302,60 @@ func _spawn_waterfall_particles(zone_root: Node3D, points: PackedVector3Array, z
 
 		particles.position = local
 		zone_root.add_child(particles)
+
+		# Mist / spray cloud at the base of significant drops
+		if dy > 3.0:
+			var base_local := curr - zone_origin
+			var mist_w := clampf(seg_w * 0.6, 1.0, 6.0)
+			var mist_amount := clampi(int(12 + dy * 4), 12, 50)
+			var mist_sz := clampf(0.3 + dy * 0.05, 0.3, 0.8)
+
+			var mist := GPUParticles3D.new()
+			mist.name = "WaterfallMist"
+			mist.amount = mist_amount
+			mist.lifetime = clampf(1.0 + dy * 0.1, 1.0, 2.0)
+			mist.explosiveness = 0.0
+			mist.randomness = 0.6
+			mist.visibility_aabb = AABB(
+				Vector3(-mist_w - 2.0, -1.0, -mist_w - 2.0),
+				Vector3((mist_w + 2.0) * 2.0, 6.0, (mist_w + 2.0) * 2.0))
+
+			var mist_mat := ParticleProcessMaterial.new()
+			mist_mat.direction = Vector3(0, 1, 0)
+			mist_mat.spread = 70.0
+			mist_mat.initial_velocity_min = 0.5
+			mist_mat.initial_velocity_max = 2.0
+			mist_mat.gravity = Vector3(0, -1.5, 0)
+			mist_mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+			mist_mat.emission_box_extents = Vector3(mist_w, 0.3, mist_w * 0.4)
+			mist_mat.scale_min = mist_sz * 0.7
+			mist_mat.scale_max = mist_sz * 1.5
+			mist_mat.damping_min = 2.0
+			mist_mat.damping_max = 4.0
+			mist_mat.color = Color(0.85, 0.90, 0.88, 0.45)
+			var mist_alpha_curve := CurveTexture.new()
+			var mist_curve := Curve.new()
+			mist_curve.add_point(Vector2(0.0, 0.0))
+			mist_curve.add_point(Vector2(0.15, 0.6))
+			mist_curve.add_point(Vector2(0.5, 0.4))
+			mist_curve.add_point(Vector2(1.0, 0.0))
+			mist_alpha_curve.curve = mist_curve
+			mist_mat.alpha_curve = mist_alpha_curve
+			mist.process_material = mist_mat
+
+			var mist_quad := QuadMesh.new()
+			mist_quad.size = Vector2(mist_sz, mist_sz)
+			var mist_draw := StandardMaterial3D.new()
+			mist_draw.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mist_draw.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			mist_draw.albedo_color = Color(0.88, 0.93, 0.90, 0.5)
+			mist_draw.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mist_draw.vertex_color_use_as_albedo = true
+			mist_quad.material = mist_draw
+			mist.draw_pass_1 = mist_quad
+
+			mist.position = base_local
+			zone_root.add_child(mist)
 
 
 func _water_plane_size() -> Vector2:
