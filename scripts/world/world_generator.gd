@@ -2009,18 +2009,39 @@ func _compute_merchant_position() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _seed_hash + 55555
 	var target_dist := 800.0
-	for attempt in 24:
+	const MIN_LAND_H := 4.0
+	for attempt in 48:
 		var angle := rng.randf_range(0.0, TAU)
 		var dist := rng.randf_range(target_dist * 0.8, target_dist * 1.2)
 		var wx := cos(angle) * dist
 		var wz := sin(angle) * dist
 		var h := get_height_at(wx, wz)
-		if h > WATER_LEVEL + 1.5 and h < 40.0:
-			_merchant_world_pos = Vector3(wx, h, wz)
-			break
+		if h > WATER_LEVEL + MIN_LAND_H and h < 40.0:
+			if _is_solid_land(wx, wz, 8.0, MIN_LAND_H):
+				_merchant_world_pos = Vector3(wx, h, wz)
+				break
 	if _merchant_world_pos == Vector3.ZERO:
-		_merchant_world_pos = Vector3(600.0, get_height_at(600.0, 200.0), 200.0)
+		for fallback_attempt in 48:
+			var angle := rng.randf_range(0.0, TAU)
+			var dist := rng.randf_range(200.0, 600.0)
+			var wx := cos(angle) * dist
+			var wz := sin(angle) * dist
+			var h := get_height_at(wx, wz)
+			if h > WATER_LEVEL + MIN_LAND_H and h < 40.0:
+				if _is_solid_land(wx, wz, 8.0, MIN_LAND_H):
+					_merchant_world_pos = Vector3(wx, h, wz)
+					break
+	if _merchant_world_pos == Vector3.ZERO:
+		_merchant_world_pos = Vector3(600.0, maxf(get_height_at(600.0, 200.0), WATER_LEVEL + MIN_LAND_H), 200.0)
 	_compute_signpost_positions()
+
+
+func _is_solid_land(wx: float, wz: float, radius: float, min_h: float) -> bool:
+	for dz in [-radius, 0.0, radius]:
+		for dx in [-radius, 0.0, radius]:
+			if get_height_at(wx + dx, wz + dz) < WATER_LEVEL + min_h:
+				return false
+	return true
 
 
 func _compute_signpost_positions() -> void:
