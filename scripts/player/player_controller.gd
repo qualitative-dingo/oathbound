@@ -4297,7 +4297,7 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 		var dur := AudioManager.get_stream_duration(grp, sidx)
 		if dur > 0.0:
 			hold_time = dur + 0.5
-		AudioManager.play_sfx_indexed(grp, sidx, -2.0)
+		AudioManager.play_speech(grp, sidx)
 
 	# Size the background quad to fit the text
 	if _speech_bg:

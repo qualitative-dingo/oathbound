@@ -9,6 +9,7 @@ var _sfx_pool: Array[AudioStreamPlayer] = []
 var _sfx_3d_pool: Array[AudioStreamPlayer3D] = []
 var _pool_idx := 0
 var _pool_3d_idx := 0
+var _speech_player: AudioStreamPlayer
 var _music_player: AudioStreamPlayer
 var _music_playlist: Array[String] = []
 var _music_shuffle_queue: Array[String] = []
@@ -32,6 +33,10 @@ func _ready() -> void:
 		p3d.attenuation_model = AudioStreamPlayer3D.ATTENUATION_LOGARITHMIC
 		add_child(p3d)
 		_sfx_3d_pool.append(p3d)
+
+	_speech_player = AudioStreamPlayer.new()
+	_speech_player.bus = &"SFX"
+	add_child(_speech_player)
 
 	_music_player = AudioStreamPlayer.new()
 	_music_player.bus = &"Music"
@@ -152,6 +157,18 @@ func get_stream_duration(group_name: String, idx: int) -> float:
 		return 0.0
 	var s: AudioStream = streams[idx] as AudioStream
 	return s.get_length() if s else 0.0
+
+
+func play_speech(group_name: String, idx: int, volume_db: float = -2.0) -> void:
+	if not _sounds.has(group_name):
+		return
+	var streams: Array = _sounds[group_name] as Array
+	if idx < 0 or idx >= streams.size():
+		return
+	_speech_player.stream = streams[idx] as AudioStream
+	_speech_player.volume_db = volume_db
+	_speech_player.pitch_scale = 1.0
+	_speech_player.play()
 
 
 func play_sfx_indexed(group_name: String, idx: int, volume_db: float = 0.0) -> void:
