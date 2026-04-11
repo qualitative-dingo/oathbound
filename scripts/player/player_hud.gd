@@ -1474,6 +1474,35 @@ func draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: flo
 			continue
 		draw_map_dot(n3d.global_position, cave_col, 2, half_px, zones_per_pixel, zone_size)
 
+	var sign_col := Color(1.0, 0.9, 0.3)
+	for node in pc.get_tree().get_nodes_in_group(&"signposts"):
+		var n3d := node as Node3D
+		if not n3d:
+			continue
+		draw_map_exclamation(n3d.global_position, sign_col, half_px, zones_per_pixel, zone_size)
+
+
+func draw_map_exclamation(world_pos: Vector3, color: Color, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
+	if zones_per_pixel < 0.001:
+		return
+	var dx_world := world_pos.x - pc.global_position.x
+	var dz_world := world_pos.z - pc.global_position.z
+	var cx := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
+	var cy := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
+	# 7px tall exclamation mark: stem (4px) + gap (1px) + dot (2px)
+	for dy in range(-3, 1):
+		for dx_off in [-1, 0]:
+			var fx := cx + dx_off
+			var fy := cy + dy
+			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
+				pc._map_image.set_pixel(fx, fy, color)
+	for dy in [2, 3]:
+		for dx_off in [-1, 0]:
+			var fx := cx + dx_off
+			var fy := cy + dy
+			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
+				pc._map_image.set_pixel(fx, fy, color)
+
 
 func draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
 	if zones_per_pixel < 0.001:
