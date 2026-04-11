@@ -2348,7 +2348,8 @@ func _spawn_tavern() -> void:
 
 	var tavern := _ZonePopulator.build_tavern(
 		zone_root, tavern_wx, tavern_wz, tavern_h)
-	tavern.position = Vector3(tavern_wx - zone_origin_x, tavern_h, tavern_wz - zone_origin_z)
+	# Lower by floor thickness (0.75) so the floor top sits flush with terrain
+	tavern.position = Vector3(tavern_wx - zone_origin_x, tavern_h - 0.75, tavern_wz - zone_origin_z)
 
 	_tavern_world_pos = Vector3(tavern_wx, tavern_h, tavern_wz)
 	print("[TAVERN] Placed at world (%.0f, %.1f, %.0f)" % [tavern_wx, tavern_h, tavern_wz])
