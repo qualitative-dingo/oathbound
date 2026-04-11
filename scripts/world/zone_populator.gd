@@ -2284,9 +2284,10 @@ static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, c
 		if dist_sq < r_sq:
 			return true
 	for ec in _forced_exclusion_circles:
-		var edx := ec[0] - wx
-		var edz := ec[1] - wz
-		if edx * edx + edz * edz < ec[2] * ec[2]:
+		var edx: float = float(ec[0]) - wx
+		var edz: float = float(ec[1]) - wz
+		var er: float = float(ec[2])
+		if edx * edx + edz * edz < er * er:
 			return true
 	return false
 
