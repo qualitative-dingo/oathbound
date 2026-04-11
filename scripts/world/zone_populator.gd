@@ -4270,7 +4270,7 @@ static func _try_spawn_goblin_camp(
 	zone_root.add_child(camp_root)
 
 	_build_goblin_hut(camp_root, rng)
-	_build_goblin_campfire(camp_root, rng)
+	_build_goblin_campfire(camp_root, rng, height_func, peak_x, peak_z, peak_h)
 	_build_goblin_camp_chest(camp_root, rng)
 
 	var goblin_count := 10
@@ -4355,7 +4355,7 @@ static func _build_goblin_hut(camp_root: Node3D, rng: RandomNumberGenerator) -> 
 	camp_root.add_child(hut)
 
 
-static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator) -> void:
+static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator, height_func: Callable, peak_x: float, peak_z: float, peak_h: float) -> void:
 	var fire := Node3D.new()
 	fire.name = "GoblinCampfire"
 	fire.add_to_group(&"structures")
@@ -4515,7 +4515,10 @@ static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator
 
 	var angle := rng.randf_range(0, TAU)
 	var dist := rng.randf_range(16.0, 20.0)
-	fire.position = Vector3(cos(angle) * dist, 0, sin(angle) * dist)
+	var world_x := peak_x + cos(angle) * dist
+	var world_z := peak_z + sin(angle) * dist
+	var ground_h := float(height_func.call(world_x, world_z))
+	fire.position = Vector3(cos(angle) * dist, ground_h - peak_h, sin(angle) * dist)
 	camp_root.add_child(fire)
 
 

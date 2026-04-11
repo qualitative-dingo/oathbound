@@ -4274,7 +4274,18 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	if not _speech_label_3d:
 		return
 
-	var idx := randi() % lines.size()
+	var voiced: Array = []
+	var unvoiced: Array = []
+	for i in range(lines.size()):
+		if _LINE_VOICE.has(str(lines[i])):
+			voiced.append(i)
+		else:
+			unvoiced.append(i)
+	var idx: int
+	if not voiced.is_empty():
+		idx = voiced[randi() % voiced.size()]
+	else:
+		idx = randi() % lines.size()
 	var msg := str(lines[idx])
 	_speech_label_3d.text = "\" " + msg + " \""
 
