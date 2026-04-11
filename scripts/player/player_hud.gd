@@ -1526,8 +1526,9 @@ func draw_marrow_quest_areas(wg: WorldGenerator, half_px: int, zones_per_pixel: 
 	var world_radius := max_dist + 30.0
 	var px_radius := roundi(world_radius / (zones_per_pixel * zone_size))
 	px_radius = maxi(px_radius, 6)
-	var dx_world := center.x - pc.global_position.x
-	var dz_world := center.z - pc.global_position.z
+	var player_world := wg.get_world_position(pc)
+	var dx_world := center.x - player_world.x
+	var dz_world := center.z - player_world.z
 	var cx := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
 	var cy := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
 	var col := Color(0.85, 0.55, 0.15, 1.0)
