@@ -5773,7 +5773,7 @@ func _refresh_minimap() -> void:
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
 	_draw_signpost_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
-	_draw_arrow_on_image(_minimap_lo_image, _MINIMAP_LO / 2, 1.0)
+	_draw_arrow_on_image(_minimap_lo_image, _MINIMAP_LO / 2, 0.4)
 
 	_minimap_image_tex.set_image(_minimap_lo_image)
 	if _minimap_tex_rect.texture != _minimap_image_tex:
