@@ -4340,7 +4340,9 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	)
 
 	_speech_cooldown = _SPEECH_GLOBAL_COOLDOWN
-	_speech_trigger_cooldowns[trigger_key] = _SPEECH_TRIGGER_COOLDOWN
+	const _NO_TRIGGER_CD: Array[StringName] = [&"killing_spree", &"close_call", &"craft_5star", &"find_5star", &"halvard"]
+	if trigger_key not in _NO_TRIGGER_CD:
+		_speech_trigger_cooldowns[trigger_key] = _SPEECH_TRIGGER_COOLDOWN
 
 
 func _check_speech_triggers(delta: float) -> void:
