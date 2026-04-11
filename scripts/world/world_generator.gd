@@ -3431,7 +3431,7 @@ func _spawn_waterfall_particles(zone_root: Node3D, points: PackedVector3Array, w
 		var mid := (prev + curr) * 0.5
 		var local := mid - zone_origin
 
-		var amount := clampi(int(16 + dy * 8), 16, 80)
+		var amount := clampi(int((16 + dy * 8) * 2.5), 40, 200)
 		var lifetime := clampf(0.7 + dy * 0.15, 0.7, 2.5)
 		var vel_max := clampf(3.0 + slope_val * 6.0, 3.0, 12.0)
 		var vel_min := vel_max * 0.4
@@ -3490,7 +3490,7 @@ func _spawn_waterfall_particles(zone_root: Node3D, points: PackedVector3Array, w
 		if dy > 3.0:
 			var base_local := curr - zone_origin
 			var mist_w := clampf(seg_w * 0.6, 1.0, 6.0)
-			var mist_amount := clampi(int(12 + dy * 4), 12, 50)
+			var mist_amount := clampi(int((12 + dy * 4) * 2.5), 30, 125)
 			var mist_sz := clampf(0.3 + dy * 0.05, 0.3, 0.8)
 
 			var mist := GPUParticles3D.new()
