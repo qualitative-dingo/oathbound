@@ -1639,6 +1639,8 @@ func _stamp_creek_bed() -> void:
 					for cz in range(cz_min, cz_max + 1):
 						var cell_wx := (float(cx) + 0.5) * _CREEK_BED_CELL
 						var cell_wz := (float(cz) + 0.5) * _CREEK_BED_CELL
+						if cell_wx * cell_wx + cell_wz * cell_wz < 2500.0:
+							continue
 						var dx := cell_wx - p.x
 						var dz := cell_wz - p.z
 						var dist_sq := dx * dx + dz * dz
@@ -1944,12 +1946,6 @@ func get_height_at(x: float, z: float) -> float:
 			var lake_depth := lerpf(2.0, 5.0, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
-	# Flatten spawn area — fully flat within 20m, fading to 80m
-	var center_dist := Vector2(x, z).length()
-	if center_dist < 80.0:
-		var flatten := 1.0 - smoothstep(0.0, 80.0, center_dist)
-		h = lerpf(h, 2.0, flatten)
-
 	# Creek bed grid carving — wide channels matching creek mesh footprints
 	if not _creek_bed.is_empty():
 		var cb_gx := x / _CREEK_BED_CELL
@@ -1971,6 +1967,13 @@ func get_height_at(x: float, z: float) -> float:
 			var bed_h := lerpf(lerpf(a, b, cb_fx), lerpf(c, d, cb_fx), cb_fz)
 			if bed_h < h:
 				h = bed_h
+
+	# Flatten spawn area — applied AFTER all water carving so rivers/creeks
+	# cannot punch through. Fully flat within 35m, fading out to 80m.
+	var center_dist := Vector2(x, z).length()
+	if center_dist < 80.0:
+		var flatten := 1.0 - smoothstep(35.0, 80.0, center_dist)
+		h = lerpf(h, 2.0, flatten)
 
 	return h
 
@@ -2117,8 +2120,8 @@ func _spawn_debug_portals() -> void:
 
 
 func _spawn_village_cave_entrance() -> void:
-	var cx := 12.0
-	var cz := 12.0
+	var cx := 40.0
+	var cz := 32.0
 	var cy := get_height_at(cx, cz)
 	if cy < 0.5:
 		cy = 1.0
@@ -2130,8 +2133,8 @@ func _spawn_village_cave_entrance() -> void:
 
 func _spawn_starter_goblins() -> void:
 	_ZonePopulator._ensure_textures()
-	var center_x := 15.0
-	var center_z := 15.0
+	var center_x := 32.0
+	var center_z := 40.0
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _seed_hash + 9999
 	var spawn_zone := world_to_zone(Vector3(center_x, 0.0, center_z))

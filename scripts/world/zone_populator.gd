@@ -197,10 +197,12 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 				flags |= _RG_PATH
 			if wg and wg.has_method("_ws_sample_accum"):
 				var accum: float = wg._ws_sample_accum(wx, wz)
-				if accum > 1.5:
-					flags |= _RG_WATER
-				if accum >= 2.5:
-					flags |= _RG_RIVER
+				var spawn_dist_sq := wx * wx + wz * wz
+				if spawn_dist_sq >= 2500.0:
+					if accum > 1.5:
+						flags |= _RG_WATER
+					if accum >= 2.5:
+						flags |= _RG_RIVER
 			_rg_data[idx] = flags
 
 	var os := origin_shift
@@ -1191,8 +1193,8 @@ static func populate_zone_phase(
 			if biome == &"hearthlands":
 				_VillageGenerator.try_spawn_village(zone_root, coord, rng, origin_x, origin_z, height_func)
 			if coord == Vector2i(0, 0):
-				_VillageGenerator.force_spawn_village(zone_root, 20.0, 20.0, height_func)
-				_spawn_village_signpost(zone_root, 20.0, 20.0, origin_x, origin_z, height_func)
+				_VillageGenerator.force_spawn_village(zone_root, 36.0, 36.0, height_func)
+				_spawn_village_signpost(zone_root, 36.0, 36.0, origin_x, origin_z, height_func)
 
 		_try_spawn_merchant_camp(zone_root, coord, origin_x, origin_z, height_func)
 		_try_spawn_signposts(zone_root, coord, origin_x, origin_z, height_func)
