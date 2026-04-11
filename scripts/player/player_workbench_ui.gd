@@ -821,6 +821,11 @@ func execute_craft(item_id: StringName) -> void:
 			spawn_discard_text(crafted_id)
 		else:
 			spawn_craft_text(crafted_id)
+			if crafted_stars >= 3:
+				if item_type == "weapon":
+					pc._show_speech(pc._LINES_CRAFT_WEAPON, &"craft_weapon")
+				elif item_type == "tool":
+					pc._show_speech(pc._LINES_CRAFT_TOOL, &"craft_tool")
 		refresh_workbench_ui()
 		pc._refresh_inventory_ui()
 
