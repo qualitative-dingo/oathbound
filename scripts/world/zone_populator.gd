@@ -4657,6 +4657,398 @@ static func _build_goblin_campfire(camp_root: Node3D, rng: RandomNumberGenerator
 	camp_root.add_child(fire)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+#  TAVERN BUILDER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+static func _tavern_wall(body: StaticBody3D, sz: Vector3, pos: Vector3, mat: Material) -> void:
+	var mi := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = sz
+	mi.mesh = mesh
+	mi.set_surface_override_material(0, mat)
+	mi.position = pos
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	body.add_child(mi)
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = sz
+	col.shape = shape
+	col.position = pos
+	body.add_child(col)
+
+static func _tavern_box(parent: Node3D, sz: Vector3, pos: Vector3, mat: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = sz
+	mi.mesh = mesh
+	mi.set_surface_override_material(0, mat)
+	mi.position = pos
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
+	return mi
+
+static func _tavern_torch(parent: Node3D, pos: Vector3) -> void:
+	var torch := Node3D.new()
+	torch.name = "WallTorch"
+	var stick := MeshInstance3D.new()
+	var stick_mesh := BoxMesh.new()
+	stick_mesh.size = Vector3(0.12, 0.7, 0.12)
+	stick.mesh = stick_mesh
+	var stick_mat := StandardMaterial3D.new()
+	stick_mat.albedo_color = Color(0.35, 0.22, 0.10)
+	stick_mat.roughness = 1.0
+	stick.set_surface_override_material(0, stick_mat)
+	stick.position.y = -0.15
+	stick.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	torch.add_child(stick)
+
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.75, 0.4)
+	light.light_energy = 4.0
+	light.omni_range = 18.0
+	light.omni_attenuation = 1.3
+	light.shadow_enabled = false
+	light.position.y = 0.3
+	torch.add_child(light)
+
+	var glow := MeshInstance3D.new()
+	var gs := SphereMesh.new()
+	gs.radius = 0.1
+	gs.height = 0.2
+	glow.mesh = gs
+	var gm := StandardMaterial3D.new()
+	gm.emission_enabled = true
+	gm.emission = Color(1.0, 0.7, 0.3)
+	gm.emission_energy_multiplier = 6.0
+	gm.albedo_color = Color(1.0, 0.8, 0.3)
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.albedo_color.a = 0.7
+	glow.set_surface_override_material(0, gm)
+	glow.position.y = 0.2
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	torch.add_child(glow)
+
+	torch.position = pos
+	parent.add_child(torch)
+
+static func _tavern_table(parent: Node3D, center: Vector3, mat: Material) -> void:
+	var table := Node3D.new()
+	table.name = "Table"
+	_tavern_box(table, Vector3(2.2, 0.08, 1.4), Vector3(0, 0.82, 0), mat)
+	var leg_mat := StandardMaterial3D.new()
+	leg_mat.albedo_color = Color(0.40, 0.30, 0.18)
+	leg_mat.roughness = 0.9
+	for lx in [-0.8, 0.8]:
+		for lz in [-0.5, 0.5]:
+			_tavern_box(table, Vector3(0.1, 0.78, 0.1), Vector3(lx, 0.39, lz), leg_mat)
+	table.position = center
+	parent.add_child(table)
+	for ci in 4:
+		var chair := Node3D.new()
+		chair.name = "Chair"
+		var angle := ci * TAU / 4.0 + PI / 4.0
+		var cx := cos(angle) * 1.4
+		var cz := sin(angle) * 1.4
+		_tavern_box(chair, Vector3(0.5, 0.06, 0.5), Vector3(0, 0.42, 0), mat)
+		for clx in [-0.2, 0.2]:
+			for clz in [-0.2, 0.2]:
+				_tavern_box(chair, Vector3(0.06, 0.42, 0.06), Vector3(clx, 0.21, clz), leg_mat)
+		_tavern_box(chair, Vector3(0.5, 0.45, 0.06), Vector3(0, 0.67, -0.22), mat)
+		chair.position = center + Vector3(cx, 0, cz)
+		chair.rotation.y = angle + PI
+		parent.add_child(chair)
+
+
+static func build_tavern(parent: Node3D, world_x: float, world_z: float, ground_h: float) -> Node3D:
+	PlayerBuilding.ensure_building_materials()
+	var stone_mat: StandardMaterial3D = PlayerBuilding._bmat_stone
+	var wood_mat: StandardMaterial3D = PlayerBuilding._bmat_wood
+	var thatch_mat: StandardMaterial3D = PlayerBuilding._bmat_thatch
+
+	const TW := 32.0
+	const TD := 20.0
+	const WH := 9.0
+	const WT := 0.8
+	const FT := 0.75
+	const DW := 5.0
+	const DH := 6.5
+
+	var tavern := Node3D.new()
+	tavern.name = "Tavern"
+	tavern.add_to_group(&"structures")
+	tavern.add_to_group(&"tavern")
+	tavern.set_meta("footprint_radius", maxf(TW, TD) * 0.5 + 5.0)
+
+	var hw := TW * 0.5
+	var hd := TD * 0.5
+
+	var body := StaticBody3D.new()
+	body.name = "TavernBody"
+	body.collision_layer = 1
+	body.collision_mask = 0
+	tavern.add_child(body)
+
+	# ── Floor ──
+	_tavern_wall(body, Vector3(TW, FT, TD), Vector3(0, FT * 0.5, 0), stone_mat)
+
+	# ── Walls ──
+	_tavern_wall(body, Vector3(TW, WH, WT), Vector3(0, WH * 0.5 + FT, -hd), stone_mat)
+	_tavern_wall(body, Vector3(WT, WH, TD), Vector3(-hw, WH * 0.5 + FT, 0), stone_mat)
+	_tavern_wall(body, Vector3(WT, WH, TD), Vector3(hw, WH * 0.5 + FT, 0), stone_mat)
+	var half_front := (TW - DW) * 0.5
+	_tavern_wall(body, Vector3(half_front, WH, WT),
+		Vector3(-(half_front + DW) * 0.5, WH * 0.5 + FT, hd), stone_mat)
+	_tavern_wall(body, Vector3(half_front, WH, WT),
+		Vector3((half_front + DW) * 0.5, WH * 0.5 + FT, hd), stone_mat)
+	_tavern_wall(body, Vector3(DW, WH - DH, WT),
+		Vector3(0, DH + (WH - DH) * 0.5 + FT, hd), stone_mat)
+
+	# ── Roof ──
+	var roof_mi := MeshInstance3D.new()
+	var roof_mesh := BoxMesh.new()
+	roof_mesh.size = Vector3(TW + 3.0, 0.7, TD + 3.0)
+	roof_mi.mesh = roof_mesh
+	roof_mi.set_surface_override_material(0, thatch_mat)
+	roof_mi.position.y = FT + WH + 0.35
+	roof_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	tavern.add_child(roof_mi)
+
+	# ── Chimney (back-left corner, rises above roof) ──
+	const CH_W := 3.5
+	const CH_D := 3.0
+	const CH_ABOVE := 5.0
+	var ch_total_h := WH + CH_ABOVE
+	var ch_x := -hw + CH_W * 0.5 + WT + 0.5
+	var ch_z := -hd + CH_D * 0.5 + WT + 0.5
+	_tavern_box(tavern, Vector3(CH_W, ch_total_h, CH_D),
+		Vector3(ch_x, ch_total_h * 0.5 + FT, ch_z), stone_mat)
+	var chimney_col := CollisionShape3D.new()
+	var chimney_shape := BoxShape3D.new()
+	chimney_shape.size = Vector3(CH_W, ch_total_h, CH_D)
+	chimney_col.shape = chimney_shape
+	chimney_col.position = Vector3(ch_x, ch_total_h * 0.5 + FT, ch_z)
+	body.add_child(chimney_col)
+
+	# ── Fireplace (inside, in front of chimney) ──
+	var fireplace := Node3D.new()
+	fireplace.name = "TavernFireplace"
+	fireplace.add_to_group(&"campfires")
+
+	var fp_x := ch_x
+	var fp_z := ch_z + CH_D * 0.5 + 0.5
+	var fp_y := FT + 0.05
+
+	var fire_shader := load("res://shaders/fire_flame.gdshader") as Shader
+	var ember_shader := load("res://shaders/ember_glow.gdshader") as Shader
+
+	var ember_mi := MeshInstance3D.new()
+	var ember_quad := QuadMesh.new()
+	ember_quad.size = Vector2(1.8, 1.8)
+	ember_quad.orientation = PlaneMesh.FACE_Y
+	ember_mi.mesh = ember_quad
+	ember_mi.position.y = 0.04
+	ember_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if ember_shader:
+		var emat := ShaderMaterial.new()
+		emat.shader = ember_shader
+		emat.set_shader_parameter("color_hot", Color(1.0, 0.55, 0.05))
+		emat.set_shader_parameter("color_cool", Color(0.4, 0.08, 0.0))
+		emat.set_shader_parameter("pulse_speed", 1.0)
+		emat.set_shader_parameter("noise_scale", 5.0)
+		emat.set_shader_parameter("brightness", 3.5)
+		ember_mi.material_override = emat
+	else:
+		var fb := StandardMaterial3D.new()
+		fb.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		fb.albedo_color = Color(1.0, 0.4, 0.05)
+		fb.emission_enabled = true
+		fb.emission = Color(1.0, 0.4, 0.05)
+		fb.emission_energy_multiplier = 3.0
+		ember_mi.material_override = fb
+	fireplace.add_child(ember_mi)
+
+	if fire_shader:
+		var inner := MeshInstance3D.new()
+		inner.name = "InnerFlame"
+		var ic := CylinderMesh.new()
+		ic.top_radius = 0.5
+		ic.bottom_radius = 0.5
+		ic.height = 2.0
+		ic.radial_segments = 12
+		ic.rings = 8
+		inner.mesh = ic
+		inner.position.y = 0.08
+		inner.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var imat := ShaderMaterial.new()
+		imat.shader = fire_shader
+		imat.set_shader_parameter("top_radius", 0.10)
+		imat.set_shader_parameter("bottom_radius", 0.2)
+		imat.set_shader_parameter("center_radius", 0.22)
+		imat.set_shader_parameter("center_position", 0.5)
+		imat.set_shader_parameter("cylinder_height", 0.75)
+		imat.set_shader_parameter("bottom_curve", 0.6)
+		imat.set_shader_parameter("vibrate_amplitude", 0.012)
+		imat.set_shader_parameter("vibrate_frequency", 100.0)
+		imat.set_shader_parameter("speed", 2.5)
+		imat.set_shader_parameter("noise_scale", 3.5)
+		imat.set_shader_parameter("brightness", 0.95)
+		imat.set_shader_parameter("cutoff_base", 0.18)
+		imat.set_shader_parameter("band_steps", 5.0)
+		imat.set_shader_parameter("color_core", Color(1.0, 1.0, 0.9))
+		imat.set_shader_parameter("color_mid", Color(1.0, 0.7, 0.15))
+		imat.set_shader_parameter("color_outer", Color(1.0, 0.35, 0.04))
+		imat.set_shader_parameter("color_edge", Color(0.7, 0.12, 0.0))
+		inner.material_override = imat
+		fireplace.add_child(inner)
+
+		var outer := MeshInstance3D.new()
+		outer.name = "OuterFlame"
+		var oc := CylinderMesh.new()
+		oc.top_radius = 0.5
+		oc.bottom_radius = 0.5
+		oc.height = 2.0
+		oc.radial_segments = 10
+		oc.rings = 6
+		outer.mesh = oc
+		outer.position.y = 0.04
+		outer.scale = Vector3(1.1, 1.05, 1.1)
+		outer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var omat := ShaderMaterial.new()
+		omat.shader = fire_shader
+		omat.set_shader_parameter("top_radius", 0.22)
+		omat.set_shader_parameter("bottom_radius", 0.25)
+		omat.set_shader_parameter("center_radius", 0.34)
+		omat.set_shader_parameter("center_position", 0.55)
+		omat.set_shader_parameter("cylinder_height", 0.68)
+		omat.set_shader_parameter("bottom_curve", 0.6)
+		omat.set_shader_parameter("vibrate_amplitude", 0.024)
+		omat.set_shader_parameter("vibrate_frequency", 50.0)
+		omat.set_shader_parameter("speed", 1.8)
+		omat.set_shader_parameter("noise_scale", 4.0)
+		omat.set_shader_parameter("brightness", 0.75)
+		omat.set_shader_parameter("cutoff_base", 0.14)
+		omat.set_shader_parameter("band_steps", 4.0)
+		omat.set_shader_parameter("color_core", Color(1.0, 0.8, 0.25))
+		omat.set_shader_parameter("color_mid", Color(1.0, 0.4, 0.06))
+		omat.set_shader_parameter("color_outer", Color(0.75, 0.15, 0.0))
+		omat.set_shader_parameter("color_edge", Color(0.3, 0.04, 0.0))
+		outer.material_override = omat
+		fireplace.add_child(outer)
+
+	var fire_light := OmniLight3D.new()
+	fire_light.name = "FireLight"
+	fire_light.light_color = Color(1.0, 0.6, 0.2)
+	fire_light.light_energy = 10.0
+	fire_light.omni_range = 24.0
+	fire_light.omni_attenuation = 1.1
+	fire_light.shadow_enabled = false
+	fire_light.position = Vector3(0, 1.5, 0)
+	fireplace.add_child(fire_light)
+
+	var fill_light := OmniLight3D.new()
+	fill_light.name = "FillLight"
+	fill_light.light_color = Color(1.0, 0.85, 0.6)
+	fill_light.light_energy = 3.0
+	fill_light.omni_range = 20.0
+	fill_light.omni_attenuation = 1.5
+	fill_light.shadow_enabled = false
+	fill_light.position = Vector3(0, 4.0, 3.0)
+	fireplace.add_child(fill_light)
+
+	var campfire_stream := load("res://audio/sfx/campfire.wav") as AudioStream
+	if campfire_stream:
+		var audio := AudioStreamPlayer3D.new()
+		audio.name = "FireAudio"
+		audio.stream = campfire_stream
+		audio.bus = &"SFX"
+		audio.volume_db = 4.0
+		audio.max_distance = 40.0
+		audio.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		audio.unit_size = 8.0
+		audio.autoplay = true
+		audio.max_polyphony = 1
+		fireplace.add_child(audio)
+		audio.finished.connect(audio.play)
+
+	fireplace.position = Vector3(fp_x, fp_y, fp_z)
+	tavern.add_child(fireplace)
+
+	# ── Log pile next to fireplace ──
+	var log_mat := StandardMaterial3D.new()
+	log_mat.albedo_color = Color(0.35, 0.22, 0.10)
+	log_mat.roughness = 1.0
+	log_mat.emission_enabled = true
+	log_mat.emission = Color(0.3, 0.06, 0.0)
+	log_mat.emission_energy_multiplier = 0.4
+	for i in 5:
+		var log_mi := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 0.12
+		cyl.bottom_radius = 0.16
+		cyl.height = 1.2
+		cyl.radial_segments = 5
+		log_mi.mesh = cyl
+		log_mi.material_override = log_mat
+		var la := float(i) * TAU / 5.0
+		log_mi.rotation.z = 0.4 + float(i) * 0.1
+		log_mi.rotation.y = la
+		log_mi.position = Vector3(fp_x + cos(la) * 0.4, FT + 0.3, fp_z + sin(la) * 0.4)
+		log_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		tavern.add_child(log_mi)
+
+	# ── Bar counter (along right side of back wall) ──
+	const BAR_L := 12.0
+	const BAR_H := 1.1
+	const BAR_D := 0.9
+	var bar_x := hw - BAR_L * 0.5 - WT - 0.8
+	var bar_z := -hd + BAR_D * 0.5 + WT + 0.5
+	_tavern_box(tavern, Vector3(BAR_L, BAR_H, BAR_D),
+		Vector3(bar_x, FT + BAR_H * 0.5, bar_z), wood_mat)
+	var bar_col := CollisionShape3D.new()
+	var bar_shape := BoxShape3D.new()
+	bar_shape.size = Vector3(BAR_L, BAR_H, BAR_D)
+	bar_col.shape = bar_shape
+	bar_col.position = Vector3(bar_x, FT + BAR_H * 0.5, bar_z)
+	body.add_child(bar_col)
+
+	# Shelves behind bar
+	_tavern_box(tavern, Vector3(BAR_L - 1.0, 2.5, 0.4),
+		Vector3(bar_x, FT + BAR_H + 1.25, -hd + WT * 0.5 + 0.25), wood_mat)
+	# Shelf dividers
+	for si in 4:
+		var sx := bar_x - BAR_L * 0.5 + 1.5 + float(si) * 3.0
+		_tavern_box(tavern, Vector3(0.08, 2.5, 0.35),
+			Vector3(sx, FT + BAR_H + 1.25, -hd + WT * 0.5 + 0.25), wood_mat)
+
+	# ── Tables with chairs ──
+	var table_positions := [
+		Vector3(-6.0, 0, 2.0),
+		Vector3(1.0, 0, 2.0),
+		Vector3(8.0, 0, 2.0),
+		Vector3(-6.0, 0, -4.0),
+		Vector3(1.0, 0, -4.0),
+	]
+	for tpos in table_positions:
+		_tavern_table(tavern, tpos, wood_mat)
+
+	# ── Wall torches ──
+	_tavern_torch(tavern, Vector3(-hw + 0.5, FT + 5.5, -hd * 0.5))
+	_tavern_torch(tavern, Vector3(-hw + 0.5, FT + 5.5, hd * 0.5))
+	_tavern_torch(tavern, Vector3(hw - 0.5, FT + 5.5, -hd * 0.5))
+	_tavern_torch(tavern, Vector3(hw - 0.5, FT + 5.5, hd * 0.5))
+	_tavern_torch(tavern, Vector3(-3.0, FT + 5.5, -hd + 0.5))
+	_tavern_torch(tavern, Vector3(bar_x, FT + 5.5, -hd + 0.5))
+
+	# ── Position tavern in world ──
+	var dir_to_spawn := Vector2(-world_x, -world_z)
+	if dir_to_spawn.length_squared() > 0.01:
+		tavern.rotation.y = atan2(dir_to_spawn.x, dir_to_spawn.y)
+
+	parent.add_child(tavern)
+	return tavern
+
+
 static func _build_goblin_camp_chest(camp_root: Node3D, rng: RandomNumberGenerator) -> void:
 	var chest := StaticBody3D.new()
 	chest.name = "GoblinChest"

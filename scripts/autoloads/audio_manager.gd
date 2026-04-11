@@ -256,7 +256,7 @@ func _play_next_shuffle(fade_in: float = 3.0) -> void:
 
 
 func _play_track(filename: String, fade_in: float = 2.0) -> void:
-	var path := MUSIC_PATH + filename
+	var path := filename if filename.begins_with("res://") else MUSIC_PATH + filename
 	if not ResourceLoader.exists(path):
 		return
 	var stream := load(path) as AudioStream

@@ -51,6 +51,21 @@ const WATER_LEVEL := 0.0
 var _theme_songs: Array[String] = []
 var _seed_hash: int
 var _merchant_world_pos: Vector3 = Vector3.ZERO
+
+# ─── Tavern ────────────────────────────────────────────────────────────────────
+var _tavern_world_pos := Vector3.ZERO
+var _player_in_tavern := false
+const _TAVERN_ENTER_DIST := 18.0
+const _TAVERN_EXIT_DIST := 28.0
+const _TAVERN_MUSIC_PATH := "res://audio/tavern music/"
+var _tavern_songs: Array[String] = [
+	_TAVERN_MUSIC_PATH + "song1.mp3",
+	_TAVERN_MUSIC_PATH + "song2.mp3",
+	_TAVERN_MUSIC_PATH + "song3.mp3",
+	_TAVERN_MUSIC_PATH + "song4.mp3",
+	_TAVERN_MUSIC_PATH + "song6.mp3",
+	_TAVERN_MUSIC_PATH + "song8.mp3",
+]
 var _merchant_signpost_positions: Array[Vector3] = []
 var _marrow_deposit_positions: Array[Vector3] = []
 var _continent_noise: FastNoiseLite
@@ -440,6 +455,7 @@ func _ready() -> void:
 		"misty_nordic_forest_theme.mp3",
 		"nordic_wilderness_echoes.mp3",
 		"whispers_of_the_northern_wild.mp3",
+		_TAVERN_MUSIC_PATH + "additional theme song.mp3",
 	]
 	AudioManager.play_music_playlist(_theme_songs, 4.0)
 	GameEvents.day_night_changed.connect(_on_day_night_changed)
@@ -451,11 +467,29 @@ func _ready() -> void:
 
 
 func _on_day_night_changed(is_day: bool) -> void:
+	if _player_in_tavern:
+		return
 	if is_day:
 		if not _theme_songs.is_empty():
 			AudioManager.play_music_playlist(_theme_songs, 4.0)
 	else:
 		AudioManager.stop_music(3.0)
+
+
+func _update_tavern_music(player_wp: Vector3) -> void:
+	if _tavern_world_pos == Vector3.ZERO:
+		return
+	var dist := Vector2(player_wp.x - _tavern_world_pos.x, player_wp.z - _tavern_world_pos.z).length()
+	if not _player_in_tavern and dist < _TAVERN_ENTER_DIST:
+		_player_in_tavern = true
+		AudioManager.play_music_playlist(_tavern_songs, 2.0)
+	elif _player_in_tavern and dist > _TAVERN_EXIT_DIST:
+		_player_in_tavern = false
+		var dnc := get_node_or_null("DayNightCycle")
+		if dnc and dnc.has_method("is_daytime") and dnc.is_daytime():
+			AudioManager.play_music_playlist(_theme_songs, 3.0)
+		else:
+			AudioManager.stop_music(3.0)
 
 
 var _diag_timer := 0.0
@@ -671,6 +705,9 @@ func _physics_process(delta: float) -> void:
 	_perf_max_explore_ms = maxf(_perf_max_explore_ms, float(t5 - t4) / 1000.0)
 	_perf_max_total_ms = maxf(_perf_max_total_ms, float(t5 - t0) / 1000.0)
 	_perf_pending_size_max = maxi(_perf_pending_size_max, _pending_zones.size())
+
+	# Tavern music zone
+	_update_tavern_music(host_wp)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2220,6 +2257,7 @@ func _generate_spawn_area() -> void:
 	_spawn_debug_portals()
 	_spawn_village_cave_entrance()
 	_spawn_starter_goblins()
+	_spawn_tavern()
 	_dismiss_loading_screen.call_deferred()
 
 
@@ -2291,6 +2329,30 @@ func _spawn_starter_goblins() -> void:
 		zone_root.add_child(goblin)
 		spawned += 1
 	print("[WORLD] Spawned %d starter goblins near (%.0f, %.0f)" % [spawned, center_x, center_z])
+
+
+func _spawn_tavern() -> void:
+	var tavern_wx := 48.0
+	var tavern_wz := 10.0
+	var tavern_h := get_height_at(tavern_wx, tavern_wz)
+	if tavern_h < 0.5:
+		tavern_h = 2.0
+
+	var spawn_zone := world_to_zone(Vector3(tavern_wx, 0.0, tavern_wz))
+	var zone_root: Node3D = _loaded_zones.get(spawn_zone, null)
+	if not zone_root:
+		print("[TAVERN] Zone not loaded at ", spawn_zone)
+		return
+
+	var zone_origin_x: float = spawn_zone.x * _ZonePopulator.ZONE_SIZE
+	var zone_origin_z: float = spawn_zone.y * _ZonePopulator.ZONE_SIZE
+
+	var tavern := _ZonePopulator.build_tavern(
+		zone_root, tavern_wx, tavern_wz, tavern_h)
+	tavern.position = Vector3(tavern_wx - zone_origin_x, tavern_h, tavern_wz - zone_origin_z)
+
+	_tavern_world_pos = Vector3(tavern_wx, tavern_h, tavern_wz)
+	print("[TAVERN] Placed at world (%.0f, %.1f, %.0f)" % [tavern_wx, tavern_h, tavern_wz])
 
 
 var _max_loaded_zones: int = 50
