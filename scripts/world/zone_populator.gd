@@ -370,6 +370,7 @@ static func reset_texture_cache() -> void:
 	_flower_types_table.clear()
 	_merchant_spawned = false
 	_signposts_spawned.clear()
+	_marrow_deposits_spawned.clear()
 	print("[ZonePopulator] Texture cache reset - will reload on next use")
 
 
@@ -1198,6 +1199,7 @@ static func populate_zone_phase(
 
 		_try_spawn_merchant_camp(zone_root, coord, origin_x, origin_z, height_func)
 		_try_spawn_signposts(zone_root, coord, origin_x, origin_z, height_func)
+		_try_spawn_marrow_deposits(zone_root, coord, origin_x, origin_z, height_func)
 
 		var structs := _get_structures_cached()
 		var scatter_n := int(tree_n * 0.4)
@@ -1612,6 +1614,137 @@ static func _spawn_village_signpost(
 	)
 	signpost.position = Vector3(sign_wx - origin_x, sign_y, sign_wz - origin_z)
 	zone_root.add_child(signpost)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MARROW DEPOSITS (Bones of the Earth quest)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+static var _marrow_deposits_spawned: Dictionary = {}
+
+static func _try_spawn_marrow_deposits(
+	zone_root: Node3D,
+	coord: Vector2i,
+	origin_x: float,
+	origin_z: float,
+	height_func: Callable,
+) -> void:
+	var wg := _get_world_generator()
+	if not wg or not wg.has_method("get_marrow_positions"):
+		return
+	var positions: Array = wg.get_marrow_positions()
+	var zone_end_x := origin_x + ZONE_SIZE
+	var zone_end_z := origin_z + ZONE_SIZE
+	for i in positions.size():
+		var mp: Vector3 = positions[i]
+		if _marrow_deposits_spawned.has(i):
+			continue
+		if mp.x < origin_x or mp.x >= zone_end_x:
+			continue
+		if mp.z < origin_z or mp.z >= zone_end_z:
+			continue
+		_marrow_deposits_spawned[i] = true
+		var deposit := _create_marrow_deposit()
+		var lx := mp.x - origin_x
+		var lz := mp.z - origin_z
+		var ground_y: float = height_func.call(mp.x, mp.z)
+		deposit.position = Vector3(lx, ground_y, lz)
+		zone_root.add_child(deposit)
+		if _DEBUG_LOG:
+			print("[ZONE] Spawned marrow deposit #%d at world (%.0f, %.0f)" % [i, mp.x, mp.z])
+
+
+static func _create_marrow_deposit() -> StaticBody3D:
+	var root := StaticBody3D.new()
+	root.name = "MarrowDeposit"
+	root.collision_layer = 4
+	root.collision_mask = 0
+	root.add_to_group(&"interactables")
+	root.set_meta("harvestable", true)
+	root.set_meta("hp", 35.0)
+	root.set_meta("max_hp", 35.0)
+	root.set_meta("drop_id", &"ancient_marrow")
+	root.set_meta("drop_min", 1)
+	root.set_meta("drop_max", 2)
+	root.set_meta("requires_tool", &"pickaxe")
+	root.set_meta("harvest_type", &"deposit")
+
+	var bone_mat := StandardMaterial3D.new()
+	bone_mat.albedo_color = Color(0.6, 0.45, 0.28)
+	bone_mat.roughness = 0.85
+	bone_mat.metallic = 0.05
+
+	var marrow_mat := StandardMaterial3D.new()
+	marrow_mat.albedo_color = Color(0.72, 0.55, 0.3)
+	marrow_mat.roughness = 0.7
+	marrow_mat.metallic = 0.1
+	marrow_mat.emission_enabled = true
+	marrow_mat.emission = Color(0.4, 0.3, 0.15)
+	marrow_mat.emission_energy_multiplier = 0.3
+
+	var base := Node3D.new()
+	base.name = "MeshInstance3D"
+
+	var bones: Array[Dictionary] = [
+		{"pos": Vector3(0, 0.25, 0), "rot": Vector3(0, 0, 0.6), "len": 1.4, "rad": 0.08},
+		{"pos": Vector3(0, 0.3, 0), "rot": Vector3(0, 0.8, -0.5), "len": 1.2, "rad": 0.07},
+		{"pos": Vector3(0, 0.15, 0.05), "rot": Vector3(0.3, 0.4, 0.3), "len": 1.0, "rad": 0.065},
+		{"pos": Vector3(-0.1, 0.1, -0.05), "rot": Vector3(-0.2, -0.3, -0.4), "len": 0.9, "rad": 0.06},
+	]
+
+	for bdef in bones:
+		var bone := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.height = bdef["len"]
+		cyl.top_radius = bdef["rad"] * 0.85
+		cyl.bottom_radius = bdef["rad"]
+		bone.mesh = cyl
+		bone.material_override = bone_mat
+		bone.position = bdef["pos"]
+		bone.rotation = bdef["rot"]
+		base.add_child(bone)
+
+		var knob_top := MeshInstance3D.new()
+		var knob_mesh_t := SphereMesh.new()
+		knob_mesh_t.radius = bdef["rad"] * 1.4
+		knob_mesh_t.height = bdef["rad"] * 2.4
+		knob_top.mesh = knob_mesh_t
+		knob_top.material_override = marrow_mat
+		knob_top.position = Vector3(0, bdef["len"] * 0.5, 0)
+		bone.add_child(knob_top)
+
+		var knob_bot := MeshInstance3D.new()
+		var knob_mesh_b := SphereMesh.new()
+		knob_mesh_b.radius = bdef["rad"] * 1.3
+		knob_mesh_b.height = bdef["rad"] * 2.2
+		knob_bot.mesh = knob_mesh_b
+		knob_bot.material_override = marrow_mat
+		knob_bot.position = Vector3(0, -bdef["len"] * 0.5, 0)
+		bone.add_child(knob_bot)
+
+	root.add_child(base)
+
+	var col := CollisionShape3D.new()
+	var shape := SphereShape3D.new()
+	shape.radius = 0.8
+	col.shape = shape
+	col.position = Vector3(0, 0.3, 0)
+	root.add_child(col)
+
+	var label := Label3D.new()
+	label.text = "Ancient Marrow"
+	label.font_size = 32
+	label.pixel_size = 0.006
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.no_depth_test = true
+	label.modulate = Color(0.9, 0.75, 0.4)
+	label.outline_modulate = Color(0, 0, 0, 0.8)
+	label.outline_size = 6
+	label.position = Vector3(0, 1.2, 0)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	root.add_child(label)
+
+	return root
 
 
 ## Legacy single-call populate for spawn area (runs synchronously)

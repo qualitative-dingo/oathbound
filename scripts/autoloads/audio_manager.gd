@@ -109,6 +109,23 @@ func _preload_sounds() -> void:
 	_load_group("speech_craft_tool", ["speech_craft_tool_1.mp3", "speech_craft_tool_2.mp3", "speech_craft_tool_3.mp3", "speech_craft_tool_4.mp3", "speech_craft_tool_5.mp3"])
 	_load_group("speech_loot_drop", ["speech_loot_drop_1.mp3", "speech_loot_drop_2.mp3", "speech_loot_drop_3.mp3", "speech_loot_drop_4.mp3", "speech_loot_drop_5.mp3", "speech_loot_drop_6.mp3", "speech_loot_drop_7.mp3", "speech_loot_drop_8.mp3", "speech_loot_drop_9.mp3", "speech_loot_drop_10.mp3", "speech_loot_drop_11.mp3", "speech_loot_drop_12.mp3"])
 	_load_group("speech_halvard", ["speech_halvard_1.mp3", "speech_halvard_2.mp3", "speech_halvard_3.mp3"])
+	_load_group("dialogue_quest", [
+		"dialogue_quest_1.mp3", "dialogue_quest_2.mp3", "dialogue_quest_3.mp3", "dialogue_quest_4.mp3",
+		"dialogue_quest_5.mp3", "dialogue_quest_6.mp3", "dialogue_quest_7.mp3", "dialogue_quest_8.mp3",
+		"dialogue_quest_9.mp3", "dialogue_quest_10.mp3", "dialogue_quest_11.mp3", "dialogue_quest_12.mp3",
+		"dialogue_quest_13.mp3", "dialogue_quest_14.mp3", "dialogue_quest_15.mp3", "dialogue_quest_16.mp3",
+	])
+	_load_group("dialogue_turnin", [
+		"dialogue_turnin_1.mp3", "dialogue_turnin_2.mp3", "dialogue_turnin_3.mp3",
+		"dialogue_turnin_4.mp3", "dialogue_turnin_5.mp3",
+	])
+	_load_group("halvard_greet", [
+		"halvard_greet_1.mp3", "halvard_greet_2.mp3", "halvard_greet_3.mp3",
+	])
+	_load_group("halvard_farewell", [
+		"halvard_farewell_1.mp3", "halvard_farewell_2.mp3", "halvard_farewell_3.mp3",
+		"halvard_farewell_4.mp3", "halvard_farewell_5.mp3", "halvard_farewell_6.mp3",
+	])
 
 
 func _load_group(group_name: String, filenames: Array) -> void:

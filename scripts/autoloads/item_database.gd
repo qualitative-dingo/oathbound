@@ -628,6 +628,11 @@ func _register_defaults() -> void:
 		"icon": "res://textures/items/trophy_skeleton.png",
 	})
 
+	register_item(&"ancient_marrow", {
+		"name": "Ancient Marrow", "description": "A shard of Deep-Bone flint -- the marrow of the world. Harder than anything found in the sun.",
+		"stack_size": 10, "type": "quest_material",
+		"icon": "res://textures/items/ancient_marrow.png",
+	})
 	register_item(&"resin", {
 		"name": "Resin", "description": "Sticky tree sap.",
 		"stack_size": 50, "type": "material",

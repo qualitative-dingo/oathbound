@@ -462,6 +462,7 @@ var _dialogue_ui: DialogueUI
 var _dialogue_open: bool = false
 var _dialogue_merchant_ref: Node3D
 var _quest_bones_accepted: bool = false
+var _quest_bones_completed: bool = false
 var _npc_progress: int = 0
 var _hud_module: PlayerHUD
 var _interaction: PlayerInteraction
@@ -590,6 +591,7 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 		"type": "npc",
 		"speaker": "Halvard",
 		"text": "Easy there, traveler. The wind's got a bite today, and me forge is as cold as a mountain grave. I've a mind to work the metal, but me grindstone has finally turned to dust.",
+		"audio": ["dialogue_quest", 0],
 		"next": 1,
 	},
 	{
@@ -597,14 +599,17 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 		"options": [
 			{
 				"label": "That stone looks like it's seen a thousand winters.",
+				"audio": ["dialogue_quest", 1],
 				"response_speaker": "Halvard",
 				"response": "Aye... it's outlasted the men who brought me here. These old bones are wearin' thin, too -- but I wouldn't trade 'em. They've still got the rhythm of the hammer in 'em.",
+				"response_audio": ["dialogue_quest", 2],
 				"next": 2,
 			},
 			{
 				"label": "How am I supposed to craft without a working forge?",
 				"response_speaker": "Halvard",
 				"response": "Patience, fledgling. Even the gods had to wait for the heat to rise. But I'm too stiff to trek down to the river-silt where the 'Deep-Bone' flint hides.",
+				"response_audio": ["dialogue_quest", 3],
 				"next": 2,
 			},
 		],
@@ -614,14 +619,18 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 		"options": [
 			{
 				"label": "Deep-Bone? Is that different from regular stone?",
+				"audio": ["dialogue_quest", 4],
 				"response_speaker": "Halvard",
 				"response": "Surface stones are brittle -- hollow things. The Deep-Bone is the marrow of the world. It's a masterpiece of nature, harder than anythin' you'll find in the sun. It'll give yer blade a king-killer's edge.",
+				"response_audio": ["dialogue_quest", 5],
 				"next": 3,
 			},
 			{
 				"label": "Is there a reason you haven't gone down there yourself?",
+				"audio": ["dialogue_quest", 6],
 				"response_speaker": "Halvard",
 				"response": "The river-silt is home to the goblins, and me knees don't bend like they used to. I'd be a slow meal for 'em. But you... you've got the look of someone who can outrun a nip at the heels.",
+				"response_audio": ["dialogue_quest", 7],
 				"next": 3,
 			},
 		],
@@ -631,14 +640,18 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 		"options": [
 			{
 				"label": "Tell me where to look. I'll bring back the flint.",
+				"audio": ["dialogue_quest", 8],
 				"response_speaker": "Halvard",
 				"response": "Follow the stream till the water turns black and the mud gets thick. Bring me three shards of that Deep-Bone. I'll show yeh what real craftsmanship looks like.",
+				"response_audio": ["dialogue_quest", 9],
 				"next": 4,
 			},
 			{
 				"label": "I don't know if I'm ready to tangle with river beasts.",
+				"audio": ["dialogue_quest", 10],
 				"response_speaker": "Halvard",
 				"response": "Nature's a cruel smith, traveler. She culls the blunt tools first. If yeh want to survive the night, yeh need a weapon that won't fail yeh.",
+				"response_audio": ["dialogue_quest", 11],
 				"next": 4,
 			},
 		],
@@ -648,15 +661,68 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 		"options": [
 			{
 				"label": "[Take Quest]  I'll return with the shards, Halvard.",
+				"audio": ["dialogue_quest", 12],
 				"response_speaker": "Halvard",
 				"response": "Good. Watch the shadows in the reeds. I'll be sharpenin' me tongue while I wait for me stone.",
+				"response_audio": ["dialogue_quest", 13],
 				"action": "accept",
 			},
 			{
 				"label": "[Leave]  I need to find my bearings first.",
+				"audio": ["dialogue_quest", 14],
 				"response_speaker": "Halvard",
 				"response": "Suit yerself. But a dull axe makes for a very long day in these woods.",
+				"response_audio": ["dialogue_quest", 15],
 				"action": "decline",
+			},
+		],
+	},
+]
+
+static var DIALOGUE_BONES_TURNIN: Array[Dictionary] = [
+	{
+		"type": "npc",
+		"speaker": "Halvard",
+		"text": "Thought maybe the fog took yeh. Good to see you in one piece.",
+		"audio": ["dialogue_turnin", 0],
+		"next": 1,
+	},
+	{
+		"type": "choice",
+		"options": [
+			{
+				"label": "I have what you asked for. Here's the marrow.",
+				"audio": ["dialogue_turnin", 1],
+				"response_speaker": "Halvard",
+				"response": "This is indeed the Deep-Bone flint. You've done well, traveler. Not many would brave those waters.",
+				"response_audio": ["dialogue_turnin", 3],
+				"next": 2,
+			},
+			{
+				"label": "So you can fix the grindstone with this?",
+				"audio": ["dialogue_turnin", 2],
+				"response_speaker": "Halvard",
+				"response": "This is indeed the Deep-Bone flint. You've done well, traveler. Not many would brave those waters.",
+				"response_audio": ["dialogue_turnin", 3],
+				"next": 2,
+			},
+		],
+	},
+	{
+		"type": "npc",
+		"speaker": "Halvard",
+		"text": "Aye, just give me a moment. These old hands still know their way around a stone.",
+		"audio": ["dialogue_turnin", 4],
+		"next": 3,
+	},
+	{
+		"type": "final",
+		"options": [
+			{
+				"label": "[Complete Quest]  Take your time, old man.",
+				"response_speaker": "Halvard",
+				"response": "There. Good as new -- better, even. The grindstone sings again. You've earned my thanks, and my best prices. Browse freely, friend.",
+				"action": "complete",
 			},
 		],
 	},
@@ -7412,6 +7478,13 @@ func open_shop(merchant: Node3D) -> void:
 		_dialogue_open = true
 		_dialogue_ui.open_dialogue(DIALOGUE_BONES_OF_EARTH)
 		return
+	if _quest_bones_accepted and not _quest_bones_completed:
+		var marrow_count := Inventory.get_amount(&"ancient_marrow")
+		if marrow_count >= 3:
+			_dialogue_merchant_ref = merchant
+			_dialogue_open = true
+			_dialogue_ui.open_dialogue(DIALOGUE_BONES_TURNIN)
+			return
 	_show_halvard_greeting()
 	if _shop_ui:
 		_shop_ui.open_shop(merchant)
@@ -7424,13 +7497,17 @@ func close_shop() -> void:
 
 
 func _show_halvard_greeting() -> void:
-	var line: String = _HALVARD_GREETINGS[randi() % _HALVARD_GREETINGS.size()]
-	_show_speech([line], &"halvard_greet")
+	var idx := randi() % _HALVARD_GREETINGS.size()
+	_show_speech([_HALVARD_GREETINGS[idx]], &"halvard_greet")
+	if idx < AudioManager.get_group_size("halvard_greet"):
+		AudioManager.play_speech("halvard_greet", idx)
 
 
 func _show_halvard_farewell() -> void:
-	var line: String = _HALVARD_FAREWELLS[randi() % _HALVARD_FAREWELLS.size()]
-	_show_speech([line], &"halvard_farewell")
+	var idx := randi() % _HALVARD_FAREWELLS.size()
+	_show_speech([_HALVARD_FAREWELLS[idx]], &"halvard_farewell")
+	if idx < AudioManager.get_group_size("halvard_farewell"):
+		AudioManager.play_speech("halvard_farewell", idx)
 
 
 func _on_dialogue_finished(action: String) -> void:
@@ -7439,6 +7516,12 @@ func _on_dialogue_finished(action: String) -> void:
 	_dialogue_merchant_ref = null
 	if action == "accept":
 		_quest_bones_accepted = true
+		if merchant and _shop_ui:
+			_shop_ui.open_shop(merchant)
+	elif action == "complete":
+		Inventory.remove_item(&"ancient_marrow", 3)
+		_quest_bones_completed = true
+		GameEvents.inventory_changed.emit()
 		if merchant and _shop_ui:
 			_shop_ui.open_shop(merchant)
 	elif action == "decline":
@@ -10588,7 +10671,7 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 	for i in mini(harvestable_candidates.size(), max_harvestable_hits):
 		var h_node: Node3D = harvestable_candidates[i]["node"] as Node3D
 		var drop_id: StringName = h_node.get_meta("drop_id", &"wood") as StringName
-		var harvest_slot := "pickaxe" if drop_id == &"stone" else "weapon"
+		var harvest_slot := "pickaxe" if (drop_id == &"stone" or h_node.get_meta("harvest_type", &"") == &"deposit") else "weapon"
 		var harvest_id: StringName = Inventory.get_equipped(harvest_slot)
 		var harvest_data: Dictionary = ItemDatabase.get_item(harvest_id) if harvest_id != &"" else {}
 		var harvest_dmg: float = float(harvest_data.get("damage", 5.0)) * randf_range(0.7, 1.3)
@@ -10672,7 +10755,7 @@ func _hit_harvestable(node: Node3D, damage: float) -> void:
 	if drop_id == &"wood":
 		var sfx := "axe_chop" if equipped_weapon != &"fists" and equipped_weapon != &"" else "fist_hit_tree"
 		AudioManager.play_sfx(sfx, -4.0)
-	elif drop_id == &"stone":
+	elif drop_id == &"stone" or node.get_meta("harvest_type", &"") == &"deposit":
 		AudioManager.play_sfx("pickaxe_hit", -4.0)
 	elif node.get_meta("harvest_type", &"") == &"bush":
 		AudioManager.play_sfx("fist_hit_tree", -8.0)
@@ -10680,6 +10763,8 @@ func _hit_harvestable(node: Node3D, damage: float) -> void:
 	if hp <= 0.0:
 		if drop_id == &"stone":
 			_destroy_rock(node)
+		elif node.get_meta("harvest_type", &"") == &"deposit":
+			_destroy_deposit(node)
 		elif node.get_meta("harvest_type", &"") == &"bush":
 			_destroy_bush(node)
 		else:
@@ -10850,6 +10935,54 @@ func _destroy_rock(node: Node3D) -> void:
 
 	AudioManager.play_sfx_at("rock_fall", rock_pos, 2.0)
 	AudioManager.play_sfx_at("stone_rubble", rock_pos, -2.0)
+	node.queue_free()
+
+
+func _destroy_deposit(node: Node3D) -> void:
+	var wss := _get_world_state_sync()
+	var is_client_destroy := false
+	if wss and NetworkManager.is_connected_to_game():
+		var key := WorldStateSync.get_object_key_for_node(node)
+		if not key.is_empty():
+			if NetworkManager.is_server():
+				wss.record_object_destroyed(node)
+			else:
+				wss.request_destroy_object.rpc_id(1, key)
+				is_client_destroy = true
+
+	var drop_id: StringName = node.get_meta("drop_id", &"ancient_marrow") as StringName
+	var drop_min: int = int(node.get_meta("drop_min", 1))
+	var drop_max: int = int(node.get_meta("drop_max", 2))
+
+	node.remove_from_group(&"interactables")
+	node.set_meta("harvestable", false)
+
+	var deposit_pos := node.global_position
+	_spawn_rock_explosion(deposit_pos, 1.0)
+
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var total := rng.randi_range(drop_min, drop_max)
+	var use_sync := wss and NetworkManager.is_connected_to_game() and NetworkManager.is_server()
+	if not is_client_destroy:
+		for i in total:
+			var angle := rng.randf_range(0.0, TAU)
+			var dist := rng.randf_range(1.0, 3.0)
+			var offset := Vector3(cos(angle) * dist, 0.5, sin(angle) * dist)
+			var pos := deposit_pos + offset
+			if use_sync:
+				wss.spawn_loot_synced(pos, drop_id, 1, 0, 0.8)
+			else:
+				var drop := LootDrop.new()
+				drop.item_id = drop_id
+				drop.star_level = 0
+				drop.amount = 1
+				drop.spawn_delay = 0.8
+				get_tree().current_scene.add_child(drop)
+				drop.global_position = pos
+
+	AudioManager.play_sfx_at("rock_fall", deposit_pos, 0.0)
+	AudioManager.play_sfx_at("stone_rubble", deposit_pos, -4.0)
 	node.queue_free()
 
 

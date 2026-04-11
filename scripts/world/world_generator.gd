@@ -52,6 +52,7 @@ var _theme_songs: Array[String] = []
 var _seed_hash: int
 var _merchant_world_pos: Vector3 = Vector3.ZERO
 var _merchant_signpost_positions: Array[Vector3] = []
+var _marrow_deposit_positions: Array[Vector3] = []
 var _continent_noise: FastNoiseLite
 var _mountain_noise: FastNoiseLite
 var _mountain_broad_noise: FastNoiseLite
@@ -2010,7 +2011,9 @@ func _compute_merchant_position() -> void:
 	rng.seed = _seed_hash + 55555
 	var target_dist := 800.0
 	const MIN_LAND_H := 4.0
-	for attempt in 48:
+	var best_pos := Vector3.ZERO
+	var best_river_dist := 9999.0
+	for attempt in 96:
 		var angle := rng.randf_range(0.0, TAU)
 		var dist := rng.randf_range(target_dist * 0.8, target_dist * 1.2)
 		var wx := cos(angle) * dist
@@ -2018,8 +2021,14 @@ func _compute_merchant_position() -> void:
 		var h := get_height_at(wx, wz)
 		if h > WATER_LEVEL + MIN_LAND_H and h < 40.0:
 			if _is_solid_land(wx, wz, 8.0, MIN_LAND_H):
-				_merchant_world_pos = Vector3(wx, h, wz)
-				break
+				var rdist := _distance_to_nearest_river(wx, wz)
+				if rdist < 120.0 and rdist < best_river_dist:
+					best_river_dist = rdist
+					best_pos = Vector3(wx, h, wz)
+				elif best_pos == Vector3.ZERO:
+					best_pos = Vector3(wx, h, wz)
+	if best_pos != Vector3.ZERO:
+		_merchant_world_pos = best_pos
 	if _merchant_world_pos == Vector3.ZERO:
 		for fallback_attempt in 48:
 			var angle := rng.randf_range(0.0, TAU)
@@ -2034,6 +2043,7 @@ func _compute_merchant_position() -> void:
 	if _merchant_world_pos == Vector3.ZERO:
 		_merchant_world_pos = Vector3(600.0, maxf(get_height_at(600.0, 200.0), WATER_LEVEL + MIN_LAND_H), 200.0)
 	_compute_signpost_positions()
+	_compute_marrow_positions()
 
 
 func _is_solid_land(wx: float, wz: float, radius: float, min_h: float) -> bool:
@@ -2067,6 +2077,104 @@ func get_merchant_world_pos() -> Vector3:
 
 func get_signpost_positions() -> Array[Vector3]:
 	return _merchant_signpost_positions
+
+
+func get_marrow_positions() -> Array[Vector3]:
+	return _marrow_deposit_positions
+
+
+func _distance_to_nearest_river(wx: float, wz: float) -> float:
+	var best := 9999.0
+	var step := 16.0
+	for dz in range(-8, 9):
+		for dx in range(-8, 9):
+			var sx := wx + dx * step
+			var sz := wz + dz * step
+			var acc := _ws_sample_accum(sx, sz)
+			if acc > _WS_RIVER_THRESH * 0.6:
+				var dist := sqrt((sx - wx) * (sx - wx) + (sz - wz) * (sz - wz))
+				if dist < best:
+					best = dist
+	return best
+
+
+func _compute_marrow_positions() -> void:
+	_marrow_deposit_positions.clear()
+	if _merchant_world_pos == Vector3.ZERO:
+		return
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _seed_hash + 66666
+	var mx := _merchant_world_pos.x
+	var mz := _merchant_world_pos.z
+
+	var river_dir := Vector2.ZERO
+	var best_acc := 0.0
+	var river_pos := Vector2.ZERO
+	var step := 12.0
+	for dz in range(-10, 11):
+		for dx in range(-10, 11):
+			var sx := mx + dx * step
+			var sz := mz + dz * step
+			var acc := _ws_sample_accum(sx, sz)
+			if acc > best_acc:
+				best_acc = acc
+				river_pos = Vector2(sx, sz)
+	if best_acc < 1.0:
+		river_pos = Vector2(mx + 80.0, mz + 80.0)
+
+	var flow := _ws_sample_flow_dir(river_pos.x, river_pos.y)
+	if flow.length_squared() < 0.01:
+		flow = Vector2(1, 0)
+
+	var search_center := river_pos + flow * 200.0
+
+	var lake_candidates: Array[Vector3] = []
+	for attempt in 120:
+		var ox := rng.randf_range(-100.0, 100.0)
+		var oz := rng.randf_range(-100.0, 100.0)
+		var wx := search_center.x + ox
+		var wz := search_center.y + oz
+		var h := get_height_at(wx, wz)
+		if h > WATER_LEVEL + 0.5 and h < WATER_LEVEL + 5.0:
+			var acc := _ws_sample_accum(wx, wz)
+			if acc > 1.0 or h < WATER_LEVEL + 2.0:
+				lake_candidates.append(Vector3(wx, h, wz))
+
+	if lake_candidates.is_empty():
+		for attempt in 60:
+			var angle := rng.randf_range(0.0, TAU)
+			var dist := rng.randf_range(100.0, 250.0)
+			var wx := mx + cos(angle) * dist
+			var wz := mz + sin(angle) * dist
+			var h := get_height_at(wx, wz)
+			if h > WATER_LEVEL + 0.3 and h < WATER_LEVEL + 6.0:
+				lake_candidates.append(Vector3(wx, h, wz))
+
+	lake_candidates.shuffle()
+
+	var placed := 0
+	var min_spacing := 12.0
+	for cand in lake_candidates:
+		if placed >= 5:
+			break
+		var too_close := false
+		for existing in _marrow_deposit_positions:
+			if cand.distance_to(existing) < min_spacing:
+				too_close = true
+				break
+		if too_close:
+			continue
+		_marrow_deposit_positions.append(cand)
+		placed += 1
+
+	if _marrow_deposit_positions.is_empty():
+		var fallback_dir := flow.normalized()
+		for i in 5:
+			var wx := mx + fallback_dir.x * (150.0 + i * 15.0) + rng.randf_range(-8.0, 8.0)
+			var wz := mz + fallback_dir.y * (150.0 + i * 15.0) + rng.randf_range(-8.0, 8.0)
+			var h := maxf(get_height_at(wx, wz), WATER_LEVEL + 0.5)
+			_marrow_deposit_positions.append(Vector3(wx, h, wz))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

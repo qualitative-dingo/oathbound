@@ -140,6 +140,7 @@ func _present_step() -> void:
 	if type == "npc":
 		_speaker_label.text = str(node.get("speaker", "???"))
 		_text_label.text = str(node.get("text", ""))
+		_play_node_audio(node)
 		_pending_next = int(node.get("next", _step + 1))
 		_continue_btn.visible = true
 		_continue_btn.grab_focus()
@@ -198,6 +199,11 @@ func _on_choice_picked(opt: Dictionary, type: String) -> void:
 		_choices_box.visible = false
 		_speaker_label.text = speaker
 		_text_label.text = response
+		var resp_audio: Array = opt.get("response_audio", []) as Array
+		if resp_audio.size() >= 2:
+			_play_node_audio({"audio": resp_audio})
+		else:
+			_play_node_audio(opt)
 		_showing_response = true
 
 		if type == "final":
@@ -240,6 +246,14 @@ func _on_continue() -> void:
 		_step = _pending_next if _pending_next >= 0 else _step + 1
 		_pending_next = -1
 		_present_step()
+
+
+func _play_node_audio(node: Dictionary) -> void:
+	var audio: Array = node.get("audio", []) as Array
+	if audio.size() >= 2:
+		var grp: String = str(audio[0])
+		var idx: int = int(audio[1])
+		AudioManager.play_speech(grp, idx)
 
 
 func _clear_choices() -> void:
