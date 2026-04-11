@@ -829,7 +829,6 @@ func _ready() -> void:
 	GameEvents.creature_killed.connect(_on_creature_killed_speech)
 	GameEvents.day_night_changed.connect(_on_day_night_changed)
 	_build_line_voice_map()
-	call_deferred("_show_day_banner")
 	if NetworkManager.is_connected_to_game():
 		NetworkManager.chest_contents_received.connect(_on_chest_contents_received)
 
@@ -4489,14 +4488,17 @@ func _on_day_night_changed(is_day: bool) -> void:
 
 
 func _show_day_banner() -> void:
-	if not _hud_root:
+	if not _hud_root or _day_count < 2:
 		return
 	var lbl := Label.new()
 	lbl.name = "DayBanner"
 	lbl.text = "Day %d" % _day_count
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	lbl.anchor_left = 0.5
+	lbl.anchor_right = 0.5
+	lbl.anchor_top = 0.25
+	lbl.anchor_bottom = 0.25
 	lbl.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	lbl.grow_vertical = Control.GROW_DIRECTION_BOTH
 	lbl.add_theme_font_size_override("font_size", 72)
