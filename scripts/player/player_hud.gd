@@ -1428,6 +1428,10 @@ func refresh_map() -> void:
 	# ── Structure markers ──
 	draw_structure_markers(half_px, zones_per_pixel, zone_size)
 
+	# ── Marrow quest area circles ──
+	if pc._quest_bones_accepted and not pc._quest_bones_completed:
+		draw_marrow_quest_areas(wg, half_px, zones_per_pixel, zone_size)
+
 	# ── Player marker — directional arrow ──
 	draw_player_arrow(half_px)
 
@@ -1502,6 +1506,42 @@ func draw_map_exclamation(world_pos: Vector3, color: Color, half_px: int, zones_
 			var fy := cy + dy
 			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
 				pc._map_image.set_pixel(fx, fy, color)
+
+
+func draw_marrow_quest_areas(wg: WorldGenerator, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
+	if zones_per_pixel < 0.001:
+		return
+	var positions: Array[Vector3] = wg.get_marrow_positions()
+	if positions.is_empty():
+		return
+	var center := Vector3.ZERO
+	for p in positions:
+		center += p
+	center /= float(positions.size())
+	var max_dist := 0.0
+	for p in positions:
+		var d := Vector2(p.x - center.x, p.z - center.z).length()
+		if d > max_dist:
+			max_dist = d
+	var world_radius := max_dist + 30.0
+	var px_radius := roundi(world_radius / (zones_per_pixel * zone_size))
+	px_radius = maxi(px_radius, 6)
+	var dx_world := center.x - pc.global_position.x
+	var dz_world := center.z - pc.global_position.z
+	var cx := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
+	var cy := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
+	var col := Color(0.85, 0.55, 0.15, 1.0)
+	var r_sq_outer := px_radius * px_radius
+	var r_inner := px_radius - 2
+	var r_sq_inner := r_inner * r_inner
+	for dy in range(-px_radius, px_radius + 1):
+		for dx in range(-px_radius, px_radius + 1):
+			var d_sq := dx * dx + dy * dy
+			if d_sq <= r_sq_outer and d_sq >= r_sq_inner:
+				var fx := cx + dx
+				var fy := cy + dy
+				if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
+					pc._map_image.set_pixel(fx, fy, col)
 
 
 func draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
