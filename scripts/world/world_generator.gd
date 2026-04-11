@@ -140,7 +140,7 @@ func flatten_terrain(world_x: float, world_z: float, radius: float) -> void:
 	var target_h := get_height_at(world_x, world_z)
 	flatten_terrain_to(world_x, world_z, radius, target_h)
 
-const TERRAFORM_MAX_DELTA := 8.0
+const TERRAFORM_MAX_DELTA := 1.0
 const TERRAFORM_MIN_HEIGHT := WATER_LEVEL + 2.0
 
 func flatten_terrain_to(world_x: float, world_z: float, radius: float, target_h: float) -> void:

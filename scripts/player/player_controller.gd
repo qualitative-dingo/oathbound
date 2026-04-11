@@ -111,6 +111,7 @@ var _terraform_raise: bool = false
 var _hoe_indicator: MeshInstance3D
 var _hoe_height_line: MeshInstance3D
 const HOE_RADIUS := 3.0
+const HOE_STEP := 0.5
 # Bottom-right control hints panel (Valheim-style)
 var _control_hints_box: VBoxContainer
 var _build_snap_enabled: bool = true
@@ -9895,9 +9896,9 @@ func _try_hoe_use() -> void:
 	var current_h := wg.get_height_at(world_hit.x, world_hit.z)
 	var target_h: float
 	if _terraform_raise:
-		target_h = current_h + 2.0
+		target_h = current_h + HOE_STEP
 	else:
-		target_h = current_h - 2.0
+		target_h = current_h - HOE_STEP
 
 	wg.flatten_terrain_to(world_hit.x, world_hit.z, HOE_RADIUS, target_h)
 
