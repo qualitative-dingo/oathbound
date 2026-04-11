@@ -2253,6 +2253,19 @@ func _generate_spawn_area() -> void:
 			if idx >= 0:
 				_deferred_collisions.remove_at(idx)
 
+	# Force all spawn-area zone roots into the scene tree immediately so that
+	# structures added to them are discoverable via get_nodes_in_group.
+	# _finalize_zone may have used call_deferred if no players existed yet.
+	for x2 in range(spawn_zone.x - 1, spawn_zone.x + 2):
+		for z2 in range(spawn_zone.y - 1, spawn_zone.y + 2):
+			var zr: Node3D = _loaded_zones.get(Vector2i(x2, z2))
+			if zr and not zr.is_inside_tree():
+				add_child(zr)
+
+	# Register tavern exclusion zone so vegetation is suppressed even if the
+	# tavern node hasn't entered the scene tree yet (belt-and-suspenders).
+	_register_tavern_exclusion()
+
 	# Spawn tavern before populating so vegetation avoids its footprint
 	_spawn_tavern()
 
@@ -2269,6 +2282,7 @@ func _generate_spawn_area() -> void:
 			zone_loaded.emit(pcoord)
 
 	_spawn_village_cave_entrance()
+	_spawn_starter_goblins()
 	_dismiss_loading_screen.call_deferred()
 
 
@@ -2340,6 +2354,10 @@ func _spawn_starter_goblins() -> void:
 		zone_root.add_child(goblin)
 		spawned += 1
 	print("[WORLD] Spawned %d starter goblins near (%.0f, %.0f)" % [spawned, center_x, center_z])
+
+
+func _register_tavern_exclusion() -> void:
+	_ZonePopulator._forced_exclusion_circles.append([48.0, 10.0, 40.0])
 
 
 func _spawn_tavern() -> void:

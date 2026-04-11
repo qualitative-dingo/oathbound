@@ -27,6 +27,10 @@ const _TREE_LINE_END := 37.0
 # ─── Floating origin offset (set by WorldGenerator on each origin shift) ──────
 static var origin_shift := Vector3.ZERO
 
+# Explicit exclusion circles [world_x, world_z, radius] — used for structures
+# that may not yet be in the scene tree when vegetation is placed.
+static var _forced_exclusion_circles: Array = []
+
 # ─── Structures group cache (refreshed once per frame to avoid repeated scene tree scans) ──
 static var _cached_structures: Array = []
 static var _structures_cache_frame: int = -1
@@ -238,6 +242,25 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 				var cz := origin_z + (rgz + 0.5) * _RG_CELL
 				if (cx - swx) * (cx - swx) + (cz - swz) * (cz - swz) < r * r:
 					_rg_data[rgz * _RG_RES + rgx] |= _RG_STRUCTURE
+
+	for ec in _forced_exclusion_circles:
+		var ewx: float = ec[0]
+		var ewz: float = ec[1]
+		var er: float = ec[2]
+		var elx := ewx - origin_x
+		var elz := ewz - origin_z
+		if elx < -er or elx > ZONE_SIZE + er or elz < -er or elz > ZONE_SIZE + er:
+			continue
+		var ecmin_x := maxi(0, int((elx - er) / _RG_CELL))
+		var ecmax_x := mini(_RG_RES - 1, int((elx + er) / _RG_CELL))
+		var ecmin_z := maxi(0, int((elz - er) / _RG_CELL))
+		var ecmax_z := mini(_RG_RES - 1, int((elz + er) / _RG_CELL))
+		for egz in range(ecmin_z, ecmax_z + 1):
+			for egx in range(ecmin_x, ecmax_x + 1):
+				var ecx := origin_x + (egx + 0.5) * _RG_CELL
+				var ecz := origin_z + (egz + 0.5) * _RG_CELL
+				if (ecx - ewx) * (ecx - ewx) + (ecz - ewz) * (ecz - ewz) < er * er:
+					_rg_data[egz * _RG_RES + egx] |= _RG_STRUCTURE
 
 	var bushes := _get_berry_bushes_cached()
 	for b in bushes:
@@ -2259,6 +2282,11 @@ static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, c
 					r_sq = maxf(r_sq, half * half)
 					break
 		if dist_sq < r_sq:
+			return true
+	for ec in _forced_exclusion_circles:
+		var edx := ec[0] - wx
+		var edz := ec[1] - wz
+		if edx * edx + edz * edz < ec[2] * ec[2]:
 			return true
 	return false
 
