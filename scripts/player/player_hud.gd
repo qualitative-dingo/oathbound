@@ -1494,16 +1494,16 @@ func draw_map_exclamation(world_pos: Vector3, color: Color, half_px: int, zones_
 	var cx := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
 	var cy := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
 	# 7px tall exclamation mark: stem (4px) + gap (1px) + dot (2px)
-	for dy in range(-3, 1):
-		for dx_off in [-1, 0]:
-			var fx := cx + dx_off
-			var fy := cy + dy
+	for dy: int in range(-3, 1):
+		for dx_off: int in [-1, 0]:
+			var fx: int = cx + dx_off
+			var fy: int = cy + dy
 			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
 				pc._map_image.set_pixel(fx, fy, color)
-	for dy in [2, 3]:
-		for dx_off in [-1, 0]:
-			var fx := cx + dx_off
-			var fy := cy + dy
+	for dy: int in [2, 3]:
+		for dx_off: int in [-1, 0]:
+			var fx: int = cx + dx_off
+			var fy: int = cy + dy
 			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
 				pc._map_image.set_pixel(fx, fy, color)
 
