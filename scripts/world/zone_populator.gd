@@ -1193,9 +1193,6 @@ static func populate_zone_phase(
 		if not debug_skip_villages:
 			if biome == &"hearthlands":
 				_VillageGenerator.try_spawn_village(zone_root, coord, rng, origin_x, origin_z, height_func)
-			if coord == Vector2i(0, 0):
-				_VillageGenerator.force_spawn_village(zone_root, 36.0, 36.0, height_func)
-				_spawn_village_signpost(zone_root, 36.0, 36.0, origin_x, origin_z, height_func)
 
 		_try_spawn_merchant_camp(zone_root, coord, origin_x, origin_z, height_func)
 		_try_spawn_signposts(zone_root, coord, origin_x, origin_z, height_func)
@@ -4804,15 +4801,22 @@ static func build_tavern(parent: Node3D, world_x: float, world_z: float, ground_
 	_tavern_wall(body, Vector3(DW, WH - DH, WT),
 		Vector3(0, DH + (WH - DH) * 0.5 + FT, hd), stone_mat)
 
-	# ── Roof ──
+	# ── Roof (visual + collision to keep player from landing on top) ──
+	var roof_y := FT + WH + 0.35
 	var roof_mi := MeshInstance3D.new()
 	var roof_mesh := BoxMesh.new()
 	roof_mesh.size = Vector3(TW + 3.0, 0.7, TD + 3.0)
 	roof_mi.mesh = roof_mesh
 	roof_mi.set_surface_override_material(0, thatch_mat)
-	roof_mi.position.y = FT + WH + 0.35
+	roof_mi.position.y = roof_y
 	roof_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	tavern.add_child(roof_mi)
+	var roof_col := CollisionShape3D.new()
+	var roof_shape := BoxShape3D.new()
+	roof_shape.size = Vector3(TW + 3.0, 0.7, TD + 3.0)
+	roof_col.shape = roof_shape
+	roof_col.position = Vector3(0, roof_y, 0)
+	body.add_child(roof_col)
 
 	# ── Chimney (back-left corner, rises above roof) ──
 	const CH_W := 3.5

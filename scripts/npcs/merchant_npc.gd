@@ -10,12 +10,15 @@ const SHOP_ITEMS: Array[Dictionary] = [
 	{"item_id": &"copper_ore", "price": 12},
 ]
 
+const _MODEL_DIR := "res://models/Meshy_AI_Thin_ragged_hermit_l_biped/"
+const _ANIM_GLB := _MODEL_DIR + "Meshy_AI_Thin_ragged_hermit_l_biped_Animation_Idle_7_withSkin.glb"
+const _CHAR_GLB := _MODEL_DIR + "Meshy_AI_Thin_ragged_hermit_l_biped_Character_output.glb"
+const _FACE_PLAYER_DIST := 5.0
+const _FACE_TURN_SPEED := 4.0
+
 var _nameplate: Label3D
-var _idle_timer: float = 0.0
-var _idle_bob_phase: float = 0.0
-var _body: MeshInstance3D
-var _head: MeshInstance3D
-var _hat: MeshInstance3D
+var _model_root: Node3D
+var _anim_player: AnimationPlayer
 
 func _ready() -> void:
 	super._ready()
@@ -36,44 +39,26 @@ func _do_interact(player: CharacterBody3D) -> void:
 
 
 func _build_visuals() -> void:
-	var body_mat := StandardMaterial3D.new()
-	body_mat.albedo_color = Color(0.45, 0.28, 0.15)
-	body_mat.roughness = 0.85
+	var glb_path := _ANIM_GLB if ResourceLoader.exists(_ANIM_GLB) else _CHAR_GLB
+	if ResourceLoader.exists(glb_path):
+		var scene: PackedScene = load(glb_path) as PackedScene
+		if scene:
+			_model_root = scene.instantiate()
+			_model_root.name = "HalvardModel"
+			_model_root.scale = Vector3(1.8, 1.8, 1.8)
+			add_child(_model_root)
+			_anim_player = _find_anim_player(_model_root)
+			if _anim_player:
+				var anims := _anim_player.get_animation_list()
+				for anim_name in anims:
+					var anim := _anim_player.get_animation(anim_name)
+					if anim:
+						anim.loop_mode = Animation.LOOP_LINEAR
+				if not anims.is_empty():
+					_anim_player.play(anims[0])
 
-	var skin_mat := StandardMaterial3D.new()
-	skin_mat.albedo_color = Color(0.82, 0.68, 0.55)
-	skin_mat.roughness = 0.7
-
-	var hat_mat := StandardMaterial3D.new()
-	hat_mat.albedo_color = Color(0.3, 0.18, 0.08)
-	hat_mat.roughness = 0.9
-
-	_body = MeshInstance3D.new()
-	var body_mesh := CapsuleMesh.new()
-	body_mesh.radius = 0.35
-	body_mesh.height = 1.2
-	_body.mesh = body_mesh
-	_body.material_override = body_mat
-	_body.position = Vector3(0, 0.7, 0)
-	add_child(_body)
-
-	_head = MeshInstance3D.new()
-	var head_mesh := SphereMesh.new()
-	head_mesh.radius = 0.22
-	_head.mesh = head_mesh
-	_head.material_override = skin_mat
-	_head.position = Vector3(0, 1.5, 0)
-	add_child(_head)
-
-	_hat = MeshInstance3D.new()
-	var hat_mesh := CylinderMesh.new()
-	hat_mesh.top_radius = 0.15
-	hat_mesh.bottom_radius = 0.3
-	hat_mesh.height = 0.2
-	_hat.mesh = hat_mesh
-	_hat.material_override = hat_mat
-	_hat.position = Vector3(0, 1.72, 0)
-	add_child(_hat)
+	if not _model_root:
+		_build_fallback_visuals()
 
 	var col := CollisionShape3D.new()
 	var shape := CapsuleShape3D.new()
@@ -82,6 +67,31 @@ func _build_visuals() -> void:
 	col.shape = shape
 	col.position = Vector3(0, 0.8, 0)
 	add_child(col)
+
+
+func _build_fallback_visuals() -> void:
+	var body_mat := StandardMaterial3D.new()
+	body_mat.albedo_color = Color(0.45, 0.28, 0.15)
+	body_mat.roughness = 0.85
+	var body := MeshInstance3D.new()
+	var body_mesh := CapsuleMesh.new()
+	body_mesh.radius = 0.35
+	body_mesh.height = 1.2
+	body.mesh = body_mesh
+	body.material_override = body_mat
+	body.position = Vector3(0, 0.7, 0)
+	add_child(body)
+
+	var skin_mat := StandardMaterial3D.new()
+	skin_mat.albedo_color = Color(0.82, 0.68, 0.55)
+	skin_mat.roughness = 0.7
+	var head := MeshInstance3D.new()
+	var head_mesh := SphereMesh.new()
+	head_mesh.radius = 0.22
+	head.mesh = head_mesh
+	head.material_override = skin_mat
+	head.position = Vector3(0, 1.5, 0)
+	add_child(head)
 
 
 func _build_nameplate() -> void:
@@ -94,23 +104,43 @@ func _build_nameplate() -> void:
 	_nameplate.modulate = Color(1.0, 0.85, 0.4)
 	_nameplate.outline_modulate = Color(0, 0, 0, 0.8)
 	_nameplate.outline_size = 8
-	_nameplate.position = Vector3(0, 2.1, 0)
+	_nameplate.position = Vector3(0, 2.4, 0)
 	_nameplate.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_nameplate.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	add_child(_nameplate)
 
 
 func _process(delta: float) -> void:
-	_idle_bob_phase += delta * 1.5
-	var bob := sin(_idle_bob_phase) * 0.02
-	if _body:
-		_body.position.y = 0.7 + bob
-	if _head:
-		_head.position.y = 1.5 + bob
-	if _hat:
-		_hat.position.y = 1.72 + bob
-	if _nameplate:
-		_nameplate.position.y = 2.1 + bob
+	_face_nearest_player(delta)
+
+
+func _face_nearest_player(delta: float) -> void:
+	var closest: Node3D = null
+	var closest_dist := _FACE_PLAYER_DIST + 1.0
+	for p in get_tree().get_nodes_in_group(&"player"):
+		if p is Node3D:
+			var d := global_position.distance_to((p as Node3D).global_position)
+			if d < closest_dist:
+				closest_dist = d
+				closest = p as Node3D
+	if not closest or closest_dist > _FACE_PLAYER_DIST:
+		return
+	var dir := closest.global_position - global_position
+	dir.y = 0.0
+	if dir.length_squared() < 0.01:
+		return
+	var target_angle := atan2(dir.x, dir.z)
+	rotation.y = lerp_angle(rotation.y, target_angle, delta * _FACE_TURN_SPEED)
+
+
+static func _find_anim_player(node: Node) -> AnimationPlayer:
+	if node is AnimationPlayer:
+		return node
+	for child in node.get_children():
+		var result := _find_anim_player(child)
+		if result:
+			return result
+	return null
 
 
 static func create_camp(pos: Vector3, height_func: Callable) -> Node3D:

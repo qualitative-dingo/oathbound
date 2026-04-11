@@ -2256,7 +2256,6 @@ func _generate_spawn_area() -> void:
 
 	_spawn_debug_portals()
 	_spawn_village_cave_entrance()
-	_spawn_starter_goblins()
 	_spawn_tavern()
 	_dismiss_loading_screen.call_deferred()
 
