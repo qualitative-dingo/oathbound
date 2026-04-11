@@ -4729,6 +4729,72 @@ static func _tavern_torch(parent: Node3D, pos: Vector3) -> void:
 	torch.position = pos
 	parent.add_child(torch)
 
+
+static func _tavern_standing_torch(parent: Node3D, pos: Vector3) -> void:
+	var torch := Node3D.new()
+	torch.name = "DoorTorch"
+
+	var pole_mat := StandardMaterial3D.new()
+	pole_mat.albedo_color = Color(0.30, 0.18, 0.08)
+	pole_mat.roughness = 1.0
+
+	var pole := MeshInstance3D.new()
+	var pole_mesh := CylinderMesh.new()
+	pole_mesh.top_radius = 0.06
+	pole_mesh.bottom_radius = 0.1
+	pole_mesh.height = 3.0
+	pole_mesh.radial_segments = 6
+	pole.mesh = pole_mesh
+	pole.set_surface_override_material(0, pole_mat)
+	pole.position.y = 1.5
+	pole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	torch.add_child(pole)
+
+	var bowl := MeshInstance3D.new()
+	var bowl_mesh := CylinderMesh.new()
+	bowl_mesh.top_radius = 0.25
+	bowl_mesh.bottom_radius = 0.12
+	bowl_mesh.height = 0.3
+	bowl_mesh.radial_segments = 8
+	bowl.mesh = bowl_mesh
+	var bowl_mat := StandardMaterial3D.new()
+	bowl_mat.albedo_color = Color(0.2, 0.15, 0.1)
+	bowl_mat.roughness = 0.8
+	bowl.set_surface_override_material(0, bowl_mat)
+	bowl.position.y = 3.1
+	bowl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	torch.add_child(bowl)
+
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.65, 0.3)
+	light.light_energy = 6.0
+	light.omni_range = 22.0
+	light.omni_attenuation = 1.2
+	light.shadow_enabled = false
+	light.position.y = 3.5
+	torch.add_child(light)
+
+	var glow := MeshInstance3D.new()
+	var gs := SphereMesh.new()
+	gs.radius = 0.18
+	gs.height = 0.36
+	glow.mesh = gs
+	var gm := StandardMaterial3D.new()
+	gm.emission_enabled = true
+	gm.emission = Color(1.0, 0.6, 0.2)
+	gm.emission_energy_multiplier = 8.0
+	gm.albedo_color = Color(1.0, 0.7, 0.25)
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.albedo_color.a = 0.8
+	glow.set_surface_override_material(0, gm)
+	glow.position.y = 3.4
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	torch.add_child(glow)
+
+	torch.position = pos
+	parent.add_child(torch)
+
+
 static func _tavern_table(parent: Node3D, center: Vector3, mat: Material) -> void:
 	var table := Node3D.new()
 	table.name = "Table"
@@ -4763,19 +4829,19 @@ static func build_tavern(parent: Node3D, world_x: float, world_z: float, ground_
 	var wood_mat: StandardMaterial3D = PlayerBuilding._bmat_wood
 	var thatch_mat: StandardMaterial3D = PlayerBuilding._bmat_thatch
 
-	const TW := 32.0
-	const TD := 20.0
-	const WH := 9.0
-	const WT := 0.8
+	const TW := 64.0
+	const TD := 40.0
+	const WH := 14.0
+	const WT := 1.0
 	const FT := 0.75
-	const DW := 5.0
-	const DH := 6.5
+	const DW := 8.0
+	const DH := 10.0
 
 	var tavern := Node3D.new()
 	tavern.name = "Tavern"
 	tavern.add_to_group(&"structures")
 	tavern.add_to_group(&"tavern")
-	tavern.set_meta("footprint_radius", maxf(TW, TD) * 0.5 + 5.0)
+	tavern.set_meta("footprint_radius", maxf(TW, TD) * 0.5 + 8.0)
 
 	var hw := TW * 0.5
 	var hd := TD * 0.5
@@ -4805,7 +4871,7 @@ static func build_tavern(parent: Node3D, world_x: float, world_z: float, ground_
 	var roof_y := FT + WH + 0.35
 	var roof_mi := MeshInstance3D.new()
 	var roof_mesh := BoxMesh.new()
-	roof_mesh.size = Vector3(TW + 3.0, 0.7, TD + 3.0)
+	roof_mesh.size = Vector3(TW + 4.0, 0.8, TD + 4.0)
 	roof_mi.mesh = roof_mesh
 	roof_mi.set_surface_override_material(0, thatch_mat)
 	roof_mi.position.y = roof_y
@@ -4813,15 +4879,15 @@ static func build_tavern(parent: Node3D, world_x: float, world_z: float, ground_
 	tavern.add_child(roof_mi)
 	var roof_col := CollisionShape3D.new()
 	var roof_shape := BoxShape3D.new()
-	roof_shape.size = Vector3(TW + 3.0, 0.7, TD + 3.0)
+	roof_shape.size = Vector3(TW + 4.0, 0.8, TD + 4.0)
 	roof_col.shape = roof_shape
 	roof_col.position = Vector3(0, roof_y, 0)
 	body.add_child(roof_col)
 
 	# ── Chimney (back-left corner, rises above roof) ──
-	const CH_W := 3.5
-	const CH_D := 3.0
-	const CH_ABOVE := 5.0
+	const CH_W := 5.0
+	const CH_D := 4.0
+	const CH_ABOVE := 6.0
 	var ch_total_h := WH + CH_ABOVE
 	var ch_x := -hw + CH_W * 0.5 + WT + 0.5
 	var ch_z := -hd + CH_D * 0.5 + WT + 0.5
@@ -5002,11 +5068,11 @@ static func build_tavern(parent: Node3D, world_x: float, world_z: float, ground_
 		tavern.add_child(log_mi)
 
 	# ── Bar counter (along right side of back wall) ──
-	const BAR_L := 12.0
+	const BAR_L := 24.0
 	const BAR_H := 1.1
-	const BAR_D := 0.9
-	var bar_x := hw - BAR_L * 0.5 - WT - 0.8
-	var bar_z := -hd + BAR_D * 0.5 + WT + 0.5
+	const BAR_D := 1.0
+	var bar_x := hw - BAR_L * 0.5 - WT - 1.0
+	var bar_z := -hd + BAR_D * 0.5 + WT + 0.8
 	_tavern_box(tavern, Vector3(BAR_L, BAR_H, BAR_D),
 		Vector3(bar_x, FT + BAR_H * 0.5, bar_z), wood_mat)
 	var bar_col := CollisionShape3D.new()
@@ -5017,32 +5083,48 @@ static func build_tavern(parent: Node3D, world_x: float, world_z: float, ground_
 	body.add_child(bar_col)
 
 	# Shelves behind bar
-	_tavern_box(tavern, Vector3(BAR_L - 1.0, 2.5, 0.4),
-		Vector3(bar_x, FT + BAR_H + 1.25, -hd + WT * 0.5 + 0.25), wood_mat)
+	_tavern_box(tavern, Vector3(BAR_L - 1.0, 3.5, 0.5),
+		Vector3(bar_x, FT + BAR_H + 1.75, -hd + WT * 0.5 + 0.3), wood_mat)
 	# Shelf dividers
-	for si in 4:
-		var sx := bar_x - BAR_L * 0.5 + 1.5 + float(si) * 3.0
-		_tavern_box(tavern, Vector3(0.08, 2.5, 0.35),
-			Vector3(sx, FT + BAR_H + 1.25, -hd + WT * 0.5 + 0.25), wood_mat)
+	for si in 7:
+		var sx := bar_x - BAR_L * 0.5 + 1.5 + float(si) * 3.2
+		_tavern_box(tavern, Vector3(0.1, 3.5, 0.45),
+			Vector3(sx, FT + BAR_H + 1.75, -hd + WT * 0.5 + 0.3), wood_mat)
 
 	# ── Tables with chairs ──
 	var table_positions := [
-		Vector3(-6.0, 0, 2.0),
-		Vector3(1.0, 0, 2.0),
-		Vector3(8.0, 0, 2.0),
-		Vector3(-6.0, 0, -4.0),
-		Vector3(1.0, 0, -4.0),
+		Vector3(-14.0, 0, 4.0),
+		Vector3(-4.0, 0, 4.0),
+		Vector3(6.0, 0, 4.0),
+		Vector3(16.0, 0, 4.0),
+		Vector3(-14.0, 0, -4.0),
+		Vector3(-4.0, 0, -4.0),
+		Vector3(6.0, 0, -4.0),
+		Vector3(16.0, 0, -4.0),
+		Vector3(-9.0, 0, 12.0),
+		Vector3(1.0, 0, 12.0),
+		Vector3(11.0, 0, 12.0),
 	]
 	for tpos in table_positions:
 		_tavern_table(tavern, tpos, wood_mat)
 
-	# ── Wall torches ──
-	_tavern_torch(tavern, Vector3(-hw + 0.5, FT + 5.5, -hd * 0.5))
-	_tavern_torch(tavern, Vector3(-hw + 0.5, FT + 5.5, hd * 0.5))
-	_tavern_torch(tavern, Vector3(hw - 0.5, FT + 5.5, -hd * 0.5))
-	_tavern_torch(tavern, Vector3(hw - 0.5, FT + 5.5, hd * 0.5))
-	_tavern_torch(tavern, Vector3(-3.0, FT + 5.5, -hd + 0.5))
-	_tavern_torch(tavern, Vector3(bar_x, FT + 5.5, -hd + 0.5))
+	# ── Wall torches (interior) ──
+	var torch_y := FT + WH * 0.6
+	_tavern_torch(tavern, Vector3(-hw + 0.5, torch_y, -hd * 0.66))
+	_tavern_torch(tavern, Vector3(-hw + 0.5, torch_y, 0.0))
+	_tavern_torch(tavern, Vector3(-hw + 0.5, torch_y, hd * 0.66))
+	_tavern_torch(tavern, Vector3(hw - 0.5, torch_y, -hd * 0.66))
+	_tavern_torch(tavern, Vector3(hw - 0.5, torch_y, 0.0))
+	_tavern_torch(tavern, Vector3(hw - 0.5, torch_y, hd * 0.66))
+	_tavern_torch(tavern, Vector3(-8.0, torch_y, -hd + 0.5))
+	_tavern_torch(tavern, Vector3(bar_x, torch_y, -hd + 0.5))
+
+	# ── Outdoor door torches (2 on each side) ──
+	var door_torch_z := hd + 1.5
+	_tavern_standing_torch(tavern, Vector3(-DW * 0.5 - 1.5, FT, door_torch_z))
+	_tavern_standing_torch(tavern, Vector3(-DW * 0.5 - 4.0, FT, door_torch_z))
+	_tavern_standing_torch(tavern, Vector3(DW * 0.5 + 1.5, FT, door_torch_z))
+	_tavern_standing_torch(tavern, Vector3(DW * 0.5 + 4.0, FT, door_torch_z))
 
 	# ── Position tavern in world ──
 	var dir_to_spawn := Vector2(-world_x, -world_z)

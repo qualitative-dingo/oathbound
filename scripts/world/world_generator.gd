@@ -55,8 +55,8 @@ var _merchant_world_pos: Vector3 = Vector3.ZERO
 # ─── Tavern ────────────────────────────────────────────────────────────────────
 var _tavern_world_pos := Vector3.ZERO
 var _player_in_tavern := false
-const _TAVERN_ENTER_DIST := 18.0
-const _TAVERN_EXIT_DIST := 28.0
+const _TAVERN_ENTER_DIST := 35.0
+const _TAVERN_EXIT_DIST := 50.0
 const _TAVERN_MUSIC_PATH := "res://audio/tavern music/"
 var _tavern_songs: Array[String] = [
 	_TAVERN_MUSIC_PATH + "song1.mp3",
@@ -2242,6 +2242,9 @@ func _generate_spawn_area() -> void:
 			if idx >= 0:
 				_deferred_collisions.remove_at(idx)
 
+	# Spawn tavern before populating so vegetation avoids its footprint
+	_spawn_tavern()
+
 	# Populate all 9 spawn-area zones synchronously so the player (who spawns
 	# at the corner of the center zone) sees full vegetation in every direction.
 	while not _populate_backlog.is_empty():
@@ -2255,7 +2258,6 @@ func _generate_spawn_area() -> void:
 			zone_loaded.emit(pcoord)
 
 	_spawn_village_cave_entrance()
-	_spawn_tavern()
 	_dismiss_loading_screen.call_deferred()
 
 
