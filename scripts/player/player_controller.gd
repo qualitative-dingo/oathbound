@@ -5622,6 +5622,60 @@ func _draw_arrow_on_image(img: Image, half_px: int, scale: float = 1.0) -> void:
 		img.set_pixel(half_px, half_px, center_col)
 
 
+func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, half: int, wg: Node) -> void:
+	if not wg.has_method("get_signpost_positions"):
+		return
+	var positions: Array = wg.get_signpost_positions()
+	if positions.is_empty():
+		return
+
+	var closest_pos := Vector3.ZERO
+	var closest_dist := INF
+	for sp: Vector3 in positions:
+		var d := Vector2(sp.x - player_pos.x, sp.z - player_pos.z).length()
+		if d < closest_dist:
+			closest_dist = d
+			closest_pos = sp
+
+	if closest_dist < 5.0:
+		return
+
+	var dx := (closest_pos.x - player_pos.x) / m_per_px
+	var dz := (closest_pos.z - player_pos.z) / m_per_px
+	var px_x := half + int(round(dx))
+	var px_y := half + int(round(dz))
+
+	var from_center := Vector2(float(px_x - half), float(px_y - half))
+	var max_r := float(half) - 3.0
+	if from_center.length() > max_r:
+		from_center = from_center.normalized() * max_r
+		px_x = half + int(round(from_center.x))
+		px_y = half + int(round(from_center.y))
+
+	var sz := img.get_width()
+	var fill := Color(1.0, 0.85, 0.1)
+	var outline := Color(0.15, 0.10, 0.0)
+
+	# "!" glyph: stem 3px tall, 1px gap, 1px dot — drawn with 1px dark outline
+	var stem_top := px_y - 2
+	var dot_y := px_y + 2
+	# Outline pass
+	for oy in range(stem_top - 1, stem_top + 4):
+		for ox in [px_x - 1, px_x, px_x + 1]:
+			if ox >= 0 and ox < sz and oy >= 0 and oy < sz:
+				img.set_pixel(ox, oy, outline)
+	for ox in [px_x - 1, px_x, px_x + 1]:
+		for oy in [dot_y - 1, dot_y, dot_y + 1]:
+			if ox >= 0 and ox < sz and oy >= 0 and oy < sz:
+				img.set_pixel(ox, oy, outline)
+	# Fill pass
+	for oy in range(stem_top, stem_top + 3):
+		if px_x >= 0 and px_x < sz and oy >= 0 and oy < sz:
+			img.set_pixel(px_x, oy, fill)
+	if px_x >= 0 and px_x < sz and dot_y >= 0 and dot_y < sz:
+		img.set_pixel(px_x, dot_y, fill)
+
+
 const _MINIMAP_LO := 36  # 180 / 5 - one pixel per stride cell
 
 var _minimap_lo_image: Image
@@ -5718,6 +5772,7 @@ func _refresh_minimap() -> void:
 					clampf(col.b * bright, 0.0, 1.0))
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
+	_draw_signpost_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
 	_draw_arrow_on_image(_minimap_lo_image, _MINIMAP_LO / 2, 1.0)
 
 	_minimap_image_tex.set_image(_minimap_lo_image)
