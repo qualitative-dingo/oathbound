@@ -2073,29 +2073,17 @@ func _generate_spawn_area() -> void:
 			if idx >= 0:
 				_deferred_collisions.remove_at(idx)
 
-	# Only fully populate the center spawn zone synchronously (the one the player stands on).
-	# Surrounding zones stay in _populate_backlog and load incrementally via _process_pending_zones.
-	var sync_populated: Array[Dictionary] = []
-	var deferred: Array[Dictionary] = []
+	# Populate all 9 spawn-area zones synchronously so the player (who spawns
+	# at the corner of the center zone) sees full vegetation in every direction.
 	while not _populate_backlog.is_empty():
 		var pitem: Dictionary = _populate_backlog.pop_front()
-		var pcoord: Vector2i = pitem["coord"]
-		if pcoord == spawn_zone:
-			sync_populated.append(pitem)
-		else:
-			deferred.append(pitem)
-
-	for pitem in sync_populated:
-		var pcoord: Vector2i = pitem["coord"]
 		var zone_root = pitem["zone_root"]
 		if is_instance_valid(zone_root):
+			var pcoord: Vector2i = pitem["coord"]
 			_ZonePopulator.populate_zone(zone_root, pcoord, pitem["biome"], _seed_hash, get_height_at, pitem["micro"])
-			_update_zone_lod(zone_root, 0.0)
+			var dist := float((pcoord - spawn_zone).length())
+			_update_zone_lod(zone_root, dist)
 			zone_loaded.emit(pcoord)
-
-	# Put surrounding zones back in backlog for incremental loading
-	for pitem in deferred:
-		_populate_backlog.append(pitem)
 
 	_spawn_debug_portals()
 	_spawn_village_cave_entrance()

@@ -1994,12 +1994,11 @@ static func _scatter_flowers(
 
 
 static func _grass_cell_hash(cx: int, cz: int, salt: int) -> float:
-	var n: int = (cx + 7919) * 374761393 + (cz + 7207) * 668265263 + (salt + 3571) * 1274126177
-	n = (n >> 13) ^ n
-	n = n % 1000000007
-	if n < 0:
-		n += 1000000007
-	return float(n) / 1000000007.0
+	var n: int = (cx * 374761393) ^ (cz * 668265263) ^ (salt * 1274126177)
+	n = (n ^ (n >> 16)) * -2048144789  # 0x85ebca77
+	n = (n ^ (n >> 13)) * -1028477387  # 0xc2b2ae3d
+	n = n ^ (n >> 16)
+	return float(n & 0x7FFFFFFF) / float(0x7FFFFFFF)
 
 
 static func _scatter_grass(
