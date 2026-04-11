@@ -1428,10 +1428,6 @@ func refresh_map() -> void:
 	# ── Structure markers ──
 	draw_structure_markers(half_px, zones_per_pixel, zone_size)
 
-	# ── Marrow quest area circles ──
-	if pc._quest_bones_accepted and not pc._quest_bones_completed:
-		draw_marrow_quest_areas(wg, half_px, zones_per_pixel, zone_size)
-
 	# ── Player marker — directional arrow ──
 	draw_player_arrow(half_px)
 
