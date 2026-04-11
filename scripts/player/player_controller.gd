@@ -458,6 +458,10 @@ var _inventory_ui: PlayerInventoryUI
 var _workbench_ui: PlayerWorkbenchUI
 var _shop_ui: PlayerShopUI
 var _shop_open: bool = false
+var _dialogue_ui: DialogueUI
+var _dialogue_open: bool = false
+var _dialogue_merchant_ref: Node3D
+var _quest_bones_accepted: bool = false
 var _npc_progress: int = 0
 var _hud_module: PlayerHUD
 var _interaction: PlayerInteraction
@@ -565,6 +569,97 @@ const _LINES_HALVARD := [
 	"Closing in on Halvard. Hope he's got something good.",
 	"That old fart is nearby. Time to trade.",
 	"Someone hasn't showered in years. The stench is unbearable.",
+]
+const _HALVARD_GREETINGS: Array[String] = [
+	"Ah, back again. Let's see what catches yer eye.",
+	"Welcome, traveler. My wares are honest -- can't say the same for the prices.",
+	"Ye look like ye've been through the wringer. Come, have a look.",
+	"The forge burns low, but there's still plenty to trade.",
+	"Good to see a familiar face. What'll it be?",
+]
+const _HALVARD_FAREWELLS: Array[String] = [
+	"Safe travels. Watch yer back out there.",
+	"Come again when yer pockets are heavier.",
+	"May yer axe stay sharp and yer belly full.",
+	"Don't be a stranger, now.",
+	"Try not to die before next time, eh?",
+]
+
+static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
+	{
+		"type": "npc",
+		"speaker": "Halvard",
+		"text": "Easy there, traveler. The wind's got a bite today, and me forge is as cold as a mountain grave. I've a mind to work the metal, but me grindstone has finally turned to dust.",
+		"next": 1,
+	},
+	{
+		"type": "choice",
+		"options": [
+			{
+				"label": "That stone looks like it's seen a thousand winters.",
+				"response_speaker": "Halvard",
+				"response": "Aye... it's outlasted the men who brought me here. These old bones are wearin' thin, too -- but I wouldn't trade 'em. They've still got the rhythm of the hammer in 'em.",
+				"next": 2,
+			},
+			{
+				"label": "How am I supposed to craft without a working forge?",
+				"response_speaker": "Halvard",
+				"response": "Patience, fledgling. Even the gods had to wait for the heat to rise. But I'm too stiff to trek down to the river-silt where the 'Deep-Bone' flint hides.",
+				"next": 2,
+			},
+		],
+	},
+	{
+		"type": "choice",
+		"options": [
+			{
+				"label": "Deep-Bone? Is that different from regular stone?",
+				"response_speaker": "Halvard",
+				"response": "Surface stones are brittle -- hollow things. The Deep-Bone is the marrow of the world. It's a masterpiece of nature, harder than anythin' you'll find in the sun. It'll give yer blade a king-killer's edge.",
+				"next": 3,
+			},
+			{
+				"label": "Is there a reason you haven't gone down there yourself?",
+				"response_speaker": "Halvard",
+				"response": "The river-silt is home to the goblins, and me knees don't bend like they used to. I'd be a slow meal for 'em. But you... you've got the look of someone who can outrun a nip at the heels.",
+				"next": 3,
+			},
+		],
+	},
+	{
+		"type": "choice",
+		"options": [
+			{
+				"label": "Tell me where to look. I'll bring back the flint.",
+				"response_speaker": "Halvard",
+				"response": "Follow the stream till the water turns black and the mud gets thick. Bring me three shards of that Deep-Bone. I'll show yeh what real craftsmanship looks like.",
+				"next": 4,
+			},
+			{
+				"label": "I don't know if I'm ready to tangle with river beasts.",
+				"response_speaker": "Halvard",
+				"response": "Nature's a cruel smith, traveler. She culls the blunt tools first. If yeh want to survive the night, yeh need a weapon that won't fail yeh.",
+				"next": 4,
+			},
+		],
+	},
+	{
+		"type": "final",
+		"options": [
+			{
+				"label": "[Take Quest]  I'll return with the shards, Halvard.",
+				"response_speaker": "Halvard",
+				"response": "Good. Watch the shadows in the reeds. I'll be sharpenin' me tongue while I wait for me stone.",
+				"action": "accept",
+			},
+			{
+				"label": "[Leave]  I need to find my bearings first.",
+				"response_speaker": "Halvard",
+				"response": "Suit yerself. But a dull axe makes for a very long day in these woods.",
+				"action": "decline",
+			},
+		],
+	},
 ]
 const _LINES_SHELTER := [
 	"Finally, a place to rest my weary head.",
@@ -1099,6 +1194,12 @@ func _notification(what: int) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if _dialogue_open and (event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(&"quit_game")):
+		_dialogue_ui.close_dialogue()
+		_dialogue_open = false
+		_dialogue_merchant_ref = null
+		get_viewport().set_input_as_handled()
+		return
 	if _shop_open and (event.is_action_pressed(&"interact") or event.is_action_pressed(&"inventory") or event.is_action_pressed(&"quit_game") or event.is_action_pressed(&"ui_cancel")):
 		close_shop()
 		get_viewport().set_input_as_handled()
@@ -1183,7 +1284,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _bow_drawing:
 			_cancel_bow_draw()
 			return
-		if _shop_open:
+		if _dialogue_open:
+			_dialogue_ui.close_dialogue()
+			_dialogue_open = false
+			_dialogue_merchant_ref = null
+		elif _shop_open:
 			close_shop()
 		elif _chest_open:
 			_interaction.close_chest()
@@ -1278,7 +1383,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
 		var debug_open: bool = _debug_panel != null and is_instance_valid(_debug_panel) and _debug_panel.visible
-		if not _inventory_open and not _workbench_open and not _build_menu_open and not _map_open and not _chest_open and not _pause_open and not _shop_open and not _chat_focused and not debug_open:
+		if not _inventory_open and not _workbench_open and not _build_menu_open and not _map_open and not _chest_open and not _pause_open and not _shop_open and not _dialogue_open and not _chat_focused and not debug_open:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		return
 
@@ -4214,6 +4319,12 @@ func _build_hud() -> void:
 	add_child(_shop_ui)
 	_shop_ui.pc = self
 	_shop_ui.build_shop_panel(_hud_root)
+	_dialogue_ui = DialogueUI.new()
+	_dialogue_ui.name = "DialogueUI"
+	add_child(_dialogue_ui)
+	_dialogue_ui.pc = self
+	_dialogue_ui.build_panel(_hud_root)
+	_dialogue_ui.dialogue_finished.connect(_on_dialogue_finished)
 	_interaction.build_chest_panel(_hud_root)
 	_build_interaction_prompt(_hud_root)
 	_build_world_name_label(_hud_root)
@@ -7294,6 +7405,14 @@ func _get_build_recipe(build_id: StringName) -> Dictionary:
 
 
 func open_shop(merchant: Node3D) -> void:
+	if _dialogue_open:
+		return
+	if not _quest_bones_accepted:
+		_dialogue_merchant_ref = merchant
+		_dialogue_open = true
+		_dialogue_ui.open_dialogue(DIALOGUE_BONES_OF_EARTH)
+		return
+	_show_halvard_greeting()
 	if _shop_ui:
 		_shop_ui.open_shop(merchant)
 
@@ -7301,6 +7420,29 @@ func open_shop(merchant: Node3D) -> void:
 func close_shop() -> void:
 	if _shop_ui:
 		_shop_ui.close_shop()
+	_show_halvard_farewell()
+
+
+func _show_halvard_greeting() -> void:
+	var line: String = _HALVARD_GREETINGS[randi() % _HALVARD_GREETINGS.size()]
+	_show_speech([line], &"halvard_greet")
+
+
+func _show_halvard_farewell() -> void:
+	var line: String = _HALVARD_FAREWELLS[randi() % _HALVARD_FAREWELLS.size()]
+	_show_speech([line], &"halvard_farewell")
+
+
+func _on_dialogue_finished(action: String) -> void:
+	_dialogue_open = false
+	var merchant := _dialogue_merchant_ref
+	_dialogue_merchant_ref = null
+	if action == "accept":
+		_quest_bones_accepted = true
+		if merchant and _shop_ui:
+			_shop_ui.open_shop(merchant)
+	elif action == "decline":
+		pass
 
 
 func _try_learn_recipe(item_id: StringName) -> void:
@@ -9602,6 +9744,11 @@ func _process(delta: float) -> void:
 			_report_data_timer = 0.0
 			_report_player_data_to_host()
 
+	if _dialogue_open and _dialogue_merchant_ref:
+		if not is_instance_valid(_dialogue_merchant_ref) or global_position.distance_to(_dialogue_merchant_ref.global_position) > 5.0:
+			_dialogue_ui.close_dialogue()
+			_dialogue_open = false
+			_dialogue_merchant_ref = null
 	if _shop_open and _shop_ui and _shop_ui._merchant_node:
 		if not is_instance_valid(_shop_ui._merchant_node) or global_position.distance_to(_shop_ui._merchant_node.global_position) > 5.0:
 			close_shop()

@@ -27,7 +27,7 @@ func _ready() -> void:
 
 
 func get_interaction_verb() -> String:
-	return "Trade"
+	return "Talk"
 
 
 func _do_interact(player: CharacterBody3D) -> void:

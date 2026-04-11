@@ -571,7 +571,8 @@ func update_interact_prompt() -> void:
 		if d < 3.5 and d < closest_dist:
 			closest_dist = d
 			var npc_name: String = str(n3d.get("display_name")) if "display_name" in n3d else "NPC"
-			closest_name = "Trade %s" % npc_name
+			var verb: String = n3d.get_interaction_verb() if n3d.has_method("get_interaction_verb") else "Talk to"
+			closest_name = "%s %s" % [verb, npc_name]
 
 	for sp in _interact_cached_signposts:
 		if not is_instance_valid(sp):
