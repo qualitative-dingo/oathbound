@@ -213,10 +213,6 @@ func tick_unlock(delta: float) -> void:
 	if pc.global_position.distance_to(_unlock_target.global_position) > 3.5:
 		cancel_unlock()
 		return
-	if not Input.is_action_pressed(&"interact"):
-		cancel_unlock()
-		return
-
 	_unlock_progress += delta
 	if _unlock_bar and is_instance_valid(_unlock_bar):
 		_unlock_bar.value = clampf(_unlock_progress / UNLOCK_HOLD_TIME, 0.0, 1.0)
