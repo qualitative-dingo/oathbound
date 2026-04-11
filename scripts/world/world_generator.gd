@@ -2254,7 +2254,6 @@ func _generate_spawn_area() -> void:
 			_update_zone_lod(zone_root, dist)
 			zone_loaded.emit(pcoord)
 
-	_spawn_debug_portals()
 	_spawn_village_cave_entrance()
 	_spawn_tavern()
 	_dismiss_loading_screen.call_deferred()
