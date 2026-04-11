@@ -483,6 +483,12 @@ var _speech_near_halvard := false
 var _speech_kill_times: Array[float] = []
 const _SPEECH_KILL_WINDOW := 20.0
 const _SPEECH_KILL_SPREE_COUNT := 5
+var _speech_in_home := false
+var _speech_home_last_game_time := -1.0
+var _speech_shelter_last_game_time := -1.0
+const _SPEECH_SHELTER_GAME_HOURS := 6.0
+var _day_count := 1
+var _is_sleeping := false
 
 const _LINES_DARK := [
 	"It's getting dark out there, I could use a light source.",
@@ -517,22 +523,21 @@ const _LINES_LOW_HEALTH := [
 	"Stay standing... just a bit longer...",
 	"A grim end awaits if I don't find a way to heal.",
 ]
-const _LINES_CRAFT_WEAPON := [
+const _LINES_CRAFT_WEAPON_ONLY := [
 	"A legend's weapon. This will change everything.",
 	"A symphony of metal. Not a single note out of place.",
+]
+const _LINES_CRAFT_5STAR := [
 	"At last. The world isn't ready for what I've forged.",
 	"Look at the way it catches the light. Pure perfection.",
 	"I can feel the power thrumming through it. Incredible.",
 	"This... belongs in a king's hall, not in my muddy hands.",
-]
-const _LINES_CRAFT_TOOL := [
 	"The geometry is flawless. It's a work of art.",
-	"Perfectly balanced. This wasn't made by any ordinary smith.",
 	"This is an absolute masterpiece.",
 	"The glow alone tells me I've struck gold.",
 	"By the gods... look at the craftsmanship on this!",
 ]
-const _LINES_LOOT_DROP := [
+const _LINES_FIND_5STAR := [
 	"A find like this makes all the scars worth it.",
 	"Now this is a prize worth the blood spilled.",
 	"Luck favors the bold today! A truly rare find.",
@@ -545,11 +550,20 @@ const _LINES_LOOT_DROP := [
 	"Steady now... don't want to drop a treasure as rare as this.",
 	"A treasure beyond my wildest dreams.",
 	"I've beaten the odds. This is my day.",
+	"Perfectly balanced. This wasn't made by any ordinary smith.",
+	"Look at the way it catches the light. Pure perfection.",
+	"I can feel the power thrumming through it. Incredible.",
+	"This... belongs in a king's hall, not in my muddy hands.",
+	"The geometry is flawless. It's a work of art.",
+	"This is an absolute masterpiece.",
+	"The glow alone tells me I've struck gold.",
+	"By the gods... look at the craftsmanship on this!",
 ]
 const _LINES_HALVARD := [
 	"Almost there. Halvard's shop is just ahead.",
 	"Closing in on Halvard. Hope he's got something good.",
 	"That old fart is nearby. Time to trade.",
+	"Someone hasn't showered in years. The stench is unbearable.",
 ]
 const _LINES_SHELTER := [
 	"Finally, a place to rest my weary head.",
@@ -562,6 +576,11 @@ const _LINES_SHELTER := [
 	"Dry wood and a solid ceiling. I've found a little slice of peace.",
 	"The damp is staying out there. Good.",
 	"Safe and sound. Time to check the gear.",
+]
+const _LINES_HOME_ENTRY := [
+	"Finally, a place to rest my weary head.",
+	"The cold can't follow me through these doors.",
+	"Ah... to breathe air that doesn't bite back.",
 ]
 const _LINES_FIRST_LIGHT := [
 	"The sun returns to chase the shadows away. A new day begins.",
@@ -593,7 +612,6 @@ const _LINES_ABANDONED_VILLAGE := [
 	"Silence is the only thing living here now.",
 	"Dust and echoes. This place used to have a soul.",
 	"Best be quick. Places like this attract the wrong sort.",
-	"Someone hasn't showered in years. The stench is unbearable.",
 	"Let's see what they left behind in their hurry.",
 	"No fire in the windows. No laughter in the streets.",
 	"The forest is taking this place back, inch by inch.",
@@ -612,6 +630,89 @@ const _LINES_CLOSE_CALL := [
 	"I've got more lives than a barn cat, it seems.",
 	"Not my time. Not today.",
 ]
+
+# Maps line text → [audio_group, index] for exact text-to-voice sync.
+var _LINE_VOICE: Dictionary = {}
+func _build_line_voice_map() -> void:
+	var _map := {
+		# dark
+		"It's getting dark out there, I could use a light source.": ["speech_dark", 0],
+		"Shadows are growing long. A torch would be wise.": ["speech_dark", 1],
+		"Hard to see the path... where did I put my light?": ["speech_dark", 2],
+		"The sun is abandoning me. I need a flame.": ["speech_dark", 3],
+		"Darkness takes over. A man needs a torch in these woods.": ["speech_dark", 4],
+		# inv_full
+		"My pack is screaming for mercy... no room for this.": ["speech_inv_full", 0],
+		"I've got more loot than sense. I need to clear some space.": ["speech_inv_full", 1],
+		"If I want this, something else has to stay in the dirt.": ["speech_inv_full", 2],
+		"I'm carrying a village's worth of gear. No more.": ["speech_inv_full", 3],
+		# drowning
+		"Arms are getting heavy. I'm going to go under!": ["speech_drowning", 0],
+		"Deep water is no place for a tired man.": ["speech_drowning", 1],
+		# shelter
+		"Finally, a place to rest my weary head.": ["speech_shelter", 0],
+		"Nothing beats the sound of rain hitting a roof that isn't mine.": ["speech_shelter", 1],
+		"The cold can't follow me through these doors.": ["speech_shelter", 2],
+		"Ah... to breathe air that doesn't bite back.": ["speech_shelter", 3],
+		# first_light
+		"The sun returns to chase the shadows away. A new day begins.": ["speech_first_light", 0],
+		"Night's grip finally loosens. I've lived to see another dawn.": ["speech_first_light", 1],
+		"Light breaks the horizon. The monsters will be slinking back now.": ["speech_first_light", 2],
+		"Clear skies and fresh light. Let's see what this day brings.": ["speech_first_light", 3],
+		"Shadows retreat. It's safer to move now.": ["speech_first_light", 4],
+		"Golden light... the world looks almost kind for a moment.": ["speech_first_light", 5],
+		# killing_spree
+		"Let them come! I'm just getting started!": ["speech_killing_spree", 0],
+		"Is that all? I was hoping for a challenge!": ["speech_killing_spree", 1],
+		"They fall like wheat before the scythe!": ["speech_killing_spree", 2],
+		"I'll paint these woods red if I have to!": ["speech_killing_spree", 3],
+		"None shall stand against me!": ["speech_killing_spree", 4],
+		"Ha! I haven't felt this alive in years!": ["speech_killing_spree", 5],
+		# village
+		"A ghost town. I wonder what drove them out.": ["speech_village", 0],
+		"Empty homes and cold hearths. A lonely sight.": ["speech_village", 1],
+		"Silence is the only thing living here now.": ["speech_village", 2],
+		"Dust and echoes. This place used to have a soul.": ["speech_village", 3],
+		"Best be quick. Places like this attract the wrong sort.": ["speech_village", 4],
+		# close_call
+		"That was closer to the grave than I'd like. Still breathing, at least.": ["speech_close_call", 0],
+		"Stared into the abyss and it blinked first.": ["speech_close_call", 1],
+		"My blood stays inside for now. A lucky escape.": ["speech_close_call", 2],
+		"A few inches closer and that would have been the end.": ["speech_close_call", 3],
+		"The ancestors aren't ready for me yet.": ["speech_close_call", 4],
+		# craft_weapon
+		"A legend's weapon. This will change everything.": ["speech_craft_weapon", 0],
+		"A symphony of metal. Not a single note out of place.": ["speech_craft_weapon", 1],
+		"At last. The world isn't ready for what I've forged.": ["speech_craft_weapon", 2],
+		"Look at the way it catches the light. Pure perfection.": ["speech_craft_weapon", 3],
+		"I can feel the power thrumming through it. Incredible.": ["speech_craft_weapon", 4],
+		"This... belongs in a king's hall, not in my muddy hands.": ["speech_craft_weapon", 5],
+		# craft_tool
+		"The geometry is flawless. It's a work of art.": ["speech_craft_tool", 0],
+		"Perfectly balanced. This wasn't made by any ordinary smith.": ["speech_craft_tool", 1],
+		"This is an absolute masterpiece.": ["speech_craft_tool", 2],
+		"The glow alone tells me I've struck gold.": ["speech_craft_tool", 3],
+		"By the gods... look at the craftsmanship on this!": ["speech_craft_tool", 4],
+		# loot_drop
+		"A find like this makes all the scars worth it.": ["speech_loot_drop", 0],
+		"Now this is a prize worth the blood spilled.": ["speech_loot_drop", 1],
+		"Luck favors the bold today! A truly rare find.": ["speech_loot_drop", 2],
+		"Shining amidst the rubble, a true diamond in the rough.": ["speech_loot_drop", 3],
+		"Fate has smiled upon me. I'll put this to good use.": ["speech_loot_drop", 4],
+		"The ancestors must be watching over me today... what a beauty!": ["speech_loot_drop", 5],
+		"I've hunted for something like this my whole life.": ["speech_loot_drop", 6],
+		"I've never seen anything quite like this. Exquisite.": ["speech_loot_drop", 7],
+		"Songs will be sung of the day I found this.": ["speech_loot_drop", 8],
+		"Steady now... don't want to drop a treasure as rare as this.": ["speech_loot_drop", 9],
+		"A treasure beyond my wildest dreams.": ["speech_loot_drop", 10],
+		"I've beaten the odds. This is my day.": ["speech_loot_drop", 11],
+		# halvard
+		"Almost there. Halvard's shop is just ahead.": ["speech_halvard", 0],
+		"Closing in on Halvard. Hope he's got something good.": ["speech_halvard", 1],
+		"That old fart is nearby. Time to trade.": ["speech_halvard", 2],
+		"Someone hasn't showered in years. The stench is unbearable.": ["speech_village", 5],
+	}
+	_LINE_VOICE = _map
 
 
 func _set_player_sprite_tex(_tex: Texture2D) -> void:
@@ -726,6 +827,9 @@ func _ready() -> void:
 	GameEvents.item_picked_up.connect(_on_item_picked_up_speech)
 	GameEvents.inventory_changed.connect(_on_inventory_changed_speech)
 	GameEvents.creature_killed.connect(_on_creature_killed_speech)
+	GameEvents.day_night_changed.connect(_on_day_night_changed)
+	_build_line_voice_map()
+	call_deferred("_show_day_banner")
 	if NetworkManager.is_connected_to_game():
 		NetworkManager.chest_contents_received.connect(_on_chest_contents_received)
 
@@ -4174,10 +4278,9 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	var msg := str(lines[idx])
 	_speech_label_3d.text = "\" " + msg + " \""
 
-	var voice_group := "speech_" + String(trigger_key)
-	var voice_count := AudioManager.get_group_size(voice_group)
-	if voice_count > 0 and idx < voice_count:
-		AudioManager.play_sfx_indexed(voice_group, idx, -2.0)
+	if _LINE_VOICE.has(msg):
+		var vinfo: Array = _LINE_VOICE[msg]
+		AudioManager.play_sfx_indexed(vinfo[0] as String, vinfo[1] as int, -2.0)
 
 	# Size the background quad to fit the text
 	if _speech_bg:
@@ -4263,19 +4366,32 @@ func _check_speech_triggers(delta: float) -> void:
 			_show_speech(_LINES_FIRST_LIGHT, &"first_light")
 		_speech_last_hour = hour
 
-	# 3. Shelter: under a roof during bad weather
+	# 3. Shelter: under a roof during bad weather (6 game-hour cooldown)
+	var cur_gt: float = dnc.game_time if dnc else 0.0
 	if get_tree() and WeatherSystem.current_weather >= 2:
-		var space := get_world_3d().direct_space_state
-		if space:
-			var from := global_position + Vector3.UP * 0.5
-			var to := from + Vector3.UP * 12.0
-			var query := PhysicsRayQueryParameters3D.create(from, to)
-			query.collision_mask = 9  # Terrain (1) + Buildings (8)
-			query.exclude = [get_rid()]
-			var result := space.intersect_ray(query)
-			if not result.is_empty():
-				_show_speech(_LINES_SHELTER, &"shelter")
-				return
+		if _game_hours_since(_speech_shelter_last_game_time, cur_gt) >= _SPEECH_SHELTER_GAME_HOURS:
+			var space := get_world_3d().direct_space_state
+			if space:
+				var from := global_position + Vector3.UP * 0.5
+				var to := from + Vector3.UP * 12.0
+				var query := PhysicsRayQueryParameters3D.create(from, to)
+				query.collision_mask = 9  # Terrain (1) + Buildings (8)
+				query.exclude = [get_rid()]
+				var result := space.intersect_ray(query)
+				if not result.is_empty():
+					_speech_shelter_last_game_time = cur_gt
+					_show_speech(_LINES_SHELTER, &"shelter")
+					return
+
+	# 3b. Home entry: player-built structure with roof + door nearby (6 game-hour cooldown)
+	if get_tree() and _game_hours_since(_speech_home_last_game_time, cur_gt) >= _SPEECH_SHELTER_GAME_HOURS:
+		var in_home := _is_inside_player_home()
+		if in_home and not _speech_in_home:
+			_speech_in_home = true
+			_speech_home_last_game_time = cur_gt
+			_show_speech(_LINES_HOME_ENTRY, &"home_entry")
+		elif not in_home:
+			_speech_in_home = false
 
 	# 4. Stamina drowning: swimming + stamina < 20%
 	if _is_swimming and max_stamina > 0.0 and current_stamina / max_stamina < 0.20:
@@ -4329,6 +4445,34 @@ func _check_speech_triggers(delta: float) -> void:
 			_speech_near_halvard = false
 
 
+func _game_hours_since(last_gt: float, cur_gt: float) -> float:
+	if last_gt < 0.0:
+		return 999.0
+	var delta_gt := cur_gt - last_gt
+	if delta_gt < 0.0:
+		delta_gt += 1.0
+	return delta_gt * 24.0
+
+
+func _is_inside_player_home() -> bool:
+	var space := get_world_3d().direct_space_state
+	if not space:
+		return false
+	var from := global_position + Vector3.UP * 0.5
+	var to := from + Vector3.UP * 12.0
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	query.collision_mask = 8
+	query.exclude = [get_rid()]
+	var result := space.intersect_ray(query)
+	if result.is_empty():
+		return false
+	for door in get_tree().get_nodes_in_group(&"doors"):
+		var d3d := door as Node3D
+		if d3d and global_position.distance_squared_to(d3d.global_position) < 100.0:
+			return true
+	return false
+
+
 func _on_creature_killed_speech(creature_pos: Vector3) -> void:
 	if global_position.distance_squared_to(creature_pos) > 2500.0:
 		return
@@ -4338,11 +4482,86 @@ func _on_creature_killed_speech(creature_pos: Vector3) -> void:
 		_show_speech(_LINES_KILLING_SPREE, &"killing_spree")
 
 
+func _on_day_night_changed(is_day: bool) -> void:
+	if is_day:
+		_day_count += 1
+		_show_day_banner()
+
+
+func _show_day_banner() -> void:
+	if not _hud_root:
+		return
+	var lbl := Label.new()
+	lbl.name = "DayBanner"
+	lbl.text = "Day %d" % _day_count
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	lbl.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	lbl.grow_vertical = Control.GROW_DIRECTION_BOTH
+	lbl.add_theme_font_size_override("font_size", 72)
+	lbl.add_theme_color_override("font_color", Color(0.95, 0.88, 0.65))
+	lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.6))
+	lbl.add_theme_constant_override("shadow_offset_x", 3)
+	lbl.add_theme_constant_override("shadow_offset_y", 3)
+	lbl.modulate.a = 0.0
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_root.add_child(lbl)
+
+	var tw := create_tween()
+	tw.tween_property(lbl, "modulate:a", 1.0, 1.2)
+	tw.tween_interval(3.0)
+	tw.tween_property(lbl, "modulate:a", 0.0, 2.0)
+	tw.tween_callback(lbl.queue_free)
+
+
+func _try_sleep() -> void:
+	if _is_sleeping:
+		return
+	var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree() and get_tree().current_scene else null
+	if not dnc:
+		return
+	var hour: int = dnc.get_hour()
+	if hour >= 6 and hour < 20:
+		_show_speech(["It's the middle of the day. I don't need sleep right now."], &"cant_sleep")
+		return
+	_is_sleeping = true
+	_start_sleep(dnc)
+
+
+func _start_sleep(dnc: Node) -> void:
+	var overlay := ColorRect.new()
+	overlay.name = "SleepOverlay"
+	overlay.color = Color(0.0, 0.0, 0.0, 0.0)
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _hud_root:
+		_hud_root.add_child(overlay)
+	else:
+		var cr := CanvasLayer.new()
+		cr.layer = 100
+		add_child(cr)
+		cr.add_child(overlay)
+
+	var tw := create_tween()
+	tw.tween_property(overlay, "color:a", 1.0, 1.0)
+	tw.tween_callback(func():
+		const WAKE_TIME := 0.247
+		dnc.game_time = WAKE_TIME
+	)
+	tw.tween_interval(1.0)
+	tw.tween_property(overlay, "color:a", 0.0, 1.5)
+	tw.tween_callback(func():
+		overlay.queue_free()
+		_is_sleeping = false
+	)
+
+
 func _on_item_picked_up_speech(item_id: StringName, _amount: int) -> void:
 	_try_learn_recipe(item_id)
 	var parsed := ItemDatabase.parse_star_id(item_id)
 	if parsed["stars"] >= 5:
-		_show_speech(_LINES_LOOT_DROP, &"loot_drop")
+		_show_speech(_LINES_FIND_5STAR, &"find_5star")
 
 
 func _on_inventory_changed_speech() -> void:
@@ -6603,6 +6822,8 @@ func _place_build() -> void:
 	elif _is_door:
 		structure.add_to_group(&"doors")
 		structure.set_meta("door_open", false)
+	elif _is_bed:
+		structure.add_to_group(&"beds")
 
 	var _is_roof := mesh_type.begins_with("roof") or mesh_type.begins_with("gable")
 
@@ -6849,6 +7070,8 @@ func rebuild_structure(build_id_str: String, pos: Vector3, rot_y: float) -> void
 	elif is_door:
 		structure.add_to_group(&"doors")
 		structure.set_meta("door_open", false)
+	elif is_bed:
+		structure.add_to_group(&"beds")
 
 	var is_stair := mesh_type == "stair"
 	if is_stair:
@@ -8697,7 +8920,7 @@ func _show_tooltip_for_item(item_id: StringName) -> void:
 	var tip_stars: int = parsed_tip["stars"]
 
 	if tip_stars >= 5:
-		_show_speech(_LINES_LOOT_DROP, &"loot_drop")
+		_show_speech(_LINES_FIND_5STAR, &"find_5star")
 
 	var text := ""
 	if tip_stars > 0:
@@ -9043,11 +9266,11 @@ func _on_craft_pressed(item_id: StringName) -> void:
 		var cdata := ItemDatabase.get_item(item_id)
 		var ctype: String = str(cdata.get("type", ""))
 		var cparsed := ItemDatabase.parse_star_id(crafted_id)
-		if cparsed["stars"] >= 3:
+		if cparsed["stars"] >= 5:
 			if ctype == "weapon":
-				_show_speech(_LINES_CRAFT_WEAPON, &"craft_weapon")
-			elif ctype == "tool":
-				_show_speech(_LINES_CRAFT_TOOL, &"craft_tool")
+				_show_speech(_LINES_CRAFT_5STAR + _LINES_CRAFT_WEAPON_ONLY, &"craft_5star")
+			elif ctype in ["tool", "armor"]:
+				_show_speech(_LINES_CRAFT_5STAR, &"craft_5star")
 		_refresh_inventory_ui()
 
 

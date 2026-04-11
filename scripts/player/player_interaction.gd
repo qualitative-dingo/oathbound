@@ -721,6 +721,13 @@ func try_interact() -> void:
 			pc._toggle_door(d3d)
 			return
 
+	# Check beds (sleep)
+	for bed in pc.get_tree().get_nodes_in_group(&"beds"):
+		var b3d := bed as Node3D
+		if b3d and pc.global_position.distance_to(b3d.global_position) < 3.5:
+			pc._try_sleep()
+			return
+
 	# Check chests
 	for ch in pc.get_tree().get_nodes_in_group(&"chests"):
 		var ch3d := ch as Node3D

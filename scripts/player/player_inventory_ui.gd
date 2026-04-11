@@ -983,11 +983,11 @@ func on_craft_pressed(item_id: StringName) -> void:
 		var cdata := ItemDatabase.get_item(item_id)
 		var ctype: String = str(cdata.get("type", ""))
 		var cparsed := ItemDatabase.parse_star_id(crafted_id)
-		if cparsed["stars"] >= 3 and pc:
+		if cparsed["stars"] >= 5 and pc:
 			if ctype == "weapon":
-				pc._show_speech(pc._LINES_CRAFT_WEAPON, &"craft_weapon")
-			elif ctype == "tool":
-				pc._show_speech(pc._LINES_CRAFT_TOOL, &"craft_tool")
+				pc._show_speech(pc._LINES_CRAFT_5STAR + pc._LINES_CRAFT_WEAPON_ONLY, &"craft_5star")
+			elif ctype in ["tool", "armor"]:
+				pc._show_speech(pc._LINES_CRAFT_5STAR, &"craft_5star")
 		refresh_inventory_ui()
 
 
