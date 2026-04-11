@@ -144,6 +144,16 @@ func get_group_size(group_name: String) -> int:
 	return (_sounds[group_name] as Array).size()
 
 
+func get_stream_duration(group_name: String, idx: int) -> float:
+	if not _sounds.has(group_name):
+		return 0.0
+	var streams: Array = _sounds[group_name] as Array
+	if idx < 0 or idx >= streams.size():
+		return 0.0
+	var s: AudioStream = streams[idx] as AudioStream
+	return s.get_length() if s else 0.0
+
+
 func play_sfx_indexed(group_name: String, idx: int, volume_db: float = 0.0) -> void:
 	if not _sounds.has(group_name):
 		return

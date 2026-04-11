@@ -4277,9 +4277,15 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	var msg := str(lines[idx])
 	_speech_label_3d.text = "\" " + msg + " \""
 
+	var hold_time := _SPEECH_DISPLAY_TIME
 	if _LINE_VOICE.has(msg):
 		var vinfo: Array = _LINE_VOICE[msg]
-		AudioManager.play_sfx_indexed(vinfo[0] as String, vinfo[1] as int, -2.0)
+		var grp: String = vinfo[0] as String
+		var sidx: int = vinfo[1] as int
+		var dur := AudioManager.get_stream_duration(grp, sidx)
+		if dur > 0.0:
+			hold_time = dur + 0.5
+		AudioManager.play_sfx_indexed(grp, sidx, -2.0)
 
 	# Size the background quad to fit the text
 	if _speech_bg:
@@ -4309,7 +4315,7 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	if _speech_bg and _speech_bg.material_override:
 		_speech_tween.tween_property(_speech_bg.material_override, "albedo_color:a", 0.75, 0.4)
 	_speech_tween.set_parallel(false)
-	_speech_tween.tween_interval(_SPEECH_DISPLAY_TIME)
+	_speech_tween.tween_interval(hold_time)
 	_speech_tween.set_parallel(true)
 	_speech_tween.tween_property(_speech_label_3d, "modulate:a", 0.0, 0.6)
 	if _speech_bg and _speech_bg.material_override:
