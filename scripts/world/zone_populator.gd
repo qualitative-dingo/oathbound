@@ -1214,9 +1214,6 @@ static func populate_zone_phase(
 	if phase == 0:
 		# ── Phase 0: villages + scatter trees + NPC camps ──
 		if not debug_skip_villages:
-			if coord == Vector2i(0, 0):
-				_VillageGenerator.force_spawn_village(zone_root, 36.0, 36.0, height_func)
-				_spawn_village_signpost(zone_root, 36.0, 36.0, origin_x, origin_z, height_func)
 			if biome == &"hearthlands":
 				_VillageGenerator.try_spawn_village(zone_root, coord, rng, origin_x, origin_z, height_func)
 
