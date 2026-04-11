@@ -9046,6 +9046,7 @@ func _point_in_tri(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> bool:
 func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
 	var marker_col := Color(0.9, 0.75, 0.3)
 	var cave_col := Color(0.5, 0.35, 0.2)
+	var signpost_col := Color(1.0, 0.9, 0.3)
 
 	for node in get_tree().get_nodes_in_group(&"structures"):
 		var n3d := node as Node3D
@@ -9054,6 +9055,12 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 		if n3d.is_in_group(&"village"):
 			continue
 		_draw_map_dot(n3d.global_position, marker_col, 2, half_px, zones_per_pixel, zone_size)
+
+	for node in get_tree().get_nodes_in_group(&"signposts"):
+		var n3d := node as Node3D
+		if not n3d:
+			continue
+		_draw_map_dot(n3d.global_position, signpost_col, 3, half_px, zones_per_pixel, zone_size)
 
 	for node in get_tree().get_nodes_in_group(&"cave_entrances"):
 		var n3d := node as Node3D

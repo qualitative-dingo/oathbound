@@ -2099,13 +2099,24 @@ func _compute_signpost_positions() -> void:
 	rng.seed = _seed_hash + 55556
 	for frac: float in fractions:
 		var base: Vector2 = dir * _merchant_world_pos.length() * frac
-		var offset := Vector2(rng.randf_range(-30.0, 30.0), rng.randf_range(-30.0, 30.0))
-		var wx: float = base.x + offset.x
-		var wz: float = base.y + offset.y
-		var h: float = get_height_at(wx, wz)
-		if h < WATER_LEVEL + 0.5:
-			h = WATER_LEVEL + 1.0
-		_merchant_signpost_positions.append(Vector3(wx, h, wz))
+		var best_pos := Vector3.ZERO
+		for attempt in 20:
+			var offset := Vector2(rng.randf_range(-40.0, 40.0), rng.randf_range(-40.0, 40.0))
+			var wx: float = base.x + offset.x
+			var wz: float = base.y + offset.y
+			var h: float = get_height_at(wx, wz)
+			if h < WATER_LEVEL + 2.0:
+				continue
+			if h > 25.0:
+				continue
+			best_pos = Vector3(wx, h, wz)
+			break
+		if best_pos == Vector3.ZERO:
+			var wx: float = base.x
+			var wz: float = base.y
+			var h: float = maxf(get_height_at(wx, wz), WATER_LEVEL + 2.0)
+			best_pos = Vector3(wx, h, wz)
+		_merchant_signpost_positions.append(best_pos)
 
 
 func get_merchant_world_pos() -> Vector3:

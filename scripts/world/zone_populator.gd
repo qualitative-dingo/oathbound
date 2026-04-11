@@ -1539,9 +1539,9 @@ static func _create_signpost(world_pos: Vector3, text: String, merchant_pos: Vec
 
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(0.3, 1.6, 0.3)
+	shape.size = Vector3(0.9, 4.8, 0.9)
 	col.shape = shape
-	col.position = Vector3(0, 0.8, 0)
+	col.position = Vector3(0, 2.4, 0)
 	post.add_child(col)
 
 	var post_mat := StandardMaterial3D.new()
@@ -1550,32 +1550,32 @@ static func _create_signpost(world_pos: Vector3, text: String, merchant_pos: Vec
 
 	var pole := MeshInstance3D.new()
 	var pole_mesh := CylinderMesh.new()
-	pole_mesh.height = 1.8
-	pole_mesh.top_radius = 0.06
-	pole_mesh.bottom_radius = 0.08
+	pole_mesh.height = 5.4
+	pole_mesh.top_radius = 0.18
+	pole_mesh.bottom_radius = 0.24
 	pole.mesh = pole_mesh
 	pole.material_override = post_mat
-	pole.position = Vector3(0, 0.9, 0)
+	pole.position = Vector3(0, 2.7, 0)
 	post.add_child(pole)
 
 	var board := MeshInstance3D.new()
 	var board_mesh := BoxMesh.new()
-	board_mesh.size = Vector3(0.8, 0.35, 0.04)
+	board_mesh.size = Vector3(2.4, 1.05, 0.12)
 	board.mesh = board_mesh
 	board.material_override = post_mat
-	board.position = Vector3(0, 1.5, 0.06)
+	board.position = Vector3(0, 4.5, 0.18)
 	post.add_child(board)
 
 	var label := Label3D.new()
 	label.text = text
-	label.font_size = 24
-	label.pixel_size = 0.006
+	label.font_size = 48
+	label.pixel_size = 0.01
 	label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 	label.no_depth_test = false
 	label.modulate = Color(0.9, 0.8, 0.5)
 	label.outline_modulate = Color(0, 0, 0, 0.8)
-	label.outline_size = 4
-	label.position = Vector3(0, 1.5, 0.1)
+	label.outline_size = 6
+	label.position = Vector3(0, 4.5, 0.25)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	post.add_child(label)
 
