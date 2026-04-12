@@ -66,8 +66,8 @@ var _map_zoom: float = 40.0
 var _map_zoom_target: float = 40.0
 const MAP_ZOOM_MIN := 8.0
 const MAP_ZOOM_MAX := 100.0
-const MAP_ZOOM_STEP := 6.0
-const MAP_ZOOM_SPEED := 10.0
+const MAP_ZOOM_STEP := 4.0
+const MAP_ZOOM_SPEED := 25.0
 const MAP_PX := 512
 
 var equipped_weapon: StringName = &"fists"
@@ -425,6 +425,7 @@ var _map_circle_mask: Image
 var _map_dirty := true
 var _map_last_player_pos := Vector3.ZERO
 var _map_refresh_timer := 0.0
+var _map_rendered_zoom: float = 40.0
 var _map_fog_time := 0.0
 var _map_fog_noise: FastNoiseLite
 
@@ -4299,9 +4300,12 @@ func _toggle_map() -> void:
 	_map_open = not _map_open
 	if _map_open:
 		_map_zoom = _map_zoom_target
+		_map_rendered_zoom = _map_zoom
 		_map_dirty = true
 		if _map_panel:
 			_map_panel.visible = true
+		if _map_texture_rect:
+			_map_texture_rect.scale = Vector2.ONE
 		_refresh_map()
 		_map_dirty = false
 	else:
@@ -8990,6 +8994,7 @@ func _build_map_panel(root: Control) -> void:
 	var map_container := Control.new()
 	map_container.name = "MapContainer"
 	map_container.custom_minimum_size = Vector2(MAP_PX, MAP_PX)
+	map_container.clip_contents = true
 	map_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	_map_texture_rect = TextureRect.new()
@@ -9000,6 +9005,7 @@ func _build_map_panel(root: Control) -> void:
 	_map_texture_rect.stretch_mode = TextureRect.STRETCH_SCALE
 	_map_texture_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_map_texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_texture_rect.pivot_offset = Vector2(MAP_PX / 2.0, MAP_PX / 2.0)
 	map_container.add_child(_map_texture_rect)
 
 	_add_compass_label(map_container, "N", Vector2(MAP_PX * 0.5 - 4, 10), Color(0.95, 0.85, 0.5))
@@ -10209,20 +10215,27 @@ func _process(delta: float) -> void:
 
 	if _map_open:
 		_map_fog_time += delta
-		var prev_zoom := _map_zoom
 		_map_zoom = lerpf(_map_zoom, _map_zoom_target, clampf(MAP_ZOOM_SPEED * delta, 0.0, 1.0))
-		if absf(_map_zoom - _map_zoom_target) < 0.02:
+		if absf(_map_zoom - _map_zoom_target) < 0.01:
 			_map_zoom = _map_zoom_target
+
+		if _map_texture_rect and _map_rendered_zoom > 0.001:
+			var vis_ratio := _map_rendered_zoom / _map_zoom
+			_map_texture_rect.scale = Vector2(vis_ratio, vis_ratio)
+
 		var moved := global_position.distance_squared_to(_map_last_player_pos) > 0.5
 		_map_refresh_timer += delta
 		var periodic := _map_refresh_timer >= 0.5
-		var zoom_changed := absf(_map_zoom - prev_zoom) > 0.03
-		var needs_refresh := _map_dirty or moved or periodic or zoom_changed
-		if needs_refresh and _map_refresh_timer >= 0.1:
+		var scale_drift := absf(_map_rendered_zoom / maxf(_map_zoom, 0.01) - 1.0) > 0.12
+		var needs_refresh := _map_dirty or moved or periodic or scale_drift
+		if needs_refresh and _map_refresh_timer >= 0.15:
 			_map_last_player_pos = global_position
 			_map_refresh_timer = 0.0
 			_refresh_map()
 			_map_dirty = false
+			_map_rendered_zoom = _map_zoom
+			if _map_texture_rect:
+				_map_texture_rect.scale = Vector2.ONE
 
 	var _pc_total_ms := float(Time.get_ticks_usec() - _pc_t0) / 1000.0
 	_pc_proc_max_total = maxf(_pc_proc_max_total, _pc_total_ms)
