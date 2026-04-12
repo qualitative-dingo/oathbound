@@ -4421,7 +4421,7 @@ func _build_speech_bubble(_root: Control) -> void:
 	var bg_mat := StandardMaterial3D.new()
 	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	bg_mat.albedo_color = Color(0.06, 0.05, 0.04, 0.75)
+	bg_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.82)
 	bg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bg_mat.no_depth_test = true
 	bg_mat.render_priority = 1
@@ -4430,16 +4430,20 @@ func _build_speech_bubble(_root: Control) -> void:
 	_speech_bg.visible = false
 	add_child(_speech_bg)
 
+	var speech_font := load("res://fonts/Almendra-Bold.ttf") as Font
+
 	_speech_label_3d = Label3D.new()
 	_speech_label_3d.name = "SpeechBubble3D"
 	_speech_label_3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_speech_label_3d.no_depth_test = true
 	_speech_label_3d.fixed_size = true
 	_speech_label_3d.pixel_size = 0.0008
-	_speech_label_3d.font_size = 28
-	_speech_label_3d.outline_size = 6
-	_speech_label_3d.modulate = Color(0.95, 0.90, 0.78)
-	_speech_label_3d.outline_modulate = Color(0.0, 0.0, 0.0, 0.0)
+	if speech_font:
+		_speech_label_3d.font = speech_font
+	_speech_label_3d.font_size = 30
+	_speech_label_3d.outline_size = 8
+	_speech_label_3d.modulate = Color(0.93, 0.91, 0.87)
+	_speech_label_3d.outline_modulate = Color(0.0, 0.0, 0.0, 0.7)
 	_speech_label_3d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_speech_label_3d.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_speech_label_3d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -4498,7 +4502,7 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	if sp.finished.is_connected(_on_speech_audio_finished):
 		sp.finished.disconnect(_on_speech_audio_finished)
 
-	var base_color := Color(0.95, 0.90, 0.78, 0.0)
+	var base_color := Color(0.93, 0.91, 0.87, 0.0)
 	_speech_label_3d.modulate = base_color
 	_speech_label_3d.visible = true
 
@@ -4512,7 +4516,7 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	_speech_tween.set_parallel(true)
 	_speech_tween.tween_property(_speech_label_3d, "modulate:a", 1.0, 0.4)
 	if _speech_bg and _speech_bg.material_override:
-		_speech_tween.tween_property(_speech_bg.material_override, "albedo_color:a", 0.75, 0.4)
+		_speech_tween.tween_property(_speech_bg.material_override, "albedo_color:a", 0.82, 0.4)
 
 	if has_voice:
 		_speech_waiting_for_audio = true
