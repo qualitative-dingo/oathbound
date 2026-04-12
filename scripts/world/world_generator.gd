@@ -846,9 +846,9 @@ func _sample_island_mask(wx: float, wz: float) -> float:
 		return 1.0
 	var raw := _island_noise.get_noise_2d(wx, wz)
 	var spawn_dist := Vector2(wx, wz).length()
-	var spawn_bias := smoothstep(2500.0, 400.0, spawn_dist) * 0.6
+	var spawn_bias := smoothstep(2500.0, 400.0, spawn_dist) * 0.55
 	raw += spawn_bias
-	return smoothstep(-0.08, 0.08, raw)
+	return smoothstep(-0.05, 0.12, raw)
 
 
 func _get_base_height(wx: float, wz: float) -> float:
@@ -860,7 +860,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 
 	var island := _sample_island_mask(wx, wz)
 	if island < 0.01:
-		return WATER_LEVEL - 10.0
+		return WATER_LEVEL - 15.0
 
 	var continent := _continent_noise.get_noise_2d(wx, wz)
 	var mountain := _gate_mountain(wx, wz, maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.35, 0.0))
@@ -885,7 +885,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 	bias *= island
 	h += bias
 
-	h = lerpf(WATER_LEVEL - 10.0, h, island)
+	h = lerpf(WATER_LEVEL - 15.0, h, island)
 
 	var center_dist := Vector2(wx, wz).length()
 	if center_dist < 100.0:
@@ -1891,7 +1891,7 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 
 	var island := _sample_island_mask(x, z)
 	if island < 0.01:
-		return WATER_LEVEL - 10.0
+		return WATER_LEVEL - 15.0
 
 	var continent := _continent_noise.get_noise_2d(x, z)
 	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
@@ -1914,7 +1914,7 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 	bias *= island
 	h += bias
 
-	h = lerpf(WATER_LEVEL - 10.0, h, island)
+	h = lerpf(WATER_LEVEL - 15.0, h, island)
 	return h
 
 
@@ -1933,7 +1933,7 @@ func get_height_at(x: float, z: float) -> float:
 
 	var island := _sample_island_mask(x, z)
 	if island < 0.01:
-		return WATER_LEVEL - 10.0
+		return WATER_LEVEL - 15.0
 
 	var continent := _continent_noise.get_noise_2d(x, z)
 	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
@@ -2006,11 +2006,11 @@ func get_height_at(x: float, z: float) -> float:
 	h += bias
 
 	# Blend toward deep ocean at island edges for natural shore transitions
-	h = lerpf(WATER_LEVEL - 10.0, h, island)
+	h = lerpf(WATER_LEVEL - 15.0, h, island)
 
 	# Keep terrain above water on land — soft floor only where island mask allows
 	var min_land := lerpf(WATER_LEVEL - 1.0, WATER_LEVEL + 2.5, smoothstep(-0.38, 0.10, lake_n))
-	min_land = lerpf(WATER_LEVEL - 10.0, min_land, island)
+	min_land = lerpf(WATER_LEVEL - 15.0, min_land, island)
 	h = maxf(h, min_land)
 
 	# Watershed river/creek carving
