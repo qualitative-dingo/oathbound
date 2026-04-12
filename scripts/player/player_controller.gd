@@ -4562,7 +4562,7 @@ func _update_speech_position() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if not cam:
 		return
-	var head_world := global_position + Vector3(0.0, 2.6, 0.0)
+	var head_world := global_position + Vector3(0.0, 3.4, 0.0)
 	if cam.is_position_behind(head_world):
 		_speech_panel.visible = false
 		return
@@ -4572,7 +4572,7 @@ func _update_speech_position() -> void:
 		return
 	var vp_rect := get_viewport().get_visible_rect().size
 	var px := clampf(screen_pos.x - panel_size.x * 0.5, 4.0, vp_rect.x - panel_size.x - 4.0)
-	var py := clampf(screen_pos.y - panel_size.y - 12.0, 4.0, vp_rect.y - panel_size.y - 4.0)
+	var py := clampf(screen_pos.y - panel_size.y - 20.0, 4.0, vp_rect.y - panel_size.y - 4.0)
 	_speech_panel.position = Vector2(px, py)
 
 
