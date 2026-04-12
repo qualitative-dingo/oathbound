@@ -577,9 +577,9 @@ const _LINES_HALVARD := [
 	"Someone hasn't showered in years. The stench is unbearable.",
 ]
 const _HALVARD_GREETINGS: Array[String] = [
-	"Blimey, you've grown! Or maybe I've just shrunk.",
-	"A bit o' kindness goes further than gold.",
-	"Pull up a stump. My stories are free.",
+	"Blimey, you've grown! Or maybe I'm just sinking into the earth.",
+	"A bit o' kindness goes further than a sharp blade.",
+	"Pull up a stump. My stories are longer than your journey.",
 ]
 const _HALVARD_FAREWELLS: Array[String] = [
 	"Goodbye to you too.",
