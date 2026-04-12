@@ -9095,7 +9095,10 @@ func _refresh_map() -> void:
 	var water_shallow := Color(0.18, 0.38, 0.55)
 	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
 	var wmap_biome_cache: Dictionary = {}
-	var no_fog := equipped_weapon == &"god_axe" or Inventory.is_equipped(&"god_axe")
+	var wpn_base: StringName = ItemDatabase.parse_star_id(equipped_weapon).get("base_id", &"") as StringName
+	var inv_wpn := Inventory.get_equipped("weapon")
+	var inv_base: StringName = ItemDatabase.parse_star_id(inv_wpn).get("base_id", &"") as StringName if inv_wpn != &"" else &""
+	var no_fog := wpn_base == &"god_axe" or inv_base == &"god_axe"
 
 	for py in range(0, MAP_PX):
 		for px in range(0, MAP_PX):
