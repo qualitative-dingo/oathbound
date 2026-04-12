@@ -843,12 +843,13 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(wx * 0.015 + 9000.0, wz * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
+	var mtn_multiplier := lerpf(0.5, 5.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
 	h += peak_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
-	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	var ridge_mult := lerpf(0.1, 1.5, peak_intensity) * lerpf(0.3, 1.0, breadth)
+	var ridge := 1.0 - absf(ridge_raw)
+	ridge = ridge * ridge * ridge
+	var ridge_mult := lerpf(0.1, 1.0, peak_intensity) * lerpf(0.3, 1.0, breadth)
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 
 	h += lerpf(7.5, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.80, dist))
@@ -1863,11 +1864,12 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
+	var mtn_multiplier := lerpf(0.5, 5.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
 	h += peak_ramp * height_scale * mtn_multiplier
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
-	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	var ridge_mult := lerpf(0.1, 1.5, peak_intensity) * lerpf(0.3, 1.0, breadth)
+	var ridge := 1.0 - absf(ridge_raw)
+	ridge = ridge * ridge * ridge
+	var ridge_mult := lerpf(0.1, 1.0, peak_intensity) * lerpf(0.3, 1.0, breadth)
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 	return h
 
@@ -1897,32 +1899,40 @@ func get_height_at(x: float, z: float) -> float:
 	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 9.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
+	var mtn_multiplier := lerpf(0.5, 5.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
 	h += peak_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
-	var ridge := (1.0 - absf(ridge_raw)) * (1.0 - absf(ridge_raw))
-	var ridge_mult := lerpf(0.1, 1.5, peak_intensity) * lerpf(0.3, 1.0, breadth)
+	var ridge := 1.0 - absf(ridge_raw)
+	ridge = ridge * ridge * ridge
+	var ridge_mult := lerpf(0.1, 1.0, peak_intensity) * lerpf(0.3, 1.0, breadth)
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 
 	h += detail * height_scale * 0.15
 
+	# High-elevation crag detail — reduced and capped for walkable plateaus
 	var elev_t := clampf((h - 40.0) / 100.0, 0.0, 1.0)
 	if elev_t > 0.0:
 		var crag := _detail_noise.get_noise_2d(x * 0.12 + 7000.0, z * 0.12 + 7000.0)
-		h += crag * height_scale * 0.12 * elev_t
+		h += crag * height_scale * 0.06 * elev_t
 
-	# Mountain paths - carve walkable switchback trails on steep mountainsides
-	if _mtn_path_noise and mountain > 0.25 and h > 15.0:
+	# Plateau softening — flatten extreme peaks into explorable plateaus
+	var plateau_start := height_scale * 2.5
+	if h > plateau_start:
+		var excess := h - plateau_start
+		h = plateau_start + excess * 0.4
+
+	# Mountain paths - carve wider walkable switchback trails on mountainsides
+	if _mtn_path_noise and mountain > 0.20 and h > 12.0:
 		var path_raw := _mtn_path_noise.get_noise_2d(x, z)
 		var path_raw2 := _mtn_path_noise.get_noise_2d(x * 0.7 + 2000.0, z * 0.7 + 2000.0)
 		var path_combined := path_raw * 0.6 + path_raw2 * 0.4
 		var path_t := 1.0 - absf(path_combined)
-		path_t = smoothstep(0.85, 0.98, path_t)  # Sharp band for distinct paths
+		path_t = smoothstep(0.75, 0.95, path_t)
 		if path_t > 0.0:
 			var path_width_var := _detail_noise.get_noise_2d(x * 0.08 + 5000.0, z * 0.08 + 5000.0)
-			var path_flatten := lerpf(0.3, 0.6, 0.5 + path_width_var * 0.5)
-			var mtn_factor := smoothstep(0.25, 0.5, mountain)
+			var path_flatten := lerpf(0.4, 0.75, 0.5 + path_width_var * 0.5)
+			var mtn_factor := smoothstep(0.20, 0.45, mountain)
 			var path_carve := path_t * path_flatten * mtn_factor
 			var local_gradient := _sample_terrain_gradient(x, z, h)
 			h -= path_carve * local_gradient * height_scale * 0.8

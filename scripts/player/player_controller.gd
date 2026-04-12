@@ -5656,6 +5656,60 @@ func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, hal
 			img.set_pixel(fp.x, fp.y, fill)
 
 
+func _draw_merchant_marker(img: Image, player_pos: Vector3, m_per_px: float, half: int) -> void:
+	if not get_tree():
+		return
+	var merchants := get_tree().get_nodes_in_group(&"merchants")
+	if merchants.is_empty():
+		return
+
+	var closest: Node3D = null
+	var closest_dist := INF
+	for m in merchants:
+		var n3d := m as Node3D
+		if not n3d or not is_instance_valid(n3d):
+			continue
+		var d := Vector2(n3d.global_position.x - player_pos.x, n3d.global_position.z - player_pos.z).length()
+		if d < closest_dist:
+			closest_dist = d
+			closest = n3d
+
+	if not closest or closest_dist < 3.0:
+		return
+
+	var dx := (closest.global_position.x - player_pos.x) / m_per_px
+	var dz := (closest.global_position.z - player_pos.z) / m_per_px
+	var px_x := half + int(round(dx))
+	var px_y := half + int(round(dz))
+
+	var from_center := Vector2(float(px_x - half), float(px_y - half))
+	var max_r := float(half) - 3.0
+	if from_center.length() > max_r:
+		from_center = from_center.normalized() * max_r
+		px_x = half + int(round(from_center.x))
+		px_y = half + int(round(from_center.y))
+
+	var sz := img.get_width()
+	var outline := Color(0.1, 0.05, 0.0)
+	var fill := Color(1.0, 0.65, 0.15)
+	var r := 3
+	for dy in range(-r, r + 1):
+		for ddx in range(-r, r + 1):
+			if ddx * ddx + dy * dy <= r * r:
+				var fx := px_x + ddx
+				var fy := px_y + dy
+				if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
+					img.set_pixel(fx, fy, outline)
+	r = 2
+	for dy in range(-r, r + 1):
+		for ddx in range(-r, r + 1):
+			if ddx * ddx + dy * dy <= r * r:
+				var fx := px_x + ddx
+				var fy := px_y + dy
+				if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
+					img.set_pixel(fx, fy, fill)
+
+
 func _generate_arrow_texture(sz: int) -> ImageTexture:
 	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
@@ -5840,6 +5894,7 @@ func _refresh_minimap() -> void:
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
 	_draw_signpost_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
+	_draw_merchant_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo)
 
 	_minimap_image_tex.set_image(_minimap_lo_image)
 	if _minimap_tex_rect.texture != _minimap_image_tex:
@@ -8886,7 +8941,7 @@ func _build_map_panel(root: Control) -> void:
 	_map_panel.name = "MapPanel"
 	_map_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.02, 0.02, 0.04, 0.94)
+	bg.bg_color = Color(0.02, 0.02, 0.04, 0.45)
 	_map_panel.add_theme_stylebox_override("panel", bg)
 	_map_panel.visible = false
 	_map_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -9243,8 +9298,8 @@ func _draw_map_markers(half_px: int, zones_per_pixel: float, zone_size: float) -
 	for marker in _map_markers:
 		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
 		var col: Color = marker.get("color", Color.GOLD) as Color
-		_draw_map_dot(wpos, col, 4, half_px, zones_per_pixel, zone_size)
 		var scene_pos := wg.world_to_scene_pos(wpos) if wg else wpos
+		_draw_map_dot(scene_pos, col, 4, half_px, zones_per_pixel, zone_size)
 		var ring_col := Color(col.r, col.g, col.b, 0.6)
 		for r in range(5, 7):
 			for dy in range(-r, r + 1):
