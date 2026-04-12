@@ -9976,7 +9976,7 @@ func _process(delta: float) -> void:
 	var _pc_tmm := Time.get_ticks_usec()
 	if not _minimap_paused:
 		_minimap_refresh_timer += delta
-		var refresh_interval := 0.06
+		var refresh_interval := 0.2
 		if _minimap_needs_refresh or _minimap_refresh_timer >= refresh_interval:
 			_minimap_refresh_timer = 0.0
 			_refresh_minimap()
