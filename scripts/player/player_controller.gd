@@ -5634,21 +5634,11 @@ func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, hal
 		px_y = half + int(round(from_center.y))
 
 	var sz := img.get_width()
-	var fill := Color(1.0, 0.85, 0.1)
-	var outline := Color(0.15, 0.10, 0.0)
+	var fill := Color(1.0, 0.9, 0.3)
 
-	# "!" glyph: stem 2px tall, 1px gap, 1px dot — compact for minimap
+	# "!" glyph: stem 2px tall, 1px gap, 1px dot — no outline, clean fill
 	var stem_top := px_y - 1
 	var dot_y := px_y + 2
-	# Outline pass
-	for oy in range(stem_top - 1, stem_top + 3):
-		for ox in [px_x - 1, px_x, px_x + 1]:
-			if ox >= 0 and ox < sz and oy >= 0 and oy < sz:
-				img.set_pixel(ox, oy, outline)
-	for ox in [px_x - 1, px_x, px_x + 1]:
-		if dot_y >= 0 and dot_y < sz and ox >= 0 and ox < sz:
-			img.set_pixel(ox, dot_y, outline)
-	# Fill pass
 	for oy in range(stem_top, stem_top + 2):
 		if px_x >= 0 and px_x < sz and oy >= 0 and oy < sz:
 			img.set_pixel(px_x, oy, fill)
@@ -5851,9 +5841,6 @@ func _refresh_minimap() -> void:
 					clampf(col.g * bright, 0.0, 1.0),
 					clampf(col.b * bright, 0.0, 1.0))
 			_minimap_lo_image.set_pixel(lx, ly, col)
-
-	# 3x3 box blur to smooth block boundaries before markers
-	_blur_minimap_image()
 
 	_draw_signpost_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
 
@@ -9046,32 +9033,24 @@ func _refresh_map() -> void:
 	var water_shallow := Color(0.18, 0.38, 0.55)
 	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
 
-	var stride := 2
-
-	for py in range(0, MAP_PX, stride):
-		for px in range(0, MAP_PX, stride):
+	for py in range(0, MAP_PX):
+		for px in range(0, MAP_PX):
 			var mask_pixel := _map_circle_mask.get_pixel(px, py)
 			if mask_pixel.a < 0.01:
 				continue
 
 			if mask_pixel.r < 0.9 and mask_pixel.g < 0.9 and mask_pixel.a > 0.5 and (mask_pixel.r > 0.05 or mask_pixel.g > 0.05):
-				var ring_col := Color(mask_pixel.r, mask_pixel.g, mask_pixel.b, mask_pixel.a)
-				for sy in stride:
-					for sx in stride:
-						if px + sx < MAP_PX and py + sy < MAP_PX:
-							_map_image.set_pixel(px + sx, py + sy, ring_col)
+				_map_image.set_pixel(px, py, Color(mask_pixel.r, mask_pixel.g, mask_pixel.b, mask_pixel.a))
 				continue
 
 			var zone_fx: float = float(px - half_px) * zones_per_pixel
 			var zone_fz: float = float(py - half_px) * zones_per_pixel
 			var zone_coord := Vector2i(
-				center_zone.x + roundi(zone_fx),
-				center_zone.y + roundi(zone_fz))
+				center_zone.x + floori(zone_fx),
+				center_zone.y + floori(zone_fz))
 
 			var col: Color
 			if explored.has(zone_coord):
-				var biome: StringName = cache.get(zone_coord, &"hearthlands") as StringName
-				var micro := wg.get_microbiome_at_zone(zone_coord)
 				var world_x := player_pos.x + zone_fx * zone_size
 				var world_z := player_pos.z + zone_fz * zone_size
 				var zh := wg.get_height_at(world_x, world_z)
@@ -9079,6 +9058,8 @@ func _refresh_map() -> void:
 					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
 					col = water_shallow.lerp(water_col, depth)
 				else:
+					var biome: StringName = cache.get(zone_coord, &"hearthlands") as StringName
+					var micro := wg.get_microbiome_at_zone(zone_coord)
 					col = _biome_map_color(biome, micro, zh)
 					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
 					col = Color(
@@ -9088,10 +9069,7 @@ func _refresh_map() -> void:
 			else:
 				col = unexplored
 
-			for sy in stride:
-				for sx in stride:
-					if px + sx < MAP_PX and py + sy < MAP_PX:
-						_map_image.set_pixel(px + sx, py + sy, col)
+			_map_image.set_pixel(px, py, col)
 
 	# -- Structure markers --
 	_draw_structure_markers(half_px, zones_per_pixel, zone_size)

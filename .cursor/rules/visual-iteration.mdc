@@ -1,0 +1,19 @@
+---
+description: Use Godot MCP for visual verification when fixing rendering, UI, or spatial issues
+alwaysApply: true
+---
+
+# Visual Iteration with Godot MCP
+
+When fixing visual/rendering issues (shaders, UI, placement, particles, terrain), use the Godot MCP to verify changes instead of coding blind:
+
+1. Make the code/shader change
+2. Run the game via `editor` → `run`
+3. Ask the user to navigate to the relevant area (e.g. "Walk to a river so I can screenshot it")
+4. Use `editor` → `screenshot_game` to capture the result
+5. Evaluate the screenshot — if the fix isn't right, iterate
+6. Use `editor` → `stop` when done
+
+Also use `editor` → `get_errors` and `get_log_messages` to catch runtime issues after changes.
+
+Do NOT skip the visual verification loop for rendering or spatial changes. Always confirm visually before marking a task complete.

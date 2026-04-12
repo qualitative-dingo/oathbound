@@ -4,7 +4,6 @@ render_mode blend_mix, depth_draw_always, cull_disabled, specular_schlick_ggx;
 group_uniforms waves;
 uniform float wave_speed : hint_range(0.0, 2.0)    = 0.08;
 uniform float wave_height : hint_range(0.0, 2.0)   = 0.06;
-uniform float wave_frequency : hint_range(0.5, 8.0) = 1.2;
 
 group_uniforms colors;
 uniform vec4 shallow_color : source_color = vec4(0.06, 0.16, 0.30, 0.70);
@@ -14,6 +13,7 @@ uniform vec4 foam_color    : source_color = vec4(0.75, 0.82, 0.88, 0.85);
 group_uniforms depth;
 uniform float depth_distance : hint_range(0.1, 20.0)  = 3.0;
 uniform float foam_width : hint_range(0.01, 2.0)      = 0.12;
+uniform float riverbed_depth_cutoff : hint_range(0.3, 5.0) = 0.8;
 
 group_uniforms surface;
 uniform float fresnel_power : hint_range(1.0, 8.0)  = 2.5;
@@ -45,17 +45,16 @@ float water_fbm(vec2 p) {
 	return v;
 }
 
-float wave(vec2 pos, float time) {
-	float w1 = sin(pos.x * wave_frequency + time * wave_speed * 4.0) * 0.5;
-	float w2 = sin(pos.y * wave_frequency * 0.7 + time * wave_speed * 3.2 + 1.5) * 0.35;
-	float w3 = sin((pos.x + pos.y) * wave_frequency * 0.5 + time * wave_speed * 2.8) * 0.25;
-	float w4 = sin((pos.x * 0.3 - pos.y * 0.7) * wave_frequency * 1.3 + time * wave_speed * 5.0) * 0.15;
-	return (w1 + w2 + w3 + w4) * wave_height;
-}
-
 void vertex() {
 	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	VERTEX.y += wave(world_pos.xz, TIME);
+
+	// Noise-based waves — multi-directional, no axis-aligned banding
+	float t = TIME * wave_speed;
+	float w = 0.0;
+	w += (vnoise(world_pos.xz * 0.15 + vec2(t * 1.2, t * 0.8)) - 0.5);
+	w += (vnoise(world_pos.xz * 0.28 + vec2(-t * 0.9, t * 1.4) + vec2(40.0, 70.0)) - 0.5) * 0.6;
+	w += (vnoise(world_pos.xz * 0.55 + vec2(t * 0.6, -t * 1.1) + vec2(-25.0, 55.0)) - 0.5) * 0.3;
+	VERTEX.y += w * wave_height * 2.0;
 }
 
 void fragment() {
@@ -64,14 +63,12 @@ void fragment() {
 	// ── Scrolling noise layers with domain warping to break tiling ──
 	float t = TIME * flow_speed;
 
-	// Domain warp: offset UVs with a slow-moving noise field
 	vec2 warp = vec2(
 		vnoise(world_pos.xz * 0.02 + vec2(t * 0.3, -t * 0.2)),
 		vnoise(world_pos.xz * 0.02 + vec2(-t * 0.15, t * 0.25) + vec2(50.0, 80.0))
 	) * 3.0;
 
 	vec2 uv_a = world_pos.xz * 0.06 + warp * 0.06 + vec2(t, t * 0.7);
-	// Rotate uv_b ~40 degrees to break diagonal alignment
 	vec2 base_b = world_pos.xz * 0.045;
 	vec2 uv_b = vec2(base_b.x * 0.766 - base_b.y * 0.643, base_b.x * 0.643 + base_b.y * 0.766)
 	           + warp * 0.04 + vec2(-t * 0.6, t * 0.4);
@@ -91,6 +88,12 @@ void fragment() {
 	float depth_factor = clamp(depth_diff / depth_distance, 0.0, 1.0);
 	depth_factor = depth_factor * depth_factor;
 	float interior_opaque = smoothstep(0.15, 0.5, depth_diff);
+
+	// ── Riverbed suppression ──
+	// Where terrain is carved deep below water level (river channels), the creek
+	// ribbon mesh handles rendering. Fade out the global plane to avoid double-layer
+	// puddle artifacts on the riverbed.
+	float riverbed_fade = 1.0 - smoothstep(riverbed_depth_cutoff * 0.5, riverbed_depth_cutoff, depth_diff);
 
 	// ── Water color with depth ──
 	vec4 water_col = mix(shallow_color, deep_color, depth_factor);
@@ -133,6 +136,10 @@ void fragment() {
 	ALBEDO = final_col.rgb;
 	float foam_shore_fade = smoothstep(0.0, 0.25, perturbed_depth);
 	ALPHA = max(final_col.a * shore_alpha, total_foam * foam_shore_fade * 0.9);
+
+	// Apply riverbed suppression — fade out in deep carved channels
+	ALPHA *= riverbed_fade;
+
 	ROUGHNESS = mix(0.08, 0.35, total_foam);
 	METALLIC = mix(0.08, 0.0, total_foam);
 	SPECULAR = mix(0.5, 0.1, total_foam);
