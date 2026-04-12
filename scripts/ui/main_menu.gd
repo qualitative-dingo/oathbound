@@ -319,8 +319,8 @@ func _show_play_mode() -> void:
 	var char_name: String = str(_selected_character.get("name", "Unknown"))
 	var world_name: String = str(_selected_world.get("name", "World"))
 	center.add_child(_make_title_block(
-		world_name,
-		"%s  on  %s" % [char_name, world_name],
+		"%s on %s" % [char_name, world_name],
+		"",
 		Palette.COOL
 	))
 	center.add_child(_make_spacer(16))
