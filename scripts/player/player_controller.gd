@@ -4459,11 +4459,9 @@ func _build_speech_bubble(root: Control) -> void:
 	_speech_label.add_theme_constant_override("shadow_offset_y", 1)
 	_speech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_speech_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_speech_label.custom_minimum_size = Vector2(0, 0)
 	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_speech_panel.add_child(_speech_label)
 
-	_speech_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	root.add_child(_speech_panel)
 
 
@@ -4491,16 +4489,14 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	_speech_label.text = "\" " + msg + " \""
 
 	var max_w := get_viewport().get_visible_rect().size.x * 0.45
-	_speech_label.custom_minimum_size.x = 0
-	_speech_panel.custom_minimum_size.x = 0
-	_speech_panel.size = Vector2.ZERO
-	_speech_label.size = Vector2.ZERO
+	var label_w := max_w
 	if _speech_label.get_theme_font("font"):
 		var f: Font = _speech_label.get_theme_font("font")
 		var fs: int = _speech_label.get_theme_font_size("font_size")
 		var text_w := f.get_string_size(_speech_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		if text_w > max_w:
-			_speech_label.custom_minimum_size.x = max_w
+		label_w = minf(text_w + 4.0, max_w)
+	_speech_label.custom_minimum_size.x = label_w
+	_speech_panel.size = Vector2.ZERO
 
 	var has_voice := false
 	if _LINE_VOICE.has(msg):
