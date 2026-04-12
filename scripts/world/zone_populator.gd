@@ -1535,7 +1535,10 @@ static func _try_spawn_merchant_camp(
 	height_func: Callable,
 ) -> void:
 	if _merchant_spawned:
-		return
+		var tree := Engine.get_main_loop() as SceneTree
+		if tree and not tree.get_nodes_in_group(&"merchants").is_empty():
+			return
+		_merchant_spawned = false
 	var wg := _get_world_generator()
 	if not wg or not wg.has_method("get_merchant_world_pos"):
 		return
@@ -1582,6 +1585,8 @@ static func _try_spawn_signposts(
 
 	for i in positions.size():
 		var sp: Vector3 = positions[i]
+		if _signposts_spawned.has(i) and sp.x >= origin_x and sp.x < zone_end_x and sp.z >= origin_z and sp.z < zone_end_z:
+			_signposts_spawned.erase(i)
 		if _signposts_spawned.has(i):
 			continue
 		if sp.x < origin_x or sp.x >= zone_end_x:
@@ -1708,6 +1713,8 @@ static func _try_spawn_marrow_deposits(
 	var zone_end_z := origin_z + ZONE_SIZE
 	for i in positions.size():
 		var mp: Vector3 = positions[i]
+		if _marrow_deposits_spawned.has(i) and mp.x >= origin_x and mp.x < zone_end_x and mp.z >= origin_z and mp.z < zone_end_z:
+			_marrow_deposits_spawned.erase(i)
 		if _marrow_deposits_spawned.has(i):
 			continue
 		if mp.x < origin_x or mp.x >= zone_end_x:
