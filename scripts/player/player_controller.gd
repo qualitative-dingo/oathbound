@@ -5673,29 +5673,19 @@ func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, hal
 			img.set_pixel(fp.x, fp.y, fill)
 
 
-func _draw_merchant_marker(img: Image, player_pos: Vector3, m_per_px: float, half: int) -> void:
-	if not get_tree():
+func _draw_merchant_marker(img: Image, player_pos: Vector3, m_per_px: float, half: int, wg: Node) -> void:
+	if not wg or not wg.has_method("get_merchant_world_pos"):
 		return
-	var merchants := get_tree().get_nodes_in_group(&"merchants")
-	if merchants.is_empty():
-		return
-
-	var closest: Node3D = null
-	var closest_dist := INF
-	for m in merchants:
-		var n3d := m as Node3D
-		if not n3d or not is_instance_valid(n3d):
-			continue
-		var d := Vector2(n3d.global_position.x - player_pos.x, n3d.global_position.z - player_pos.z).length()
-		if d < closest_dist:
-			closest_dist = d
-			closest = n3d
-
-	if not closest or closest_dist < 3.0:
+	var merchant_pos: Vector3 = wg.get_merchant_world_pos()
+	if merchant_pos == Vector3.ZERO:
 		return
 
-	var dx := (closest.global_position.x - player_pos.x) / m_per_px
-	var dz := (closest.global_position.z - player_pos.z) / m_per_px
+	var dist := Vector2(merchant_pos.x - player_pos.x, merchant_pos.z - player_pos.z).length()
+	if dist < 3.0:
+		return
+
+	var dx := (merchant_pos.x - player_pos.x) / m_per_px
+	var dz := (merchant_pos.z - player_pos.z) / m_per_px
 	var px_x := half + int(round(dx))
 	var px_y := half + int(round(dz))
 
@@ -5919,7 +5909,7 @@ func _refresh_minimap() -> void:
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
 	_draw_signpost_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
-	_draw_merchant_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo)
+	_draw_merchant_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
 
 	_minimap_image_tex.set_image(_minimap_lo_image)
 	if _minimap_tex_rect.texture != _minimap_image_tex:
@@ -9221,6 +9211,28 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 		if not n3d:
 			continue
 		_draw_map_dot(n3d.global_position, cave_col, 2, half_px, zones_per_pixel, zone_size)
+
+	var wg := _find_world_generator()
+	if wg and wg.has_method("get_merchant_world_pos"):
+		var merchant_world: Vector3 = wg.get_merchant_world_pos()
+		if merchant_world != Vector3.ZERO:
+			var merchant_scene := wg.world_to_scene_pos(merchant_world)
+			var merchant_col := Color(1.0, 0.65, 0.15)
+			_draw_map_dot(merchant_scene, merchant_col, 4, half_px, zones_per_pixel, zone_size)
+			var ring_col := Color(1.0, 0.65, 0.15, 0.5)
+			var dx_w := merchant_scene.x - global_position.x
+			var dz_w := merchant_scene.z - global_position.z
+			var cx := half_px + roundi(dx_w / (zones_per_pixel * zone_size))
+			var cy := half_px + roundi(dz_w / (zones_per_pixel * zone_size))
+			for r in range(5, 7):
+				for dy in range(-r, r + 1):
+					for ddx in range(-r, r + 1):
+						var dd := ddx * ddx + dy * dy
+						if dd >= (r - 1) * (r - 1) and dd <= r * r:
+							var fx := cx + ddx
+							var fy := cy + dy
+							if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
+								_map_image.set_pixel(fx, fy, ring_col)
 
 
 func _draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
