@@ -9202,7 +9202,7 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 			continue
 		if n3d.is_in_group(&"village"):
 			continue
-		if n3d.name == "Tavern":
+		if n3d.name == "Tavern" or n3d.name == "MerchantCamp":
 			continue
 		_draw_map_dot(n3d.global_position, marker_col, 2, half_px, zones_per_pixel, zone_size)
 
@@ -9218,27 +9218,6 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 			continue
 		_draw_map_dot(n3d.global_position, cave_col, 2, half_px, zones_per_pixel, zone_size)
 
-	var wg := _find_world_generator()
-	if wg and wg.has_method("get_merchant_world_pos"):
-		var merchant_world: Vector3 = wg.get_merchant_world_pos()
-		if merchant_world != Vector3.ZERO:
-			var merchant_scene := wg.world_to_scene_pos(merchant_world)
-			var merchant_col := Color(1.0, 0.65, 0.15)
-			_draw_map_dot(merchant_scene, merchant_col, 4, half_px, zones_per_pixel, zone_size)
-			var ring_col := Color(1.0, 0.65, 0.15, 0.5)
-			var dx_w := merchant_scene.x - global_position.x
-			var dz_w := merchant_scene.z - global_position.z
-			var cx := half_px + roundi(dx_w / (zones_per_pixel * zone_size))
-			var cy := half_px + roundi(dz_w / (zones_per_pixel * zone_size))
-			for r in range(5, 7):
-				for dy in range(-r, r + 1):
-					for ddx in range(-r, r + 1):
-						var dd := ddx * ddx + dy * dy
-						if dd >= (r - 1) * (r - 1) and dd <= r * r:
-							var fx := cx + ddx
-							var fy := cy + dy
-							if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
-								_map_image.set_pixel(fx, fy, ring_col)
 
 
 func _draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
