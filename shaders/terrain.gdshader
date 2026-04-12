@@ -4,7 +4,6 @@ render_mode cull_back, diffuse_lambert_wrap;
 group_uniforms textures;
 uniform sampler2D tex_flat  : filter_linear_mipmap, repeat_enable;
 uniform sampler2D tex_slope : filter_linear_mipmap, repeat_enable;
-uniform sampler2D tex_cliff : filter_linear_mipmap, repeat_enable;
 
 group_uniforms settings;
 uniform float texture_scale : hint_range(0.01, 4.0) = 0.5;

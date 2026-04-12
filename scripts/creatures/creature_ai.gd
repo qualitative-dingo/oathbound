@@ -45,6 +45,8 @@ var _poison_dps: float = 0.0
 var _poison_source: Node3D = null
 var _fire_exposure: float = 0.0  # seconds standing in campfire
 var _fire_damage_timer: float = 0.0  # cooldown between fire damage ticks
+var _campfire_check_timer: float = 0.0
+var _campfire_in_fire: bool = false
 var _disorient_timer: float = 0.0
 var _armor_shred_timer: float = 0.0
 var _armor_shred_factor: float = 0.0
@@ -255,6 +257,7 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(70.0)
 	floor_stop_on_slope = true
 	_fly_bob_phase = randf_range(0.0, TAU)
+	_campfire_check_timer = randf_range(0.0, 0.5)
 	_create_floating_ui()
 
 	# Host-authoritative creatures: only server runs AI; clients receive synced state
@@ -933,13 +936,10 @@ func _check_aggro() -> void:
 	if _aggro_check_cd > 0.0:
 		return
 	_aggro_check_cd = 0.25
-	var players := get_tree().get_nodes_in_group(&"player")
 	var best_target: Node3D = null
 	var best_dist := INF
-	for node in players:
-		var p := node as Node3D
-		if not is_instance_valid(p):
-			continue
+	var p := _get_player()
+	if is_instance_valid(p):
 		var effective_aggro := aggro_range
 		if p.has_method("_has_affix") and p._has_affix(&"light_step"):
 			effective_aggro *= 0.6
@@ -1267,16 +1267,19 @@ func _tick_status_effects(delta: float) -> void:
 			_poison_source = null
 	# -- Campfire burn damage --
 	if _state != State.DEAD:
-		var in_fire := false
-		for node in get_tree().get_nodes_in_group(&"campfire"):
-			if node is Node3D:
-				var cf2 := node as Node3D
-				var dx2 := cf2.global_position.x - global_position.x
-				var dz2 := cf2.global_position.z - global_position.z
-				if dx2*dx2 + dz2*dz2 < 1.0:
-					in_fire = true
-					break
-		if in_fire:
+		_campfire_check_timer -= delta
+		if _campfire_check_timer <= 0.0:
+			_campfire_check_timer = 0.5
+			_campfire_in_fire = false
+			for node in get_tree().get_nodes_in_group(&"campfire"):
+				if node is Node3D:
+					var cf2 := node as Node3D
+					var dx2 := cf2.global_position.x - global_position.x
+					var dz2 := cf2.global_position.z - global_position.z
+					if dx2*dx2 + dz2*dz2 < 1.0:
+						_campfire_in_fire = true
+						break
+		if _campfire_in_fire:
 			_fire_exposure += delta
 			if _fire_exposure >= 1.0:
 				_fire_damage_timer -= delta

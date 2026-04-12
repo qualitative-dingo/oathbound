@@ -358,6 +358,7 @@ var _zone_biome_cache: Dictionary = {}
 var _zone_microbiome_cache: Dictionary = {}
 var _biome_materials: Dictionary = {}
 var _pending_zones: Array[Vector2i] = []
+var _pending_zones_set: Dictionary = {}
 var _players: Array[Node3D] = []
 var _player_cache_timer := 0.0
 var _last_player_biome: StringName = &""
@@ -459,11 +460,6 @@ func _ready() -> void:
 	]
 	AudioManager.play_music_playlist(_theme_songs, 4.0)
 	GameEvents.day_night_changed.connect(_on_day_night_changed)
-
-	if multiplayer.has_multiplayer_peer():
-		var csm := CreatureSyncManager.new()
-		csm.name = "CreatureSyncManager"
-		get_parent().call_deferred("add_child", csm, true)
 
 
 func _on_day_night_changed(is_day: bool) -> void:
@@ -2486,12 +2482,13 @@ func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 			if total_queued >= _max_loaded_zones:
 				return
 			var coord := Vector2i(x, z)
-			if coord in _loaded_zones or coord in _pending_zones or coord in _gen_in_flight:
+			if coord in _loaded_zones or coord in _pending_zones_set or coord in _gen_in_flight:
 				continue
 			var world_center := zone_to_world_center(coord)
 			if Vector2(world_center.x, world_center.z).length() > world_radius * 1.1:
 				continue
 			_pending_zones.append(coord)
+			_pending_zones_set[coord] = true
 			total_queued += 1
 	# Nearest zones first so the player's surroundings always load before distant ones
 	_pending_zones.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
@@ -2515,8 +2512,8 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 
 
 const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
-const _MAX_COLLISION_ENABLES_PER_FRAME := 6
-const _MAX_COLLISION_DISABLES_PER_FRAME := 4
+const _MAX_COLLISION_ENABLES_PER_FRAME := 3
+const _MAX_COLLISION_DISABLES_PER_FRAME := 2
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
@@ -2543,9 +2540,10 @@ func _process_pending_zones() -> void:
 					_deferred_collisions.erase(tc)
 					_deferred_disable_collisions.erase(tc)
 
-	# 0b. Fast-path: enable queued collision shapes near any player (no budget)
+	# 0b. Fast-path: enable queued collision shapes near any player (capped)
 	if not _deferred_collisions.is_empty():
 		var remaining: Array = []
+		var near_enabled := 0
 		for col_shape in _deferred_collisions:
 			if not is_instance_valid(col_shape):
 				continue
@@ -2554,7 +2552,11 @@ func _process_pending_zones() -> void:
 				remaining.append(col_shape)
 				continue
 			if not parent.has_meta(&"zone_coord"):
-				col_shape.disabled = false
+				if near_enabled < 4:
+					col_shape.disabled = false
+					near_enabled += 1
+				else:
+					remaining.append(col_shape)
 				continue
 			var zc: Vector2i = parent.get_meta(&"zone_coord") as Vector2i
 			var near_player := false
@@ -2562,8 +2564,9 @@ func _process_pending_zones() -> void:
 				if absi(zc.x - pz.x) <= 1 and absi(zc.y - pz.y) <= 1:
 					near_player = true
 					break
-			if near_player:
+			if near_player and near_enabled < 4:
 				col_shape.disabled = false
+				near_enabled += 1
 			else:
 				remaining.append(col_shape)
 		_deferred_collisions = remaining
@@ -2629,8 +2632,9 @@ func _process_pending_zones() -> void:
 			_terrain_shape_cache[coord] = item["shape"]
 		if _is_in_load_range(coord):
 			_finalize_backlog.append(item)
-		elif coord not in _pending_zones:
+		elif coord not in _pending_zones_set:
 			_pending_zones.append(coord)
+			_pending_zones_set[coord] = true
 		ready_count += 1
 
 	_evict_terrain_cache()
@@ -2655,8 +2659,8 @@ func _process_pending_zones() -> void:
 		var phase: int = pitem.get("phase", 0)
 		var biome: StringName = pitem["biome"]
 		var micro: StringName = pitem["micro"]
-		var done := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
-		if done:
+		var result := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
+		if result == 2:
 			_populate_backlog.pop_front()
 			var min_dist := 999.0
 			for p in _players:
@@ -2667,11 +2671,11 @@ func _process_pending_zones() -> void:
 			_update_zone_lod(zone_root, min_dist)
 			zone_loaded.emit(pcoord)
 			continue
-		pitem["phase"] = phase + 1
+		if result == 1:
+			pitem["phase"] = phase + 1
 
 	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
-	# HeightMapShape3D is cheap to assign — allow multiple finalizations per frame
-	var max_finalize := 4
+	var max_finalize := 2
 	var finalized := 0
 	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
 		while not _finalize_backlog.is_empty() and finalized < max_finalize:
@@ -2680,8 +2684,9 @@ func _process_pending_zones() -> void:
 			var item: Dictionary = _finalize_backlog.pop_front()
 			var coord: Vector2i = item["coord"]
 			if not _is_in_load_range(coord):
-				if coord not in _pending_zones and coord not in _loaded_zones:
+				if coord not in _pending_zones_set and coord not in _loaded_zones:
 					_pending_zones.append(coord)
+					_pending_zones_set[coord] = true
 				continue
 			if coord not in _loaded_zones:
 				_finalize_zone(coord, item["arrays"], item["shape"])
@@ -2695,6 +2700,7 @@ func _process_pending_zones() -> void:
 	var submitted := 0
 	while submitted < zones_this_frame and not _pending_zones.is_empty():
 		var coord: Vector2i = _pending_zones.pop_front()
+		_pending_zones_set.erase(coord)
 		if coord in _loaded_zones or coord in _gen_in_flight:
 			continue
 		if _terrain_mesh_cache.has(coord):
@@ -2792,11 +2798,10 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 		_zone_biome_cache.erase(coord)
 		_zone_microbiome_cache.erase(coord)
 		_zone_water_cache.erase(coord)
-		# Remove ALL pending population entries for this zone to prevent re-population
-		# when the zone_root is reused from the pool for a different zone
 		for i in range(_populate_backlog.size() - 1, -1, -1):
 			if _populate_backlog[i]["coord"] == coord:
 				_populate_backlog.remove_at(i)
+		_ZonePopulator._grass_cursor_clear(coord)
 		unloaded += 1
 		zone_unloaded.emit(coord)
 
@@ -3082,11 +3087,6 @@ func _init_water_material() -> void:
 		return
 	_water_shader_mat = ShaderMaterial.new()
 	_water_shader_mat.shader = shader
-	var noise_tex := _load_tex("res://textures/terrain/water.png")
-	if not noise_tex:
-		noise_tex = _load_tex("res://textures/materials/stone.png")
-	if noise_tex:
-		_water_shader_mat.set_shader_parameter("surface_noise", noise_tex)
 
 
 func _load_shader(path: String) -> Shader:
@@ -3100,8 +3100,8 @@ func _create_global_water() -> void:
 	_global_water_plane.name = "GlobalWater"
 	var plane := PlaneMesh.new()
 	plane.size = _water_plane_size()
-	plane.subdivide_width = 128
-	plane.subdivide_depth = 128
+	plane.subdivide_width = 48
+	plane.subdivide_depth = 48
 	_global_water_plane.mesh = plane
 
 	if _water_shader_mat:
@@ -3937,14 +3937,9 @@ func _init_biome_materials() -> void:
 	_terrain_shader_fast = load("res://shaders/terrain_fast.gdshader") as Shader
 	var terrain_shader := _terrain_shader_fancy
 
-	# Shared slope/cliff textures (used by every biome)
 	var dirt_tex := _load_tex("res://textures/terrain/dirt.png")
-	var stone_tex := _load_tex("res://textures/terrain/stone.png")
-	# Fallbacks from our tileable material set
 	if not dirt_tex:
 		dirt_tex = _load_tex("res://textures/materials/bark.png")
-	if not stone_tex:
-		stone_tex = _load_tex("res://textures/materials/stone.png")
 
 	# Per-biome: [flat_texture_name, tint_color, tex_scale]
 	var biome_cfg: Dictionary = {
@@ -3967,8 +3962,6 @@ func _init_biome_materials() -> void:
 				mat.set_shader_parameter("tex_flat", flat_tex)
 			if dirt_tex:
 				mat.set_shader_parameter("tex_slope", dirt_tex)
-			if stone_tex:
-				mat.set_shader_parameter("tex_cliff", stone_tex)
 			mat.set_shader_parameter("tint_color", Vector3(tint.r, tint.g, tint.b))
 			mat.set_shader_parameter("texture_scale", tex_scale)
 			mat.set_shader_parameter("origin_shift", origin_shift)

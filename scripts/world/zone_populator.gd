@@ -327,6 +327,7 @@ static var _mat_leaves: Material
 static var _mat_pine_leaves: Material
 static var _mat_palm_leaves: Material
 static var _mat_stone: Material
+static var _rock_palette: Array[Material] = []
 static var _rock_shader: Shader
 static var _mat_pebble: StandardMaterial3D
 static var _rock_meshes: Array[ArrayMesh] = []
@@ -618,6 +619,22 @@ static func _ensure_textures() -> void:
 		fallback.normal_texture = _generate_stone_normal_map()
 		fallback.normal_scale = 0.3
 		_mat_stone = fallback
+
+	# Pre-create tinted rock material palette for GPU batching
+	_rock_palette.clear()
+	var _palette_tints: Array[Color] = [
+		Color(0.92, 0.92, 0.92), Color(1.0, 1.0, 1.0), Color(1.08, 1.08, 1.08),
+		Color(0.95, 0.90, 0.92), Color(1.05, 1.02, 0.96), Color(0.90, 0.95, 1.02),
+	]
+	for tint in _palette_tints:
+		var m := _mat_stone.duplicate()
+		if m is ShaderMaterial:
+			var base_col: Color = (m as ShaderMaterial).get_shader_parameter("stone_color")
+			(m as ShaderMaterial).set_shader_parameter("stone_color", Color(
+				base_col.r * tint.r, base_col.g * tint.g, base_col.b * tint.b))
+		elif m is StandardMaterial3D:
+			(m as StandardMaterial3D).albedo_color = tint
+		_rock_palette.append(m)
 
 	# ── Pebble material — flat, muted, no normal map ──
 	_mat_pebble = StandardMaterial3D.new()
@@ -1216,7 +1233,7 @@ static func _make_triplanar_mat(tex: Texture2D, fallback_color: Color) -> Standa
 ## phase=3: ground grass (MultiMesh + billboard shader, distance-culled)
 ## phase=4-5: wildflowers (5 types per phase)
 ## phase=6: blueberry bushes + water plants
-## Returns true when ALL phases are done.
+## Returns 0=repeat this phase, 1=phase done advance, 2=all phases done.
 static func populate_zone_phase(
 	zone_root: Node3D,
 	coord: Vector2i,
@@ -1225,7 +1242,8 @@ static func populate_zone_phase(
 	height_func: Callable,
 	microbiome: StringName,
 	phase: int,
-) -> bool:
+	budgeted: bool = true,
+) -> int:
 	_ensure_textures()
 	_ensure_height_grid(coord, height_func)
 
@@ -1294,7 +1312,7 @@ static func populate_zone_phase(
 				obj.position = Vector3(lx, ground_y - 1.5, lz)
 				_placed_trees.append(Vector2(lx, lz))
 
-		return false
+		return 1
 
 	if phase == 1:
 		# ── Phase 1: cluster trees + rocks + stones ──
@@ -1406,7 +1424,7 @@ static func populate_zone_phase(
 		if not debug_skip_rocks:
 			_scatter_creek_rocks(zone_root, coord, rng, height_func)
 
-		return false
+		return 1
 
 	if phase == 2:
 		# ── Phase 2: creatures + caves + horses + fish ──
@@ -1475,20 +1493,22 @@ static func populate_zone_phase(
 						zone_root.add_child(fish)
 						fish.position = Vector3(lx, -0.1, lz)
 
-		return false
+		return 1
 
 	# ── Phase 3: ground grass (MultiMesh, shader-culled for performance) ──
 	if phase == 3:
 		if not debug_skip_grass:
-			_scatter_grass(zone_root, coord, biome, rng, height_func)
-		return false
+			var grass_done := _scatter_grass(zone_root, coord, biome, rng, height_func, budgeted)
+			if not grass_done:
+				return 0
+		return 1
 
 	# ── Phases 4–5: wildflowers (5 types per frame) ──
 	if phase >= 4 and phase <= 5:
 		if not debug_skip_flowers:
 			var fi_start := (phase - 4) * 5
 			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 5)
-		return false
+		return 1
 
 	# ── Phase 6: blueberry bushes + water plants + creek vegetation ──
 	if not debug_skip_saplings:
@@ -1497,7 +1517,7 @@ static func populate_zone_phase(
 	_scatter_water_plants(zone_root, coord, biome, rng, height_func)
 	_scatter_creek_vegetation(zone_root, coord, rng, height_func)
 
-	return true
+	return 2
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1807,8 +1827,11 @@ static func populate_zone(
 	height_func: Callable,
 	microbiome: StringName = &"none",
 ) -> void:
-	for p in 7:  # 0-6: villages/trees, clusters/rocks, creatures, (unused), flowers(x2), bushes
-		populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p)
+	var p := 0
+	while p <= 6:
+		var result := populate_zone_phase(zone_root, coord, biome, world_seed_hash, height_func, microbiome, p, false)
+		if result >= 1:
+			p += 1
 
 
 # Two intersecting planes (cross) so billboard vegetation is never edge-on to camera
@@ -2190,17 +2213,24 @@ static func _grass_cell_hash(cx: int, cz: int, salt: int) -> float:
 	return float(n & 0x7FFFFFFF) / float(0x7FFFFFFF)
 
 
+const _GRASS_CELL_BUDGET := 3000
+static var _grass_cursors: Dictionary = {}  # Vector2i -> {idx, transforms, x0, z0, x1, z1}
+
+static func _grass_cursor_clear(coord: Vector2i) -> void:
+	_grass_cursors.erase(coord)
+
 static func _scatter_grass(
 	zone_root: Node3D,
 	coord: Vector2i,
 	biome: StringName,
 	rng: RandomNumberGenerator,
 	height_func: Callable,
-) -> void:
+	budgeted: bool = true,
+) -> bool:
 	if not _grass_mat or not _billboard_quad_mesh:
-		return
+		return true
 	if biome != &"hearthlands":
-		return
+		return true
 
 	_ensure_height_grid(coord, height_func)
 
@@ -2209,76 +2239,108 @@ static func _scatter_grass(
 
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
-	var transforms: Array[Transform3D] = []
-
 	const GRASS_CELL := 0.46
-	var cell_x0 := int(floor(origin_x / GRASS_CELL))
-	var cell_z0 := int(floor(origin_z / GRASS_CELL))
-	var cell_x1 := int(ceil((origin_x + ZONE_SIZE) / GRASS_CELL))
-	var cell_z1 := int(ceil((origin_z + ZONE_SIZE) / GRASS_CELL))
+	var cell_x0: int
+	var cell_z0: int
+	var cell_x1: int
+	var cell_z1: int
+	var start_idx: int
+	var transforms: Array[Transform3D]
 
-	for gcz in range(cell_z0, cell_z1):
-		for gcx in range(cell_x0, cell_x1):
-			var h1 := _grass_cell_hash(gcx, gcz, 0)
-			var h2 := _grass_cell_hash(gcx, gcz, 1)
-			var h3 := _grass_cell_hash(gcx, gcz, 2)
-			var h4 := _grass_cell_hash(gcx, gcz, 3)
+	var cursor: Dictionary = _grass_cursors.get(coord, {})
+	if cursor.is_empty():
+		cell_x0 = int(floor(origin_x / GRASS_CELL))
+		cell_z0 = int(floor(origin_z / GRASS_CELL))
+		cell_x1 = int(ceil((origin_x + ZONE_SIZE) / GRASS_CELL))
+		cell_z1 = int(ceil((origin_z + ZONE_SIZE) / GRASS_CELL))
+		start_idx = 0
+		transforms = []
+	else:
+		cell_x0 = cursor["x0"]
+		cell_z0 = cursor["z0"]
+		cell_x1 = cursor["x1"]
+		cell_z1 = cursor["z1"]
+		start_idx = cursor["idx"]
+		transforms = cursor["transforms"]
 
-			var wx := (float(gcx) + 0.05 + h1 * 0.9) * GRASS_CELL
-			var wz := (float(gcz) + 0.05 + h2 * 0.9) * GRASS_CELL
-			var lx := wx - origin_x
-			var lz := wz - origin_z
+	var cols: int = cell_x1 - cell_x0
+	var total_cells: int = (cell_z1 - cell_z0) * cols
+	var budget: int = total_cells if not budgeted else _GRASS_CELL_BUDGET
+	var processed := 0
 
-			if lx < 0.0 or lx >= ZONE_SIZE or lz < 0.0 or lz >= ZONE_SIZE:
+	var i := start_idx
+	while i < total_cells and processed < budget:
+		var gcz := cell_z0 + i / cols
+		var gcx := cell_x0 + i % cols
+		i += 1
+		processed += 1
+
+		var h1 := _grass_cell_hash(gcx, gcz, 0)
+		var h2 := _grass_cell_hash(gcx, gcz, 1)
+		var h3 := _grass_cell_hash(gcx, gcz, 2)
+		var h4 := _grass_cell_hash(gcx, gcz, 3)
+
+		var wx := (float(gcx) + 0.05 + h1 * 0.9) * GRASS_CELL
+		var wz := (float(gcz) + 0.05 + h2 * 0.9) * GRASS_CELL
+		var lx := wx - origin_x
+		var lz := wz - origin_z
+
+		if lx < 0.0 or lx >= ZONE_SIZE or lz < 0.0 or lz >= ZONE_SIZE:
+			continue
+
+		_cov_grass_tested += 1
+
+		var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
+		var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
+		var rg_flags := _rg_data[rgz * _RG_RES + rgx]
+		if rg_flags & (_RG_STRUCTURE | _RG_RIVER) != 0:
+			_cov_grass_rej_rg += 1
+			continue
+
+		var h5 := _grass_cell_hash(gcx, gcz, 4)
+		var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
+		var keep := lerpf(0.88, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
+		if rg_flags & _RG_WATER != 0:
+			keep *= 0.3
+		if rg_flags & _RG_PATH != 0:
+			keep *= 0.35
+		if h5 > keep:
+			_cov_grass_rej_density += 1
+			continue
+
+		var sn := _hg_snap_and_normal(wx, wz)
+		var ground_y := sn.x
+		if ground_y < 0.1 or ground_y > 120.0:
+			_cov_grass_rej_height += 1
+			continue
+		if sn.y < 0.70:
+			_cov_grass_rej_slope += 1
+			continue
+
+		if ground_y > 25.0:
+			var altitude_thin := smoothstep(25.0, 60.0, ground_y)
+			var altitude_keep := lerpf(1.0, 0.30, altitude_thin)
+			if _grass_cell_hash(gcx, gcz, 5) > altitude_keep:
+				_cov_grass_rej_altitude += 1
 				continue
 
-			_cov_grass_tested += 1
+		_cov_grass_placed += 1
+		var scale_val := 0.4 + h3 * 0.45
+		var rot := h4 * TAU
+		var sx := 2.4 * scale_val
+		var sy := 1.96 * scale_val
+		var sz := 2.4 * scale_val
+		var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+		transforms.append(Transform3D(basis, Vector3(lx, ground_y - 0.04, lz)))
 
-			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
-			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
-			var rg_flags := _rg_data[rgz * _RG_RES + rgx]
-			if rg_flags & (_RG_STRUCTURE | _RG_RIVER) != 0:
-				_cov_grass_rej_rg += 1
-				continue
+	if i < total_cells:
+		_grass_cursors[coord] = {"idx": i, "transforms": transforms, "x0": cell_x0, "z0": cell_z0, "x1": cell_x1, "z1": cell_z1}
+		return false
 
-			var h5 := _grass_cell_hash(gcx, gcz, 4)
-			var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
-			var keep := lerpf(0.88, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
-			if rg_flags & _RG_WATER != 0:
-				keep *= 0.3
-			if rg_flags & _RG_PATH != 0:
-				keep *= 0.35
-			if h5 > keep:
-				_cov_grass_rej_density += 1
-				continue
-
-			var sn := _hg_snap_and_normal(wx, wz)
-			var ground_y := sn.x
-			if ground_y < 0.1 or ground_y > 120.0:
-				_cov_grass_rej_height += 1
-				continue
-			if sn.y < 0.70:
-				_cov_grass_rej_slope += 1
-				continue
-
-			if ground_y > 25.0:
-				var altitude_thin := smoothstep(25.0, 60.0, ground_y)
-				var altitude_keep := lerpf(1.0, 0.30, altitude_thin)
-				if _grass_cell_hash(gcx, gcz, 5) > altitude_keep:
-					_cov_grass_rej_altitude += 1
-					continue
-
-			_cov_grass_placed += 1
-			var scale_val := 0.4 + h3 * 0.45
-			var rot := h4 * TAU
-			var sx := 2.4 * scale_val
-			var sy := 1.96 * scale_val
-			var sz := 2.4 * scale_val
-			var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
-			transforms.append(Transform3D(basis, Vector3(lx, ground_y - 0.04, lz)))
+	_grass_cursors.erase(coord)
 
 	if transforms.is_empty():
-		return
+		return true
 
 	var mmi := MultiMeshInstance3D.new()
 	var mm := MultiMesh.new()
@@ -2296,6 +2358,7 @@ static func _scatter_grass(
 	mmi.visibility_range_end = 288.0
 	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	zone_root.add_child(mmi)
+	return true
 
 
 static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, cached_structures: Array = []) -> bool:
@@ -3373,22 +3436,13 @@ static func _create_rock(rng: RandomNumberGenerator) -> StaticBody3D:
 
 	var mesh_idx := rng.randi_range(0, _rock_meshes.size() - 1)
 
-	var tinted_mat := _mat_stone.duplicate()
-	var tint := Color(
-		rng.randf_range(0.88, 1.12),
-		rng.randf_range(0.88, 1.12),
-		rng.randf_range(0.88, 1.12))
-	if tinted_mat is ShaderMaterial:
-		var base_col: Color = (tinted_mat as ShaderMaterial).get_shader_parameter("stone_color")
-		(tinted_mat as ShaderMaterial).set_shader_parameter("stone_color", Color(
-			base_col.r * tint.r, base_col.g * tint.g, base_col.b * tint.b))
-	elif tinted_mat is StandardMaterial3D:
-		(tinted_mat as StandardMaterial3D).albedo_color = tint
+	var palette_idx := rng.randi_range(0, _rock_palette.size() - 1) if not _rock_palette.is_empty() else -1
+	var rock_mat: Material = _rock_palette[palette_idx] if palette_idx >= 0 else _mat_stone
 
 	var rock_mi := MeshInstance3D.new()
 	rock_mi.name = "MeshInstance3D"
 	rock_mi.mesh = _rock_meshes[mesh_idx]
-	rock_mi.set_surface_override_material(0, tinted_mat)
+	rock_mi.set_surface_override_material(0, rock_mat)
 	rock_mi.scale = Vector3(sf, sf, sf)
 	rock_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(rock_mi)

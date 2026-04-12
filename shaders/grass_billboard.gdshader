@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_disabled, diffuse_lambert_wrap;
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert_wrap;
 
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap;
 uniform vec4 albedo_color : source_color = vec4(0.25, 0.55, 0.15, 1.0);
@@ -18,24 +18,26 @@ global uniform vec3 player_world_position;
 
 varying vec3 world_pos;
 varying flat int tex_index;
-varying flat float discard_threshold;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	
-	// Extract texture index from custom data (encoded in x component)
+
+	// Instance origin for consistent per-instance random (same for all vertices)
+	vec3 inst_origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	float instance_rand = fract(inst_origin.x * 73.27 + inst_origin.z * 97.41);
+	float cam_dist = length(inst_origin - CAMERA_POSITION_WORLD);
+	float dist_factor = smoothstep(density_near, density_far, cam_dist);
+	float keep_threshold = mix(1.0, 0.3, dist_factor);
+
+	if (instance_rand > keep_threshold) {
+		VERTEX = vec3(0.0);
+		tex_index = 0;
+		return;
+	}
+
 	tex_index = int(INSTANCE_CUSTOM.x * float(atlas_columns) + 0.5);
 	tex_index = clamp(tex_index, 0, atlas_columns - 1);
-	
-	// Distance-based density reduction (Valheim-style LOD)
-	// Use per-instance random value from custom data Y for consistent culling
-	float instance_rand = fract(INSTANCE_CUSTOM.y * 12345.67 + world_pos.x * 0.123 + world_pos.z * 0.456);
-	float cam_dist = length(world_pos - CAMERA_POSITION_WORLD);
-	// Near: keep all (threshold=1.0), Far: keep 30% (threshold=0.3)
-	float dist_factor = smoothstep(density_near, density_far, cam_dist);
-	discard_threshold = mix(1.0, 0.3, dist_factor);
-	
-	// Shrink grass at distance for gradual visual fade
+
 	float scale_factor = mix(1.0, 0.55, dist_factor);
 	VERTEX *= scale_factor;
 
@@ -80,13 +82,6 @@ void vertex() {
 }
 
 void fragment() {
-	// Distance-based density culling: discard instances randomly based on distance
-	float instance_rand = fract(world_pos.x * 73.27 + world_pos.z * 97.41);
-	if (instance_rand > discard_threshold) {
-		discard;
-	}
-	
-	// Force normals upward so all faces catch sunlight uniformly
 	NORMAL = vec3(0.0, 1.0, 0.0);
 
 	// Calculate atlas UV - divide texture into columns

@@ -29,7 +29,7 @@ Oathbound/
 │   ├── player/             # Player controller, combat, building, HUD, inventory UI, workbench UI, skill system
 │   ├── creatures/          # Creature AI (host-authoritative), fish behavior
 │   ├── items/              # LootDrop (host-authoritative pickup, 60s despawn)
-│   ├── network/            # WorldStateSync, CreatureSyncManager, ChatManager
+│   ├── network/            # WorldStateSync, ChatManager
 │   ├── world/              # WorldGenerator, ZonePopulator, CaveGenerator, VillageGenerator, DayNightCycle
 │   ├── combat/             # CombatController, DamageSystem
 │   ├── building/           # Player-built structures

@@ -305,6 +305,7 @@ func _spawn_loot_replicated(loot_id: int, item_id_str: String, amount: int, star
 	if dropper_peer >= 0:
 		drop.drop_owner_peer = dropper_peer
 		drop.pickup_grace = 5.0
+	_loot_registry[loot_id] = drop
 	get_tree().current_scene.add_child(drop)
 	drop.global_position = Vector3(px, py, pz)
 
@@ -406,11 +407,12 @@ func _grant_pickup(loot_id: int, item_id_str: String, amount: int, star_level: i
 
 @rpc("authority", "reliable")
 func _remove_loot(loot_id: int) -> void:
-	for loot_node in get_tree().get_nodes_in_group(&"loot"):
-		var drop := loot_node as LootDrop
-		if drop and drop.get_meta("loot_id", -1) == loot_id:
-			drop.queue_free()
-			return
+	var drop: LootDrop = _loot_registry.get(loot_id)
+	if drop and is_instance_valid(drop):
+		_loot_registry.erase(loot_id)
+		drop.queue_free()
+		return
+	_loot_registry.erase(loot_id)
 
 
 func _remove_destroyed_object(key: String) -> void:

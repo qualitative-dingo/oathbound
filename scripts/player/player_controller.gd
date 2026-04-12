@@ -5389,7 +5389,6 @@ func _build_world_name_label(root: Control) -> void:
 func _minimap_do_zoom(delta_zoom: float) -> void:
 	_minimap_zoom = clampf(_minimap_zoom + delta_zoom, MINIMAP_ZOOM_MIN, MINIMAP_ZOOM_MAX)
 	_minimap_needs_refresh = true
-	_refresh_minimap()
 
 
 func _build_minimap(root: Control) -> void:
@@ -5820,37 +5819,6 @@ func _ensure_minimap_lut() -> void:
 				_minimap_mask_lut[idx] = 2
 
 
-var _minimap_blur_tmp: Image
-
-func _blur_minimap_image() -> void:
-	var sz := _MINIMAP_LO
-	if not _minimap_blur_tmp or _minimap_blur_tmp.get_width() != sz:
-		_minimap_blur_tmp = Image.create(sz, sz, false, Image.FORMAT_RGBA8)
-	_minimap_blur_tmp.blit_rect(_minimap_lo_image, Rect2i(0, 0, sz, sz), Vector2i.ZERO)
-	for y in range(1, sz - 1):
-		for x in range(1, sz - 1):
-			var idx := y * sz + x
-			if _minimap_mask_lut[idx] != 2:
-				continue
-			var r := 0.0
-			var g := 0.0
-			var b := 0.0
-			var a := 0.0
-			var count := 0.0
-			for dy in range(-1, 2):
-				for dx in range(-1, 2):
-					var ni := (y + dy) * sz + (x + dx)
-					if _minimap_mask_lut[ni] == 2:
-						var c := _minimap_blur_tmp.get_pixel(x + dx, y + dy)
-						r += c.r
-						g += c.g
-						b += c.b
-						a += c.a
-						count += 1.0
-			if count > 0.0:
-				_minimap_lo_image.set_pixel(x, y, Color(r / count, g / count, b / count, a / count))
-
-
 func _refresh_minimap() -> void:
 	if _in_cave:
 		return
@@ -5864,6 +5832,7 @@ func _refresh_minimap() -> void:
 	_ensure_minimap_lut()
 
 	var player_pos := wg.get_world_position(self)
+	_minimap_last_pos = global_position
 	var half_lo := _MINIMAP_LO / 2
 	var zone_size: float = wg.ZONE_SIZE
 	var water_col := Color(0.12, 0.28, 0.52)
@@ -10208,12 +10177,12 @@ func _process(delta: float) -> void:
 	if _tooltip_panel and _tooltip_panel.visible and _hud_root:
 		_tooltip_panel.position = _clamp_tooltip_pos(_hud_root.get_local_mouse_position())
 
-	# Minimap: longer interval when idle, shorter when moving
 	var _pc_tmm := Time.get_ticks_usec()
 	if not _minimap_paused:
 		_minimap_refresh_timer += delta
 		var refresh_interval := 0.25
-		if _minimap_needs_refresh or _minimap_refresh_timer >= refresh_interval:
+		var moved := global_position.distance_squared_to(_minimap_last_pos) > 4.0
+		if _minimap_needs_refresh or (moved and _minimap_refresh_timer >= refresh_interval):
 			_minimap_refresh_timer = 0.0
 			_refresh_minimap()
 	var _minimap_ms := float(Time.get_ticks_usec() - _pc_tmm) / 1000.0
@@ -10758,7 +10727,9 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 	var best_enemy: Node3D = null
 	var best_dist := INF
 
-	for node: Node in get_tree().get_nodes_in_group(&"enemies"):
+	var _cached_enemies: Array[Node] = get_tree().get_nodes_in_group(&"enemies")
+
+	for node: Node in _cached_enemies:
 		var enemy: Node3D = node as Node3D
 		if not enemy:
 			continue
@@ -10893,7 +10864,7 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 			var arc_dmg := wpn_damage * 0.4
 			var nearest: Node3D = null
 			var nearest_dist := 8.0
-			for other: Node in get_tree().get_nodes_in_group(&"enemies"):
+			for other: Node in _cached_enemies:
 				var other_3d := other as Node3D
 				if not other_3d or other_3d == enemy:
 					continue
@@ -10909,7 +10880,7 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 		# Runic AoE
 		if affixes.has(&"runic") and randf() < _affix_val(&"runic"):
 			var aoe_dmg := wpn_damage * 0.25
-			for other: Node in get_tree().get_nodes_in_group(&"enemies"):
+			for other: Node in _cached_enemies:
 				var other_3d := other as Node3D
 				if not other_3d or other_3d == enemy:
 					continue
@@ -10943,7 +10914,7 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 		# Earthshaker (mace): 12% chance for ground slam AoE
 		if affixes.has(&"earthshaker") and randf() < _affix_val(&"earthshaker"):
 			var slam_dmg := wpn_damage * 0.30
-			for aoe_node: Node in get_tree().get_nodes_in_group(&"enemies"):
+			for aoe_node: Node in _cached_enemies:
 				var aoe_e := aoe_node as Node3D
 				if not aoe_e or aoe_e == enemy:
 					continue
@@ -10960,7 +10931,7 @@ func _resolve_attack(wpn_damage: float, wpn_range: float, wpn_knockback: float, 
 		# Thunderclap (mace): 8% chance for lightning AoE
 		if affixes.has(&"thunderclap") and randf() < _affix_val(&"thunderclap"):
 			var thunder_dmg := wpn_damage * 0.25
-			for t_node: Node in get_tree().get_nodes_in_group(&"enemies"):
+			for t_node: Node in _cached_enemies:
 				var t_e := t_node as Node3D
 				if not t_e or t_e == enemy:
 					continue
@@ -11648,133 +11619,6 @@ func _check_tree_crush_player(base_pos: Vector3, fall_angle: float, trunk_h: flo
 # ===================================================================
 # INTERACT / LOOT PICKUP
 # ===================================================================
-
-func _update_interact_prompt() -> void:
-	if not _interact_prompt:
-		return
-	if _inventory_open or _workbench_open or _build_menu_open or _build_mode or _terraform_mode or _chest_open or _map_open:
-		_interact_prompt.visible = false
-		if _world_name_label:
-			_world_name_label.visible = false
-		return
-
-	# Check for nearby workbenches
-	var closest_dist := 3.5
-	var closest_name := ""
-	for wb in get_tree().get_nodes_in_group(&"workbenches"):
-		var wb3d := wb as Node3D
-		if not wb3d:
-			continue
-		var d := global_position.distance_to(wb3d.global_position)
-		if d < closest_dist:
-			closest_dist = d
-			closest_name = "Workbench"
-
-	# Check for nearby doors
-	for door in get_tree().get_nodes_in_group(&"doors"):
-		var d3d := door as Node3D
-		if not d3d:
-			continue
-		var d := global_position.distance_to(d3d.global_position)
-		if d < closest_dist:
-			closest_dist = d
-			var is_open: bool = d3d.get_meta("door_open", false)
-			closest_name = "Close Door" if is_open else "Open Door"
-
-	# Check for nearby chests
-	for ch in get_tree().get_nodes_in_group(&"chests"):
-		var ch3d := ch as Node3D
-		if not ch3d:
-			continue
-		var d := global_position.distance_to(ch3d.global_position)
-		if d < closest_dist:
-			closest_dist = d
-			closest_name = "Chest"
-
-	# Check for nearby horses/rafts (mount prompt) or show dismount
-	if _on_raft:
-		closest_name = "Dismount Raft"
-	elif _mounted:
-		closest_name = "Dismount"
-	else:
-		for horse in get_tree().get_nodes_in_group(&"horses"):
-			var h3d := horse as Node3D
-			if not h3d:
-				continue
-			var d := global_position.distance_to(h3d.global_position)
-			if d < closest_dist:
-				closest_dist = d
-				closest_name = "Mount"
-		for raft in get_tree().get_nodes_in_group(&"rafts"):
-			var r3d := raft as Node3D
-			if not r3d:
-				continue
-			var d := global_position.distance_to(r3d.global_position)
-			if d < 4.0 and d < closest_dist:
-				closest_dist = d
-				closest_name = "Board Raft"
-
-	# Show interactable name only when crosshair is aimed at it (raycast)
-	var nearest_world_name := ""
-	var cam: Camera3D = _spring_arm.get_child(0) if _spring_arm.get_child_count() > 0 else null
-	if cam and cam.is_inside_tree() and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var ray_origin := cam.global_position
-		var ray_dir := -cam.global_transform.basis.z
-		var ray_end := ray_origin + ray_dir * 20.0
-		var space := get_world_3d().direct_space_state
-		if space:
-			var q := PhysicsRayQueryParameters3D.create(ray_origin, ray_end, 4 | 32)
-			q.exclude = [get_rid()]
-			var hit := space.intersect_ray(q)
-			if not hit.is_empty():
-				var obj := hit["collider"] as Node3D
-				if obj:
-					if obj.has_meta("tree_name"):
-						nearest_world_name = obj.get_meta("tree_name") as String
-					elif obj.has_meta("rock_name"):
-						nearest_world_name = obj.get_meta("rock_name") as String
-					elif obj.has_meta("vein_name"):
-						nearest_world_name = obj.get_meta("vein_name") as String
-					elif obj.has_meta("cave_entrance"):
-						nearest_world_name = "Cave"
-					elif obj.has_meta("cave_exit"):
-						nearest_world_name = "Exit"
-
-	# Cave entrance / exit prompt
-	if not _in_cave:
-		for ce in get_tree().get_nodes_in_group(&"cave_entrances"):
-			var ce3d := ce as Node3D
-			if not ce3d:
-				continue
-			var d := global_position.distance_to(ce3d.global_position)
-			if d < 4.0 and d < closest_dist:
-				closest_dist = d
-				closest_name = "Enter Cave"
-	else:
-		for node in get_tree().get_nodes_in_group(&"interactables"):
-			var n3d := node as Node3D
-			if not n3d or not n3d.has_meta("cave_exit"):
-				continue
-			var d := global_position.distance_to(n3d.global_position)
-			if d < 4.0 and d < closest_dist:
-				closest_dist = d
-				closest_name = "Exit Cave"
-
-	if closest_name != "":
-		_interact_prompt.text = "[E] %s" % closest_name
-		_interact_prompt.visible = true
-	else:
-		_interact_prompt.visible = false
-
-	if _world_name_label:
-		if nearest_world_name != "" and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-			_world_name_label.text = nearest_world_name
-			_world_name_label.visible = true
-			var vp_center := get_viewport().get_visible_rect().size * 0.5
-			_world_name_label.position = vp_center + Vector2(18, 16)
-		else:
-			_world_name_label.visible = false
-
 
 func _try_interact() -> void:
 	# Dismount raft
