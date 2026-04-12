@@ -1244,6 +1244,8 @@ func _on_inventory_changed() -> void:
 	else:
 		var new_weapon: StringName = Inventory.get_equipped("sword")
 		if new_weapon == &"":
+			new_weapon = Inventory.get_equipped("weapon")
+		if new_weapon == &"":
 			new_weapon = &"fists"
 		if new_weapon != equipped_weapon:
 			equipped_weapon = new_weapon
@@ -1474,8 +1476,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				_update_equipped_weapon_model()
 			elif slot_data.has("armor_slot") and str(slot_data["armor_slot"]) == "weapon":
 				Inventory.equip_armor(slot_item)
+				equipped_weapon = slot_item
+				_update_equipped_weapon_model()
 			else:
 				var new_weapon: StringName = Inventory.get_equipped("sword")
+				if new_weapon == &"":
+					new_weapon = Inventory.get_equipped("weapon")
 				if new_weapon == &"":
 					new_weapon = &"fists"
 				equipped_weapon = new_weapon
