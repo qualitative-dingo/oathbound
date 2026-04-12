@@ -186,6 +186,11 @@ static var _cov_grass_tested := 0
 static var _cov_grass_placed := 0
 static var _cov_flower_tested := 0
 static var _cov_flower_placed := 0
+static var _cov_grass_rej_rg := 0
+static var _cov_grass_rej_density := 0
+static var _cov_grass_rej_height := 0
+static var _cov_grass_rej_slope := 0
+static var _cov_grass_rej_altitude := 0
 
 static func get_coverage_stats() -> Dictionary:
 	var g_pct := 100.0 * _cov_grass_placed / maxf(_cov_grass_tested, 1) as float
@@ -193,6 +198,9 @@ static func get_coverage_stats() -> Dictionary:
 	return {
 		"grass_tested": _cov_grass_tested, "grass_placed": _cov_grass_placed, "grass_pct": g_pct,
 		"flower_tested": _cov_flower_tested, "flower_placed": _cov_flower_placed, "flower_pct": f_pct,
+		"rej_rg": _cov_grass_rej_rg, "rej_density": _cov_grass_rej_density,
+		"rej_height": _cov_grass_rej_height, "rej_slope": _cov_grass_rej_slope,
+		"rej_altitude": _cov_grass_rej_altitude,
 	}
 
 static func reset_coverage_stats() -> void:
@@ -200,6 +208,11 @@ static func reset_coverage_stats() -> void:
 	_cov_grass_placed = 0
 	_cov_flower_tested = 0
 	_cov_flower_placed = 0
+	_cov_grass_rej_rg = 0
+	_cov_grass_rej_density = 0
+	_cov_grass_rej_height = 0
+	_cov_grass_rej_slope = 0
+	_cov_grass_rej_altitude = 0
 
 static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: float) -> void:
 	if coord == _rg_coord:
@@ -2225,6 +2238,7 @@ static func _scatter_grass(
 			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
 			var rg_flags := _rg_data[rgz * _RG_RES + rgx]
 			if rg_flags & (_RG_STRUCTURE | _RG_RIVER | _RG_WATER) != 0:
+				_cov_grass_rej_rg += 1
 				continue
 
 			var h5 := _grass_cell_hash(gcx, gcz, 4)
@@ -2233,19 +2247,23 @@ static func _scatter_grass(
 			if rg_flags & _RG_PATH != 0:
 				keep *= 0.35
 			if h5 > keep:
+				_cov_grass_rej_density += 1
 				continue
 
 			var sn := _hg_snap_and_normal(wx, wz)
 			var ground_y := sn.x
 			if ground_y < 0.1 or ground_y > 120.0:
+				_cov_grass_rej_height += 1
 				continue
 			if sn.y < 0.70:
+				_cov_grass_rej_slope += 1
 				continue
 
 			if ground_y > 25.0:
 				var altitude_thin := smoothstep(25.0, 60.0, ground_y)
 				var altitude_keep := lerpf(1.0, 0.30, altitude_thin)
 				if _grass_cell_hash(gcx, gcz, 5) > altitude_keep:
+					_cov_grass_rej_altitude += 1
 					continue
 
 			_cov_grass_placed += 1
