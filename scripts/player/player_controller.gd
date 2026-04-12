@@ -4706,7 +4706,8 @@ func _on_creature_killed_speech(creature_pos: Vector3) -> void:
 func _on_day_night_changed(is_day: bool) -> void:
 	if is_day:
 		_day_count += 1
-		_show_day_banner()
+		_show_speech(_LINES_FIRST_LIGHT, &"first_light")
+		get_tree().create_timer(2.0).timeout.connect(_show_day_banner)
 
 
 func _show_day_banner() -> void:
