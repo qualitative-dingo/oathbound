@@ -5876,6 +5876,9 @@ func _refresh_minimap() -> void:
 	var water_col := Color(0.12, 0.28, 0.52)
 	var water_shallow := Color(0.18, 0.38, 0.55)
 	var transparent := Color(0, 0, 0, 0)
+	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
+	var explored: Dictionary = wg._explored_zones
+	var no_fog := equipped_weapon == &"god_axe" or Inventory.is_equipped(&"god_axe")
 
 	var world_radius_map := _minimap_zoom * zone_size
 	var meters_per_lo_pixel := world_radius_map / float(half_lo)
@@ -5895,6 +5898,11 @@ func _refresh_minimap() -> void:
 
 			var world_x := player_pos.x + float(lx - half_lo) * meters_per_lo_pixel
 			var world_z := player_pos.z + float(ly - half_lo) * meters_per_lo_pixel
+
+			var zone_coord := Vector2i(floori(world_x / zone_size), floori(world_z / zone_size))
+			if not no_fog and not explored.has(zone_coord):
+				_minimap_lo_image.set_pixel(lx, ly, unexplored)
+				continue
 
 			var h := wg.get_height_at(world_x, world_z)
 			var col: Color
@@ -9102,7 +9110,7 @@ func _refresh_map() -> void:
 	var water_shallow := Color(0.18, 0.38, 0.55)
 	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
 	var wmap_biome_cache: Dictionary = {}
-	var no_fog := equipped_weapon == &"god_axe"
+	var no_fog := equipped_weapon == &"god_axe" or Inventory.is_equipped(&"god_axe")
 
 	for py in range(0, MAP_PX):
 		for px in range(0, MAP_PX):
