@@ -4456,7 +4456,9 @@ func _build_speech_bubble(root: Control) -> void:
 	_speech_label.add_theme_constant_override("shadow_offset_y", 1)
 	_speech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_speech_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_speech_label.max_lines_visible = 3
 	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_speech_panel.clip_contents = true
 	_speech_panel.add_child(_speech_label)
 
 	root.add_child(_speech_panel)
@@ -4485,14 +4487,15 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	var msg := str(lines[idx])
 	_speech_label.text = "\" " + msg + " \""
 
-	var max_w := get_viewport().get_visible_rect().size.x * 0.45
+	var vp_size := get_viewport().get_visible_rect().size
+	var max_w := vp_size.x * 0.45
 	var label_w := max_w
 	if _speech_label.get_theme_font("font"):
 		var f: Font = _speech_label.get_theme_font("font")
 		var fs: int = _speech_label.get_theme_font_size("font_size")
 		var text_w := f.get_string_size(_speech_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		label_w = minf(text_w + 4.0, max_w)
-	_speech_label.custom_minimum_size.x = label_w
+		label_w = clampf(text_w + 4.0, 100.0, max_w)
+	_speech_label.custom_minimum_size = Vector2(label_w, 0.0)
 	_speech_panel.size = Vector2.ZERO
 
 	var has_voice := false
@@ -4562,9 +4565,12 @@ func _update_speech_position() -> void:
 		return
 	var screen_pos := cam.unproject_position(head_world)
 	var panel_size := _speech_panel.size
-	_speech_panel.position = Vector2(
-		screen_pos.x - panel_size.x * 0.5,
-		screen_pos.y - panel_size.y - 12.0)
+	if panel_size.x < 1.0 or panel_size.y < 1.0:
+		return
+	var vp_rect := get_viewport().get_visible_rect().size
+	var px := clampf(screen_pos.x - panel_size.x * 0.5, 4.0, vp_rect.x - panel_size.x - 4.0)
+	var py := clampf(screen_pos.y - panel_size.y - 12.0, 4.0, vp_rect.y - panel_size.y - 4.0)
+	_speech_panel.position = Vector2(px, py)
 
 
 func _check_speech_triggers(delta: float) -> void:
