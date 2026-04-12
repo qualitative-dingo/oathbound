@@ -234,7 +234,7 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 				flags |= _RG_PATH
 			if wg and wg.has_method("_ws_sample_accum"):
 				var accum: float = wg._ws_sample_accum(wx, wz)
-				if accum > 1.5:
+				if accum > 2.0:
 					flags |= _RG_WATER
 				if accum >= 2.5:
 					flags |= _RG_RIVER
@@ -2237,13 +2237,15 @@ static func _scatter_grass(
 			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
 			var rg_flags := _rg_data[rgz * _RG_RES + rgx]
-			if rg_flags & (_RG_STRUCTURE | _RG_RIVER | _RG_WATER) != 0:
+			if rg_flags & (_RG_STRUCTURE | _RG_RIVER) != 0:
 				_cov_grass_rej_rg += 1
 				continue
 
 			var h5 := _grass_cell_hash(gcx, gcz, 4)
 			var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
 			var keep := lerpf(0.78, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
+			if rg_flags & _RG_WATER != 0:
+				keep *= 0.3
 			if rg_flags & _RG_PATH != 0:
 				keep *= 0.35
 			if h5 > keep:
