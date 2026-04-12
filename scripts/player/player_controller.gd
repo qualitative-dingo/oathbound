@@ -423,6 +423,8 @@ var _map_texture_rect: TextureRect
 var _map_image: Image
 var _map_image_tex: ImageTexture
 var _map_circle_mask: Image
+var _map_mask_bytes: PackedByteArray
+var _map_zone_color_cache: Dictionary = {}
 var _map_dirty := true
 var _map_last_player_pos := Vector3.ZERO
 var _map_refresh_timer := 0.0
@@ -9087,14 +9089,14 @@ func _build_circle_mask() -> void:
 				_map_circle_mask.set_pixel(x, y, Color(1.0, 1.0, 1.0, t * 0.15 + 0.85))
 			else:
 				_map_circle_mask.set_pixel(x, y, Color(1.0, 1.0, 1.0, 1.0))
+	_map_mask_bytes = _map_circle_mask.get_data()
 
 
 func _refresh_map() -> void:
 	if not _map_panel or not _map_image or not _map_texture_rect:
 		return
-
-	var transparent := Color(0, 0, 0, 0)
-	_map_image.fill(transparent)
+	if _map_mask_bytes.is_empty():
+		return
 
 	var wg := _find_world_generator()
 	if not wg:
@@ -9107,7 +9109,6 @@ func _refresh_map() -> void:
 	var center_zone: Vector2i = wg.world_to_zone(player_pos)
 	var half_px := MAP_PX / 2
 	var explored: Dictionary = wg._explored_zones
-	var cache: Dictionary = wg._zone_biome_cache
 	var zone_size: float = wg.ZONE_SIZE
 
 	if _map_biome_label:
@@ -9121,21 +9122,34 @@ func _refresh_map() -> void:
 	var zones_per_pixel: float = _map_zoom / float(half_px)
 	var water_col := Color(0.12, 0.28, 0.52)
 	var water_shallow := Color(0.18, 0.38, 0.55)
-	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
-	var wmap_biome_cache: Dictionary = {}
 	var wpn_base: StringName = ItemDatabase.parse_star_id(equipped_weapon).get("base_id", &"") as StringName
 	var inv_wpn := Inventory.get_equipped("weapon")
 	var inv_base: StringName = ItemDatabase.parse_star_id(inv_wpn).get("base_id", &"") as StringName if inv_wpn != &"" else &""
 	var no_fog := wpn_base == &"god_axe" or inv_base == &"god_axe"
 
-	for py in range(0, MAP_PX):
-		for px in range(0, MAP_PX):
-			var mask_pixel := _map_circle_mask.get_pixel(px, py)
-			if mask_pixel.a < 0.01:
+	var unx_r := 20
+	var unx_g := 20
+	var unx_b := 26
+	var mask_bytes := _map_mask_bytes
+	var out := PackedByteArray()
+	out.resize(MAP_PX * MAP_PX * 4)
+	var zcache := _map_zone_color_cache
+
+	for py in MAP_PX:
+		for px in MAP_PX:
+			var bi := (py * MAP_PX + px) * 4
+			var ma := mask_bytes[bi + 3]
+
+			if ma < 3:
 				continue
 
-			if mask_pixel.r < 0.9 and mask_pixel.g < 0.9 and mask_pixel.a > 0.5 and (mask_pixel.r > 0.05 or mask_pixel.g > 0.05):
-				_map_image.set_pixel(px, py, Color(mask_pixel.r, mask_pixel.g, mask_pixel.b, mask_pixel.a))
+			var mr := mask_bytes[bi]
+			var mg := mask_bytes[bi + 1]
+			if mr < 230 and mg < 230 and ma > 128 and (mr > 13 or mg > 13):
+				out[bi] = mr
+				out[bi + 1] = mg
+				out[bi + 2] = mask_bytes[bi + 2]
+				out[bi + 3] = ma
 				continue
 
 			var zone_fx: float = float(px - half_px) * zones_per_pixel
@@ -9144,25 +9158,37 @@ func _refresh_map() -> void:
 				center_zone.x + floori(zone_fx),
 				center_zone.y + floori(zone_fz))
 
-			var col: Color
 			if no_fog or explored.has(zone_coord):
-				var world_x := player_pos.x + zone_fx * zone_size
-				var world_z := player_pos.z + zone_fz * zone_size
-				var zh := wg.get_height_at(world_x, world_z)
-				if zh < wg.WATER_LEVEL:
-					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
-					col = water_shallow.lerp(water_col, depth)
-				else:
-					col = _get_blended_biome_color(world_x, world_z, zh, zone_size, wg, wmap_biome_cache)
-					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
-					col = Color(
-						clampf(col.r * bright, 0.0, 1.0),
-						clampf(col.g * bright, 0.0, 1.0),
-						clampf(col.b * bright, 0.0, 1.0))
+				if not zcache.has(zone_coord):
+					var zx_w := (float(zone_coord.x) + 0.5) * zone_size
+					var zz_w := (float(zone_coord.y) + 0.5) * zone_size
+					var zh := wg.get_height_at(zx_w, zz_w)
+					var zcol: Color
+					if zh < wg.WATER_LEVEL:
+						var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
+						zcol = water_shallow.lerp(water_col, depth)
+					else:
+						var biome: StringName = wg._determine_biome(zone_coord)
+						var micro: StringName = wg.get_microbiome_at_zone(zone_coord)
+						zcol = _biome_map_color(biome, micro, zh)
+						var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
+						zcol = Color(
+							clampf(zcol.r * bright, 0.0, 1.0),
+							clampf(zcol.g * bright, 0.0, 1.0),
+							clampf(zcol.b * bright, 0.0, 1.0))
+					zcache[zone_coord] = zcol
+				var c: Color = zcache[zone_coord]
+				out[bi] = int(c.r * 255.0)
+				out[bi + 1] = int(c.g * 255.0)
+				out[bi + 2] = int(c.b * 255.0)
+				out[bi + 3] = 255
 			else:
-				col = unexplored
+				out[bi] = unx_r
+				out[bi + 1] = unx_g
+				out[bi + 2] = unx_b
+				out[bi + 3] = 255
 
-			_map_image.set_pixel(px, py, col)
+	_map_image.set_data(MAP_PX, MAP_PX, false, Image.FORMAT_RGBA8, out)
 
 	# -- Structure markers --
 	_draw_structure_markers(half_px, zones_per_pixel, zone_size, wg)
@@ -9222,7 +9248,11 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 
 	if wg and wg.has_method("get_signpost_positions"):
 		var sp_positions: Array = wg.get_signpost_positions()
+		var explored_zones: Dictionary = wg._explored_zones
 		for sp_world: Vector3 in sp_positions:
+			var sp_zone := wg.world_to_zone(sp_world)
+			if not explored_zones.has(sp_zone):
+				continue
 			var sp_scene: Vector3 = wg.world_to_scene_pos(sp_world)
 			_draw_map_exclamation(sp_scene, signpost_col, half_px, zones_per_pixel, zone_size)
 
@@ -10208,11 +10238,11 @@ func _process(delta: float) -> void:
 
 	if _map_open:
 		_map_fog_time += delta
-		var moved := global_position.distance_squared_to(_map_last_player_pos) > 0.5
+		var moved := global_position.distance_squared_to(_map_last_player_pos) > 4.0
 		_map_refresh_timer += delta
-		var periodic := _map_refresh_timer >= 0.5
+		var periodic := _map_refresh_timer >= 1.0
 		var needs_refresh := _map_dirty or moved or periodic
-		if needs_refresh and _map_refresh_timer >= 0.05:
+		if needs_refresh and _map_refresh_timer >= 0.15:
 			_map_last_player_pos = global_position
 			_map_refresh_timer = 0.0
 			_refresh_map()
