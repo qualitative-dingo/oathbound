@@ -1679,6 +1679,11 @@ func _stamp_creek_bed() -> void:
 						var cell_wz := (float(cz) + 0.5) * _CREEK_BED_CELL
 						if cell_wx * cell_wx + cell_wz * cell_wz < 2500.0:
 							continue
+						if _tavern_world_pos.y > 0.0:
+							var t_cdx := cell_wx - _tavern_world_pos.x
+							var t_cdz := cell_wz - _tavern_world_pos.z
+							if t_cdx * t_cdx + t_cdz * t_cdz < _TAVERN_FLAT_RADIUS * _TAVERN_FLAT_RADIUS:
+								continue
 						var dx := cell_wx - p.x
 						var dz := cell_wz - p.z
 						var dist_sq := dx * dx + dz * dz
@@ -2013,6 +2018,15 @@ func get_height_at(x: float, z: float) -> float:
 		var flatten := 1.0 - smoothstep(35.0, 80.0, center_dist)
 		h = lerpf(h, 2.0, flatten)
 
+	# Flatten terrain under the tavern so it sits on level ground
+	if _tavern_world_pos.y > 0.0:
+		var tdx := x - _tavern_world_pos.x
+		var tdz := z - _tavern_world_pos.z
+		var tavern_dist := sqrt(tdx * tdx + tdz * tdz)
+		if tavern_dist < _TAVERN_FADE_RADIUS:
+			var t_flat := 1.0 - smoothstep(_TAVERN_FLAT_RADIUS, _TAVERN_FADE_RADIUS, tavern_dist)
+			h = lerpf(h, _tavern_world_pos.y, t_flat)
+
 	return h
 
 
@@ -2236,6 +2250,10 @@ func _compute_marrow_positions() -> void:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 func _generate_spawn_area() -> void:
+	# Find tavern position BEFORE building zone meshes so get_height_at
+	# can flatten terrain under the tavern during mesh generation.
+	_find_tavern_position()
+
 	var spawn_zone := world_to_zone(Vector3.ZERO)
 	for x in range(spawn_zone.x - 1, spawn_zone.x + 2):
 		for z in range(spawn_zone.y - 1, spawn_zone.y + 2):
@@ -2361,16 +2379,67 @@ func _spawn_starter_goblins() -> void:
 	print("[WORLD] Spawned %d starter goblins near (%.0f, %.0f)" % [spawned, center_x, center_z])
 
 
+const _TAVERN_FLAT_RADIUS := 38.0
+const _TAVERN_FADE_RADIUS := 50.0
+
+func _find_tavern_position() -> void:
+	var best_wx := 48.0
+	var best_wz := 10.0
+	var best_score := -999.0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _seed_hash + 77777
+	for attempt in 60:
+		var angle := rng.randf_range(0.0, TAU)
+		var dist := rng.randf_range(40.0, 70.0)
+		var wx := cos(angle) * dist
+		var wz := sin(angle) * dist
+		var h := get_height_at(wx, wz)
+		if h < WATER_LEVEL + 1.5 or h > 15.0:
+			continue
+		var accum := _ws_sample_accum(wx, wz)
+		if accum > 1.0:
+			continue
+		var flat_ok := true
+		var h_sum := h
+		var h_count := 1
+		for si in 8:
+			var sa := float(si) * TAU / 8.0
+			for sr in [12.0, 24.0]:
+				var sh := get_height_at(wx + cos(sa) * sr, wz + sin(sa) * sr)
+				h_sum += sh
+				h_count += 1
+				if absf(sh - h) > 2.5:
+					flat_ok = false
+				var sa_accum := _ws_sample_accum(wx + cos(sa) * sr, wz + sin(sa) * sr)
+				if sa_accum > 1.5:
+					flat_ok = false
+		if not flat_ok:
+			continue
+		var avg_h := h_sum / float(h_count)
+		var score := avg_h - absf(h - avg_h) * 5.0
+		if score > best_score:
+			best_score = score
+			best_wx = wx
+			best_wz = wz
+	var base_h := maxf(get_height_at(best_wx, best_wz), 2.0)
+	_tavern_world_pos = Vector3(best_wx, base_h, best_wz)
+	print("[TAVERN] Selected position (%.1f, %.1f) h=%.1f score=%.1f" % [best_wx, best_wz, base_h, best_score])
+
+
 func _register_tavern_exclusion() -> void:
-	_ZonePopulator._forced_exclusion_circles.append([48.0, 10.0, 40.0])
+	if _tavern_world_pos == Vector3.ZERO:
+		return
+	_ZonePopulator._forced_exclusion_circles.append([
+		_tavern_world_pos.x, _tavern_world_pos.z, _TAVERN_FLAT_RADIUS + 2.0])
 
 
 func _spawn_tavern() -> void:
-	var tavern_wx := 48.0
-	var tavern_wz := 10.0
+	if _tavern_world_pos == Vector3.ZERO:
+		print("[TAVERN] No valid position found")
+		return
+	var tavern_wx := _tavern_world_pos.x
+	var tavern_wz := _tavern_world_pos.z
 	var tavern_h := get_height_at(tavern_wx, tavern_wz)
-	if tavern_h < 0.5:
-		tavern_h = 2.0
 
 	var spawn_zone := world_to_zone(Vector3(tavern_wx, 0.0, tavern_wz))
 	var zone_root: Node3D = _loaded_zones.get(spawn_zone, null)
@@ -2383,11 +2452,10 @@ func _spawn_tavern() -> void:
 
 	var tavern := _ZonePopulator.build_tavern(
 		zone_root, tavern_wx, tavern_wz, tavern_h)
-	# Lower by floor thickness (0.75) so the floor top sits flush with terrain
 	tavern.position = Vector3(tavern_wx - zone_origin_x, tavern_h - 0.75, tavern_wz - zone_origin_z)
 
 	_tavern_world_pos = Vector3(tavern_wx, tavern_h, tavern_wz)
-	print("[TAVERN] Placed at world (%.0f, %.1f, %.0f)" % [tavern_wx, tavern_h, tavern_wz])
+	print("[TAVERN] Placed at world (%.1f, %.1f, %.1f)" % [tavern_wx, tavern_h, tavern_wz])
 
 
 var _max_loaded_zones: int = 50
