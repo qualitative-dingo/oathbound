@@ -9089,6 +9089,7 @@ func _refresh_map() -> void:
 	var water_shallow := Color(0.18, 0.38, 0.55)
 	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
 	var wmap_biome_cache: Dictionary = {}
+	var no_fog := equipped_weapon == &"god_axe"
 
 	for py in range(0, MAP_PX):
 		for px in range(0, MAP_PX):
@@ -9107,7 +9108,7 @@ func _refresh_map() -> void:
 				center_zone.y + floori(zone_fz))
 
 			var col: Color
-			if explored.has(zone_coord):
+			if no_fog or explored.has(zone_coord):
 				var world_x := player_pos.x + zone_fx * zone_size
 				var world_z := player_pos.z + zone_fz * zone_size
 				var zh := wg.get_height_at(world_x, world_z)
