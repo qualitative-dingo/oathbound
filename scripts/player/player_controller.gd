@@ -4588,7 +4588,7 @@ func _check_speech_triggers(delta: float) -> void:
 	# 2. First light greeting: hour transitions to 6
 	if dnc and dnc.has_method("get_hour"):
 		var hour: int = dnc.get_hour()
-		if _speech_last_hour >= 0 and _speech_last_hour < 5 and hour >= 5:
+		if _speech_last_hour >= 0 and _speech_last_hour < 6 and hour >= 6:
 			_show_speech(_LINES_FIRST_LIGHT, &"first_light")
 		_speech_last_hour = hour
 
@@ -5654,6 +5654,75 @@ func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, hal
 			img.set_pixel(px_x, oy, fill)
 	if px_x >= 0 and px_x < sz and dot_y >= 0 and dot_y < sz:
 		img.set_pixel(px_x, dot_y, fill)
+
+
+func _generate_arrow_texture(sz: int) -> ImageTexture:
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var half := float(sz) / 2.0
+	var border_col := Color(0.08, 0.04, 0.0, 1.0)
+	var fill_outer := Color(0.82, 0.55, 0.12, 1.0)
+	var fill_inner := Color(1.0, 0.88, 0.35, 1.0)
+	var highlight := Color(1.0, 0.97, 0.80, 1.0)
+
+	# Chevron vertices (pointing up, 0 = top center)
+	var tip_y := 3.0
+	var base_y := float(sz) - 5.0
+	var notch_y := base_y - 7.0
+	var wing_w := 7.0
+
+	for y in sz:
+		for x in sz:
+			var fx := float(x) - half
+			var fy := float(y) - tip_y
+			var total_h := base_y - tip_y
+			var t := clampf(fy / total_h, 0.0, 1.0)
+			var cur_w := wing_w * t
+
+			var in_left := fx >= -cur_w and fx <= 0.0
+			var in_right := fx <= cur_w and fx >= 0.0
+
+			if not (in_left or in_right):
+				continue
+
+			# Cut the notch from the bottom
+			if float(y) > notch_y:
+				var notch_h := base_y - notch_y
+				var nt := clampf((float(y) - notch_y) / notch_h, 0.0, 1.0)
+				var notch_half_w := wing_w * (1.0 - nt * 0.75)
+				if absf(fx) < notch_half_w * (1.0 - nt):
+					continue
+
+			# Distance from edges for border/gradient
+			var edge_dist := minf(absf(fx + cur_w), absf(fx - cur_w)) if (in_left and in_right) else (cur_w - absf(fx))
+			var top_dist := fy
+			var min_dist := minf(edge_dist, top_dist)
+			min_dist = minf(min_dist, base_y - float(y))
+
+			# Anti-aliased border (1.5px)
+			if min_dist < 1.5:
+				var ba := clampf(min_dist / 1.5, 0.0, 1.0)
+				if min_dist < 0.5:
+					img.set_pixel(x, y, Color(border_col.r, border_col.g, border_col.b, clampf(min_dist + 0.5, 0.0, 1.0)))
+				else:
+					img.set_pixel(x, y, border_col.lerp(fill_outer, (min_dist - 0.5) / 1.0))
+				continue
+
+			# Center highlight along vertical axis
+			var center_t := 1.0 - clampf(absf(fx) / maxf(cur_w * 0.4, 0.01), 0.0, 1.0)
+			center_t = center_t * center_t
+			var col := fill_outer.lerp(fill_inner, center_t * 0.7)
+
+			# Bright specular line down the center
+			if absf(fx) < 1.2:
+				var spec_t := 1.0 - absf(fx) / 1.2
+				col = col.lerp(highlight, spec_t * 0.6 * (1.0 - t * 0.3))
+
+			# Subtle vertical gradient (brighter at tip)
+			col = col.lerp(fill_outer.darkened(0.15), t * 0.3)
+
+			img.set_pixel(x, y, col)
+	return ImageTexture.create_from_image(img)
 
 
 const _MINIMAP_LO := 60  # 180 / 3 — balanced quality vs performance
@@ -10032,6 +10101,12 @@ func _process(delta: float) -> void:
 			_refresh_minimap()
 	var _minimap_ms := float(Time.get_ticks_usec() - _pc_tmm) / 1000.0
 	_pc_proc_max_minimap = maxf(_pc_proc_max_minimap, _minimap_ms)
+
+	if _minimap_arrow_rect and _spring_arm and _spring_arm.get_child_count() > 0:
+		var cam := _spring_arm.get_child(0) as Camera3D
+		if cam:
+			var fwd := -cam.global_transform.basis.z
+			_minimap_arrow_rect.rotation = atan2(fwd.x, -fwd.z)
 
 	if _map_open:
 		_map_fog_time += delta
