@@ -425,7 +425,6 @@ var _map_circle_mask: Image
 var _map_dirty := true
 var _map_last_player_pos := Vector3.ZERO
 var _map_refresh_timer := 0.0
-var _map_rendered_zoom: float = 40.0
 var _map_fog_time := 0.0
 var _map_fog_noise: FastNoiseLite
 
@@ -1445,15 +1444,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				_build_rotation += deg_to_rad(15.0)
 			return
 
-	# Map zoom with scroll wheel - smooth target, no instant rebuild
 	if _map_open and event is InputEventMouseButton and event.pressed:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_map_zoom_target = clampf(_map_zoom_target - MAP_ZOOM_STEP, MAP_ZOOM_MIN, MAP_ZOOM_MAX)
+			_map_zoom = _map_zoom_target
 			_map_dirty = true
 			return
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_map_zoom_target = clampf(_map_zoom_target + MAP_ZOOM_STEP, MAP_ZOOM_MIN, MAP_ZOOM_MAX)
+			_map_zoom = _map_zoom_target
 			_map_dirty = true
 			return
 
@@ -4300,12 +4300,9 @@ func _toggle_map() -> void:
 	_map_open = not _map_open
 	if _map_open:
 		_map_zoom = _map_zoom_target
-		_map_rendered_zoom = _map_zoom
 		_map_dirty = true
 		if _map_panel:
 			_map_panel.visible = true
-		if _map_texture_rect:
-			_map_texture_rect.scale = Vector2.ONE
 		_refresh_map()
 		_map_dirty = false
 	else:
@@ -5866,9 +5863,6 @@ func _refresh_minimap() -> void:
 	var water_col := Color(0.12, 0.28, 0.52)
 	var water_shallow := Color(0.18, 0.38, 0.55)
 	var transparent := Color(0, 0, 0, 0)
-	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
-	var explored: Dictionary = wg._explored_zones
-	var no_fog := equipped_weapon == &"god_axe" or Inventory.is_equipped(&"god_axe")
 
 	var world_radius_map := _minimap_zoom * zone_size
 	var meters_per_lo_pixel := world_radius_map / float(half_lo)
@@ -5888,11 +5882,6 @@ func _refresh_minimap() -> void:
 
 			var world_x := player_pos.x + float(lx - half_lo) * meters_per_lo_pixel
 			var world_z := player_pos.z + float(ly - half_lo) * meters_per_lo_pixel
-
-			var zone_coord := Vector2i(floori(world_x / zone_size), floori(world_z / zone_size))
-			if not no_fog and not explored.has(zone_coord):
-				_minimap_lo_image.set_pixel(lx, ly, unexplored)
-				continue
 
 			var h := wg.get_height_at(world_x, world_z)
 			var col: Color
@@ -8990,7 +8979,6 @@ func _build_map_panel(root: Control) -> void:
 	var map_container := Control.new()
 	map_container.name = "MapContainer"
 	map_container.custom_minimum_size = Vector2(MAP_PX, MAP_PX)
-	map_container.clip_contents = true
 	map_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	_map_texture_rect = TextureRect.new()
@@ -9001,7 +8989,6 @@ func _build_map_panel(root: Control) -> void:
 	_map_texture_rect.stretch_mode = TextureRect.STRETCH_SCALE
 	_map_texture_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_map_texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_texture_rect.pivot_offset = Vector2(MAP_PX / 2.0, MAP_PX / 2.0)
 	map_container.add_child(_map_texture_rect)
 
 	_add_compass_label(map_container, "N", Vector2(MAP_PX * 0.5 - 4, 10), Color(0.95, 0.85, 0.5))
@@ -10190,27 +10177,15 @@ func _process(delta: float) -> void:
 
 	if _map_open:
 		_map_fog_time += delta
-		_map_zoom = lerpf(_map_zoom, _map_zoom_target, clampf(MAP_ZOOM_SPEED * delta, 0.0, 1.0))
-		if absf(_map_zoom - _map_zoom_target) < 0.01:
-			_map_zoom = _map_zoom_target
-
-		if _map_texture_rect and _map_rendered_zoom > 0.001:
-			var vis_ratio := _map_rendered_zoom / _map_zoom
-			_map_texture_rect.scale = Vector2(vis_ratio, vis_ratio)
-
 		var moved := global_position.distance_squared_to(_map_last_player_pos) > 0.5
 		_map_refresh_timer += delta
 		var periodic := _map_refresh_timer >= 0.5
-		var scale_drift := absf(_map_rendered_zoom / maxf(_map_zoom, 0.01) - 1.0) > 0.12
-		var needs_refresh := _map_dirty or moved or periodic or scale_drift
-		if needs_refresh and _map_refresh_timer >= 0.15:
+		var needs_refresh := _map_dirty or moved or periodic
+		if needs_refresh and _map_refresh_timer >= 0.05:
 			_map_last_player_pos = global_position
 			_map_refresh_timer = 0.0
 			_refresh_map()
 			_map_dirty = false
-			_map_rendered_zoom = _map_zoom
-			if _map_texture_rect:
-				_map_texture_rect.scale = Vector2.ONE
 
 	var _pc_total_ms := float(Time.get_ticks_usec() - _pc_t0) / 1000.0
 	_pc_proc_max_total = maxf(_pc_proc_max_total, _pc_total_ms)
