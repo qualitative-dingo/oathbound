@@ -2307,18 +2307,18 @@ static func _scatter_grass(
 		var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 		var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
 		var rg_flags := _rg_data[rgz * _RG_RES + rgx]
-		if rg_flags & (_RG_STRUCTURE | _RG_RIVER) != 0:
+		if rg_flags & _RG_STRUCTURE != 0:
 			_cov_grass_rej_rg += 1
-			if rg_flags & _RG_STRUCTURE != 0:
-				_cov_grass_rej_struct += 1
-			else:
-				_cov_grass_rej_river += 1
+			_cov_grass_rej_struct += 1
 			continue
 
 		var h5 := _grass_cell_hash(gcx, gcz, 4)
 		var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
 		var keep := lerpf(0.88, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
-		if rg_flags & _RG_WATER != 0:
+		if rg_flags & _RG_RIVER != 0:
+			keep *= 0.15
+			_cov_grass_rej_river += 1
+		elif rg_flags & _RG_WATER != 0:
 			keep *= 0.3
 		if rg_flags & _RG_PATH != 0:
 			keep *= 0.35
@@ -2458,8 +2458,11 @@ static func _scatter_blueberry_bushes(
 		var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 		var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
 		var rg_flags := _rg_data[rgz * _RG_RES + rgx]
-		if rg_flags & (_RG_STRUCTURE | _RG_RIVER | _RG_WATER) != 0:
+		if rg_flags & _RG_STRUCTURE != 0:
 			continue
+		if rg_flags & (_RG_RIVER | _RG_WATER) != 0:
+			if rng.randf() > 0.2:
+				continue
 		var sn := _hg_snap_and_normal(wx, wz)
 		var ground_y := sn.x
 		if ground_y < _MIN_LAND_Y or ground_y > 20.0:
