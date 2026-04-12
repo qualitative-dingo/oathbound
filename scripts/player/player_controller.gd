@@ -670,7 +670,7 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 				"label": "[Take Quest]  I'll return with the shards, Halvard.",
 				"audio": ["dialogue_quest", 12],
 				"response_speaker": "Halvard",
-				"response": "Good. Watch the shadows in the reeds. I'll be sharpenin' me tongue while I wait for me stone.",
+				"response": "Good. Watch the shadows in the reeds. I'll be sharpenin' my tongue while I wait for my stone.",
 				"response_audio": ["dialogue_quest", 13],
 				"action": "accept",
 			},
@@ -9432,11 +9432,14 @@ func _get_blended_biome_color(world_x: float, world_z: float, height: float, zon
 
 
 func _biome_map_color(biome: StringName, micro: StringName = &"none", height: float = 0.0) -> Color:
-	if height > 25.0:
-		var rock_t := clampf((height - 25.0) / 35.0, 0.0, 1.0)
+	if height > 18.0:
 		var grass_col := Color(0.45, 0.52, 0.32)
 		var stone_col := Color(0.52, 0.50, 0.45)
-		return grass_col.lerp(stone_col, rock_t)
+		var snow_col  := Color(0.92, 0.92, 0.95)
+		var rock_t := clampf((height - 18.0) / 22.0, 0.0, 1.0)
+		var snow_t := clampf((height - 35.0) / 20.0, 0.0, 1.0)
+		var col := grass_col.lerp(stone_col, rock_t)
+		return col.lerp(snow_col, snow_t)
 	if biome == &"hearthlands" and micro != &"none":
 		match micro:
 			&"meadow":        return Color(0.42, 0.62, 0.28)
