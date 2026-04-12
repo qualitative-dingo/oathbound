@@ -9250,7 +9250,7 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 		var sp_positions: Array = wg.get_signpost_positions()
 		var explored_zones: Dictionary = wg._explored_zones
 		for sp_world: Vector3 in sp_positions:
-			var sp_zone := wg.world_to_zone(sp_world)
+			var sp_zone = wg.world_to_zone(sp_world)
 			if not explored_zones.has(sp_zone):
 				continue
 			var sp_scene: Vector3 = wg.world_to_scene_pos(sp_world)
