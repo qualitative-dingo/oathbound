@@ -9161,10 +9161,7 @@ func _refresh_map() -> void:
 					cg = int(wc.g * 255.0)
 					cb = int(wc.b * 255.0)
 				else:
-					if not biome_cache.has(zone_coord):
-						biome_cache[zone_coord] = [wg._determine_biome(zone_coord), wg.get_microbiome_at_zone(zone_coord)]
-					var bc: Array = biome_cache[zone_coord]
-					var col := _biome_map_color(bc[0], bc[1], zh)
+					var col := _get_blended_biome_color(world_x, world_z, zh, zone_size, wg, biome_cache)
 					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
 					cr = int(clampf(col.r * bright, 0.0, 1.0) * 255.0)
 					cg = int(clampf(col.g * bright, 0.0, 1.0) * 255.0)
@@ -9200,7 +9197,7 @@ func _refresh_map() -> void:
 
 
 func _draw_player_arrow(half_px: int) -> void:
-	var base_scale := 0.7
+	var base_scale := 1.4
 	var zoom_compensate := _map_zoom / 40.0
 	_draw_arrow_on_image(_map_image, half_px, base_scale * zoom_compensate)
 
@@ -9233,7 +9230,7 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 			continue
 		if n3d.is_in_group(&"village"):
 			continue
-		if n3d.name == "Tavern" or n3d.name == "MerchantCamp":
+		if n3d.name == "Tavern":
 			continue
 		_draw_map_dot(n3d.global_position, marker_col, 2, half_px, zones_per_pixel, zone_size)
 
