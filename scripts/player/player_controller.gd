@@ -430,7 +430,7 @@ var _map_fog_noise: FastNoiseLite
 
 const MINIMAP_PX := 180
 const MINIMAP_RING := 5
-var _minimap_zoom: float = MINIMAP_ZOOM_MAX
+var _minimap_zoom: float = MINIMAP_ZOOM_MIN + MINIMAP_ZOOM_STEP * 2.0
 const MINIMAP_ZOOM_MIN := 3.0
 const MINIMAP_ZOOM_MAX := 20.0
 const MINIMAP_ZOOM_STEP := 1.5
@@ -475,6 +475,7 @@ var _speech_tween: Tween
 var _speech_timer := 0.0
 var _speech_cooldown := 0.0
 var _speech_trigger_cooldowns: Dictionary = {}
+var _speech_waiting_for_audio := false
 const _SPEECH_DISPLAY_TIME := 5.0
 const _SPEECH_GLOBAL_COOLDOWN := 45.0
 const _SPEECH_TRIGGER_COOLDOWN := 120.0
@@ -4466,15 +4467,13 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	var msg := str(lines[idx])
 	_speech_label_3d.text = "\" " + msg + " \""
 
-	var hold_time := _SPEECH_DISPLAY_TIME
+	var has_voice := false
 	if _LINE_VOICE.has(msg):
 		var vinfo: Array = _LINE_VOICE[msg]
 		var grp: String = vinfo[0] as String
 		var sidx: int = vinfo[1] as int
-		var dur := AudioManager.get_stream_duration(grp, sidx)
-		if dur > 0.0:
-			hold_time = dur + 0.5
 		AudioManager.play_speech(grp, sidx)
+		has_voice = true
 
 	# Size the background quad to fit the text
 	if _speech_bg:
@@ -4487,6 +4486,11 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 
 	if _speech_tween and _speech_tween.is_valid():
 		_speech_tween.kill()
+
+	_speech_waiting_for_audio = false
+	var sp := AudioManager._speech_player
+	if sp.finished.is_connected(_on_speech_audio_finished):
+		sp.finished.disconnect(_on_speech_audio_finished)
 
 	var base_color := Color(0.95, 0.90, 0.78, 0.0)
 	_speech_label_3d.modulate = base_color
@@ -4503,23 +4507,44 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	_speech_tween.tween_property(_speech_label_3d, "modulate:a", 1.0, 0.4)
 	if _speech_bg and _speech_bg.material_override:
 		_speech_tween.tween_property(_speech_bg.material_override, "albedo_color:a", 0.75, 0.4)
-	_speech_tween.set_parallel(false)
-	_speech_tween.tween_interval(hold_time)
-	_speech_tween.set_parallel(true)
-	_speech_tween.tween_property(_speech_label_3d, "modulate:a", 0.0, 0.6)
-	if _speech_bg and _speech_bg.material_override:
-		_speech_tween.tween_property(_speech_bg.material_override, "albedo_color:a", 0.0, 0.6)
-	_speech_tween.set_parallel(false)
-	_speech_tween.tween_callback(func():
-		_speech_label_3d.visible = false
-		if _speech_bg:
-			_speech_bg.visible = false
-	)
+
+	if has_voice:
+		_speech_waiting_for_audio = true
+		sp.finished.connect(_on_speech_audio_finished, CONNECT_ONE_SHOT)
+	else:
+		_speech_tween.set_parallel(false)
+		_speech_tween.tween_interval(_SPEECH_DISPLAY_TIME)
+		_append_speech_fade_out(_speech_tween)
 
 	_speech_cooldown = _SPEECH_GLOBAL_COOLDOWN
 	const _NO_TRIGGER_CD: Array[StringName] = [&"killing_spree", &"close_call", &"craft_5star", &"find_5star", &"halvard"]
 	if trigger_key not in _NO_TRIGGER_CD:
 		_speech_trigger_cooldowns[trigger_key] = _SPEECH_TRIGGER_COOLDOWN
+
+
+func _on_speech_audio_finished() -> void:
+	if not _speech_waiting_for_audio:
+		return
+	_speech_waiting_for_audio = false
+	if _speech_tween and _speech_tween.is_valid():
+		_speech_tween.kill()
+	var tw := create_tween()
+	tw.tween_interval(0.5)
+	_append_speech_fade_out(tw)
+	_speech_tween = tw
+
+
+func _append_speech_fade_out(tw: Tween) -> void:
+	tw.set_parallel(true)
+	tw.tween_property(_speech_label_3d, "modulate:a", 0.0, 0.6)
+	if _speech_bg and _speech_bg.material_override:
+		tw.tween_property(_speech_bg.material_override, "albedo_color:a", 0.0, 0.6)
+	tw.set_parallel(false)
+	tw.tween_callback(func():
+		_speech_label_3d.visible = false
+		if _speech_bg:
+			_speech_bg.visible = false
+	)
 
 
 func _check_speech_triggers(delta: float) -> void:
@@ -5430,72 +5455,6 @@ func _build_minimap(root: Control) -> void:
 	north_lbl.z_index = 6
 	map_clip.add_child(north_lbl)
 
-	# -- Icons placed on the circle ring edge --
-	var half_d := float(circle_d) / 2.0
-	var ring_r := half_d - 1.0
-
-	# Weather icon - top-right (about 1:30 on a clock, ~60Â° from top)
-	var weather_angle := -PI * 0.28
-	var wx := circle_x + half_d + ring_r * sin(weather_angle) - 14.0
-	var wy := circle_y + half_d - ring_r * cos(weather_angle) - 14.0
-	var weather_frame := _make_minimap_icon_frame(28)
-	weather_frame.position = Vector2(wx, wy)
-	outer.add_child(weather_frame)
-
-	_minimap_weather_label = Label.new()
-	_minimap_weather_label.name = "WeatherIcon"
-	_minimap_weather_label.text = "*"
-	_minimap_weather_label.add_theme_font_size_override("font_size", 16)
-	_minimap_weather_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.75))
-	_minimap_weather_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_minimap_weather_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_minimap_weather_label.position = Vector2(2, 2)
-	_minimap_weather_label.size = Vector2(24, 24)
-	_minimap_weather_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	weather_frame.add_child(_minimap_weather_label)
-
-	# Zoom + button - bottom-right (about 4 o'clock, ~120Â° from top)
-	var zp_angle := PI * 0.35
-	var zp_x := circle_x + half_d + ring_r * sin(zp_angle) - 13.0
-	var zp_y := circle_y + half_d - ring_r * cos(zp_angle) - 13.0
-	var zoom_in_frame := _make_minimap_icon_frame(26)
-	zoom_in_frame.position = Vector2(zp_x, zp_y)
-	outer.add_child(zoom_in_frame)
-
-	var zoom_in_btn := Button.new()
-	zoom_in_btn.text = "+"
-	zoom_in_btn.position = Vector2.ZERO
-	zoom_in_btn.size = Vector2(26, 26)
-	zoom_in_btn.custom_minimum_size = Vector2(26, 26)
-	zoom_in_btn.add_theme_font_size_override("font_size", 16)
-	zoom_in_btn.flat = true
-	zoom_in_btn.add_theme_color_override("font_color", Color(0.9, 0.82, 0.45))
-	zoom_in_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	zoom_in_btn.z_index = 10
-	zoom_in_btn.pressed.connect(func() -> void: _minimap_do_zoom(-MINIMAP_ZOOM_STEP))
-	zoom_in_frame.add_child(zoom_in_btn)
-
-	# Zoom - button - below + (about 5 o'clock, ~150Â° from top)
-	var zm_angle := PI * 0.45
-	var zm_x := circle_x + half_d + ring_r * sin(zm_angle) - 13.0
-	var zm_y := circle_y + half_d - ring_r * cos(zm_angle) - 13.0
-	var zoom_out_frame := _make_minimap_icon_frame(26)
-	zoom_out_frame.position = Vector2(zm_x, zm_y)
-	outer.add_child(zoom_out_frame)
-
-	var zoom_out_btn := Button.new()
-	zoom_out_btn.text = "-"
-	zoom_out_btn.position = Vector2.ZERO
-	zoom_out_btn.size = Vector2(26, 26)
-	zoom_out_btn.custom_minimum_size = Vector2(26, 26)
-	zoom_out_btn.add_theme_font_size_override("font_size", 16)
-	zoom_out_btn.flat = true
-	zoom_out_btn.add_theme_color_override("font_color", Color(0.9, 0.82, 0.45))
-	zoom_out_btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	zoom_out_btn.z_index = 10
-	zoom_out_btn.pressed.connect(func() -> void: _minimap_do_zoom(MINIMAP_ZOOM_STEP))
-	zoom_out_frame.add_child(zoom_out_btn)
-
 	# -- Time label (bottom center, in a small dark banner) --
 	var time_banner := PanelContainer.new()
 	time_banner.name = "TimeBanner"
@@ -5656,27 +5615,26 @@ func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, hal
 	var fill := Color(1.0, 0.85, 0.1)
 	var outline := Color(0.15, 0.10, 0.0)
 
-	# "!" glyph: stem 3px tall, 1px gap, 1px dot — drawn with 1px dark outline
-	var stem_top := px_y - 2
+	# "!" glyph: stem 2px tall, 1px gap, 1px dot — compact for minimap
+	var stem_top := px_y - 1
 	var dot_y := px_y + 2
 	# Outline pass
-	for oy in range(stem_top - 1, stem_top + 4):
+	for oy in range(stem_top - 1, stem_top + 3):
 		for ox in [px_x - 1, px_x, px_x + 1]:
 			if ox >= 0 and ox < sz and oy >= 0 and oy < sz:
 				img.set_pixel(ox, oy, outline)
 	for ox in [px_x - 1, px_x, px_x + 1]:
-		for oy in [dot_y - 1, dot_y, dot_y + 1]:
-			if ox >= 0 and ox < sz and oy >= 0 and oy < sz:
-				img.set_pixel(ox, oy, outline)
+		if dot_y >= 0 and dot_y < sz and ox >= 0 and ox < sz:
+			img.set_pixel(ox, dot_y, outline)
 	# Fill pass
-	for oy in range(stem_top, stem_top + 3):
+	for oy in range(stem_top, stem_top + 2):
 		if px_x >= 0 and px_x < sz and oy >= 0 and oy < sz:
 			img.set_pixel(px_x, oy, fill)
 	if px_x >= 0 and px_x < sz and dot_y >= 0 and dot_y < sz:
 		img.set_pixel(px_x, dot_y, fill)
 
 
-const _MINIMAP_LO := 36  # 180 / 5 - one pixel per stride cell
+const _MINIMAP_LO := 90  # 180 / 2 — higher resolution for less pixelation
 
 var _minimap_lo_image: Image
 var _minimap_mask_lut: PackedByteArray  # 0=skip, 1=ring, 2=terrain
@@ -5782,8 +5740,6 @@ func _refresh_minimap() -> void:
 	if _minimap_biome_label:
 		var current_biome: StringName = wg.get_biome_at(player_pos)
 		_minimap_biome_label.text = _biome_display_name(current_biome)
-	if _minimap_weather_label:
-		_minimap_weather_label.text = WeatherSystem.get_weather_emoji()
 	if _minimap_time_label:
 		var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree().current_scene else null
 		if dnc and dnc.has_method("get_time_string"):
@@ -7554,15 +7510,25 @@ func close_shop() -> void:
 func _show_halvard_greeting() -> void:
 	var idx := randi() % _HALVARD_GREETINGS.size()
 	_show_speech([_HALVARD_GREETINGS[idx]], &"halvard_greet")
-	if idx < AudioManager.get_group_size("halvard_greet"):
+	if not _speech_waiting_for_audio and idx < AudioManager.get_group_size("halvard_greet"):
 		AudioManager.play_speech("halvard_greet", idx)
+		_speech_waiting_for_audio = true
+		var sp := AudioManager._speech_player
+		if sp.finished.is_connected(_on_speech_audio_finished):
+			sp.finished.disconnect(_on_speech_audio_finished)
+		sp.finished.connect(_on_speech_audio_finished, CONNECT_ONE_SHOT)
 
 
 func _show_halvard_farewell() -> void:
 	var idx := randi() % _HALVARD_FAREWELLS.size()
 	_show_speech([_HALVARD_FAREWELLS[idx]], &"halvard_farewell")
-	if idx < AudioManager.get_group_size("halvard_farewell"):
+	if not _speech_waiting_for_audio and idx < AudioManager.get_group_size("halvard_farewell"):
 		AudioManager.play_speech("halvard_farewell", idx)
+		_speech_waiting_for_audio = true
+		var sp := AudioManager._speech_player
+		if sp.finished.is_connected(_on_speech_audio_finished):
+			sp.finished.disconnect(_on_speech_audio_finished)
+		sp.finished.connect(_on_speech_audio_finished, CONNECT_ONE_SHOT)
 
 
 func _on_dialogue_finished(action: String) -> void:
@@ -8957,7 +8923,6 @@ func _refresh_map() -> void:
 	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
 
 	var stride := 2
-	var map_zone_cache: Dictionary = {}
 
 	for py in range(0, MAP_PX, stride):
 		for px in range(0, MAP_PX, stride):
@@ -8980,15 +8945,13 @@ func _refresh_map() -> void:
 				center_zone.y + roundi(zone_fz))
 
 			var col: Color
-			if map_zone_cache.has(zone_coord):
-				col = map_zone_cache[zone_coord] as Color
-			elif explored.has(zone_coord):
+			if explored.has(zone_coord):
 				var biome: StringName = cache.get(zone_coord, &"hearthlands") as StringName
 				var micro := wg.get_microbiome_at_zone(zone_coord)
-				var zx := (float(zone_coord.x) + 0.5) * zone_size
-				var zz := (float(zone_coord.y) + 0.5) * zone_size
-				var zh := wg.get_height_at(zx, zz)
-				if wg._zone_has_water(zone_coord) or zh < wg.WATER_LEVEL:
+				var world_x := player_pos.x + zone_fx * zone_size
+				var world_z := player_pos.z + zone_fz * zone_size
+				var zh := wg.get_height_at(world_x, world_z)
+				if zh < wg.WATER_LEVEL:
 					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
 					col = water_shallow.lerp(water_col, depth)
 				else:
@@ -8998,10 +8961,8 @@ func _refresh_map() -> void:
 						clampf(col.r * bright, 0.0, 1.0),
 						clampf(col.g * bright, 0.0, 1.0),
 						clampf(col.b * bright, 0.0, 1.0))
-				map_zone_cache[zone_coord] = col
 			else:
 				col = unexplored
-				map_zone_cache[zone_coord] = col
 
 			for sy in stride:
 				for sx in stride:
@@ -9100,14 +9061,30 @@ func _draw_map_exclamation(world_pos: Vector3, color: Color, half_px: int, zones
 	var dz_w := scene_pos.z - global_position.z
 	var cx: int = half_px + roundi(dx_w / (zones_per_pixel * zone_size))
 	var cy: int = half_px + roundi(dz_w / (zones_per_pixel * zone_size))
-	for dy: int in range(-3, 1):
-		for dx_off: int in range(-1, 1):
+	var outline := Color(0.15, 0.10, 0.0)
+	# Outline pass — 2px wide stem (8px) + gap + dot (3px)
+	for dy: int in range(-7, 2):
+		for dx_off: int in range(-2, 3):
+			var fx: int = cx + dx_off
+			var fy: int = cy + dy
+			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
+				_map_image.set_pixel(fx, fy, outline)
+	for dy: int in range(4, 8):
+		for dx_off: int in range(-2, 3):
+			var fx: int = cx + dx_off
+			var fy: int = cy + dy
+			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
+				_map_image.set_pixel(fx, fy, outline)
+	# Fill pass — stem
+	for dy: int in range(-6, 1):
+		for dx_off: int in range(-1, 2):
 			var fx: int = cx + dx_off
 			var fy: int = cy + dy
 			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
 				_map_image.set_pixel(fx, fy, color)
-	for dy: int in range(2, 4):
-		for dx_off: int in range(-1, 1):
+	# Fill pass — dot
+	for dy: int in range(5, 7):
+		for dx_off: int in range(-1, 2):
 			var fx: int = cx + dx_off
 			var fy: int = cy + dy
 			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
@@ -9994,7 +9971,7 @@ func _process(delta: float) -> void:
 	var _pc_tmm := Time.get_ticks_usec()
 	if not _minimap_paused:
 		_minimap_refresh_timer += delta
-		var refresh_interval := 0.3
+		var refresh_interval := 0.06
 		if _minimap_needs_refresh or _minimap_refresh_timer >= refresh_interval:
 			_minimap_refresh_timer = 0.0
 			_refresh_minimap()

@@ -97,7 +97,12 @@ void fragment() {
 	float ground_ao = mix(0.88, 1.0, 1.0 - UV.y);
 	ALBEDO = tex.rgb * albedo_color.rgb * ground_ao;
 	ROUGHNESS = roughness;
-	ALPHA = tex.a * albedo_color.a;
+
+	// Soft fade at top and bottom edges to eliminate hard horizontal lines
+	// when viewed at shallow angles
+	float edge_top = smoothstep(0.0, 0.12, UV.y);    // fade near top (UV.y=0)
+	float edge_bot = smoothstep(1.0, 0.88, UV.y);     // fade near bottom (UV.y=1)
+	ALPHA = tex.a * albedo_color.a * edge_top * edge_bot;
 	ALPHA_SCISSOR_THRESHOLD = alpha_cutoff;
 	BACKLIGHT = vec3(0.35);
 }

@@ -851,7 +851,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var ridge_mult := lerpf(0.1, 1.5, peak_intensity) * lerpf(0.3, 1.0, breadth)
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 
-	h += lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
+	h += lerpf(7.5, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.80, dist))
 
 	var center_dist := Vector2(wx, wz).length()
 	if center_dist < 100.0:
@@ -1943,12 +1943,12 @@ func get_height_at(x: float, z: float) -> float:
 
 	# Continental bias — lift central play area above water, but fade to zero
 	# in lake/shore regions so the bias doesn't create terrain arches over water
-	var bias := lerpf(6.0, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.75, dist))
-	bias *= smoothstep(-0.45, -0.08, lake_n)
+	var bias := lerpf(7.5, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.80, dist))
+	bias *= smoothstep(-0.55, -0.12, lake_n)
 	h += bias
 
 	# Keep terrain above water — soft floor that allows underwater banks near lakes
-	var min_land := lerpf(WATER_LEVEL - 1.5, WATER_LEVEL + 2.0, smoothstep(-0.30, 0.10, lake_n))
+	var min_land := lerpf(WATER_LEVEL - 1.0, WATER_LEVEL + 2.5, smoothstep(-0.38, 0.10, lake_n))
 	h = maxf(h, min_land)
 
 	# Watershed river/creek carving
@@ -1981,11 +1981,11 @@ func get_height_at(x: float, z: float) -> float:
 
 	# Noise-driven lakes — steep banks that drop below water for natural shorelines
 	if _detail_noise:
-		if lake_n < -0.15 and lake_n >= -0.32:
-			var shore_t := smoothstep(-0.15, -0.32, lake_n)
+		if lake_n < -0.22 and lake_n >= -0.40:
+			var shore_t := smoothstep(-0.22, -0.40, lake_n)
 			h = lerpf(h, WATER_LEVEL - 0.8, shore_t)
-		if lake_n < -0.32:
-			var lake_t := smoothstep(-0.32, -0.55, lake_n)
+		if lake_n < -0.40:
+			var lake_t := smoothstep(-0.40, -0.62, lake_n)
 			var lake_depth := lerpf(2.0, 5.0, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
