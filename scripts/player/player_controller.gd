@@ -8973,16 +8973,19 @@ func _build_map_panel(root: Control) -> void:
 
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var vbox := VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_theme_constant_override("separation", 6)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var title := Label.new()
 	title.text = "WORLD MAP"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_color_override("font_color", Color(0.85, 0.75, 0.45))
 	title.add_theme_font_size_override("font_size", 22)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(title)
 
 	_map_biome_label = Label.new()
@@ -8991,11 +8994,13 @@ func _build_map_panel(root: Control) -> void:
 	_map_biome_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_map_biome_label.add_theme_color_override("font_color", Color(0.7, 0.85, 0.6))
 	_map_biome_label.add_theme_font_size_override("font_size", 14)
+	_map_biome_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_map_biome_label)
 
 	var map_container := Control.new()
 	map_container.name = "MapContainer"
 	map_container.custom_minimum_size = Vector2(MAP_PX, MAP_PX)
+	map_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	_map_texture_rect = TextureRect.new()
 	_map_texture_rect.name = "MapTexture"
@@ -9019,6 +9024,7 @@ func _build_map_panel(root: Control) -> void:
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_color_override("font_color", Color(0.4, 0.38, 0.32))
 	hint.add_theme_font_size_override("font_size", 12)
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(hint)
 
 	center.add_child(vbox)
