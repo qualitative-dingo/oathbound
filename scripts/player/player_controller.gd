@@ -490,7 +490,7 @@ var _speech_low_stamina_warned := false
 var _speech_close_call_eligible := false
 var _speech_last_hour := -1
 var _speech_in_village := false
-var _speech_near_halvard := false
+var _speech_halvard_last_day := -1
 var _speech_kill_times: Array[float] = []
 const _SPEECH_KILL_WINDOW := 20.0
 const _SPEECH_KILL_SPREE_COUNT := 5
@@ -571,10 +571,10 @@ const _LINES_FIND_5STAR := [
 	"By the gods... look at the craftsmanship on this!",
 ]
 const _LINES_HALVARD := [
-	"Almost there. Halvard's shop is just ahead.",
-	"Closing in on Halvard. Hope he's got something good.",
-	"That old fart is nearby. Time to trade.",
-	"Someone hasn't showered in years. The stench is unbearable.",
+	"Almost there, Halvard's shop is finally within our sights.",
+	"Closing in on Halvard. Hoping he's open for business.",
+	"That old fart is nearby. Time to spend some hard-earned gold.",
+	"Someone hasn't showered in years, must be Halvard up ahead.",
 ]
 const _HALVARD_GREETINGS: Array[String] = [
 	"Blimey, you've grown! Or maybe I'm just sinking into the earth.",
@@ -874,10 +874,10 @@ func _build_line_voice_map() -> void:
 		"A treasure beyond my wildest dreams.": ["speech_loot_drop", 10],
 		"I've beaten the odds. This is my day.": ["speech_loot_drop", 11],
 		# halvard
-		"Almost there. Halvard's shop is just ahead.": ["speech_halvard", 0],
-		"Closing in on Halvard. Hope he's got something good.": ["speech_halvard", 1],
-		"That old fart is nearby. Time to trade.": ["speech_halvard", 2],
-		"Someone hasn't showered in years. The stench is unbearable.": ["speech_village", 5],
+		"Almost there, Halvard's shop is finally within our sights.": ["speech_halvard", 0],
+		"Closing in on Halvard. Hoping he's open for business.": ["speech_halvard", 1],
+		"That old fart is nearby. Time to spend some hard-earned gold.": ["speech_halvard", 2],
+		"Someone hasn't showered in years, must be Halvard up ahead.": ["speech_halvard", 3],
 	}
 	_LINE_VOICE = _map
 
@@ -4680,21 +4680,16 @@ func _check_speech_triggers(delta: float) -> void:
 		elif not near_village:
 			_speech_in_village = false
 
-	# 7. Halvard / merchant proximity
-	if get_tree():
+	# 7. Halvard / merchant proximity (once per day, 100m range)
+	if get_tree() and _speech_halvard_last_day != _day_count:
 		var merchants := get_tree().get_nodes_in_group(&"merchants")
-		var near_halvard := false
 		for m in merchants:
 			if not is_instance_valid(m):
 				continue
-			if global_position.distance_squared_to((m as Node3D).global_position) < 2500.0:
-				near_halvard = true
+			if global_position.distance_squared_to((m as Node3D).global_position) < 10000.0:
+				_speech_halvard_last_day = _day_count
+				_show_speech(_LINES_HALVARD, &"halvard")
 				break
-		if near_halvard and not _speech_near_halvard:
-			_speech_near_halvard = true
-			_show_speech(_LINES_HALVARD, &"halvard")
-		elif not near_halvard:
-			_speech_near_halvard = false
 
 
 func _game_hours_since(last_gt: float, cur_gt: float) -> float:
@@ -5909,13 +5904,6 @@ func _refresh_minimap() -> void:
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
 	_draw_signpost_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
-	var _merchant_revealed := false
-	for m in _map_markers:
-		if m.get("id", "") == "merchant":
-			_merchant_revealed = true
-			break
-	if _merchant_revealed:
-		_draw_merchant_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
 
 	_minimap_image_tex.set_image(_minimap_lo_image)
 	if _minimap_tex_rect.texture != _minimap_image_tex:
@@ -9373,6 +9361,8 @@ func _reveal_map_marker(marker_id: String, world_pos: Vector3, label_text: Strin
 func _draw_map_markers(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
 	var wg := _find_world_generator()
 	for marker in _map_markers:
+		if str(marker.get("id", "")) == "merchant":
+			continue
 		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
 		var col: Color = marker.get("color", Color.GOLD) as Color
 		var scene_pos := wg.world_to_scene_pos(wpos) if wg else wpos
