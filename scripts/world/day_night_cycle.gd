@@ -42,7 +42,7 @@ const MOON_OFFSET := PI  # moon is opposite the sun
 #         0.958=23:00 (near dark), 1.0=midnight(00:00)
 # Pitch dark: 00:00–03:00.  Golden hour peaks at 21:00, dark by ~23:00.
 
-const NIGHT_END   := 0.125   # 03:00 — end of full darkness / dawn trigger
+const NIGHT_END   := 0.2083  # 05:00 — end of full darkness / dawn trigger
 const NIGHT_START := 0.0     # 00:00 — midnight, full darkness begins
 
 const SUN_ENERGY_KEYS := [

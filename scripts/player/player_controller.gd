@@ -446,6 +446,7 @@ var _minimap_refresh_timer := 0.0
 var _minimap_needs_refresh := true
 var _minimap_paused := false
 var _minimap_outer: Control
+var _minimap_arrow_rect: TextureRect
 
 ## Phase 5: Report player data to host for save on disconnect
 const _REPORT_DATA_INTERVAL := 8.0
@@ -4580,14 +4581,14 @@ func _check_speech_triggers(delta: float) -> void:
 	# 1. Light source warning: evening/night + no torch (triggers from 20:00 onward)
 	if dnc and dnc.has_method("get_hour"):
 		var dark_hour: int = dnc.get_hour()
-		if (dark_hour >= 20 or dark_hour < 5) and not _torch_light:
+		if (dark_hour >= 20 or dark_hour < 2) and not _torch_light:
 			_show_speech(_LINES_DARK, &"dark")
 			return
 
 	# 2. First light greeting: hour transitions to 6
 	if dnc and dnc.has_method("get_hour"):
 		var hour: int = dnc.get_hour()
-		if _speech_last_hour >= 0 and _speech_last_hour < 6 and hour >= 6:
+		if _speech_last_hour >= 0 and _speech_last_hour < 5 and hour >= 5:
 			_show_speech(_LINES_FIRST_LIGHT, &"first_light")
 		_speech_last_hour = hour
 
@@ -5492,6 +5493,22 @@ func _build_minimap(root: Control) -> void:
 	_minimap_time_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	time_banner.add_child(_minimap_time_label)
 
+	# -- Player arrow overlay (high-res, rotated per-frame) --
+	_minimap_arrow_rect = TextureRect.new()
+	_minimap_arrow_rect.name = "ArrowOverlay"
+	var arrow_sz := 32
+	_minimap_arrow_rect.custom_minimum_size = Vector2(arrow_sz, arrow_sz)
+	_minimap_arrow_rect.size = Vector2(arrow_sz, arrow_sz)
+	_minimap_arrow_rect.position = Vector2(circle_d / 2 - arrow_sz / 2, circle_d / 2 - arrow_sz / 2)
+	_minimap_arrow_rect.pivot_offset = Vector2(arrow_sz / 2, arrow_sz / 2)
+	_minimap_arrow_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_minimap_arrow_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_minimap_arrow_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_minimap_arrow_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_minimap_arrow_rect.z_index = 10
+	_minimap_arrow_rect.texture = _generate_arrow_texture(arrow_sz)
+	map_clip.add_child(_minimap_arrow_rect)
+
 	# -- Pre-compute circular mask (ring = gold, inside = white, outside = transparent) --
 	_minimap_image = Image.create(MINIMAP_PX, MINIMAP_PX, false, Image.FORMAT_RGBA8)
 	_minimap_image_tex = ImageTexture.new()
@@ -5639,7 +5656,7 @@ func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, hal
 		img.set_pixel(px_x, dot_y, fill)
 
 
-const _MINIMAP_LO := 90  # 180 / 2 — higher resolution for less pixelation
+const _MINIMAP_LO := 60  # 180 / 3 — balanced quality vs performance
 
 var _minimap_lo_image: Image
 var _minimap_mask_lut: PackedByteArray  # 0=skip, 1=ring, 2=terrain
@@ -5668,6 +5685,37 @@ func _ensure_minimap_lut() -> void:
 				_minimap_ring_colors[idx] = Color(mask_px.r, mask_px.g, mask_px.b, mask_px.a)
 			else:
 				_minimap_mask_lut[idx] = 2
+
+
+var _minimap_blur_tmp: Image
+
+func _blur_minimap_image() -> void:
+	var sz := _MINIMAP_LO
+	if not _minimap_blur_tmp or _minimap_blur_tmp.get_width() != sz:
+		_minimap_blur_tmp = Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	_minimap_blur_tmp.blit_rect(_minimap_lo_image, Rect2i(0, 0, sz, sz), Vector2i.ZERO)
+	for y in range(1, sz - 1):
+		for x in range(1, sz - 1):
+			var idx := y * sz + x
+			if _minimap_mask_lut[idx] != 2:
+				continue
+			var r := 0.0
+			var g := 0.0
+			var b := 0.0
+			var a := 0.0
+			var count := 0.0
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					var ni := (y + dy) * sz + (x + dx)
+					if _minimap_mask_lut[ni] == 2:
+						var c := _minimap_blur_tmp.get_pixel(x + dx, y + dy)
+						r += c.r
+						g += c.g
+						b += c.b
+						a += c.a
+						count += 1.0
+			if count > 0.0:
+				_minimap_lo_image.set_pixel(x, y, Color(r / count, g / count, b / count, a / count))
 
 
 func _refresh_minimap() -> void:
@@ -5735,8 +5783,10 @@ func _refresh_minimap() -> void:
 					clampf(col.b * bright, 0.0, 1.0))
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
+	# 3x3 box blur to smooth block boundaries before markers
+	_blur_minimap_image()
+
 	_draw_signpost_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
-	_draw_arrow_on_image(_minimap_lo_image, _MINIMAP_LO / 2, 0.4)
 
 	_minimap_image_tex.set_image(_minimap_lo_image)
 	if _minimap_tex_rect.texture != _minimap_image_tex:
@@ -9976,7 +10026,7 @@ func _process(delta: float) -> void:
 	var _pc_tmm := Time.get_ticks_usec()
 	if not _minimap_paused:
 		_minimap_refresh_timer += delta
-		var refresh_interval := 0.2
+		var refresh_interval := 0.25
 		if _minimap_needs_refresh or _minimap_refresh_timer >= refresh_interval:
 			_minimap_refresh_timer = 0.0
 			_refresh_minimap()
