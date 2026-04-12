@@ -65,8 +65,8 @@ var _map_marker_labels: Array[Label] = []
 var _map_zoom: float = 40.0
 var _map_zoom_target: float = 40.0
 const MAP_ZOOM_MIN := 8.0
-const MAP_ZOOM_MAX := 100.0
-const MAP_ZOOM_STEP := 4.0
+const MAP_ZOOM_MAX := 180.0
+const MAP_ZOOM_STEP := 6.0
 const MAP_ZOOM_SPEED := 25.0
 const MAP_PX := 512
 const MAP_RENDER_PX := 256
@@ -9135,6 +9135,13 @@ func _refresh_map() -> void:
 			if no_fog or explored.has(zone_coord):
 				var world_x := player_pos.x + zone_fx * zone_size
 				var world_z := player_pos.z + zone_fz * zone_size
+				var island_m := wg._sample_island_mask(world_x, world_z)
+				if island_m < 0.01:
+					out[bi] = int(water_col.r * 255.0)
+					out[bi + 1] = int(water_col.g * 255.0)
+					out[bi + 2] = int(water_col.b * 255.0)
+					out[bi + 3] = 255
+					continue
 				var zh := wg.get_height_at(world_x, world_z)
 				var cr: int
 				var cg: int
@@ -10211,11 +10218,11 @@ func _process(delta: float) -> void:
 
 	if _map_open:
 		_map_fog_time += delta
-		var moved := global_position.distance_squared_to(_map_last_player_pos) > 16.0
+		var moved := global_position.distance_squared_to(_map_last_player_pos) > 400.0
 		_map_refresh_timer += delta
-		var periodic := _map_refresh_timer >= 2.0
-		var needs_refresh := _map_dirty or moved or periodic
-		if needs_refresh and _map_refresh_timer >= 0.5:
+		var periodic := _map_refresh_timer >= 4.0
+		var needs_refresh := _map_dirty or (moved and _map_refresh_timer >= 1.5) or periodic
+		if needs_refresh:
 			_map_last_player_pos = global_position
 			_map_refresh_timer = 0.0
 			_refresh_map()
