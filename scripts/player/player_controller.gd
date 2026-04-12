@@ -7661,7 +7661,8 @@ func close_shop() -> void:
 func _show_halvard_greeting() -> int:
 	var idx := randi() % _HALVARD_GREETINGS.size()
 	_show_speech([_HALVARD_GREETINGS[idx]], &"halvard_greet")
-	if not _speech_waiting_for_audio and idx < AudioManager.get_group_size("halvard_greet"):
+	_speech_waiting_for_audio = false
+	if idx < AudioManager.get_group_size("halvard_greet"):
 		AudioManager.play_speech("halvard_greet", idx)
 		_speech_waiting_for_audio = true
 		var sp := AudioManager._speech_player
@@ -7674,7 +7675,8 @@ func _show_halvard_greeting() -> int:
 func _show_halvard_farewell() -> void:
 	var idx := randi() % _HALVARD_FAREWELLS.size()
 	_show_speech([_HALVARD_FAREWELLS[idx]], &"halvard_farewell")
-	if not _speech_waiting_for_audio and idx < AudioManager.get_group_size("halvard_farewell"):
+	_speech_waiting_for_audio = false
+	if idx < AudioManager.get_group_size("halvard_farewell"):
 		AudioManager.play_speech("halvard_farewell", idx)
 		_speech_waiting_for_audio = true
 		var sp := AudioManager._speech_player

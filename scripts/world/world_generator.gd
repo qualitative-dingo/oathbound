@@ -750,7 +750,7 @@ func _init_noise_layers() -> void:
 	_mountain_broad_noise = FastNoiseLite.new()
 	_mountain_broad_noise.seed = _seed_hash + 1000
 	_mountain_broad_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_mountain_broad_noise.frequency = base_frequency * 0.3
+	_mountain_broad_noise.frequency = base_frequency * 0.15
 	_mountain_broad_noise.fractal_octaves = 1
 
 	_detail_noise = FastNoiseLite.new()
@@ -829,7 +829,7 @@ func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
 	if mountain_raw <= 0.0:
 		return 0.0
 	var broad := _sample_broad_mountain(wx, wz)
-	var breadth := smoothstep(0.20, 0.50, broad)
+	var breadth := smoothstep(0.10, 0.40, broad)
 	return mountain_raw * breadth
 
 
@@ -837,7 +837,7 @@ func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
 ## Used to scale peak height so isolated features stay short.
 func _mountain_breadth(wx: float, wz: float) -> float:
 	var broad := _sample_broad_mountain(wx, wz)
-	return smoothstep(0.20, 0.50, broad)
+	return smoothstep(0.10, 0.40, broad)
 
 
 ## Island mask: returns 0..1 where 1 = fully land, 0 = deep ocean.
@@ -849,7 +849,7 @@ func _sample_island_mask(wx: float, wz: float) -> float:
 	var spawn_dist := Vector2(wx, wz).length()
 	var spawn_bias := smoothstep(2500.0, 400.0, spawn_dist) * 0.55
 	raw += spawn_bias
-	return smoothstep(-0.05, 0.12, raw)
+	return smoothstep(-0.18, 0.05, raw)
 
 
 func _get_base_height(wx: float, wz: float) -> float:
@@ -1997,21 +1997,16 @@ func get_height_at(x: float, z: float) -> float:
 				pool_floor = maxf(pool_floor, WATER_LEVEL - 2.0)
 				h = lerpf(h, pool_floor, pool_t * 0.7)
 
-	# Pre-sample lake noise so bias and clamp can respect water bodies
-	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _continent_noise else 0.0
-
 	# Continental bias — fade by distance AND island mask so ocean zones stay submerged
 	var bias := lerpf(7.5, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.80, dist))
-	bias *= smoothstep(-0.65, -0.25, lake_n)
 	bias *= island
 	h += bias
 
 	# Blend toward deep ocean at island edges for natural shore transitions
 	h = lerpf(WATER_LEVEL - 15.0, h, island)
 
-	# Keep terrain above water on land — soft floor only where island mask allows
-	var min_land := lerpf(WATER_LEVEL - 1.0, WATER_LEVEL + 2.5, smoothstep(-0.50, 0.10, lake_n))
-	min_land = lerpf(WATER_LEVEL - 15.0, min_land, island)
+	# Keep terrain above water on land — floor at +3m prevents random noise lakes
+	var min_land := lerpf(WATER_LEVEL - 15.0, WATER_LEVEL + 3.0, island)
 	h = maxf(h, min_land)
 
 	# Watershed river/creek carving
@@ -2041,16 +2036,6 @@ func get_height_at(x: float, z: float) -> float:
 				var depth := lerpf(1.5, 5.0, t)
 				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
 				h = lerpf(h, WATER_LEVEL - depth, carve)
-
-	# Noise-driven lakes — steep banks that drop below water for natural shorelines
-	if _detail_noise and island > 0.5:
-		if lake_n < -0.35 and lake_n >= -0.50:
-			var shore_t := smoothstep(-0.35, -0.50, lake_n) * island
-			h = lerpf(h, WATER_LEVEL - 0.8, shore_t)
-		if lake_n < -0.50:
-			var lake_t := smoothstep(-0.50, -0.70, lake_n) * island
-			var lake_depth := lerpf(2.0, 5.0, lake_t)
-			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
 	# Creek bed grid carving — wide channels matching creek mesh footprints
 	if not _creek_bed.is_empty():
