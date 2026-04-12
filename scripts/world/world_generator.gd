@@ -69,6 +69,7 @@ var _tavern_songs: Array[String] = [
 var _merchant_signpost_positions: Array[Vector3] = []
 var _marrow_deposit_positions: Array[Vector3] = []
 var _continent_noise: FastNoiseLite
+var _island_noise: FastNoiseLite
 var _mountain_noise: FastNoiseLite
 var _mountain_broad_noise: FastNoiseLite
 var _detail_noise: FastNoiseLite
@@ -726,6 +727,14 @@ func _init_noise_layers() -> void:
 	_continent_noise.fractal_lacunarity = 2.0
 	_continent_noise.fractal_gain = 0.45
 
+	_island_noise = FastNoiseLite.new()
+	_island_noise.seed = _seed_hash + 7777
+	_island_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_island_noise.frequency = 0.0004
+	_island_noise.fractal_octaves = 2
+	_island_noise.fractal_lacunarity = 2.0
+	_island_noise.fractal_gain = 0.5
+
 	_mountain_noise = FastNoiseLite.new()
 	_mountain_noise.seed = _seed_hash + 1000
 	_mountain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -830,12 +839,29 @@ func _mountain_breadth(wx: float, wz: float) -> float:
 	return smoothstep(0.20, 0.50, broad)
 
 
+## Island mask: returns 0..1 where 1 = fully land, 0 = deep ocean.
+## Spawn area near (0,0) is always biased toward land.
+func _sample_island_mask(wx: float, wz: float) -> float:
+	if not _island_noise:
+		return 1.0
+	var raw := _island_noise.get_noise_2d(wx, wz)
+	var spawn_dist := Vector2(wx, wz).length()
+	var spawn_bias := smoothstep(2500.0, 400.0, spawn_dist) * 0.6
+	raw += spawn_bias
+	return smoothstep(-0.08, 0.08, raw)
+
+
 func _get_base_height(wx: float, wz: float) -> float:
 	if not _continent_noise:
 		return WATER_LEVEL
 	var dist := Vector2(wx, wz).length()
 	if dist > world_radius * 0.9:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
+
+	var island := _sample_island_mask(wx, wz)
+	if island < 0.01:
+		return WATER_LEVEL - 10.0
+
 	var continent := _continent_noise.get_noise_2d(wx, wz)
 	var mountain := _gate_mountain(wx, wz, maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.35, 0.0))
 	var breadth := _mountain_breadth(wx, wz)
@@ -855,7 +881,11 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var ridge_mult := lerpf(0.1, 1.0, peak_intensity) * lerpf(0.3, 1.0, breadth)
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 
-	h += lerpf(7.5, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.80, dist))
+	var bias := lerpf(7.5, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.80, dist))
+	bias *= island
+	h += bias
+
+	h = lerpf(WATER_LEVEL - 10.0, h, island)
 
 	var center_dist := Vector2(wx, wz).length()
 	if center_dist < 100.0:
@@ -1858,6 +1888,11 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 	var dist := Vector2(x, z).length()
 	if dist > world_radius * 0.9:
 		return -20.0 * ((dist - world_radius * 0.9) / (world_radius * 0.1))
+
+	var island := _sample_island_mask(x, z)
+	if island < 0.01:
+		return WATER_LEVEL - 10.0
+
 	var continent := _continent_noise.get_noise_2d(x, z)
 	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
 	var breadth := _mountain_breadth(x, z)
@@ -1874,6 +1909,12 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 	ridge = ridge * ridge * ridge
 	var ridge_mult := lerpf(0.1, 1.0, peak_intensity) * lerpf(0.3, 1.0, breadth)
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
+
+	var bias := lerpf(7.5, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.80, dist))
+	bias *= island
+	h += bias
+
+	h = lerpf(WATER_LEVEL - 10.0, h, island)
 	return h
 
 
@@ -1889,6 +1930,10 @@ func get_height_at(x: float, z: float) -> float:
 	if dist > world_radius * 0.9:
 		var edge_factor := (dist - world_radius * 0.9) / (world_radius * 0.1)
 		return -20.0 * edge_factor
+
+	var island := _sample_island_mask(x, z)
+	if island < 0.01:
+		return WATER_LEVEL - 10.0
 
 	var continent := _continent_noise.get_noise_2d(x, z)
 	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
@@ -1954,14 +1999,18 @@ func get_height_at(x: float, z: float) -> float:
 	# Pre-sample lake noise so bias and clamp can respect water bodies
 	var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0) if _continent_noise else 0.0
 
-	# Continental bias — lift central play area above water, but fade to zero
-	# in lake/shore regions so the bias doesn't create terrain arches over water
+	# Continental bias — fade by distance AND island mask so ocean zones stay submerged
 	var bias := lerpf(7.5, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.80, dist))
 	bias *= smoothstep(-0.55, -0.12, lake_n)
+	bias *= island
 	h += bias
 
-	# Keep terrain above water — soft floor that allows underwater banks near lakes
+	# Blend toward deep ocean at island edges for natural shore transitions
+	h = lerpf(WATER_LEVEL - 10.0, h, island)
+
+	# Keep terrain above water on land — soft floor only where island mask allows
 	var min_land := lerpf(WATER_LEVEL - 1.0, WATER_LEVEL + 2.5, smoothstep(-0.38, 0.10, lake_n))
+	min_land = lerpf(WATER_LEVEL - 10.0, min_land, island)
 	h = maxf(h, min_land)
 
 	# Watershed river/creek carving

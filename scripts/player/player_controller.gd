@@ -450,6 +450,7 @@ var _minimap_needs_refresh := true
 var _minimap_paused := false
 var _minimap_outer: Control
 var _minimap_arrow_rect: TextureRect
+var _map_arrow_rect: TextureRect
 
 ## Phase 5: Report player data to host for save on disconnect
 const _REPORT_DATA_INTERVAL := 8.0
@@ -5682,10 +5683,6 @@ func _draw_merchant_marker(img: Image, player_pos: Vector3, m_per_px: float, hal
 	if merchant_pos == Vector3.ZERO:
 		return
 
-	var dist := Vector2(merchant_pos.x - player_pos.x, merchant_pos.z - player_pos.z).length()
-	if dist < 3.0:
-		return
-
 	var dx := (merchant_pos.x - player_pos.x) / m_per_px
 	var dz := (merchant_pos.z - player_pos.z) / m_per_px
 	var px_x := half + int(round(dx))
@@ -8983,6 +8980,21 @@ func _build_map_panel(root: Control) -> void:
 	_add_compass_label(map_container, "E", Vector2(MAP_PX - 22, MAP_PX * 0.5 - 8), Color(0.6, 0.55, 0.45))
 	_add_compass_label(map_container, "W", Vector2(10, MAP_PX * 0.5 - 8), Color(0.6, 0.55, 0.45))
 
+	var map_arrow_sz := 32
+	_map_arrow_rect = TextureRect.new()
+	_map_arrow_rect.name = "MapArrowOverlay"
+	_map_arrow_rect.custom_minimum_size = Vector2(map_arrow_sz, map_arrow_sz)
+	_map_arrow_rect.size = Vector2(map_arrow_sz, map_arrow_sz)
+	_map_arrow_rect.position = Vector2(MAP_PX / 2 - map_arrow_sz / 2, MAP_PX / 2 - map_arrow_sz / 2)
+	_map_arrow_rect.pivot_offset = Vector2(map_arrow_sz / 2, map_arrow_sz / 2)
+	_map_arrow_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_map_arrow_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_map_arrow_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_map_arrow_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_map_arrow_rect.z_index = 10
+	_map_arrow_rect.texture = _generate_arrow_texture(map_arrow_sz)
+	map_container.add_child(_map_arrow_rect)
+
 	vbox.add_child(map_container)
 
 	var hint := Label.new()
@@ -9157,9 +9169,6 @@ func _refresh_map() -> void:
 	# -- NPC map markers (Valheim-style, visible through fog) --
 	_draw_map_markers(half_px, zones_per_pixel, zone_size)
 
-	# -- Player marker - directional arrow --
-	_draw_player_arrow(half_px)
-
 	_map_image_tex.set_image(_map_image)
 	if _map_texture_rect.texture != _map_image_tex:
 		_map_texture_rect.texture = _map_image_tex
@@ -9327,8 +9336,6 @@ func _reveal_map_marker(marker_id: String, world_pos: Vector3, label_text: Strin
 func _draw_map_markers(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
 	var wg := _find_world_generator()
 	for marker in _map_markers:
-		if str(marker.get("id", "")) == "merchant":
-			continue
 		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
 		var col: Color = marker.get("color", Color.GOLD) as Color
 		var scene_pos := wg.world_to_scene_pos(wpos) if wg else wpos
@@ -10188,19 +10195,23 @@ func _process(delta: float) -> void:
 	var _minimap_ms := float(Time.get_ticks_usec() - _pc_tmm) / 1000.0
 	_pc_proc_max_minimap = maxf(_pc_proc_max_minimap, _minimap_ms)
 
-	if _minimap_arrow_rect and _spring_arm and _spring_arm.get_child_count() > 0:
+	if _spring_arm and _spring_arm.get_child_count() > 0:
 		var cam := _spring_arm.get_child(0) as Camera3D
 		if cam:
 			var fwd := -cam.global_transform.basis.z
-			_minimap_arrow_rect.rotation = atan2(fwd.x, -fwd.z)
+			var angle := atan2(fwd.x, -fwd.z)
+			if _minimap_arrow_rect:
+				_minimap_arrow_rect.rotation = angle
+			if _map_arrow_rect:
+				_map_arrow_rect.rotation = angle
 
 	if _map_open:
 		_map_fog_time += delta
-		var moved := global_position.distance_squared_to(_map_last_player_pos) > 4.0
+		var moved := global_position.distance_squared_to(_map_last_player_pos) > 16.0
 		_map_refresh_timer += delta
-		var periodic := _map_refresh_timer >= 1.0
+		var periodic := _map_refresh_timer >= 2.0
 		var needs_refresh := _map_dirty or moved or periodic
-		if needs_refresh and _map_refresh_timer >= 0.15:
+		if needs_refresh and _map_refresh_timer >= 0.5:
 			_map_last_player_pos = global_position
 			_map_refresh_timer = 0.0
 			_refresh_map()
