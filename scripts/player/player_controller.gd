@@ -9341,8 +9341,8 @@ func _draw_marrow_quest_area(half_px: int, zones_per_pixel: float, zone_size: fl
 			if d_sq <= r_sq_outer and d_sq >= r_sq_inner:
 				var fx := cx + dx
 				var fy := cy + dy
-			if fx >= 0 and fx < MAP_RENDER_PX and fy >= 0 and fy < MAP_RENDER_PX:
-				_map_image.set_pixel(fx, fy, col)
+				if fx >= 0 and fx < MAP_RENDER_PX and fy >= 0 and fy < MAP_RENDER_PX:
+					_map_image.set_pixel(fx, fy, col)
 
 
 func _reveal_map_marker(marker_id: String, world_pos: Vector3, label_text: String) -> void:
