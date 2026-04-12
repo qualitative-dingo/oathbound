@@ -181,6 +181,26 @@ const _RG_RIVER := 64
 static var _rg_data := PackedByteArray()
 static var _rg_coord := Vector2i(-999999, -999999)
 
+# Coverage counters — accumulated during scatter, read & reset by world_generator
+static var _cov_grass_tested := 0
+static var _cov_grass_placed := 0
+static var _cov_flower_tested := 0
+static var _cov_flower_placed := 0
+
+static func get_coverage_stats() -> Dictionary:
+	var g_pct := 100.0 * _cov_grass_placed / maxf(_cov_grass_tested, 1) as float
+	var f_pct := 100.0 * _cov_flower_placed / maxf(_cov_flower_tested, 1) as float
+	return {
+		"grass_tested": _cov_grass_tested, "grass_placed": _cov_grass_placed, "grass_pct": g_pct,
+		"flower_tested": _cov_flower_tested, "flower_placed": _cov_flower_placed, "flower_pct": f_pct,
+	}
+
+static func reset_coverage_stats() -> void:
+	_cov_grass_tested = 0
+	_cov_grass_placed = 0
+	_cov_flower_tested = 0
+	_cov_flower_placed = 0
+
 static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: float) -> void:
 	if coord == _rg_coord:
 		return
@@ -2080,6 +2100,8 @@ static func _scatter_flowers(
 				if lx < 0.0 or lx >= ZONE_SIZE or lz < 0.0 or lz >= ZONE_SIZE:
 					continue
 
+				_cov_flower_tested += 1
+
 				var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 				var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
 				if _rg_data[rgz * _RG_RES + rgx] & (_RG_DENSITY_LOW | _RG_PATH | _RG_STRUCTURE) != 0:
@@ -2117,6 +2139,7 @@ static func _scatter_flowers(
 					if not near_water:
 						continue
 
+				_cov_flower_placed += 1
 				var scale_val := scale_min + h3 * (scale_max - scale_min)
 				var rot := h4 * TAU
 				var sx := quad_w * scale_val
@@ -2196,6 +2219,8 @@ static func _scatter_grass(
 			if lx < 0.0 or lx >= ZONE_SIZE or lz < 0.0 or lz >= ZONE_SIZE:
 				continue
 
+			_cov_grass_tested += 1
+
 			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
 			var rg_flags := _rg_data[rgz * _RG_RES + rgx]
@@ -2223,6 +2248,7 @@ static func _scatter_grass(
 				if _grass_cell_hash(gcx, gcz, 5) > altitude_keep:
 					continue
 
+			_cov_grass_placed += 1
 			var scale_val := 0.4 + h3 * 0.45
 			var rot := h4 * TAU
 			var sx := 2.4 * scale_val

@@ -547,8 +547,12 @@ func _process(_delta: float) -> void:
 		origin_shift.x, origin_shift.z, displaced])
 	# Vegetation debug: count flower MMIs and instances per zone
 	var veg_snap := _vegetation_perf_snapshot()
-	print("[PERF VEG] fl_mmi=%d fl_inst=%d gr_mmi=%d gr_inst=%d trees=%d" % [
-		veg_snap["fl_mmi"], veg_snap["fl_inst"], veg_snap["gr_mmi"], veg_snap["gr_inst"], veg_snap["trees"]])
+	var cov := _ZonePopulator.get_coverage_stats()
+	print("[PERF VEG] fl_mmi=%d fl_inst=%d gr_mmi=%d gr_inst=%d trees=%d grass_cov=%.1f%% (%d/%d) flower_cov=%.1f%% (%d/%d)" % [
+		veg_snap["fl_mmi"], veg_snap["fl_inst"], veg_snap["gr_mmi"], veg_snap["gr_inst"], veg_snap["trees"],
+		cov["grass_pct"], cov["grass_placed"], cov["grass_tested"],
+		cov["flower_pct"], cov["flower_placed"], cov["flower_tested"]])
+	_ZonePopulator.reset_coverage_stats()
 	_perf_max_queue_ms = 0.0
 	_perf_max_pending_ms = 0.0
 	_perf_max_unload_ms = 0.0
