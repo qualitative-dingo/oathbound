@@ -550,8 +550,9 @@ func _process(_delta: float) -> void:
 		cov["grass_pct"], cov["grass_placed"], cov["grass_tested"],
 		cov["flower_pct"], cov["flower_placed"], cov["flower_tested"]])
 	if cov["grass_tested"] > 0:
-		print("[GRASS REJ] rg=%d density=%d height=%d slope=%d altitude=%d" % [
-			cov["rej_rg"], cov["rej_density"], cov["rej_height"], cov["rej_slope"], cov["rej_altitude"]])
+		print("[GRASS REJ] rg=%d (struct=%d river=%d) density=%d height=%d slope=%d altitude=%d" % [
+			cov["rej_rg"], cov["rej_struct"], cov["rej_river"],
+			cov["rej_density"], cov["rej_height"], cov["rej_slope"], cov["rej_altitude"]])
 	_ZonePopulator.reset_coverage_stats()
 	_perf_max_queue_ms = 0.0
 	_perf_max_pending_ms = 0.0

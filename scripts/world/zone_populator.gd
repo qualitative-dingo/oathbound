@@ -187,6 +187,8 @@ static var _cov_grass_placed := 0
 static var _cov_flower_tested := 0
 static var _cov_flower_placed := 0
 static var _cov_grass_rej_rg := 0
+static var _cov_grass_rej_struct := 0
+static var _cov_grass_rej_river := 0
 static var _cov_grass_rej_density := 0
 static var _cov_grass_rej_height := 0
 static var _cov_grass_rej_slope := 0
@@ -198,7 +200,8 @@ static func get_coverage_stats() -> Dictionary:
 	return {
 		"grass_tested": _cov_grass_tested, "grass_placed": _cov_grass_placed, "grass_pct": g_pct,
 		"flower_tested": _cov_flower_tested, "flower_placed": _cov_flower_placed, "flower_pct": f_pct,
-		"rej_rg": _cov_grass_rej_rg, "rej_density": _cov_grass_rej_density,
+		"rej_rg": _cov_grass_rej_rg, "rej_struct": _cov_grass_rej_struct, "rej_river": _cov_grass_rej_river,
+		"rej_density": _cov_grass_rej_density,
 		"rej_height": _cov_grass_rej_height, "rej_slope": _cov_grass_rej_slope,
 		"rej_altitude": _cov_grass_rej_altitude,
 	}
@@ -209,6 +212,8 @@ static func reset_coverage_stats() -> void:
 	_cov_flower_tested = 0
 	_cov_flower_placed = 0
 	_cov_grass_rej_rg = 0
+	_cov_grass_rej_struct = 0
+	_cov_grass_rej_river = 0
 	_cov_grass_rej_density = 0
 	_cov_grass_rej_height = 0
 	_cov_grass_rej_slope = 0
@@ -2304,6 +2309,10 @@ static func _scatter_grass(
 		var rg_flags := _rg_data[rgz * _RG_RES + rgx]
 		if rg_flags & (_RG_STRUCTURE | _RG_RIVER) != 0:
 			_cov_grass_rej_rg += 1
+			if rg_flags & _RG_STRUCTURE != 0:
+				_cov_grass_rej_struct += 1
+			else:
+				_cov_grass_rej_river += 1
 			continue
 
 		var h5 := _grass_cell_hash(gcx, gcz, 4)
@@ -4980,7 +4989,7 @@ static func build_tavern(parent: Node3D, world_x: float, world_z: float, ground_
 	tavern.name = "Tavern"
 	tavern.add_to_group(&"structures")
 	tavern.add_to_group(&"tavern")
-	tavern.set_meta("footprint_radius", maxf(TW, TD) * 0.5 + 8.0)
+	tavern.set_meta("footprint_radius", maxf(TW, TD) * 0.35)
 
 	var hw := TW * 0.5
 	var hd := TD * 0.5
