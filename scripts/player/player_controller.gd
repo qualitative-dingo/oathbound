@@ -5898,7 +5898,13 @@ func _refresh_minimap() -> void:
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
 	_draw_signpost_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
-	_draw_merchant_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
+	var _merchant_revealed := false
+	for m in _map_markers:
+		if m.get("id", "") == "merchant":
+			_merchant_revealed = true
+			break
+	if _merchant_revealed:
+		_draw_merchant_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
 
 	_minimap_image_tex.set_image(_minimap_lo_image)
 	if _minimap_tex_rect.texture != _minimap_image_tex:
@@ -9150,7 +9156,7 @@ func _refresh_map() -> void:
 			_map_image.set_pixel(px, py, col)
 
 	# -- Structure markers --
-	_draw_structure_markers(half_px, zones_per_pixel, zone_size)
+	_draw_structure_markers(half_px, zones_per_pixel, zone_size, wg)
 
 	# -- Marrow quest area circle --
 	if _quest_bones_accepted and not _quest_bones_completed:
@@ -9190,7 +9196,7 @@ func _point_in_tri(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> bool:
 	return not (has_neg and has_pos)
 
 
-func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
+func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: float, wg: Node) -> void:
 	var marker_col := Color(0.9, 0.75, 0.3)
 	var cave_col := Color(0.5, 0.35, 0.2)
 	var signpost_col := Color(1.0, 0.9, 0.3)
@@ -9205,11 +9211,11 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 			continue
 		_draw_map_dot(n3d.global_position, marker_col, 2, half_px, zones_per_pixel, zone_size)
 
-	for node in get_tree().get_nodes_in_group(&"signposts"):
-		var n3d := node as Node3D
-		if not n3d:
-			continue
-		_draw_map_exclamation(n3d.global_position, signpost_col, half_px, zones_per_pixel, zone_size)
+	if wg and wg.has_method("get_signpost_positions"):
+		var sp_positions: Array = wg.get_signpost_positions()
+		for sp_world: Vector3 in sp_positions:
+			var sp_scene: Vector3 = wg.world_to_scene_pos(sp_world)
+			_draw_map_exclamation(sp_scene, signpost_col, half_px, zones_per_pixel, zone_size)
 
 	for node in get_tree().get_nodes_in_group(&"cave_entrances"):
 		var n3d := node as Node3D

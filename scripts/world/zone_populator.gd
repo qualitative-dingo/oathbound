@@ -201,12 +201,10 @@ static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: f
 				flags |= _RG_PATH
 			if wg and wg.has_method("_ws_sample_accum"):
 				var accum: float = wg._ws_sample_accum(wx, wz)
-				var spawn_dist_sq := wx * wx + wz * wz
-				if spawn_dist_sq >= 2500.0:
-					if accum > 1.5:
-						flags |= _RG_WATER
-					if accum >= 2.5:
-						flags |= _RG_RIVER
+				if accum > 1.5:
+					flags |= _RG_WATER
+				if accum >= 2.5:
+					flags |= _RG_RIVER
 			_rg_data[idx] = flags
 
 	var os := origin_shift
@@ -2201,14 +2199,12 @@ static func _scatter_grass(
 			var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
 			var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
 			var rg_flags := _rg_data[rgz * _RG_RES + rgx]
-			if rg_flags & (_RG_STRUCTURE | _RG_RIVER) != 0:
+			if rg_flags & (_RG_STRUCTURE | _RG_RIVER | _RG_WATER) != 0:
 				continue
 
 			var h5 := _grass_cell_hash(gcx, gcz, 4)
 			var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
 			var keep := lerpf(0.78, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
-			if rg_flags & _RG_WATER != 0:
-				keep *= 0.45
 			if rg_flags & _RG_PATH != 0:
 				keep *= 0.35
 			if h5 > keep:
@@ -2332,6 +2328,11 @@ static func _scatter_blueberry_bushes(
 		var lz := rng.randf_range(2.0, ZONE_SIZE - 2.0)
 		var wx := origin_x + lx
 		var wz := origin_z + lz
+		var rgx := clampi(int(lx / _RG_CELL), 0, _RG_RES - 1)
+		var rgz := clampi(int(lz / _RG_CELL), 0, _RG_RES - 1)
+		var rg_flags := _rg_data[rgz * _RG_RES + rgx]
+		if rg_flags & (_RG_STRUCTURE | _RG_RIVER | _RG_WATER) != 0:
+			continue
 		var sn := _hg_snap_and_normal(wx, wz)
 		var ground_y := sn.x
 		if ground_y < _MIN_LAND_Y or ground_y > 20.0:
@@ -5757,6 +5758,10 @@ static func _scatter_berry_bushes(
 		var cz := rng.randf_range(6.0, ZONE_SIZE - 6.0)
 		var wx := origin_x + cx
 		var wz := origin_z + cz
+		var bb_rgx := clampi(int(cx / _RG_CELL), 0, _RG_RES - 1)
+		var bb_rgz := clampi(int(cz / _RG_CELL), 0, _RG_RES - 1)
+		if _rg_data[bb_rgz * _RG_RES + bb_rgx] & (_RG_WATER | _RG_RIVER) != 0:
+			continue
 		var sn := _hg_snap_and_normal(wx, wz)
 		if sn.x < _MIN_LAND_Y or sn.y < 0.85:
 			continue
@@ -5788,6 +5793,10 @@ static func _scatter_berry_bushes(
 		var cz := rng.randf_range(6.0, ZONE_SIZE - 6.0)
 		var wx := origin_x + cx
 		var wz := origin_z + cz
+		var lb_rgx := clampi(int(cx / _RG_CELL), 0, _RG_RES - 1)
+		var lb_rgz := clampi(int(cz / _RG_CELL), 0, _RG_RES - 1)
+		if _rg_data[lb_rgz * _RG_RES + lb_rgx] & (_RG_WATER | _RG_RIVER) != 0:
+			continue
 		var sn := _hg_snap_and_normal(wx, wz)
 		if sn.x < _MIN_LAND_Y or sn.y < 0.82:
 			continue
