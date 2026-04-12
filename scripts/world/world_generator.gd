@@ -726,7 +726,7 @@ func _init_noise_layers() -> void:
 	_mountain_noise = FastNoiseLite.new()
 	_mountain_noise.seed = _seed_hash + 1000
 	_mountain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_mountain_noise.frequency = base_frequency * 2.0
+	_mountain_noise.frequency = base_frequency * 1.2
 	_mountain_noise.fractal_octaves = 4
 	_mountain_noise.fractal_lacunarity = 2.2
 	_mountain_noise.fractal_gain = 0.5
@@ -737,7 +737,7 @@ func _init_noise_layers() -> void:
 	_mountain_broad_noise = FastNoiseLite.new()
 	_mountain_broad_noise.seed = _seed_hash + 1000
 	_mountain_broad_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_mountain_broad_noise.frequency = base_frequency * 0.5
+	_mountain_broad_noise.frequency = base_frequency * 0.3
 	_mountain_broad_noise.fractal_octaves = 1
 
 	_detail_noise = FastNoiseLite.new()
@@ -843,7 +843,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(wx * 0.015 + 9000.0, wz * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 5.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
+	var mtn_multiplier := lerpf(0.5, 10.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
 	h += peak_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(wx, wz)
@@ -1864,7 +1864,7 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 5.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
+	var mtn_multiplier := lerpf(0.5, 10.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
 	h += peak_ramp * height_scale * mtn_multiplier
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
 	var ridge := 1.0 - absf(ridge_raw)
@@ -1899,7 +1899,7 @@ func get_height_at(x: float, z: float) -> float:
 	var peak_ramp := mountain * smoothstep(0.2, 0.5, mountain)
 	var peak_intensity := _detail_noise.get_noise_2d(x * 0.015 + 9000.0, z * 0.015 + 9000.0)
 	peak_intensity = smoothstep(-0.3, 0.6, peak_intensity)
-	var mtn_multiplier := lerpf(0.5, 5.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
+	var mtn_multiplier := lerpf(0.5, 10.0, peak_intensity) * lerpf(0.2, 1.0, breadth)
 	h += peak_ramp * height_scale * mtn_multiplier
 
 	var ridge_raw := _ridge_noise.get_noise_2d(x, z)
@@ -1917,10 +1917,10 @@ func get_height_at(x: float, z: float) -> float:
 		h += crag * height_scale * 0.06 * elev_t
 
 	# Plateau softening — flatten extreme peaks into explorable plateaus
-	var plateau_start := height_scale * 2.5
+	var plateau_start := height_scale * 5.0
 	if h > plateau_start:
 		var excess := h - plateau_start
-		h = plateau_start + excess * 0.4
+		h = plateau_start + excess * 0.35
 
 	# Mountain paths - carve wider walkable switchback trails on mountainsides
 	if _mtn_path_noise and mountain > 0.20 and h > 12.0:

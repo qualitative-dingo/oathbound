@@ -470,8 +470,8 @@ var _interaction: PlayerInteraction
 var _anim: PlayerAnimation
 
 # ── Character Speech ──
-var _speech_label_3d: Label3D
-var _speech_bg: MeshInstance3D
+var _speech_panel: PanelContainer
+var _speech_label: Label
 var _speech_tween: Tween
 var _speech_timer := 0.0
 var _speech_cooldown := 0.0
@@ -1706,6 +1706,7 @@ func _physics_process(delta: float) -> void:
 	_tick_gallop_sfx(delta)
 	_tick_river_ambient(delta)
 	_update_floating_bars(delta)
+	_update_speech_position()
 
 	if NetworkManager.is_connected_to_game():
 		_synced_position = global_position
@@ -4418,46 +4419,48 @@ func _build_hud() -> void:
 	_build_pause_menu()
 
 
-func _build_speech_bubble(_root: Control) -> void:
-	_speech_bg = MeshInstance3D.new()
-	_speech_bg.name = "SpeechBubbleBG"
-	var quad := QuadMesh.new()
-	quad.size = Vector2(1.0, 0.3)
-	_speech_bg.mesh = quad
-	var bg_mat := StandardMaterial3D.new()
-	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	bg_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.82)
-	bg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	bg_mat.no_depth_test = true
-	bg_mat.render_priority = 1
-	_speech_bg.material_override = bg_mat
-	_speech_bg.position = Vector3(0.0, 4.8, 0.0)
-	_speech_bg.visible = false
-	add_child(_speech_bg)
-
+func _build_speech_bubble(root: Control) -> void:
 	var speech_font := load("res://fonts/Almendra-Bold.ttf") as Font
 
-	_speech_label_3d = Label3D.new()
-	_speech_label_3d.name = "SpeechBubble3D"
-	_speech_label_3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_speech_label_3d.no_depth_test = true
-	_speech_label_3d.fixed_size = true
-	_speech_label_3d.pixel_size = 0.0008
+	_speech_panel = PanelContainer.new()
+	_speech_panel.name = "SpeechPanel"
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.0, 0.0, 0.0, 0.72)
+	bg.corner_radius_top_left = 6
+	bg.corner_radius_top_right = 6
+	bg.corner_radius_bottom_left = 6
+	bg.corner_radius_bottom_right = 6
+	bg.content_margin_left = 14.0
+	bg.content_margin_right = 14.0
+	bg.content_margin_top = 6.0
+	bg.content_margin_bottom = 6.0
+	bg.border_width_left = 1
+	bg.border_width_right = 1
+	bg.border_width_top = 1
+	bg.border_width_bottom = 1
+	bg.border_color = Color(0.35, 0.32, 0.25, 0.4)
+	_speech_panel.add_theme_stylebox_override("panel", bg)
+	_speech_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_speech_panel.visible = false
+	_speech_panel.z_index = 50
+
+	_speech_label = Label.new()
+	_speech_label.name = "SpeechText"
 	if speech_font:
-		_speech_label_3d.font = speech_font
-	_speech_label_3d.font_size = 30
-	_speech_label_3d.outline_size = 8
-	_speech_label_3d.modulate = Color(0.93, 0.91, 0.87)
-	_speech_label_3d.outline_modulate = Color(0.0, 0.0, 0.0, 0.7)
-	_speech_label_3d.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_speech_label_3d.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_speech_label_3d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_speech_label_3d.width = 500.0
-	_speech_label_3d.position = Vector3(0.0, 4.8, 0.01)
-	_speech_label_3d.render_priority = 2
-	_speech_label_3d.visible = false
-	add_child(_speech_label_3d)
+		_speech_label.add_theme_font_override("font", speech_font)
+	_speech_label.add_theme_font_size_override("font_size", 18)
+	_speech_label.add_theme_color_override("font_color", Color(0.93, 0.91, 0.87))
+	_speech_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.6))
+	_speech_label.add_theme_constant_override("shadow_offset_x", 1)
+	_speech_label.add_theme_constant_override("shadow_offset_y", 1)
+	_speech_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_speech_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_speech_label.custom_minimum_size = Vector2(0, 0)
+	_speech_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_speech_panel.add_child(_speech_label)
+
+	_speech_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	root.add_child(_speech_panel)
 
 
 func _show_speech(lines: Array, trigger_key: StringName) -> void:
@@ -4465,7 +4468,7 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 		return
 	if _speech_trigger_cooldowns.has(trigger_key) and _speech_trigger_cooldowns[trigger_key] > 0.0:
 		return
-	if not _speech_label_3d:
+	if not _speech_panel:
 		return
 
 	var voiced: Array = []
@@ -4481,7 +4484,19 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	else:
 		idx = randi() % lines.size()
 	var msg := str(lines[idx])
-	_speech_label_3d.text = "\" " + msg + " \""
+	_speech_label.text = "\" " + msg + " \""
+
+	var max_w := get_viewport().get_visible_rect().size.x * 0.45
+	_speech_label.custom_minimum_size.x = 0
+	_speech_panel.custom_minimum_size.x = 0
+	_speech_panel.size = Vector2.ZERO
+	_speech_label.size = Vector2.ZERO
+	if _speech_label.get_theme_font("font"):
+		var f: Font = _speech_label.get_theme_font("font")
+		var fs: int = _speech_label.get_theme_font_size("font_size")
+		var text_w := f.get_string_size(_speech_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		if text_w > max_w:
+			_speech_label.custom_minimum_size.x = max_w
 
 	var has_voice := false
 	if _LINE_VOICE.has(msg):
@@ -4491,15 +4506,6 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 		AudioManager.play_speech(grp, sidx)
 		has_voice = true
 
-	# Size the background quad to fit the text
-	if _speech_bg:
-		var char_w := 0.0065
-		var line_w := minf(float(msg.length()) * char_w, 500.0 * _speech_label_3d.pixel_size)
-		var est_lines := ceilf(float(msg.length()) * char_w / (500.0 * _speech_label_3d.pixel_size))
-		var quad_w := line_w + 0.06
-		var quad_h := est_lines * 0.032 + 0.04
-		(_speech_bg.mesh as QuadMesh).size = Vector2(quad_w, quad_h)
-
 	if _speech_tween and _speech_tween.is_valid():
 		_speech_tween.kill()
 
@@ -4508,27 +4514,17 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 	if sp.finished.is_connected(_on_speech_audio_finished):
 		sp.finished.disconnect(_on_speech_audio_finished)
 
-	var base_color := Color(0.93, 0.91, 0.87, 0.0)
-	_speech_label_3d.modulate = base_color
-	_speech_label_3d.visible = true
-
-	if _speech_bg:
-		var bg_mat := _speech_bg.material_override as StandardMaterial3D
-		if bg_mat:
-			bg_mat.albedo_color.a = 0.0
-		_speech_bg.visible = true
+	_speech_panel.modulate = Color(1, 1, 1, 0)
+	_speech_panel.visible = true
+	_update_speech_position()
 
 	_speech_tween = create_tween()
-	_speech_tween.set_parallel(true)
-	_speech_tween.tween_property(_speech_label_3d, "modulate:a", 1.0, 0.4)
-	if _speech_bg and _speech_bg.material_override:
-		_speech_tween.tween_property(_speech_bg.material_override, "albedo_color:a", 0.82, 0.4)
+	_speech_tween.tween_property(_speech_panel, "modulate:a", 1.0, 0.4)
 
 	if has_voice:
 		_speech_waiting_for_audio = true
 		sp.finished.connect(_on_speech_audio_finished, CONNECT_ONE_SHOT)
 	else:
-		_speech_tween.set_parallel(false)
 		_speech_tween.tween_interval(_SPEECH_DISPLAY_TIME)
 		_append_speech_fade_out(_speech_tween)
 
@@ -4551,16 +4547,27 @@ func _on_speech_audio_finished() -> void:
 
 
 func _append_speech_fade_out(tw: Tween) -> void:
-	tw.set_parallel(true)
-	tw.tween_property(_speech_label_3d, "modulate:a", 0.0, 0.6)
-	if _speech_bg and _speech_bg.material_override:
-		tw.tween_property(_speech_bg.material_override, "albedo_color:a", 0.0, 0.6)
-	tw.set_parallel(false)
+	tw.tween_property(_speech_panel, "modulate:a", 0.0, 0.6)
 	tw.tween_callback(func():
-		_speech_label_3d.visible = false
-		if _speech_bg:
-			_speech_bg.visible = false
+		_speech_panel.visible = false
 	)
+
+
+func _update_speech_position() -> void:
+	if not _speech_panel or not _speech_panel.visible:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if not cam:
+		return
+	var head_world := global_position + Vector3(0.0, 2.6, 0.0)
+	if cam.is_position_behind(head_world):
+		_speech_panel.visible = false
+		return
+	var screen_pos := cam.unproject_position(head_world)
+	var panel_size := _speech_panel.size
+	_speech_panel.position = Vector2(
+		screen_pos.x - panel_size.x * 0.5,
+		screen_pos.y - panel_size.y - 12.0)
 
 
 func _check_speech_triggers(delta: float) -> void:
