@@ -7651,21 +7651,29 @@ func _get_build_recipe(build_id: StringName) -> Dictionary:
 func open_shop(merchant: Node3D) -> void:
 	if _dialogue_open:
 		return
-	if not _quest_bones_accepted:
-		_dialogue_merchant_ref = merchant
-		_dialogue_open = true
-		_dialogue_ui.open_dialogue(DIALOGUE_BONES_OF_EARTH)
-		return
+	_dialogue_merchant_ref = merchant
+	_show_halvard_greeting()
+
 	if _quest_bones_accepted and not _quest_bones_completed:
 		var marrow_count := Inventory.get_amount(&"ancient_marrow")
 		if marrow_count >= 3:
-			_dialogue_merchant_ref = merchant
 			_dialogue_open = true
 			_dialogue_ui.open_dialogue(DIALOGUE_BONES_TURNIN)
 			return
-	_show_halvard_greeting()
-	if _shop_ui:
-		_shop_ui.open_shop(merchant)
+
+	var menu: Array[Dictionary] = []
+	menu.append({"type": "npc", "speaker": "Halvard", "text": _HALVARD_GREETINGS[randi() % _HALVARD_GREETINGS.size()], "next": 1})
+	var menu_opts: Array[Dictionary] = []
+	if not _quest_bones_accepted:
+		menu_opts.append({"label": "Quest: Bones of the Earth", "action": "start_quest"})
+	if not _quest_bones_completed and _quest_bones_accepted:
+		menu_opts.append({"label": "About the quest...", "action": "quest_reminder"})
+	menu_opts.append({"label": "Trade", "action": "open_trade"})
+	menu_opts.append({"label": "Leave", "action": "decline"})
+	menu.append({"type": "final", "options": menu_opts})
+
+	_dialogue_open = true
+	_dialogue_ui.open_dialogue(menu)
 
 
 func close_shop() -> void:
@@ -7704,12 +7712,17 @@ func _on_dialogue_finished(action: String) -> void:
 	_dialogue_merchant_ref = null
 	if action == "accept":
 		_quest_bones_accepted = true
-		if merchant and _shop_ui:
-			_shop_ui.open_shop(merchant)
 	elif action == "complete":
 		Inventory.remove_item(&"ancient_marrow", 3)
 		_quest_bones_completed = true
 		GameEvents.inventory_changed.emit()
+		if merchant and _shop_ui:
+			_shop_ui.open_shop(merchant)
+	elif action == "start_quest":
+		_dialogue_merchant_ref = merchant
+		_dialogue_open = true
+		_dialogue_ui.open_dialogue(DIALOGUE_BONES_OF_EARTH)
+	elif action == "open_trade":
 		if merchant and _shop_ui:
 			_shop_ui.open_shop(merchant)
 	elif action == "decline":

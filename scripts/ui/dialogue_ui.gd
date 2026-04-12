@@ -202,9 +202,17 @@ func _present_step() -> void:
 		_show_choices(node)
 
 
+func _find_last_npc_speaker() -> String:
+	for i in range(_step - 1, -1, -1):
+		var n: Dictionary = _tree[i]
+		if str(n.get("type", "npc")) == "npc" and n.has("speaker"):
+			return str(n["speaker"])
+	return "???"
+
+
 func _show_choices(node: Dictionary) -> void:
 	_clear_choices()
-	_set_speaker(str(_tree[maxi(_step - 1, 0)].get("speaker", "???")), false)
+	_set_speaker(_find_last_npc_speaker(), false)
 	_text_label.text = ""
 	_choices_rule.visible = true
 	_choices_box.visible = true
@@ -240,11 +248,12 @@ func _show_choices(node: Dictionary) -> void:
 		hover_style.content_margin_bottom = 8
 		btn.add_theme_stylebox_override("hover", hover_style)
 		btn.add_theme_stylebox_override("pressed", hover_style)
-		btn.add_theme_stylebox_override("focus", hover_style)
+		btn.add_theme_stylebox_override("focus", style)
+		btn.focus_mode = Control.FOCUS_NONE
 
 		btn.add_theme_color_override("font_color", Color(0.72, 0.68, 0.58))
 		btn.add_theme_color_override("font_hover_color", Color(1.0, 0.90, 0.55))
-		btn.add_theme_color_override("font_focus_color", Color(1.0, 0.90, 0.55))
+		btn.add_theme_color_override("font_focus_color", Color(0.72, 0.68, 0.58))
 
 		var bound_opt := opt
 		var bound_type := str(node.get("type", "choice"))
@@ -252,12 +261,13 @@ func _show_choices(node: Dictionary) -> void:
 		_choices_box.add_child(btn)
 
 	if _choices_box.get_child_count() > 0:
-		(_choices_box.get_child(0) as Button).grab_focus()
+		_choices_box.get_child(0).release_focus()
 
 
 func _on_choice_picked(opt: Dictionary, type: String) -> void:
 	_kill_tweens()
 	_disconnect_audio_signal()
+	AudioManager._speech_player.stop()
 	_clear_choices()
 
 	var player_label := str(opt.get("label", ""))
@@ -294,13 +304,22 @@ func _on_player_audio_done() -> void:
 		return
 	_showing_player_line = false
 	_disconnect_audio_signal()
+	AudioManager._speech_player.stop()
 
+	_auto_advance_tween = _panel.create_tween()
+	_auto_advance_tween.tween_interval(0.25)
+	_auto_advance_tween.tween_callback(_show_npc_response)
+
+
+func _show_npc_response() -> void:
+	if not _is_open:
+		return
 	var opt := _pending_opt
 	var type := _pending_opt_type
 	var response := str(opt.get("response", ""))
 
 	if response != "":
-		var speaker := str(opt.get("response_speaker", "Halvard"))
+		var speaker := str(opt.get("response_speaker", _find_last_npc_speaker()))
 		_set_speaker(speaker, false)
 		_start_typewriter(response)
 		var resp_audio: Array = opt.get("response_audio", []) as Array
