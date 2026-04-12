@@ -104,7 +104,7 @@ func build_panel(root: Control) -> void:
 	vbox.add_child(_choices_box)
 
 	_skip_hint = Label.new()
-	_skip_hint.text = "click to skip"
+	_skip_hint.text = "click to continue"
 	_skip_hint.add_theme_font_size_override("font_size", 11)
 	_skip_hint.add_theme_color_override("font_color", Color(0.5, 0.45, 0.35, 0.5))
 	_skip_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -160,10 +160,31 @@ func is_showing_choices() -> bool:
 func handle_click() -> void:
 	if not _is_open or is_showing_choices():
 		return
+	if _is_typewriting():
+		_complete_typewriter()
+		return
 	if _showing_player_line:
 		_skip_to_response()
 	elif _showing_response or _is_npc_talking():
 		_skip_to_next()
+	if not _skip_hint_shown:
+		_skip_hint_shown = true
+		_skip_hint.visible = false
+
+
+func _is_typewriting() -> bool:
+	return _typewriter_tween != null and _typewriter_tween.is_valid() and _typewriter_tween.is_running()
+
+
+func _complete_typewriter() -> void:
+	if _typewriter_tween and _typewriter_tween.is_valid():
+		_typewriter_tween.kill()
+		_typewriter_tween = null
+	_text_label.text = _full_text
+	if AudioManager._speech_player.playing:
+		AudioManager._speech_player.stop()
+	_disconnect_audio_signal()
+	_kill_auto_advance()
 	if not _skip_hint_shown:
 		_skip_hint_shown = true
 		_skip_hint.visible = false
