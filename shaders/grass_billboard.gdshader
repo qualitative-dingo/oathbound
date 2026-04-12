@@ -18,25 +18,18 @@ global uniform vec3 player_world_position;
 
 varying vec3 world_pos;
 varying flat int tex_index;
+varying flat float discard_threshold;
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 
-	// Instance origin for consistent per-instance random (same for all vertices)
-	vec3 inst_origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-	float instance_rand = fract(inst_origin.x * 73.27 + inst_origin.z * 97.41);
-	float cam_dist = length(inst_origin - CAMERA_POSITION_WORLD);
-	float dist_factor = smoothstep(density_near, density_far, cam_dist);
-	float keep_threshold = mix(1.0, 0.3, dist_factor);
-
-	if (instance_rand > keep_threshold) {
-		VERTEX = vec3(0.0);
-		tex_index = 0;
-		return;
-	}
-
 	tex_index = int(INSTANCE_CUSTOM.x * float(atlas_columns) + 0.5);
 	tex_index = clamp(tex_index, 0, atlas_columns - 1);
+
+	float instance_rand = fract(INSTANCE_CUSTOM.y * 12345.67 + world_pos.x * 0.123 + world_pos.z * 0.456);
+	float cam_dist = length(world_pos - CAMERA_POSITION_WORLD);
+	float dist_factor = smoothstep(density_near, density_far, cam_dist);
+	discard_threshold = mix(1.0, 0.3, dist_factor);
 
 	float scale_factor = mix(1.0, 0.55, dist_factor);
 	VERTEX *= scale_factor;
@@ -46,7 +39,6 @@ void vertex() {
 
 	float wm = leaf_wind_multiplier;
 
-	// Per-patch tempo variation: nearby blades share a lazy/lively rhythm
 	float local_tempo = 0.7 + 0.6 * (sin(world_pos.x * 0.07 + world_pos.z * 0.09 + 31.7)
 	                                 * sin(world_pos.z * 0.05 - world_pos.x * 0.06 + 74.3)
 	                                 * 0.5 + 0.5);
@@ -68,7 +60,6 @@ void vertex() {
 	VERTEX.x += (wave_x + flutter_x * wm) * sway;
 	VERTEX.z += (wave_z + flutter_z * wm) * sway * 0.7;
 
-	// Player proximity — bend grass away from the player's feet
 	vec2 to_player = world_pos.xz - player_world_position.xz;
 	float player_dist = length(to_player);
 	float push = 1.0 - smoothstep(0.0, player_push_radius, player_dist);
@@ -82,9 +73,13 @@ void vertex() {
 }
 
 void fragment() {
+	float instance_rand = fract(world_pos.x * 73.27 + world_pos.z * 97.41);
+	if (instance_rand > discard_threshold) {
+		discard;
+	}
+
 	NORMAL = vec3(0.0, 1.0, 0.0);
 
-	// Calculate atlas UV - divide texture into columns
 	float col_width = 1.0 / float(atlas_columns);
 	vec2 atlas_uv = vec2(UV.x * col_width + float(tex_index) * col_width, UV.y);
 	vec4 tex = texture(albedo_texture, atlas_uv);
@@ -93,10 +88,8 @@ void fragment() {
 	ALBEDO = tex.rgb * albedo_color.rgb * ground_ao;
 	ROUGHNESS = roughness;
 
-	// Soft fade at top and bottom edges to eliminate hard horizontal lines
-	// when viewed at shallow angles
-	float edge_top = smoothstep(0.0, 0.12, UV.y);    // fade near top (UV.y=0)
-	float edge_bot = smoothstep(1.0, 0.88, UV.y);     // fade near bottom (UV.y=1)
+	float edge_top = smoothstep(0.0, 0.12, UV.y);
+	float edge_bot = smoothstep(1.0, 0.88, UV.y);
 	ALPHA = tex.a * albedo_color.a * edge_top * edge_bot;
 	ALPHA_SCISSOR_THRESHOLD = alpha_cutoff;
 	BACKLIGHT = vec3(0.35);
