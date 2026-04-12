@@ -166,12 +166,16 @@ void fragment() {
 	float edge_fade = smoothstep(0.0, 0.06, min(v_uv.x, 1.0 - v_uv.x));
 	ALPHA = mix(ALPHA * edge_fade, final_col.a, skirt_t);
 
-	// Fade out creek mesh as it approaches water bodies
+	// Fade out creek SURFACE as it approaches water bodies, but keep skirt opaque
+	// to occlude the global water plane underneath
 	float water_fade = smoothstep(water_level - 1.2, water_level - 0.3, v_world_y);
-	ALPHA *= water_fade;
+	ALPHA *= mix(water_fade, 1.0, skirt_t);
 
 	// Boost visibility on steep cascading sections
 	ALPHA = mix(ALPHA, max(ALPHA, 0.85), v_slope * 0.6);
+
+	// Skirt and floor must be fully opaque to block the global water plane
+	ALPHA = max(ALPHA, skirt_t * 0.95);
 
 	ROUGHNESS = mix(0.1, 0.4, total_foam);
 	METALLIC = mix(0.05, 0.0, total_foam);

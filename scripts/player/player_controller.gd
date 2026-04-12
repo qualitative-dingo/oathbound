@@ -5635,16 +5635,25 @@ func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, hal
 		px_y = half + int(round(from_center.y))
 
 	var sz := img.get_width()
+	var outline := Color(0.15, 0.10, 0.0)
 	var fill := Color(1.0, 0.9, 0.3)
 
-	# "!" glyph: stem 2px tall, 1px gap, 1px dot — no outline, clean fill
 	var stem_top := px_y - 1
 	var dot_y := px_y + 2
-	for oy in range(stem_top, stem_top + 2):
-		if px_x >= 0 and px_x < sz and oy >= 0 and oy < sz:
-			img.set_pixel(px_x, oy, fill)
-	if px_x >= 0 and px_x < sz and dot_y >= 0 and dot_y < sz:
-		img.set_pixel(px_x, dot_y, fill)
+	var fill_pixels: Array[Vector2i] = [
+		Vector2i(px_x, stem_top),
+		Vector2i(px_x, stem_top + 1),
+		Vector2i(px_x, dot_y)]
+	for fp in fill_pixels:
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				var fx := fp.x + ox
+				var fy := fp.y + oy
+				if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
+					img.set_pixel(fx, fy, outline)
+	for fp in fill_pixels:
+		if fp.x >= 0 and fp.x < sz and fp.y >= 0 and fp.y < sz:
+			img.set_pixel(fp.x, fp.y, fill)
 
 
 func _generate_arrow_texture(sz: int) -> ImageTexture:
@@ -5822,20 +5831,7 @@ func _refresh_minimap() -> void:
 				var depth := clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0)
 				col = water_shallow.lerp(water_col, depth)
 			else:
-				var zone_coord := Vector2i(
-					floori(world_x / zone_size),
-					floori(world_z / zone_size))
-				var biome: StringName
-				var micro: StringName
-				if biome_cache.has(zone_coord):
-					var cached: Array = biome_cache[zone_coord]
-					biome = cached[0] as StringName
-					micro = cached[1] as StringName
-				else:
-					biome = wg._determine_biome(zone_coord)
-					micro = wg.get_microbiome_at_zone(zone_coord)
-					biome_cache[zone_coord] = [biome, micro]
-				col = _biome_map_color(biome, micro, h)
+				col = _get_blended_biome_color(world_x, world_z, h, zone_size, wg, biome_cache)
 				var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
 				col = Color(
 					clampf(col.r * bright, 0.0, 1.0),
@@ -9033,6 +9029,7 @@ func _refresh_map() -> void:
 	var water_col := Color(0.12, 0.28, 0.52)
 	var water_shallow := Color(0.18, 0.38, 0.55)
 	var unexplored := Color(0.08, 0.08, 0.10, 1.0)
+	var wmap_biome_cache: Dictionary = {}
 
 	for py in range(0, MAP_PX):
 		for px in range(0, MAP_PX):
@@ -9059,9 +9056,7 @@ func _refresh_map() -> void:
 					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
 					col = water_shallow.lerp(water_col, depth)
 				else:
-					var biome: StringName = cache.get(zone_coord, &"hearthlands") as StringName
-					var micro := wg.get_microbiome_at_zone(zone_coord)
-					col = _biome_map_color(biome, micro, zh)
+					col = _get_blended_biome_color(world_x, world_z, zh, zone_size, wg, wmap_biome_cache)
 					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
 					col = Color(
 						clampf(col.r * bright, 0.0, 1.0),
@@ -9140,10 +9135,8 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 func _draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
 	if zones_per_pixel < 0.001:
 		return
-	var wg := _find_world_generator()
-	var scene_pos := wg.world_to_scene_pos(world_pos) if wg else world_pos
-	var dx_world := scene_pos.x - global_position.x
-	var dz_world := scene_pos.z - global_position.z
+	var dx_world := world_pos.x - global_position.x
+	var dz_world := world_pos.z - global_position.z
 	var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
 	var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
 	for dy in range(-radius, radius + 1):
@@ -9158,10 +9151,8 @@ func _draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, 
 func _draw_map_exclamation(world_pos: Vector3, color: Color, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
 	if zones_per_pixel < 0.001:
 		return
-	var wg := _find_world_generator()
-	var scene_pos := wg.world_to_scene_pos(world_pos) if wg else world_pos
-	var dx_w := scene_pos.x - global_position.x
-	var dz_w := scene_pos.z - global_position.z
+	var dx_w := world_pos.x - global_position.x
+	var dz_w := world_pos.z - global_position.z
 	var cx: int = half_px + roundi(dx_w / (zones_per_pixel * zone_size))
 	var cy: int = half_px + roundi(dz_w / (zones_per_pixel * zone_size))
 	var outline := Color(0.15, 0.10, 0.0)
@@ -9300,6 +9291,32 @@ func _update_map_marker_labels(half_px: int, zones_per_pixel: float, zone_size: 
 
 	for i in range(_map_markers.size(), _map_marker_labels.size()):
 		_map_marker_labels[i].visible = false
+
+
+func _zone_biome_color(zone_coord: Vector2i, wg: Node, biome_cache: Dictionary, height: float) -> Color:
+	if biome_cache.has(zone_coord):
+		var cached: Array = biome_cache[zone_coord]
+		return _biome_map_color(cached[0], cached[1], height)
+	var biome: StringName = wg._determine_biome(zone_coord)
+	var micro: StringName = wg.get_microbiome_at_zone(zone_coord)
+	biome_cache[zone_coord] = [biome, micro]
+	return _biome_map_color(biome, micro, height)
+
+
+func _get_blended_biome_color(world_x: float, world_z: float, height: float, zone_size: float, wg: Node, biome_cache: Dictionary) -> Color:
+	var cx := world_x / zone_size - 0.5
+	var cz := world_z / zone_size - 0.5
+	var ix := floori(cx)
+	var iz := floori(cz)
+	var fx := cx - float(ix)
+	var fz := cz - float(iz)
+	fx = fx * fx * (3.0 - 2.0 * fx)
+	fz = fz * fz * (3.0 - 2.0 * fz)
+	var c00 := _zone_biome_color(Vector2i(ix, iz), wg, biome_cache, height)
+	var c10 := _zone_biome_color(Vector2i(ix + 1, iz), wg, biome_cache, height)
+	var c01 := _zone_biome_color(Vector2i(ix, iz + 1), wg, biome_cache, height)
+	var c11 := _zone_biome_color(Vector2i(ix + 1, iz + 1), wg, biome_cache, height)
+	return c00.lerp(c10, fx).lerp(c01.lerp(c11, fx), fz)
 
 
 func _biome_map_color(biome: StringName, micro: StringName = &"none", height: float = 0.0) -> Color:

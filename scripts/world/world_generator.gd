@@ -3210,8 +3210,10 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			var right_terrain_y := get_height_at(right_wx, right_wz) - zone_origin.y - 0.3
 			var skirt_depth := _CREEK_DEPTH * (1.0 - clampf(slopes[i] / 0.6, 0.0, 0.8))
 			var fixed_bottom := local_p.y - skirt_depth
-			var left_bottom_y := minf(fixed_bottom, left_terrain_y)
-			var right_bottom_y := minf(fixed_bottom, right_terrain_y)
+			# Ensure skirt extends below the global water plane to occlude it
+			var global_water_y := WATER_LEVEL - 0.15 - zone_origin.y - 0.5
+			var left_bottom_y := minf(minf(fixed_bottom, left_terrain_y), global_water_y)
+			var right_bottom_y := minf(minf(fixed_bottom, right_terrain_y), global_water_y)
 
 			var left_bottom := Vector3(left_top.x, left_bottom_y, left_top.z)
 			var right_bottom := Vector3(right_top.x, right_bottom_y, right_top.z)
@@ -3277,6 +3279,13 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 				indices.append(prev + 3)
 				indices.append(curr + 3)
 				indices.append(curr + 2)
+				# Bottom floor — seals the creek mesh to occlude the global water plane
+				indices.append(prev + 0)
+				indices.append(curr + 0)
+				indices.append(curr + 3)
+				indices.append(prev + 0)
+				indices.append(curr + 3)
+				indices.append(prev + 3)
 
 		if verts.size() < 8:
 			continue
