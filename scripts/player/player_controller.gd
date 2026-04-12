@@ -69,6 +69,7 @@ const MAP_ZOOM_MAX := 100.0
 const MAP_ZOOM_STEP := 4.0
 const MAP_ZOOM_SPEED := 25.0
 const MAP_PX := 512
+const MAP_RENDER_PX := 256
 
 var equipped_weapon: StringName = &"fists"
 ## Synced for multiplayer; updated when animation changes.
@@ -424,7 +425,6 @@ var _map_image: Image
 var _map_image_tex: ImageTexture
 var _map_circle_mask: Image
 var _map_mask_bytes: PackedByteArray
-var _map_zone_color_cache: Dictionary = {}
 var _map_dirty := true
 var _map_last_player_pos := Vector3.ZERO
 var _map_refresh_timer := 0.0
@@ -9040,7 +9040,7 @@ func _build_map_panel(root: Control) -> void:
 	_map_panel.add_child(center)
 	root.add_child(_map_panel)
 
-	_map_image = Image.create(MAP_PX, MAP_PX, false, Image.FORMAT_RGBA8)
+	_map_image = Image.create(MAP_RENDER_PX, MAP_RENDER_PX, false, Image.FORMAT_RGBA8)
 	_map_image_tex = ImageTexture.new()
 	_build_circle_mask()
 
@@ -9061,14 +9061,14 @@ func _add_compass_label(parent: Control, text: String, pos: Vector2, color: Colo
 
 
 func _build_circle_mask() -> void:
-	_map_circle_mask = Image.create(MAP_PX, MAP_PX, false, Image.FORMAT_RGBA8)
-	var half := float(MAP_PX) * 0.5
-	var radius := half - 6.0
-	var edge_width := 14.0
-	var ring_outer := radius + 3.0
-	var ring_inner := radius - 2.0
-	for y in range(MAP_PX):
-		for x in range(MAP_PX):
+	_map_circle_mask = Image.create(MAP_RENDER_PX, MAP_RENDER_PX, false, Image.FORMAT_RGBA8)
+	var half := float(MAP_RENDER_PX) * 0.5
+	var radius := half - 3.0
+	var edge_width := 7.0
+	var ring_outer := radius + 1.5
+	var ring_inner := radius - 1.0
+	for y in range(MAP_RENDER_PX):
+		for x in range(MAP_RENDER_PX):
 			var dx := float(x) - half
 			var dy := float(y) - half
 			var dist := sqrt(dx * dx + dy * dy)
@@ -9107,7 +9107,7 @@ func _refresh_map() -> void:
 
 	var player_pos := wg.get_world_position(self)
 	var center_zone: Vector2i = wg.world_to_zone(player_pos)
-	var half_px := MAP_PX / 2
+	var half_px := MAP_RENDER_PX / 2
 	var explored: Dictionary = wg._explored_zones
 	var zone_size: float = wg.ZONE_SIZE
 
@@ -9131,13 +9131,14 @@ func _refresh_map() -> void:
 	var unx_g := 20
 	var unx_b := 26
 	var mask_bytes := _map_mask_bytes
+	var rpx := MAP_RENDER_PX
 	var out := PackedByteArray()
-	out.resize(MAP_PX * MAP_PX * 4)
-	var zcache := _map_zone_color_cache
+	out.resize(rpx * rpx * 4)
+	var biome_cache: Dictionary = {}
 
-	for py in MAP_PX:
-		for px in MAP_PX:
-			var bi := (py * MAP_PX + px) * 4
+	for py in rpx:
+		for px in rpx:
+			var bi := (py * rpx + px) * 4
 			var ma := mask_bytes[bi + 3]
 
 			if ma < 3:
@@ -9159,28 +9160,30 @@ func _refresh_map() -> void:
 				center_zone.y + floori(zone_fz))
 
 			if no_fog or explored.has(zone_coord):
-				if not zcache.has(zone_coord):
-					var zx_w := (float(zone_coord.x) + 0.5) * zone_size
-					var zz_w := (float(zone_coord.y) + 0.5) * zone_size
-					var zh := wg.get_height_at(zx_w, zz_w)
-					var zcol: Color
-					if zh < wg.WATER_LEVEL:
-						var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
-						zcol = water_shallow.lerp(water_col, depth)
-					else:
-						var biome: StringName = wg._determine_biome(zone_coord)
-						var micro: StringName = wg.get_microbiome_at_zone(zone_coord)
-						zcol = _biome_map_color(biome, micro, zh)
-						var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
-						zcol = Color(
-							clampf(zcol.r * bright, 0.0, 1.0),
-							clampf(zcol.g * bright, 0.0, 1.0),
-							clampf(zcol.b * bright, 0.0, 1.0))
-					zcache[zone_coord] = zcol
-				var c: Color = zcache[zone_coord]
-				out[bi] = int(c.r * 255.0)
-				out[bi + 1] = int(c.g * 255.0)
-				out[bi + 2] = int(c.b * 255.0)
+				var world_x := player_pos.x + zone_fx * zone_size
+				var world_z := player_pos.z + zone_fz * zone_size
+				var zh := wg.get_height_at(world_x, world_z)
+				var cr: int
+				var cg: int
+				var cb: int
+				if zh < wg.WATER_LEVEL:
+					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
+					var wc := water_shallow.lerp(water_col, depth)
+					cr = int(wc.r * 255.0)
+					cg = int(wc.g * 255.0)
+					cb = int(wc.b * 255.0)
+				else:
+					if not biome_cache.has(zone_coord):
+						biome_cache[zone_coord] = [wg._determine_biome(zone_coord), wg.get_microbiome_at_zone(zone_coord)]
+					var bc: Array = biome_cache[zone_coord]
+					var col := _biome_map_color(bc[0], bc[1], zh)
+					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
+					cr = int(clampf(col.r * bright, 0.0, 1.0) * 255.0)
+					cg = int(clampf(col.g * bright, 0.0, 1.0) * 255.0)
+					cb = int(clampf(col.b * bright, 0.0, 1.0) * 255.0)
+				out[bi] = cr
+				out[bi + 1] = cg
+				out[bi + 2] = cb
 				out[bi + 3] = 255
 			else:
 				out[bi] = unx_r
@@ -9188,7 +9191,7 @@ func _refresh_map() -> void:
 				out[bi + 2] = unx_b
 				out[bi + 3] = 255
 
-	_map_image.set_data(MAP_PX, MAP_PX, false, Image.FORMAT_RGBA8, out)
+	_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
 
 	# -- Structure markers --
 	_draw_structure_markers(half_px, zones_per_pixel, zone_size, wg)
@@ -9209,7 +9212,7 @@ func _refresh_map() -> void:
 
 
 func _draw_player_arrow(half_px: int) -> void:
-	var base_scale := 1.4
+	var base_scale := 0.7
 	var zoom_compensate := _map_zoom / 40.0
 	_draw_arrow_on_image(_map_image, half_px, base_scale * zoom_compensate)
 
@@ -9271,12 +9274,13 @@ func _draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, 
 	var dz_world := world_pos.z - global_position.z
 	var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
 	var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
+	var sz := MAP_RENDER_PX
 	for dy in range(-radius, radius + 1):
 		for dx in range(-radius, radius + 1):
 			if dx * dx + dy * dy <= radius * radius:
 				var fx := px_x + dx
 				var fy := px_y + dy
-				if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
+				if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
 					_map_image.set_pixel(fx, fy, color)
 
 
@@ -9288,33 +9292,29 @@ func _draw_map_exclamation(world_pos: Vector3, color: Color, half_px: int, zones
 	var cx: int = half_px + roundi(dx_w / (zones_per_pixel * zone_size))
 	var cy: int = half_px + roundi(dz_w / (zones_per_pixel * zone_size))
 	var outline := Color(0.15, 0.10, 0.0)
-	# Outline pass — 2px wide stem (8px) + gap + dot (3px)
-	for dy: int in range(-7, 2):
-		for dx_off: int in range(-2, 3):
-			var fx: int = cx + dx_off
-			var fy: int = cy + dy
-			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
-				_map_image.set_pixel(fx, fy, outline)
-	for dy: int in range(4, 8):
-		for dx_off: int in range(-2, 3):
-			var fx: int = cx + dx_off
-			var fy: int = cy + dy
-			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
-				_map_image.set_pixel(fx, fy, outline)
-	# Fill pass — stem
-	for dy: int in range(-6, 1):
+	var sz := MAP_RENDER_PX
+	for dy: int in range(-4, 1):
 		for dx_off: int in range(-1, 2):
 			var fx: int = cx + dx_off
 			var fy: int = cy + dy
-			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
-				_map_image.set_pixel(fx, fy, color)
-	# Fill pass — dot
-	for dy: int in range(5, 7):
+			if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
+				_map_image.set_pixel(fx, fy, outline)
+	for dy: int in range(2, 5):
 		for dx_off: int in range(-1, 2):
 			var fx: int = cx + dx_off
 			var fy: int = cy + dy
-			if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
-				_map_image.set_pixel(fx, fy, color)
+			if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
+				_map_image.set_pixel(fx, fy, outline)
+	for dy: int in range(-3, 0):
+		var fx: int = cx
+		var fy: int = cy + dy
+		if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
+			_map_image.set_pixel(fx, fy, color)
+	for dy: int in range(3, 4):
+		var fx: int = cx
+		var fy: int = cy + dy
+		if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
+			_map_image.set_pixel(fx, fy, color)
 
 
 func _draw_marrow_quest_area(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
@@ -9353,8 +9353,8 @@ func _draw_marrow_quest_area(half_px: int, zones_per_pixel: float, zone_size: fl
 			if d_sq <= r_sq_outer and d_sq >= r_sq_inner:
 				var fx := cx + dx
 				var fy := cy + dy
-				if fx >= 0 and fx < MAP_PX and fy >= 0 and fy < MAP_PX:
-					_map_image.set_pixel(fx, fy, col)
+			if fx >= 0 and fx < MAP_RENDER_PX and fy >= 0 and fy < MAP_RENDER_PX:
+				_map_image.set_pixel(fx, fy, col)
 
 
 func _reveal_map_marker(marker_id: String, world_pos: Vector3, label_text: String) -> void:
@@ -9376,9 +9376,10 @@ func _draw_map_markers(half_px: int, zones_per_pixel: float, zone_size: float) -
 		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
 		var col: Color = marker.get("color", Color.GOLD) as Color
 		var scene_pos := wg.world_to_scene_pos(wpos) if wg else wpos
-		_draw_map_dot(scene_pos, col, 4, half_px, zones_per_pixel, zone_size)
+		_draw_map_dot(scene_pos, col, 3, half_px, zones_per_pixel, zone_size)
 		var ring_col := Color(col.r, col.g, col.b, 0.6)
-		for r in range(5, 7):
+		var msz := MAP_RENDER_PX
+		for r in range(4, 6):
 			for dy in range(-r, r + 1):
 				for dx in range(-r, r + 1):
 					var dd := dx * dx + dy * dy
@@ -9387,7 +9388,7 @@ func _draw_map_markers(half_px: int, zones_per_pixel: float, zone_size: float) -
 						var dz_w := scene_pos.z - global_position.z
 						var px_x := half_px + roundi(dx_w / (zones_per_pixel * zone_size)) + dx
 						var px_y := half_px + roundi(dz_w / (zones_per_pixel * zone_size)) + dy
-						if px_x >= 0 and px_x < MAP_PX and px_y >= 0 and px_y < MAP_PX:
+						if px_x >= 0 and px_x < msz and px_y >= 0 and px_y < msz:
 							_map_image.set_pixel(px_x, px_y, ring_col)
 
 	_update_map_marker_labels(half_px, zones_per_pixel, zone_size)
@@ -9418,7 +9419,8 @@ func _update_map_marker_labels(half_px: int, zones_per_pixel: float, zone_size: 
 		var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
 		var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
 		lbl.text = str(marker.get("label", ""))
-		lbl.position = Vector2(px_x + 8, px_y - 8)
+		var scale_f := float(MAP_PX) / float(MAP_RENDER_PX)
+		lbl.position = Vector2(float(px_x) * scale_f + 8.0, float(px_y) * scale_f - 8.0)
 		lbl.visible = _map_open
 
 	for i in range(_map_markers.size(), _map_marker_labels.size()):
