@@ -2414,7 +2414,7 @@ func _find_tavern_position() -> void:
 		var h_count := 1
 		for si in 8:
 			var sa := float(si) * TAU / 8.0
-			for sr in [12.0, 24.0]:
+			for sr in [12.0, 24.0, 36.0]:
 				var sh := get_height_at(wx + cos(sa) * sr, wz + sin(sa) * sr)
 				h_sum += sh
 				h_count += 1
@@ -3140,6 +3140,18 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 		if points.size() < 2:
 			continue
 
+		var tavern_cut := _tavern_world_pos.y > 0.0
+		var tavern_r2 := _TAVERN_FLAT_RADIUS * _TAVERN_FLAT_RADIUS
+		var pt_in_tavern := PackedByteArray()
+		for i in points.size():
+			var p := points[i]
+			if tavern_cut:
+				var tdx := p.x - _tavern_world_pos.x
+				var tdz := p.z - _tavern_world_pos.z
+				pt_in_tavern.append(1 if tdx * tdx + tdz * tdz < tavern_r2 else 0)
+			else:
+				pt_in_tavern.append(0)
+
 		# Pre-compute per-point slope (dy/dx) for flow speed modulation
 		var slopes := PackedFloat32Array()
 		for i in points.size():
@@ -3265,7 +3277,7 @@ func _build_creek_meshes_for_zone(zone_root: Node3D, coord: Vector2i) -> void:
 			colors.append(col_surface)
 			colors.append(col_skirt)
 
-			if i > 0:
+			if i > 0 and pt_in_tavern[i] == 0 and pt_in_tavern[i - 1] == 0:
 				var prev := (i - 1) * 4
 				var curr := i * 4
 				# Left skirt wall

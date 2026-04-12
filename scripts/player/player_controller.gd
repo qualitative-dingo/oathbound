@@ -9146,7 +9146,9 @@ func _refresh_map() -> void:
 
 
 func _draw_player_arrow(half_px: int) -> void:
-	_draw_arrow_on_image(_map_image, half_px, 1.0)
+	var base_scale := 1.4
+	var zoom_compensate := _map_zoom / 40.0
+	_draw_arrow_on_image(_map_image, half_px, base_scale * zoom_compensate)
 
 
 func _point_in_arrow(pt: Vector2, verts: Array[Vector2], scale: float) -> bool:
@@ -9176,6 +9178,8 @@ func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: fl
 		if not n3d:
 			continue
 		if n3d.is_in_group(&"village"):
+			continue
+		if n3d.name == "Tavern":
 			continue
 		_draw_map_dot(n3d.global_position, marker_col, 2, half_px, zones_per_pixel, zone_size)
 
