@@ -5665,13 +5665,13 @@ func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, hal
 		Vector2i(px_x, stem_top),
 		Vector2i(px_x, stem_top + 1),
 		Vector2i(px_x, dot_y)]
+	var cardinals: Array[Vector2i] = [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]
 	for fp in fill_pixels:
-		for oy in range(-1, 2):
-			for ox in range(-1, 2):
-				var fx := fp.x + ox
-				var fy := fp.y + oy
-				if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
-					img.set_pixel(fx, fy, outline)
+		for off in cardinals:
+			var fx := fp.x + off.x
+			var fy := fp.y + off.y
+			if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
+				img.set_pixel(fx, fy, outline)
 	for fp in fill_pixels:
 		if fp.x >= 0 and fp.x < sz and fp.y >= 0 and fp.y < sz:
 			img.set_pixel(fp.x, fp.y, fill)
