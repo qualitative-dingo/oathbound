@@ -1269,9 +1269,10 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if _dialogue_open and event is InputEventMouseButton and event.pressed and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
-		_dialogue_ui.handle_click()
-		get_viewport().set_input_as_handled()
-		return
+		if not _dialogue_ui.is_showing_choices():
+			_dialogue_ui.handle_click()
+			get_viewport().set_input_as_handled()
+			return
 	if _shop_open and (event.is_action_pressed(&"interact") or event.is_action_pressed(&"inventory") or event.is_action_pressed(&"quit_game") or event.is_action_pressed(&"ui_cancel")):
 		close_shop()
 		get_viewport().set_input_as_handled()

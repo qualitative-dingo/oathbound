@@ -153,8 +153,12 @@ func is_open() -> bool:
 	return _is_open
 
 
+func is_showing_choices() -> bool:
+	return _choices_box.visible
+
+
 func handle_click() -> void:
-	if not _is_open:
+	if not _is_open or is_showing_choices():
 		return
 	if _showing_player_line:
 		_skip_to_response()
