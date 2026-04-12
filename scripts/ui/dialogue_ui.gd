@@ -181,10 +181,6 @@ func _complete_typewriter() -> void:
 		_typewriter_tween.kill()
 		_typewriter_tween = null
 	_text_label.text = _full_text
-	if AudioManager._speech_player.playing:
-		AudioManager._speech_player.stop()
-	_disconnect_audio_signal()
-	_kill_auto_advance()
 	if not _skip_hint_shown:
 		_skip_hint_shown = true
 		_skip_hint.visible = false
