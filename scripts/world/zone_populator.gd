@@ -629,9 +629,10 @@ static func _ensure_textures() -> void:
 	for tint in _palette_tints:
 		var m := _mat_stone.duplicate()
 		if m is ShaderMaterial:
-			var base_col: Color = (m as ShaderMaterial).get_shader_parameter("stone_color")
-			(m as ShaderMaterial).set_shader_parameter("stone_color", Color(
-				base_col.r * tint.r, base_col.g * tint.g, base_col.b * tint.b))
+			var base_col = (m as ShaderMaterial).get_shader_parameter("stone_color")
+			if base_col is Color:
+				(m as ShaderMaterial).set_shader_parameter("stone_color", Color(
+					base_col.r * tint.r, base_col.g * tint.g, base_col.b * tint.b))
 		elif m is StandardMaterial3D:
 			(m as StandardMaterial3D).albedo_color = tint
 		_rock_palette.append(m)
@@ -1538,6 +1539,7 @@ static func _try_spawn_merchant_camp(
 		var tree := Engine.get_main_loop() as SceneTree
 		if tree and not tree.get_nodes_in_group(&"merchants").is_empty():
 			return
+		print("[MERCHANT] Previous merchant gone, resetting spawn flag for zone %s" % str(coord))
 		_merchant_spawned = false
 	var wg := _get_world_generator()
 	if not wg or not wg.has_method("get_merchant_world_pos"):
@@ -1558,8 +1560,8 @@ static func _try_spawn_merchant_camp(
 	var ground_y: float = height_func.call(merchant_pos.x, merchant_pos.z)
 	camp.position = Vector3(lx, ground_y, lz)
 	zone_root.add_child(camp)
-	if _DEBUG_LOG:
-		print("[ZONE] Spawned merchant camp at world (%.0f, %.0f)" % [merchant_pos.x, merchant_pos.z])
+	print("[MERCHANT] Spawned Halvard at world (%.1f, %.1f, %.1f) zone %s local (%.1f, %.1f, %.1f)" % [
+		merchant_pos.x, merchant_pos.z, ground_y, str(coord), lx, ground_y, lz])
 
 
 static func _try_spawn_signposts(

@@ -1125,7 +1125,7 @@ func _trace_lake_outflows() -> void:
 			var wx: float = -world_radius + float(gx) * _WS_CELL
 			var wz: float = -world_radius + float(gz) * _WS_CELL
 			var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
-			if lake_n > -0.50:
+			if lake_n > -0.60:
 				continue
 			if _ws_accum[gz * _ws_dim + gx] > _WS_RIVER_THRESH:
 				continue
@@ -1147,7 +1147,7 @@ func _trace_lake_outflows() -> void:
 					var ewx := -world_radius + float(ex) * _WS_CELL
 					var ewz := -world_radius + float(ez) * _WS_CELL
 					var e_lake := _continent_noise.get_noise_2d(ewx * 0.7 + 5000.0, ewz * 0.7 + 5000.0)
-					if e_lake >= -0.38:
+					if e_lake >= -0.48:
 						var eh := _ws_heights[ez * _ws_dim + ex]
 						if eh < best_eh:
 							best_eh = eh
@@ -1526,8 +1526,8 @@ func _trace_creek_paths() -> void:
 				# Detect pool/water body entry and create smooth transition
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
 				var terrain_h := get_height_at(wx, wz)
-				var near_pool := lake_n < -0.10 or terrain_h < WATER_LEVEL + 0.3
-				var in_pool := (lake_n < -0.15 and terrain_h < WATER_LEVEL - 0.5) or terrain_h < WATER_LEVEL + 0.2
+				var near_pool := lake_n < -0.25 or terrain_h < WATER_LEVEL + 0.3
+				var in_pool := (lake_n < -0.35 and terrain_h < WATER_LEVEL - 0.5) or terrain_h < WATER_LEVEL + 0.2
 
 				if in_pool:
 					if not points.is_empty():
@@ -1867,13 +1867,13 @@ func _mountain_pool_surface(x: float, z: float) -> float:
 				if _creek_bed.has(Vector2i(cb_ix + dx, cb_iz + dz)):
 					return -999.0
 	var valley_n := _valley_pool_noise.get_noise_2d(x, z)
-	if valley_n >= -0.25:
+	if valley_n >= -0.40:
 		return -999.0
 	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
 	var valley_concavity := _sample_terrain_concavity(x, z, mountain)
 	if valley_concavity <= 0.3:
 		return -999.0
-	var pool_t := smoothstep(-0.25, -0.5, valley_n) * smoothstep(0.3, 0.6, valley_concavity)
+	var pool_t := smoothstep(-0.40, -0.65, valley_n) * smoothstep(0.3, 0.6, valley_concavity)
 	if pool_t <= 0.0:
 		return -999.0
 	var pool_floor := lerpf(raw_h, raw_h - 4.0, pool_t)
@@ -1989,8 +1989,8 @@ func get_height_at(x: float, z: float) -> float:
 	if _valley_pool_noise and h > 3.0:
 		var valley_n := _valley_pool_noise.get_noise_2d(x, z)
 		var valley_concavity := _sample_terrain_concavity(x, z, mountain)
-		if valley_concavity > 0.3 and valley_n < -0.25:
-			var pool_t := smoothstep(-0.25, -0.5, valley_n) * smoothstep(0.3, 0.6, valley_concavity)
+		if valley_concavity > 0.3 and valley_n < -0.40:
+			var pool_t := smoothstep(-0.40, -0.65, valley_n) * smoothstep(0.3, 0.6, valley_concavity)
 			if pool_t > 0.0:
 				var pool_floor := lerpf(h, h - 4.0, pool_t)
 				pool_floor = maxf(pool_floor, WATER_LEVEL - 2.0)
@@ -2001,7 +2001,7 @@ func get_height_at(x: float, z: float) -> float:
 
 	# Continental bias — fade by distance AND island mask so ocean zones stay submerged
 	var bias := lerpf(7.5, 0.0, smoothstep(world_radius * 0.2, world_radius * 0.80, dist))
-	bias *= smoothstep(-0.55, -0.12, lake_n)
+	bias *= smoothstep(-0.65, -0.25, lake_n)
 	bias *= island
 	h += bias
 
@@ -2009,7 +2009,7 @@ func get_height_at(x: float, z: float) -> float:
 	h = lerpf(WATER_LEVEL - 15.0, h, island)
 
 	# Keep terrain above water on land — soft floor only where island mask allows
-	var min_land := lerpf(WATER_LEVEL - 1.0, WATER_LEVEL + 2.5, smoothstep(-0.38, 0.10, lake_n))
+	var min_land := lerpf(WATER_LEVEL - 1.0, WATER_LEVEL + 2.5, smoothstep(-0.50, 0.10, lake_n))
 	min_land = lerpf(WATER_LEVEL - 15.0, min_land, island)
 	h = maxf(h, min_land)
 
@@ -2042,12 +2042,12 @@ func get_height_at(x: float, z: float) -> float:
 				h = lerpf(h, WATER_LEVEL - depth, carve)
 
 	# Noise-driven lakes — steep banks that drop below water for natural shorelines
-	if _detail_noise:
-		if lake_n < -0.22 and lake_n >= -0.40:
-			var shore_t := smoothstep(-0.22, -0.40, lake_n)
+	if _detail_noise and island > 0.5:
+		if lake_n < -0.35 and lake_n >= -0.50:
+			var shore_t := smoothstep(-0.35, -0.50, lake_n) * island
 			h = lerpf(h, WATER_LEVEL - 0.8, shore_t)
-		if lake_n < -0.40:
-			var lake_t := smoothstep(-0.40, -0.62, lake_n)
+		if lake_n < -0.50:
+			var lake_t := smoothstep(-0.50, -0.70, lake_n) * island
 			var lake_depth := lerpf(2.0, 5.0, lake_t)
 			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
@@ -2155,6 +2155,9 @@ func _compute_merchant_position() -> void:
 					break
 	if _merchant_world_pos == Vector3.ZERO:
 		_merchant_world_pos = Vector3(600.0, maxf(get_height_at(600.0, 200.0), WATER_LEVEL + MIN_LAND_H), 200.0)
+	var mz := Vector2i(int(floor(_merchant_world_pos.x / 64.0)), int(floor(_merchant_world_pos.z / 64.0)))
+	print("[MERCHANT] Position set to world (%.1f, %.1f, %.1f) zone %s" % [
+		_merchant_world_pos.x, _merchant_world_pos.y, _merchant_world_pos.z, str(mz)])
 	_compute_signpost_positions()
 	_compute_marrow_positions()
 
@@ -3801,7 +3804,7 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 
 			if _detail_noise:
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
-				var lake_shore := smoothstep(-0.10, -0.30, lake_n)
+				var lake_shore := smoothstep(-0.25, -0.45, lake_n)
 				river_bank = maxf(river_bank, lake_shore)
 
 			river_bank = clampf(river_bank, 0.0, 1.0)
