@@ -316,11 +316,11 @@ func _show_play_mode() -> void:
 	center.add_theme_constant_override("separation", 0)
 	_screen_root.add_child(center)
 
-	# World name display
+	var char_name: String = str(_selected_character.get("name", "Unknown"))
 	var world_name: String = str(_selected_world.get("name", "World"))
 	center.add_child(_make_title_block(
 		world_name,
-		"Choose how to play",
+		"%s  on  %s" % [char_name, world_name],
 		Palette.COOL
 	))
 	center.add_child(_make_spacer(16))
