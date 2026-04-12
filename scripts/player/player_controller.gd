@@ -1268,6 +1268,10 @@ func _notification(what: int) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey and (event as InputEventKey).pressed and (event as InputEventKey).physical_keycode == KEY_F4 and (event as InputEventKey).alt_pressed:
+		SaveManager.stop_game()
+		get_tree().quit()
+		return
 	if _dialogue_open and (event.is_action_pressed(&"ui_cancel") or event.is_action_pressed(&"quit_game")):
 		_dialogue_ui.close_dialogue()
 		_dialogue_open = false
