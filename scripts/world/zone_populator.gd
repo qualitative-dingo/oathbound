@@ -1585,8 +1585,8 @@ static func _try_spawn_signposts(
 	var zone_end_z := origin_z + ZONE_SIZE
 
 	var sign_texts := [
-		"Trader Halvard -- camps nearby",
-		"Halvard's Trading Post -- follow the smoke",
+		"Trader Halvard, camps nearby",
+		"Halvard's Trading Post, follow the smoke",
 		"Supplies ahead. Almost there.",
 	]
 
@@ -1691,7 +1691,7 @@ static func _spawn_village_signpost(
 	var sign_y: float = height_func.call(sign_wx, sign_wz)
 	var signpost := _create_signpost(
 		Vector3(sign_wx, sign_y, sign_wz),
-		"Trader Halvard -- follow this path",
+		"Trader Halvard, follow this path",
 		merchant_pos,
 		height_func,
 	)

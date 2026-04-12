@@ -607,7 +607,7 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 				"label": "That stone looks like it's seen a thousand winters.",
 				"audio": ["dialogue_quest", 1],
 				"response_speaker": "Halvard",
-				"response": "Aye... it's outlasted the men who brought me here. These old bones are wearin' thin, too -- but I wouldn't trade 'em. They've still got the rhythm of the hammer in 'em.",
+				"response": "Aye... it's outlasted the men who brought me here. These old bones are wearin' thin, too, but I wouldn't trade 'em. They've still got the rhythm of the hammer in 'em.",
 				"response_audio": ["dialogue_quest", 2],
 				"next": 2,
 			},
@@ -627,7 +627,7 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 				"label": "Deep-Bone? Is that different from regular stone?",
 				"audio": ["dialogue_quest", 4],
 				"response_speaker": "Halvard",
-				"response": "Surface stones are brittle -- hollow things. The Deep-Bone is the marrow of the world. It's a masterpiece of nature, harder than anythin' you'll find in the sun. It'll give yer blade a king-killer's edge.",
+				"response": "Surface stones are brittle, hollow things. The Deep-Bone is the marrow of the world. It's a masterpiece of nature, harder than anythin' you'll find in the sun. It'll give yer blade a king-killer's edge.",
 				"response_audio": ["dialogue_quest", 5],
 				"next": 3,
 			},
@@ -653,7 +653,7 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 				"next": 4,
 			},
 			{
-				"label": "I don't know if I'm ready to tangle with river beasts.",
+				"label": "I don't know if I'm ready to tangle with goblins yet.",
 				"audio": ["dialogue_quest", 10],
 				"response_speaker": "Halvard",
 				"response": "Nature's a cruel smith, traveler. She culls the blunt tools first. If yeh want to survive the night, yeh need a weapon that won't fail yeh.",
@@ -727,7 +727,7 @@ static var DIALOGUE_BONES_TURNIN: Array[Dictionary] = [
 			{
 				"label": "[Complete Quest]  Take your time, old man.",
 				"response_speaker": "Halvard",
-				"response": "There. Good as new -- better, even. The grindstone sings again. You've earned my thanks, and my best prices. Browse freely, friend.",
+				"response": "There. Good as new, better, even. The grindstone sings again. You've earned my thanks, and my best prices. Browse freely, friend.",
 				"action": "complete",
 			},
 		],
@@ -7627,7 +7627,7 @@ func open_shop(merchant: Node3D) -> void:
 	if _dialogue_open:
 		return
 	_dialogue_merchant_ref = merchant
-	_show_halvard_greeting()
+	var greet_idx := _show_halvard_greeting()
 
 	if _quest_bones_accepted and not _quest_bones_completed:
 		var marrow_count := Inventory.get_amount(&"ancient_marrow")
@@ -7637,7 +7637,7 @@ func open_shop(merchant: Node3D) -> void:
 			return
 
 	var menu: Array[Dictionary] = []
-	menu.append({"type": "npc", "speaker": "Halvard", "text": _HALVARD_GREETINGS[randi() % _HALVARD_GREETINGS.size()], "next": 1})
+	menu.append({"type": "npc", "speaker": "Halvard", "text": _HALVARD_GREETINGS[greet_idx], "next": 1})
 	var menu_opts: Array[Dictionary] = []
 	if not _quest_bones_accepted:
 		menu_opts.append({"label": "Quest: Bones of the Earth", "action": "start_quest"})
@@ -7657,7 +7657,7 @@ func close_shop() -> void:
 	_show_halvard_farewell()
 
 
-func _show_halvard_greeting() -> void:
+func _show_halvard_greeting() -> int:
 	var idx := randi() % _HALVARD_GREETINGS.size()
 	_show_speech([_HALVARD_GREETINGS[idx]], &"halvard_greet")
 	if not _speech_waiting_for_audio and idx < AudioManager.get_group_size("halvard_greet"):
@@ -7667,6 +7667,7 @@ func _show_halvard_greeting() -> void:
 		if sp.finished.is_connected(_on_speech_audio_finished):
 			sp.finished.disconnect(_on_speech_audio_finished)
 		sp.finished.connect(_on_speech_audio_finished, CONNECT_ONE_SHOT)
+	return idx
 
 
 func _show_halvard_farewell() -> void:
