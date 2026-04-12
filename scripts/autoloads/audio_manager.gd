@@ -78,6 +78,7 @@ func _preload_sounds() -> void:
 	_load_group("wood_thud", ["wood_thud_1.wav", "wood_thud_2.wav", "wood_thud_3.wav"])
 	_load_group("campfire", ["campfire.wav", "campfire_raging_1.wav", "campfire_raging_2.wav"])
 	_load_group("player_hurt", ["player_hurt_1.wav", "player_hurt_2.wav"])
+	_load_group("player_grunt", ["player_grunt_1.mp3", "player_grunt_2.mp3"])
 	_load_group("player_death", ["player_death.wav"])
 	_load_group("stone_rubble", ["stone_rubble_1.wav", "stone_rubble_2.wav"])
 	_load_group("wind_ambient", ["wind_ambient.wav"])

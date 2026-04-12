@@ -168,6 +168,7 @@ var _last_safe_position: Vector3 = Vector3.ZERO
 var _safe_pos_timer: float = 0.0
 var _respawn_grace: float = 0.0
 var _death_immunity_timer: float = 0.0
+var _grunt_cooldown: float = 0.0
 const MOUNT_SPEED_MULT_BASE := 2.0
 const MOUNT_SPEED_PER_STAR := 0.2
 const MOUNT_STAMINA_COST := 14.0
@@ -1690,6 +1691,8 @@ func _physics_process(delta: float) -> void:
 	_handle_health_regen(delta)
 	if _death_immunity_timer > 0.0:
 		_death_immunity_timer = maxf(_death_immunity_timer - delta, 0.0)
+	if _grunt_cooldown > 0.0:
+		_grunt_cooldown = maxf(_grunt_cooldown - delta, 0.0)
 	_tick_affix_timers(delta)
 	_tick_swim_fatigue(delta)
 	_tick_campfire_damage(delta)
@@ -11991,6 +11994,9 @@ func take_damage(amount: float, _source: Node3D = null) -> void:
 	_health_regen_timer = regen_delay
 	GameEvents.player_health_changed.emit(current_health, max_health)
 	AudioManager.play_sfx("player_hurt", -2.0)
+	if _grunt_cooldown <= 0.0:
+		AudioManager.play_sfx("player_grunt", 2.0, 0.05)
+		_grunt_cooldown = 3.0
 
 	if final_amount > 0.5:
 		DamageNumber.spawn(get_tree(), global_position + Vector3.UP * 2.0, final_amount, false, "enemy")
