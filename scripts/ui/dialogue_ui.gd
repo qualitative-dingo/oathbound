@@ -298,6 +298,12 @@ func _on_choice_picked(opt: Dictionary, type: String) -> void:
 	_pending_opt = opt
 	_pending_opt_type = type
 
+	if response == "" and opt.has("action"):
+		var action := str(opt.get("action", ""))
+		close_dialogue()
+		dialogue_finished.emit(action)
+		return
+
 	if response != "":
 		if type == "final":
 			_pending_action = str(opt.get("action", ""))

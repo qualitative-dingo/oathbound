@@ -126,6 +126,7 @@ func _preload_sounds() -> void:
 	_load_group("halvard_farewell", [
 		"halvard_farewell_1.mp3", "halvard_farewell_2.mp3", "halvard_farewell_3.mp3",
 		"halvard_farewell_4.mp3", "halvard_farewell_5.mp3", "halvard_farewell_6.mp3",
+		"halvard_farewell_7.mp3",
 	])
 
 

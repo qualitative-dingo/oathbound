@@ -577,18 +577,18 @@ const _LINES_HALVARD := [
 	"Someone hasn't showered in years. The stench is unbearable.",
 ]
 const _HALVARD_GREETINGS: Array[String] = [
-	"Ah, back again. Let's see what catches yer eye.",
-	"Welcome, traveler. My wares are honest -- can't say the same for the prices.",
-	"Ye look like ye've been through the wringer. Come, have a look.",
-	"The forge burns low, but there's still plenty to trade.",
-	"Good to see a familiar face. What'll it be?",
+	"Blimey, you've grown! Or maybe I've just shrunk.",
+	"A bit o' kindness goes further than gold.",
+	"Pull up a stump. My stories are free.",
 ]
 const _HALVARD_FAREWELLS: Array[String] = [
-	"Safe travels. Watch yer back out there.",
-	"Come again when yer pockets are heavier.",
-	"May yer axe stay sharp and yer belly full.",
-	"Don't be a stranger, now.",
-	"Try not to die before next time, eh?",
+	"Goodbye to you too.",
+	"Hope to see you soon again, it's lonely out here.",
+	"Safe journey, friend.",
+	"Careful now, the shadows 'round here have teeth, they do.",
+	"Don't go dyin' on me now. I hate buryin' folks.",
+	"Go on then, these old bones need a bit of quiet.",
+	"Steady now... even the stones have ears in this place.",
 ]
 
 static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
