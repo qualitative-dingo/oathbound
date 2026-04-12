@@ -596,7 +596,7 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 	{
 		"type": "npc",
 		"speaker": "Halvard",
-		"text": "Easy there, traveler. The wind's got a bite today, and me forge is as cold as a mountain grave. I've a mind to work the metal, but me grindstone has finally turned to dust.",
+		"text": "Look at this mess. My grindstone has finally crumbled to dust. I'm afraid your blade stays dull until I find the grit to mend it.",
 		"audio": ["dialogue_quest", 0],
 		"next": 1,
 	},
@@ -612,9 +612,10 @@ static var DIALOGUE_BONES_OF_EARTH: Array[Dictionary] = [
 				"next": 2,
 			},
 			{
-				"label": "How am I supposed to craft without a working forge?",
+				"label": "Without a working grindstone, the fog's going to swallow me whole.",
+				"audio": ["dialogue_quest", 16],
 				"response_speaker": "Halvard",
-				"response": "Patience, fledgling. Even the gods had to wait for the heat to rise. But I'm too stiff to trek down to the river-silt where the 'Deep-Bone' flint hides.",
+				"response": "I can give you an edge, but not with common pebbles. I need the ancient Deep-Bone marrow from the river-silt. It's the only grit that can bite into a blade like yours.",
 				"response_audio": ["dialogue_quest", 3],
 				"next": 2,
 			},

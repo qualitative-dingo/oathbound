@@ -115,6 +115,7 @@ func _preload_sounds() -> void:
 		"dialogue_quest_5.mp3", "dialogue_quest_6.mp3", "dialogue_quest_7.mp3", "dialogue_quest_8.mp3",
 		"dialogue_quest_9.mp3", "dialogue_quest_10.mp3", "dialogue_quest_11.mp3", "dialogue_quest_12.mp3",
 		"dialogue_quest_13.mp3", "dialogue_quest_14.mp3", "dialogue_quest_15.mp3", "dialogue_quest_16.mp3",
+		"dialogue_quest_17.mp3",
 	])
 	_load_group("dialogue_turnin", [
 		"dialogue_turnin_1.mp3", "dialogue_turnin_2.mp3", "dialogue_turnin_3.mp3",
