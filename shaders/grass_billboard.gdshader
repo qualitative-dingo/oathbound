@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert_wrap;
+render_mode blend_mix, depth_draw_opaque, cull_disabled, diffuse_lambert_wrap;
 
 uniform sampler2D albedo_texture : source_color, filter_linear_mipmap;
 uniform vec4 albedo_color : source_color = vec4(0.25, 0.55, 0.15, 1.0);
