@@ -432,6 +432,10 @@ var _map_chunk_row := -1
 var _map_chunk_out: PackedByteArray
 var _map_chunk_player_pos := Vector3.ZERO
 var _map_chunk_center_zone := Vector2i.ZERO
+var _map_dbg_ocean := 0
+var _map_dbg_water := 0
+var _map_dbg_land := 0
+var _map_dbg_mountain := 0
 var _map_chunk_no_fog := false
 var _map_chunk_explored: Dictionary = {}
 const _MAP_CHUNK_ROWS := 32
@@ -9191,6 +9195,10 @@ func _refresh_map() -> void:
 	var rpx := MAP_RENDER_PX
 	_map_chunk_out = PackedByteArray()
 	_map_chunk_out.resize(rpx * rpx * 4)
+	_map_dbg_ocean = 0
+	_map_dbg_water = 0
+	_map_dbg_land = 0
+	_map_dbg_mountain = 0
 	_map_chunk_row = 0
 
 
@@ -9250,11 +9258,18 @@ func _map_render_chunk() -> void:
 					out[bi + 1] = int(cached_col.g * 255.0)
 					out[bi + 2] = int(cached_col.b * 255.0)
 					out[bi + 3] = 255
+					if cached_col.r < 0.25 and cached_col.b > 0.4:
+						_map_dbg_water += 1
+					elif cached_col.b > cached_col.g * 0.7:
+						_map_dbg_mountain += 1
+					else:
+						_map_dbg_land += 1
 				else:
 					out[bi] = int(water_col.r * 255.0)
 					out[bi + 1] = int(water_col.g * 255.0)
 					out[bi + 2] = int(water_col.b * 255.0)
 					out[bi + 3] = 255
+					_map_dbg_ocean += 1
 				terrain_px += 1
 			else:
 				out[bi] = 20
@@ -9282,8 +9297,10 @@ func _map_render_chunk() -> void:
 			_map_texture_rect.texture = _map_image_tex
 		var _mt_upload_ms := float(Time.get_ticks_usec() - _mt_upload) / 1000.0
 
-		print("[MAP TIMING] chunk=%.1fms markers=%.1fms upload=%.1fms terrain_px=%d cache=%d" % [
-			_mt_chunk_ms, _mt_markers_ms, _mt_upload_ms, terrain_px, _zone_tile_cache.size()])
+		var _dbg_total := _map_dbg_ocean + _map_dbg_water + _map_dbg_land + _map_dbg_mountain
+		print("[MAP] ocean=%d water=%d land=%d mountain=%d (of %d visible) | chunk=%.1fms markers=%.1fms upload=%.1fms cache=%d" % [
+			_map_dbg_ocean, _map_dbg_water, _map_dbg_land, _map_dbg_mountain, _dbg_total,
+			_mt_chunk_ms, _mt_markers_ms, _mt_upload_ms, _zone_tile_cache.size()])
 
 
 func _draw_player_arrow(half_px: int) -> void:

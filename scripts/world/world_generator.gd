@@ -849,7 +849,8 @@ func _sample_island_mask(wx: float, wz: float) -> float:
 	var spawn_dist := Vector2(wx, wz).length()
 	var spawn_bias := smoothstep(2500.0, 400.0, spawn_dist) * 0.55
 	raw += spawn_bias
-	return smoothstep(-0.18, 0.05, raw)
+	var s := smoothstep(-0.18, 0.05, raw)
+	return s * s * (3.0 - 2.0 * s)
 
 
 func _get_base_height(wx: float, wz: float) -> float:
