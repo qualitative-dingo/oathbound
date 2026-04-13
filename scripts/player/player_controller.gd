@@ -440,10 +440,8 @@ var _map_dbg_mountain := 0
 var _map_chunk_no_fog := false
 var _map_chunk_explored: Dictionary = {}
 var _map_chunk_zoom: float = 40.0
-const _MAP_CHUNK_BUDGET_US := 8000
-const _MAP_MAX_TILE_BUILDS := 20
-var _map_tile_builds_this_chunk := 0
-var _map_tiles_deferred := false
+const _MAP_CHUNK_BUDGET_US := 14000
+var _map_partial_upload_timer := 0.0
 var _map_fog_time := 0.0
 var _map_fog_noise: FastNoiseLite
 
@@ -9327,14 +9325,15 @@ func _refresh_map() -> void:
 	_map_chunk_zoom = _map_zoom
 
 	var rpx := MAP_RENDER_PX
-	_map_chunk_out = PackedByteArray()
-	_map_chunk_out.resize(rpx * rpx * 4)
+	var mask_bytes := _map_mask_bytes
+	_map_chunk_out = mask_bytes.duplicate()
 	_map_dbg_ocean = 0
 	_map_dbg_water = 0
 	_map_dbg_land = 0
 	_map_dbg_mountain = 0
 	_map_chunk_row = 0
 	_map_chunk_col = 0
+	_map_partial_upload_timer = 0.0
 
 
 func _map_render_chunk() -> void:
@@ -9361,6 +9360,7 @@ func _map_render_chunk() -> void:
 
 	var terrain_px := 0
 	var budget_hit := false
+	var px_count := 0
 
 	for py in range(_map_chunk_row, rpx):
 		var start_px := _map_chunk_col if py == _map_chunk_row else 0
@@ -9373,10 +9373,6 @@ func _map_render_chunk() -> void:
 			var mr := mask_bytes[bi]
 			var mg := mask_bytes[bi + 1]
 			if mr < 230 and mg < 230 and ma > 128 and (mr > 13 or mg > 13):
-				out[bi] = mr
-				out[bi + 1] = mg
-				out[bi + 2] = mask_bytes[bi + 2]
-				out[bi + 3] = ma
 				continue
 
 			var zone_fx: float = float(px - half_px) * zones_per_pixel
@@ -9407,13 +9403,14 @@ func _map_render_chunk() -> void:
 					out[bi + 3] = 255
 					_map_dbg_ocean += 1
 				terrain_px += 1
+				px_count += 1
 			else:
 				out[bi] = 20
 				out[bi + 1] = 20
 				out[bi + 2] = 26
 				out[bi + 3] = 255
 
-			if Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
+			if px_count >= 16 and Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
 				_map_chunk_row = py
 				_map_chunk_col = px + 1
 				if _map_chunk_col >= rpx:
@@ -9427,30 +9424,30 @@ func _map_render_chunk() -> void:
 		_map_chunk_col = 0
 
 	_map_chunk_out = out
-	var _mt_chunk_ms := float(Time.get_ticks_usec() - _mt0) / 1000.0
 
 	if not budget_hit:
 		_map_chunk_row = -1
 		_map_chunk_col = 0
 		_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
-
-		var _mt_markers := Time.get_ticks_usec()
 		_draw_structure_markers(half_px, zones_per_pixel, zone_size, wg)
 		if _quest_bones_accepted and not _quest_bones_completed:
 			_draw_marrow_quest_area(half_px, zones_per_pixel, zone_size)
 		_draw_map_markers(half_px, zones_per_pixel, zone_size)
-		var _mt_markers_ms := float(Time.get_ticks_usec() - _mt_markers) / 1000.0
-
-		var _mt_upload := Time.get_ticks_usec()
 		_map_image_tex.set_image(_map_image)
 		if _map_texture_rect.texture != _map_image_tex:
 			_map_texture_rect.texture = _map_image_tex
-		var _mt_upload_ms := float(Time.get_ticks_usec() - _mt_upload) / 1000.0
-
+		_map_partial_upload_timer = 0.0
 		var _dbg_total := _map_dbg_ocean + _map_dbg_water + _map_dbg_land + _map_dbg_mountain
-		print("[MAP] ocean=%d water=%d land=%d mountain=%d (of %d visible) | chunk=%.1fms markers=%.1fms upload=%.1fms cache=%d" % [
-			_map_dbg_ocean, _map_dbg_water, _map_dbg_land, _map_dbg_mountain, _dbg_total,
-			_mt_chunk_ms, _mt_markers_ms, _mt_upload_ms, _zone_tile_cache.size()])
+		print("[MAP] done: ocean=%d water=%d land=%d mtn=%d cache=%d" % [
+			_map_dbg_ocean, _map_dbg_water, _map_dbg_land, _map_dbg_mountain, _zone_tile_cache.size()])
+	else:
+		_map_partial_upload_timer += float(Time.get_ticks_usec() - _mt0) / 1000.0
+		if _map_partial_upload_timer > 150.0:
+			_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
+			_map_image_tex.set_image(_map_image)
+			if _map_texture_rect.texture != _map_image_tex:
+				_map_texture_rect.texture = _map_image_tex
+			_map_partial_upload_timer = 0.0
 
 
 func _draw_player_arrow(half_px: int) -> void:

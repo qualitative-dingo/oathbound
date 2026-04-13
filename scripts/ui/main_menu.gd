@@ -1124,3 +1124,4 @@ func _format_last_played(char_data: Dictionary) -> String:
 	if parts.is_empty():
 		return "Never played"
 	return "  \u2022  ".join(parts)
+

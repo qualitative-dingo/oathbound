@@ -750,7 +750,7 @@ func _init_noise_layers() -> void:
 	_mountain_broad_noise = FastNoiseLite.new()
 	_mountain_broad_noise.seed = _seed_hash + 1000
 	_mountain_broad_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_mountain_broad_noise.frequency = base_frequency * 0.25
+	_mountain_broad_noise.frequency = base_frequency * 0.08
 	_mountain_broad_noise.fractal_octaves = 1
 
 	_detail_noise = FastNoiseLite.new()
@@ -1959,6 +1959,11 @@ func get_height_at(x: float, z: float) -> float:
 	h += ridge * height_scale * ridge_mult * smoothstep(0.0, 0.15, mountain) - height_scale * 0.02
 
 	h += detail * height_scale * 0.15
+
+	# Broad mountain zone elevation — lifts entire regions so they form
+	# connected mountain areas on the map, not scattered peaks
+	if breadth > 0.05:
+		h += breadth * height_scale * 0.6
 
 	# High-elevation crag detail — reduced and capped for walkable plateaus
 	var elev_t := clampf((h - 40.0) / 100.0, 0.0, 1.0)
