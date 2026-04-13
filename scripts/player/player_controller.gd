@@ -5860,7 +5860,7 @@ func _build_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
 				tile[bi + 2] = int(water_col.b * 255.0)
 				tile[bi + 3] = 0
 				continue
-			var h := wg.get_height_at(wx, wz)
+			var h: float = wg.get_height_at(wx, wz)
 			var cr: int; var cg: int; var cb: int
 			if h < wg.WATER_LEVEL:
 				var depth := clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0)
