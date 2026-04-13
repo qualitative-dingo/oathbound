@@ -5934,7 +5934,7 @@ func _build_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
 				continue
 			var h: float = wg.get_height_at(wx, wz)
 			var map_h := h
-			var mtn_b: float = wg._mountain_breadth(wx, wz)
+			var mtn_b: float = wg._last_breadth
 			if mtn_b > 0.15:
 				map_h = maxf(map_h, 12.0 + mtn_b * 25.0)
 			var cr: int; var cg: int; var cb: int
@@ -9372,17 +9372,18 @@ func _map_render_chunk() -> void:
 	var half_px := rpx / 2
 	var zone_size: float = wg.ZONE_SIZE
 	var zones_per_pixel: float = _map_chunk_zoom / float(half_px)
-	var water_col := Color(0.12, 0.28, 0.52)
+	var wr := int(Color(0.12, 0.28, 0.52).r * 255.0)
+	var wgr := int(Color(0.12, 0.28, 0.52).g * 255.0)
+	var wb := int(Color(0.12, 0.28, 0.52).b * 255.0)
 	var mask_bytes := _map_mask_bytes
 	var out := _map_chunk_out
 	var player_pos := _map_chunk_player_pos
 	var center_zone := _map_chunk_center_zone
 	var explored := _map_chunk_explored
 	var no_fog := _map_chunk_no_fog
+	var tile_cache := _zone_tile_cache
 
-	var terrain_px := 0
 	var budget_hit := false
-	var px_count := 0
 
 	for py in range(_map_chunk_row, rpx):
 		var start_px := _map_chunk_col if py == _map_chunk_row else 0
@@ -9404,6 +9405,7 @@ func _map_render_chunk() -> void:
 				center_zone.y + floori(zone_fz))
 
 			if no_fog or explored.has(zone_coord):
+				var was_cached := tile_cache.has(zone_coord)
 				var world_x := player_pos.x + zone_fx * zone_size
 				var world_z := player_pos.z + zone_fz * zone_size
 				var cached_col := _terrain_color_cache_lookup(zone_coord, world_x, world_z, zone_size, wg)
@@ -9412,35 +9414,25 @@ func _map_render_chunk() -> void:
 					out[bi + 1] = int(cached_col.g * 255.0)
 					out[bi + 2] = int(cached_col.b * 255.0)
 					out[bi + 3] = 255
-					if cached_col.r < 0.25 and cached_col.b > 0.4:
-						_map_dbg_water += 1
-					elif cached_col.b > cached_col.g * 0.7:
-						_map_dbg_mountain += 1
-					else:
-						_map_dbg_land += 1
 				else:
-					out[bi] = int(water_col.r * 255.0)
-					out[bi + 1] = int(water_col.g * 255.0)
-					out[bi + 2] = int(water_col.b * 255.0)
+					out[bi] = wr
+					out[bi + 1] = wgr
+					out[bi + 2] = wb
 					out[bi + 3] = 255
-					_map_dbg_ocean += 1
-				terrain_px += 1
-				px_count += 1
+				if not was_cached and Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
+					_map_chunk_row = py
+					_map_chunk_col = px + 1
+					if _map_chunk_col >= rpx:
+						_map_chunk_row += 1
+						_map_chunk_col = 0
+					_map_chunk_out = out
+					budget_hit = true
+					break
 			else:
 				out[bi] = 20
 				out[bi + 1] = 20
 				out[bi + 2] = 26
 				out[bi + 3] = 255
-
-			if px_count >= 16 and Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
-				_map_chunk_row = py
-				_map_chunk_col = px + 1
-				if _map_chunk_col >= rpx:
-					_map_chunk_row += 1
-					_map_chunk_col = 0
-				_map_chunk_out = out
-				budget_hit = true
-				break
 		if budget_hit:
 			break
 		_map_chunk_col = 0
@@ -9458,13 +9450,9 @@ func _map_render_chunk() -> void:
 		_map_image_tex.set_image(_map_image)
 		if _map_texture_rect.texture != _map_image_tex:
 			_map_texture_rect.texture = _map_image_tex
-		_map_partial_upload_timer = 0.0
-		var _dbg_total := _map_dbg_ocean + _map_dbg_water + _map_dbg_land + _map_dbg_mountain
-		print("[MAP] done: ocean=%d water=%d land=%d mtn=%d cache=%d" % [
-			_map_dbg_ocean, _map_dbg_water, _map_dbg_land, _map_dbg_mountain, _zone_tile_cache.size()])
 	else:
 		_map_partial_upload_timer += float(Time.get_ticks_usec() - _mt0) / 1000.0
-		if _map_partial_upload_timer > 150.0:
+		if _map_partial_upload_timer > 200.0:
 			_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
 			_map_image_tex.set_image(_map_image)
 			if _map_texture_rect.texture != _map_image_tex:

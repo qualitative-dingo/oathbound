@@ -77,6 +77,7 @@ var _ridge_noise: FastNoiseLite
 var _mtn_path_noise: FastNoiseLite  # For walkable mountain paths
 var _valley_pool_noise: FastNoiseLite  # For water pools in mountain valleys
 var _color_noise: FastNoiseLite
+var _last_breadth: float = 0.0
 var _microbiome_noise: FastNoiseLite
 var _microbiome_secondary: FastNoiseLite
 
@@ -1940,6 +1941,7 @@ func get_height_at(x: float, z: float) -> float:
 	var continent := _continent_noise.get_noise_2d(x, z)
 	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.05, 0.0))
 	var breadth := _mountain_breadth(x, z)
+	_last_breadth = breadth
 	var detail := _detail_noise.get_noise_2d(x, z)
 
 	var h := continent * height_scale * 0.35
@@ -2014,13 +2016,14 @@ func get_height_at(x: float, z: float) -> float:
 	# Blend toward deep ocean at island edges for natural shore transitions
 	h = lerpf(WATER_LEVEL - 15.0, h, shore)
 
-	# Land uplift with natural variation — rolling hills where lakes were removed
-	if shore > 0.3 and h < WATER_LEVEL + 2.0:
+	# Land uplift — fill low inland areas with rolling terrain that respects mountain zones
+	if shore > 0.3 and h < WATER_LEVEL + 4.0:
 		var fill_n := _detail_noise.get_noise_2d(x * 0.008 + 4000.0, z * 0.008 + 4000.0)
 		var fill_n2 := _detail_noise.get_noise_2d(x * 0.025 + 6000.0, z * 0.025 + 6000.0)
-		var terrain_var := (fill_n * 0.6 + fill_n2 * 0.4) * 3.5 + 2.0
-		var target := WATER_LEVEL + maxf(terrain_var, 0.5)
-		var lift_t := smoothstep(WATER_LEVEL + 2.0, WATER_LEVEL - 3.0, h)
+		var terrain_var := (fill_n * 0.6 + fill_n2 * 0.4) * 4.0 + 2.5
+		var base_target := WATER_LEVEL + maxf(terrain_var, 1.0)
+		var target := base_target + breadth * height_scale * 0.3
+		var lift_t := smoothstep(WATER_LEVEL + 4.0, WATER_LEVEL - 3.0, h)
 		h = lerpf(h, target, lift_t * shore)
 
 	# Watershed river/creek carving
@@ -2073,24 +2076,15 @@ func get_height_at(x: float, z: float) -> float:
 			if bed_h < h:
 				h = bed_h
 
-	# Soft inland floor — prevent carved terrain from going underwater on solid land
-	if shore > 0.5:
-		var floor_n := _detail_noise.get_noise_2d(x * 0.012 + 4500.0, z * 0.012 + 4500.0)
-		var varied_floor := WATER_LEVEL + 0.3 + maxf(floor_n * 1.5, 0.0)
-		h = maxf(h, varied_floor)
-
-	# Natural lakes — two scales for size variety, punch through the inland clamp
+	# Natural lakes — single noise sample with threshold bands for size variety
 	if _continent_noise and shore > 0.8:
-		# Large lakes (~1km features, rare)
-		var big_lake_n := _continent_noise.get_noise_2d(x * 0.25 + 8000.0, z * 0.25 + 8000.0)
-		if big_lake_n < -0.48:
-			var bl_t := smoothstep(-0.48, -0.70, big_lake_n)
-			h = lerpf(h, WATER_LEVEL - lerpf(2.0, 6.0, bl_t), bl_t)
-		# Regular lakes (varying sizes, more frequent)
-		var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0)
-		if lake_n < -0.42:
-			var sl_t := smoothstep(-0.42, -0.65, lake_n)
-			h = lerpf(h, WATER_LEVEL - lerpf(1.0, 3.5, sl_t), sl_t)
+		var lake_n := _continent_noise.get_noise_2d(x * 0.4 + 5000.0, z * 0.4 + 5000.0)
+		if lake_n < -0.38:
+			var big_t := smoothstep(-0.55, -0.75, lake_n)
+			var small_t := smoothstep(-0.38, -0.58, lake_n)
+			var depth := lerpf(lerpf(1.0, 3.5, small_t), lerpf(3.0, 7.0, big_t), big_t)
+			var lake_t := maxf(small_t, big_t)
+			h = lerpf(h, WATER_LEVEL - depth, lake_t)
 
 	# Flatten spawn area — applied AFTER all water carving so rivers/creeks
 	# cannot punch through. Fully flat within 35m, fading out to 80m.
