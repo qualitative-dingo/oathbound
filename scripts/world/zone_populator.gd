@@ -1646,21 +1646,21 @@ static func _create_signpost(world_pos: Vector3, text: String, merchant_pos: Vec
 
 	var board := MeshInstance3D.new()
 	var board_mesh := BoxMesh.new()
-	board_mesh.size = Vector3(2.4, 1.05, 0.12)
+	board_mesh.size = Vector3(1.0, 1.05, 0.12)
 	board.mesh = board_mesh
 	board.material_override = post_mat
 	board.position = Vector3(0, 4.5, 0.18)
 	post.add_child(board)
 
 	var label := Label3D.new()
-	label.text = text
-	label.font_size = 48
-	label.pixel_size = 0.01
+	label.text = "!"
+	label.font_size = 72
+	label.pixel_size = 0.012
 	label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 	label.no_depth_test = false
-	label.modulate = Color(0.9, 0.8, 0.5)
-	label.outline_modulate = Color(0, 0, 0, 0.8)
-	label.outline_size = 6
+	label.modulate = Color(1.0, 0.85, 0.3)
+	label.outline_modulate = Color(0, 0, 0, 0.9)
+	label.outline_size = 8
 	label.position = Vector3(0, 4.5, 0.25)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	post.add_child(label)

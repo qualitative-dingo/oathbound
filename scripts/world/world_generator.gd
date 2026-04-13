@@ -2167,16 +2167,22 @@ func _compute_signpost_positions() -> void:
 		var base: Vector2 = dir * _merchant_world_pos.length() * frac
 		var best_pos := Vector3.ZERO
 		var search_radius := 40.0
-		for attempt in 40:
+		for attempt in 80:
 			if attempt == 20:
 				search_radius = 80.0
+			elif attempt == 40:
+				search_radius = 160.0
+			elif attempt == 60:
+				search_radius = 300.0
 			var offset := Vector2(rng.randf_range(-search_radius, search_radius), rng.randf_range(-search_radius, search_radius))
 			var wx: float = base.x + offset.x
 			var wz: float = base.y + offset.y
 			var h: float = get_height_at(wx, wz)
-			if h < WATER_LEVEL + 2.0:
+			if h < WATER_LEVEL + 3.0:
 				continue
 			if h > 25.0:
+				continue
+			if not _is_solid_land(wx, wz, 4.0, 2.0):
 				continue
 			var accum := _ws_sample_accum(wx, wz)
 			if accum > 1.5:
@@ -2184,10 +2190,17 @@ func _compute_signpost_positions() -> void:
 			best_pos = Vector3(wx, h, wz)
 			break
 		if best_pos == Vector3.ZERO:
-			var wx: float = base.x + rng.randf_range(-20.0, 20.0)
-			var wz: float = base.y + rng.randf_range(-20.0, 20.0)
-			var h: float = maxf(get_height_at(wx, wz), WATER_LEVEL + 2.0)
-			best_pos = Vector3(wx, h, wz)
+			for fallback in 40:
+				var angle := rng.randf_range(0.0, TAU)
+				var fdist := rng.randf_range(20.0, 200.0)
+				var wx := base.x + cos(angle) * fdist
+				var wz := base.y + sin(angle) * fdist
+				var h := get_height_at(wx, wz)
+				if h > WATER_LEVEL + 3.0 and h < 30.0 and _is_solid_land(wx, wz, 4.0, 2.0):
+					best_pos = Vector3(wx, h, wz)
+					break
+		if best_pos == Vector3.ZERO:
+			best_pos = _merchant_world_pos
 		_merchant_signpost_positions.append(best_pos)
 
 

@@ -588,6 +588,13 @@ const _LINES_HALVARD := [
 	"That old fart is nearby. Time to spend some hard-earned gold.",
 	"Someone hasn't showered in years, must be Halvard up ahead.",
 ]
+const _LINES_SIGNPOST := [
+	"Trader Halvard has set up camp nearby. It might be worth paying the old man a visit.",
+	"Halvard has settled his camp close by. Let's see what the old trader has to offer.",
+	"Trader Halvard is camping nearby. Best pay him a visit if I want to survive the night.",
+	"Old Halvard has pitched his tent nearby. Better see if he has anything worth the coin.",
+	"Trader Halvard's camp is nearby. I should go pay the old man a visit.",
+]
 const _HALVARD_GREETINGS: Array[String] = [
 	"Blimey, you've grown! Or maybe I'm just sinking into the earth.",
 	"A bit o' kindness goes further than a sharp blade.",
@@ -891,6 +898,12 @@ func _build_line_voice_map() -> void:
 		"Closing in on Halvard. Hoping he's open for business.": ["speech_halvard", 1],
 		"That old fart is nearby. Time to spend some hard-earned gold.": ["speech_halvard", 2],
 		"Someone hasn't showered in years, must be Halvard up ahead.": ["speech_halvard", 3],
+		# signpost interaction
+		"Trader Halvard has set up camp nearby. It might be worth paying the old man a visit.": ["speech_signpost", 0],
+		"Halvard has settled his camp close by. Let's see what the old trader has to offer.": ["speech_signpost", 1],
+		"Trader Halvard is camping nearby. Best pay him a visit if I want to survive the night.": ["speech_signpost", 2],
+		"Old Halvard has pitched his tent nearby. Better see if he has anything worth the coin.": ["speech_signpost", 3],
+		"Trader Halvard's camp is nearby. I should go pay the old man a visit.": ["speech_signpost", 4],
 	}
 	_LINE_VOICE = _map
 

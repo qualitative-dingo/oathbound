@@ -695,6 +695,15 @@ func try_interact() -> void:
 		best_loot.pickup(pc)
 		return
 
+	# Check signposts (high priority — before horses/bushes/etc)
+	for sp in pc.get_tree().get_nodes_in_group(&"signposts"):
+		var s3d := sp as Node3D
+		if not s3d:
+			continue
+		if pc.global_position.distance_to(s3d.global_position) < 3.0:
+			_interact_signpost(s3d)
+			return
+
 	# Check rafts
 	for raft in pc.get_tree().get_nodes_in_group(&"rafts"):
 		var r3d := raft as Node3D
@@ -786,19 +795,9 @@ func try_interact() -> void:
 				n3d.interact(pc)
 			return
 
-	# Check signposts
-	for sp in pc.get_tree().get_nodes_in_group(&"signposts"):
-		var s3d := sp as Node3D
-		if not s3d:
-			continue
-		if pc.global_position.distance_to(s3d.global_position) < 3.0:
-			_interact_signpost(s3d)
-			return
-
 
 func _interact_signpost(signpost: Node3D) -> void:
-	var text: String = str(signpost.get_meta("sign_text", "..."))
-	pc._show_speech([text], &"signpost")
+	pc._show_speech(pc._LINES_SIGNPOST, &"signpost")
 	if signpost.get_meta("reveals_merchant", false):
 		var merchant_pos: Vector3 = signpost.get_meta("merchant_pos", Vector3.ZERO) as Vector3
 		if merchant_pos != Vector3.ZERO:
