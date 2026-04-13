@@ -64,7 +64,7 @@ var _map_markers: Array[Dictionary] = []
 var _map_marker_labels: Array[Label] = []
 var _map_zoom: float = 40.0
 var _map_zoom_target: float = 40.0
-const MAP_ZOOM_MIN := 8.0
+const MAP_ZOOM_MIN := 18.0
 const MAP_ZOOM_MAX := 155.0
 const MAP_ZOOM_STEP := 6.0
 const MAP_ZOOM_SPEED := 25.0
@@ -9428,11 +9428,15 @@ func _map_render_chunk() -> void:
 				var cx := (float(zone_coord.x) + 0.5) * zone_size
 				var cz := (float(zone_coord.y) + 0.5) * zone_size
 				var h := wg._get_base_height(cx, cz)
+				var mtn_b: float = wg._mountain_breadth(cx, cz)
+				var map_h := h
+				if mtn_b > 0.15:
+					map_h = maxf(map_h, 12.0 + mtn_b * 25.0)
 				var col: Color
 				if h < wg.WATER_LEVEL:
 					col = water_color
 				else:
-					col = _biome_map_color(wg._determine_biome(zone_coord), &"none", h)
+					col = _biome_map_color(wg._determine_biome(zone_coord), &"none", map_h)
 					var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
 					col = Color(clampf(col.r * bright, 0.0, 1.0), clampf(col.g * bright, 0.0, 1.0), clampf(col.b * bright, 0.0, 1.0))
 				quick_colors[zone_coord] = col
@@ -9461,6 +9465,21 @@ func _map_render_chunk() -> void:
 	if not budget_hit:
 		_map_chunk_row = -1
 		_map_chunk_col = 0
+		var dbg_water := 0; var dbg_land := 0; var dbg_mtn := 0; var dbg_fog := 0
+		for di in range(0, rpx * rpx * 4, 4):
+			if out[di + 3] == 0:
+				continue
+			if out[di] == 20 and out[di + 1] == 20 and out[di + 2] == 26:
+				dbg_fog += 1
+			elif out[di] < 50 and out[di + 2] > 80:
+				dbg_water += 1
+			elif out[di] > 130 and out[di + 1] > 130 and out[di + 2] > 130:
+				dbg_mtn += 1
+			else:
+				dbg_land += 1
+		var total := dbg_water + dbg_land + dbg_mtn
+		if total > 0:
+			print("[MAP DBG] water=%d(%.0f%%) land=%d(%.0f%%) mountain=%d(%.0f%%) fog=%d tiles_cached=%d zoom=%.1f" % [dbg_water, dbg_water * 100.0 / total, dbg_land, dbg_land * 100.0 / total, dbg_mtn, dbg_mtn * 100.0 / total, dbg_fog, tile_cache.size(), _map_chunk_zoom])
 		_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
 		_draw_structure_markers(half_px, zones_per_pixel, zone_size, wg)
 		if _quest_bones_accepted and not _quest_bones_completed:
