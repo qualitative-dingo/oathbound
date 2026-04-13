@@ -2312,14 +2312,15 @@ static func _scatter_grass(
 			_cov_grass_rej_struct += 1
 			continue
 
+		if rg_flags & _RG_RIVER != 0:
+			_cov_grass_rej_river += 1
+			continue
+
 		var h5 := _grass_cell_hash(gcx, gcz, 4)
 		var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
 		var keep := lerpf(0.88, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
-		if rg_flags & _RG_RIVER != 0:
+		if rg_flags & _RG_WATER != 0:
 			keep *= 0.15
-			_cov_grass_rej_river += 1
-		elif rg_flags & _RG_WATER != 0:
-			keep *= 0.3
 		if rg_flags & _RG_PATH != 0:
 			keep *= 0.35
 		if h5 > keep:
@@ -2328,7 +2329,7 @@ static func _scatter_grass(
 
 		var sn := _hg_snap_and_normal(wx, wz)
 		var ground_y := sn.x
-		if ground_y < 0.1 or ground_y > 120.0:
+		if ground_y < _WATER_LEVEL + 0.35 or ground_y > 120.0:
 			_cov_grass_rej_height += 1
 			continue
 		if sn.y < 0.70:
