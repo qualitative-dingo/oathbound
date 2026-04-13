@@ -2,6 +2,7 @@ extends Node
 ## Singleton that manages all game audio: SFX with random variation and background music.
 
 const SFX_PATH := "res://audio/sfx/"
+const VOICE_PATH := "res://audio/voice/"
 const MUSIC_PATH := "res://audio/music/"
 const MAX_SFX_PLAYERS := 16
 
@@ -78,7 +79,6 @@ func _preload_sounds() -> void:
 	_load_group("wood_thud", ["wood_thud_1.wav", "wood_thud_2.wav", "wood_thud_3.wav"])
 	_load_group("campfire", ["campfire.wav", "campfire_raging_1.wav", "campfire_raging_2.wav"])
 	_load_group("player_hurt", ["player_hurt_1.wav", "player_hurt_2.wav"])
-	_load_group("player_grunt", ["player_grunt_1.mp3", "player_grunt_2.mp3"])
 	_load_group("player_death", ["player_death.wav"])
 	_load_group("stone_rubble", ["stone_rubble_1.wav", "stone_rubble_2.wav"])
 	_load_group("wind_ambient", ["wind_ambient.wav"])
@@ -95,47 +95,105 @@ func _preload_sounds() -> void:
 	_load_group("stone_step", ["stone_step_1.mp3", "stone_step_2.mp3", "stone_step_3.mp3"])
 	_load_group("till_ground", ["till_ground_1.mp3", "till_ground_2.mp3"])
 	_load_group("bow_creak", ["bow_creak_1.wav", "bow_creak_2.wav"])
-	_load_group("flowing_water", ["flowing_water_#1-1775592827594.mp3"])
+	_load_group("flowing_water", ["flowing_water.mp3"])
 
-	# Voice lines (speech barks)
-	_load_group("speech_dark", ["speech_dark_1.mp3", "speech_dark_2.mp3", "speech_dark_3.mp3", "speech_dark_4.mp3", "speech_dark_5.mp3"])
-	_load_group("speech_inv_full", ["speech_inv_full_1.mp3", "speech_inv_full_2.mp3", "speech_inv_full_3.mp3", "speech_inv_full_4.mp3"])
-	_load_group("speech_drowning", ["speech_drowning_1.mp3", "speech_drowning_2.mp3"])
-	_load_group("speech_shelter", ["speech_shelter_1.mp3", "speech_shelter_2.mp3", "speech_shelter_3.mp3", "speech_shelter_4.mp3"])
-	_load_group("speech_first_light", ["speech_first_light_1.mp3", "speech_first_light_2.mp3", "speech_first_light_3.mp3", "speech_first_light_4.mp3", "speech_first_light_5.mp3", "speech_first_light_6.mp3"])
-	_load_group("speech_killing_spree", ["speech_killing_spree_1.mp3", "speech_killing_spree_2.mp3", "speech_killing_spree_3.mp3", "speech_killing_spree_4.mp3", "speech_killing_spree_5.mp3", "speech_killing_spree_6.mp3"])
-	_load_group("speech_village", ["speech_village_1.mp3", "speech_village_2.mp3", "speech_village_3.mp3", "speech_village_4.mp3", "speech_village_5.mp3", "speech_village_6.mp3"])
-	_load_group("speech_close_call", ["speech_close_call_1.mp3", "speech_close_call_2.mp3", "speech_close_call_3.mp3", "speech_close_call_4.mp3", "speech_close_call_5.mp3"])
-	_load_group("speech_craft_weapon", ["speech_craft_weapon_1.mp3", "speech_craft_weapon_2.mp3", "speech_craft_weapon_3.mp3", "speech_craft_weapon_4.mp3", "speech_craft_weapon_5.mp3", "speech_craft_weapon_6.mp3"])
-	_load_group("speech_craft_tool", ["speech_craft_tool_1.mp3", "speech_craft_tool_2.mp3", "speech_craft_tool_3.mp3", "speech_craft_tool_4.mp3", "speech_craft_tool_5.mp3"])
-	_load_group("speech_loot_drop", ["speech_loot_drop_1.mp3", "speech_loot_drop_2.mp3", "speech_loot_drop_3.mp3", "speech_loot_drop_4.mp3", "speech_loot_drop_5.mp3", "speech_loot_drop_6.mp3", "speech_loot_drop_7.mp3", "speech_loot_drop_8.mp3", "speech_loot_drop_9.mp3", "speech_loot_drop_10.mp3", "speech_loot_drop_11.mp3", "speech_loot_drop_12.mp3"])
-	_load_group("speech_halvard", ["speech_halvard_1.mp3", "speech_halvard_2.mp3", "speech_halvard_3.mp3", "speech_halvard_4.mp3"])
-	_load_group("speech_signpost", ["speech_signpost_1.mp3", "speech_signpost_2.mp3", "speech_signpost_3.mp3", "speech_signpost_4.mp3", "speech_signpost_5.mp3"])
+	# Voice lines (speech barks) — loaded from voice/ folder
+	_load_group("speech_dark", [
+		"M_dark_getting_dark_need_light.mp3", "M_dark_shadows_growing_long.mp3",
+		"M_dark_hard_to_see_path.mp3", "M_dark_sun_abandoning_me.mp3",
+		"M_dark_darkness_takes_over.mp3",
+	], VOICE_PATH)
+	_load_group("speech_inv_full", [
+		"M_inv_full_pack_screaming_mercy.mp3", "M_inv_full_more_loot_than_sense.mp3",
+		"M_inv_full_something_stays_dirt.mp3", "M_inv_full_carrying_village_worth.mp3",
+	], VOICE_PATH)
+	_load_group("speech_drowning", [
+		"M_drowning_arms_getting_heavy.mp3", "M_drowning_deep_water_no_place.mp3",
+	], VOICE_PATH)
+	_load_group("speech_shelter", [
+		"M_shelter_place_to_rest.mp3", "M_shelter_rain_hitting_roof.mp3",
+		"M_shelter_cold_cant_follow.mp3", "M_shelter_breathe_air.mp3",
+	], VOICE_PATH)
+	_load_group("speech_first_light", [
+		"M_first_light_sun_returns_chase_shadows.mp3", "M_first_light_nights_grip_loosens.mp3",
+		"M_first_light_light_breaks_horizon.mp3", "M_first_light_clear_skies_fresh.mp3",
+		"M_first_light_shadows_retreat.mp3", "M_first_light_golden_light_world_kind.mp3",
+	], VOICE_PATH)
+	_load_group("speech_killing_spree", [
+		"M_killing_spree_let_them_come.mp3", "M_killing_spree_is_that_all.mp3",
+		"M_killing_spree_fall_like_wheat.mp3", "M_killing_spree_paint_woods_red.mp3",
+		"M_killing_spree_none_shall_stand.mp3", "M_killing_spree_havent_felt_alive.mp3",
+	], VOICE_PATH)
+	_load_group("speech_village", [
+		"M_village_ghost_town.mp3", "M_village_empty_homes_cold_hearths.mp3",
+		"M_village_silence_only_living.mp3", "M_village_dust_and_echoes.mp3",
+		"M_village_be_quick_wrong_sort.mp3", "M_village_see_what_left_behind.mp3",
+	], VOICE_PATH)
+	_load_group("speech_close_call", [
+		"M_close_call_closer_to_grave.mp3", "M_close_call_abyss_blinked_first.mp3",
+		"M_close_call_blood_stays_inside.mp3", "M_close_call_few_inches_closer.mp3",
+		"M_close_call_ancestors_not_ready.mp3",
+	], VOICE_PATH)
+	_load_group("speech_craft_weapon", [
+		"M_craft_weapon_legends_weapon.mp3", "M_craft_weapon_symphony_metal.mp3",
+		"M_craft_weapon_world_not_ready.mp3", "M_craft_weapon_catches_light.mp3",
+		"M_craft_weapon_power_thrumming.mp3", "M_craft_weapon_kings_hall.mp3",
+	], VOICE_PATH)
+	_load_group("speech_craft_tool", [
+		"M_craft_tool_geometry_flawless.mp3", "M_craft_tool_perfectly_balanced.mp3",
+		"M_craft_tool_absolute_masterpiece.mp3", "M_craft_tool_glow_struck_gold.mp3",
+		"M_craft_tool_by_the_gods.mp3",
+	], VOICE_PATH)
+	_load_group("speech_loot_drop", [
+		"M_loot_drop_scars_worth_it.mp3", "M_loot_drop_prize_blood_spilled.mp3",
+		"M_loot_drop_luck_favors_bold.mp3", "M_loot_drop_diamond_in_rough.mp3",
+		"M_loot_drop_fate_smiled.mp3", "M_loot_drop_ancestors_watching.mp3",
+		"M_loot_drop_hunted_whole_life.mp3", "M_loot_drop_never_seen_exquisite.mp3",
+		"M_loot_drop_songs_will_be_sung.mp3", "M_loot_drop_steady_dont_drop.mp3",
+		"M_loot_drop_beyond_wildest_dreams.mp3", "M_loot_drop_beaten_the_odds.mp3",
+	], VOICE_PATH)
+	_load_group("speech_halvard", [
+		"M_proximity_halvard_almost_there.mp3", "M_proximity_halvard_closing_in.mp3",
+		"M_proximity_halvard_old_fart.mp3", "M_proximity_halvard_hasnt_showered.mp3",
+	], VOICE_PATH)
+	_load_group("speech_signpost", [
+		"M_signpost_camp_nearby_visit.mp3", "M_signpost_settled_camp_offer.mp3",
+		"M_signpost_camping_survive_night.mp3", "M_signpost_pitched_tent_coin.mp3",
+		"M_signpost_camp_pay_old_man.mp3",
+	], VOICE_PATH)
 	_load_group("dialogue_quest", [
-		"dialogue_quest_1.mp3", "dialogue_quest_2.mp3", "dialogue_quest_3.mp3", "dialogue_quest_4.mp3",
-		"dialogue_quest_5.mp3", "dialogue_quest_6.mp3", "dialogue_quest_7.mp3", "dialogue_quest_8.mp3",
-		"dialogue_quest_9.mp3", "dialogue_quest_10.mp3", "dialogue_quest_11.mp3", "dialogue_quest_12.mp3",
-		"dialogue_quest_13.mp3", "dialogue_quest_14.mp3", "dialogue_quest_15.mp3", "dialogue_quest_16.mp3",
-		"dialogue_quest_17.mp3",
-	])
+		"H_quest_grindstone_crumbled_to_dust.mp3", "M_quest_stone_thousand_winters.mp3",
+		"H_quest_outlasted_the_men.mp3", "H_quest_edge_not_common_pebbles.mp3",
+		"M_quest_deep_bone_different.mp3", "H_quest_surface_stones_brittle.mp3",
+		"M_quest_reason_havent_gone.mp3", "H_quest_river_silt_home_goblins.mp3",
+		"M_quest_tell_where_to_look.mp3", "H_quest_follow_stream_water_black.mp3",
+		"M_quest_not_ready_tangle_goblins.mp3", "H_quest_natures_cruel_smith.mp3",
+		"M_quest_return_with_shards.mp3", "H_quest_watch_shadows_reeds.mp3",
+		"M_quest_find_my_bearings.mp3", "H_quest_suit_yerself_dull_axe.mp3",
+		"M_quest_without_grindstone_fog.mp3",
+	], VOICE_PATH)
 	_load_group("dialogue_turnin", [
-		"dialogue_turnin_1.mp3", "dialogue_turnin_2.mp3", "dialogue_turnin_3.mp3",
-		"dialogue_turnin_4.mp3", "dialogue_turnin_5.mp3",
-	])
+		"H_turnin_fog_took_yeh.mp3", "M_turnin_have_what_you_asked.mp3",
+		"M_turnin_fix_grindstone_with_this.mp3", "H_turnin_indeed_deep_bone.mp3",
+		"H_turnin_give_me_a_moment.mp3",
+	], VOICE_PATH)
 	_load_group("halvard_greet", [
-		"halvard_greet_1.mp3", "halvard_greet_2.mp3", "halvard_greet_3.mp3",
-	])
+		"H_greet_blimey_youve_grown.mp3", "H_greet_kindness_goes_further.mp3",
+		"H_greet_pull_up_a_stump.mp3",
+	], VOICE_PATH)
 	_load_group("halvard_farewell", [
-		"halvard_farewell_1.mp3", "halvard_farewell_2.mp3", "halvard_farewell_3.mp3",
-		"halvard_farewell_4.mp3", "halvard_farewell_5.mp3", "halvard_farewell_6.mp3",
-		"halvard_farewell_7.mp3",
-	])
+		"H_farewell_goodbye_to_you.mp3", "H_farewell_hope_see_you_soon.mp3",
+		"H_farewell_safe_journey_friend.mp3", "H_farewell_shadows_have_teeth.mp3",
+		"H_farewell_dont_go_dyin.mp3", "H_farewell_old_bones_need_quiet.mp3",
+		"H_farewell_stones_have_ears.mp3",
+	], VOICE_PATH)
+	_load_group("player_grunt", ["M_grunt_1.mp3", "M_grunt_2.mp3"], VOICE_PATH)
 
 
-func _load_group(group_name: String, filenames: Array) -> void:
+func _load_group(group_name: String, filenames: Array, base_path: String = SFX_PATH) -> void:
 	var streams: Array[AudioStream] = []
 	for fname: String in filenames:
-		var path := SFX_PATH + fname
+		var path := base_path + fname
 		if ResourceLoader.exists(path):
 			var stream := load(path) as AudioStream
 			if stream:

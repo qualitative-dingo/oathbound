@@ -57,7 +57,7 @@ var _tavern_world_pos := Vector3.ZERO
 var _player_in_tavern := false
 const _TAVERN_ENTER_DIST := 35.0
 const _TAVERN_EXIT_DIST := 50.0
-const _TAVERN_MUSIC_PATH := "res://audio/tavern music/"
+const _TAVERN_MUSIC_PATH := "res://audio/music/tavern/"
 var _tavern_songs: Array[String] = [
 	_TAVERN_MUSIC_PATH + "song1.mp3",
 	_TAVERN_MUSIC_PATH + "song2.mp3",
@@ -457,7 +457,7 @@ func _ready() -> void:
 		"misty_nordic_forest_theme.mp3",
 		"nordic_wilderness_echoes.mp3",
 		"whispers_of_the_northern_wild.mp3",
-		_TAVERN_MUSIC_PATH + "additional theme song.mp3",
+		_TAVERN_MUSIC_PATH + "additional_theme_song.mp3",
 	]
 	AudioManager.play_music_playlist(_theme_songs, 4.0)
 	GameEvents.day_night_changed.connect(_on_day_night_changed)
