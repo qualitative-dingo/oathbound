@@ -428,6 +428,7 @@ func get_sub_chunk_explore_fraction(zone_x: int, zone_z: int) -> float:
 
 
 func _ready() -> void:
+	var _t_world_start := Time.get_ticks_usec()
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	Engine.max_fps = 0
 	_ZonePool.flush_all()
@@ -441,15 +442,32 @@ func _ready() -> void:
 	_terrain_shape_cache.clear()
 	_seed_hash = world_seed.hash()
 	add_to_group(&"world_generator")
+	var _t0 := Time.get_ticks_usec()
 	_init_noise_layers()
+	var _t_noise := Time.get_ticks_usec()
 	_compute_watershed()
+	var _t_watershed := Time.get_ticks_usec()
 	_compute_merchant_position()
+	var _t_merchant := Time.get_ticks_usec()
 	_init_biome_materials()
 	_init_water_material()
 	_init_creek_material()
+	var _t_materials := Time.get_ticks_usec()
 	set_render_distance(SaveManager.render_distance)
 	_generate_spawn_area()
+	var _t_spawn := Time.get_ticks_usec()
 	_create_global_water()
+	var _t_water := Time.get_ticks_usec()
+	var _total_ms := (_t_water - _t_world_start) / 1000.0
+	print("[WORLD INIT] total=%.1fms noise=%.1fms watershed=%.1fms merchant=%.1fms materials=%.1fms spawn=%.1fms water=%.1fms seed=%s" % [
+		_total_ms,
+		(_t_noise - _t0) / 1000.0,
+		(_t_watershed - _t_noise) / 1000.0,
+		(_t_merchant - _t_watershed) / 1000.0,
+		(_t_materials - _t_merchant) / 1000.0,
+		(_t_spawn - _t_materials) / 1000.0,
+		(_t_water - _t_spawn) / 1000.0,
+		world_seed])
 	_theme_songs = [
 		"misty_forest_echoes.mp3",
 		"misty_forest_lament.mp3",
