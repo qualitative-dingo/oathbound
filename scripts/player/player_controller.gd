@@ -5880,7 +5880,7 @@ var _minimap_ring_colors: PackedColorArray
 var _minimap_zone_color_cache: Dictionary = {}  # Vector2i -> Color
 var _minimap_last_pos: Vector3 = Vector3.ZERO
 
-const _TILE_RES := 12
+const _TILE_RES := 8
 const _TILE_MAX_CACHE := 2000
 var _zone_tile_cache: Dictionary = {}  # Vector2i -> PackedByteArray (TILE_RES*TILE_RES*4 RGBA)
 var _zone_tile_lru: Array[Vector2i] = []
@@ -9347,13 +9347,11 @@ func _refresh_map() -> void:
 			buf[i + 2] = 26
 			buf[i + 3] = 255
 	_map_chunk_out = buf
-	_map_dbg_ocean = 0
-	_map_dbg_water = 0
-	_map_dbg_land = 0
-	_map_dbg_mountain = 0
 	_map_chunk_row = 0
 	_map_chunk_col = 0
 	_map_partial_upload_timer = 0.0
+	_quick_zone_colors.clear()
+	_tiles_pending_build.clear()
 
 
 func _map_render_chunk() -> void:
@@ -9370,9 +9368,6 @@ func _map_render_chunk() -> void:
 	var half_px := rpx / 2
 	var zone_size: float = wg.ZONE_SIZE
 	var zones_per_pixel: float = _map_chunk_zoom / float(half_px)
-	var wr := int(Color(0.12, 0.28, 0.52).r * 255.0)
-	var wgr := int(Color(0.12, 0.28, 0.52).g * 255.0)
-	var wb := int(Color(0.12, 0.28, 0.52).b * 255.0)
 	var mask_bytes := _map_mask_bytes
 	var out := _map_chunk_out
 	var player_pos := _map_chunk_player_pos
@@ -9380,6 +9375,8 @@ func _map_render_chunk() -> void:
 	var explored := _map_chunk_explored
 	var no_fog := _map_chunk_no_fog
 	var tile_cache := _zone_tile_cache
+	var quick_colors := _quick_zone_colors
+	var water_color := Color(0.12, 0.28, 0.52)
 
 	var budget_hit := false
 
@@ -9390,7 +9387,6 @@ func _map_render_chunk() -> void:
 			var ma := mask_bytes[bi + 3]
 			if ma < 3:
 				continue
-
 			var mr := mask_bytes[bi]
 			var mg := mask_bytes[bi + 1]
 			if mr < 230 and mg < 230 and ma > 128 and (mr > 13 or mg > 13):
@@ -9402,22 +9398,52 @@ func _map_render_chunk() -> void:
 				center_zone.x + floori(zone_fx),
 				center_zone.y + floori(zone_fz))
 
-			if no_fog or explored.has(zone_coord):
-				var was_cached := tile_cache.has(zone_coord)
+			if not (no_fog or explored.has(zone_coord)):
+				out[bi] = 20
+				out[bi + 1] = 20
+				out[bi + 2] = 26
+				out[bi + 3] = 255
+				continue
+
+			if tile_cache.has(zone_coord):
 				var world_x := player_pos.x + zone_fx * zone_size
 				var world_z := player_pos.z + zone_fz * zone_size
-				var cached_col := _terrain_color_cache_lookup(zone_coord, world_x, world_z, zone_size, wg)
-				if cached_col.a > 0.5:
-					out[bi] = int(cached_col.r * 255.0)
-					out[bi + 1] = int(cached_col.g * 255.0)
-					out[bi + 2] = int(cached_col.b * 255.0)
-					out[bi + 3] = 255
+				var c := _terrain_color_cache_lookup(zone_coord, world_x, world_z, zone_size, wg)
+				if c.a > 0.5:
+					out[bi] = int(c.r * 255.0)
+					out[bi + 1] = int(c.g * 255.0)
+					out[bi + 2] = int(c.b * 255.0)
 				else:
-					out[bi] = wr
-					out[bi + 1] = wgr
-					out[bi + 2] = wb
-					out[bi + 3] = 255
-				if not was_cached and Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
+					out[bi] = int(water_color.r * 255.0)
+					out[bi + 1] = int(water_color.g * 255.0)
+					out[bi + 2] = int(water_color.b * 255.0)
+				out[bi + 3] = 255
+			elif quick_colors.has(zone_coord):
+				var qc: Color = quick_colors[zone_coord]
+				out[bi] = int(qc.r * 255.0)
+				out[bi + 1] = int(qc.g * 255.0)
+				out[bi + 2] = int(qc.b * 255.0)
+				out[bi + 3] = 255
+			else:
+				var cx := (float(zone_coord.x) + 0.5) * zone_size
+				var cz := (float(zone_coord.y) + 0.5) * zone_size
+				var h := wg._get_base_height(cx, cz)
+				var col: Color
+				if h < wg.WATER_LEVEL:
+					col = water_color
+				else:
+					col = _biome_map_color(wg._determine_biome(zone_coord), &"none", h)
+					var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
+					col = Color(clampf(col.r * bright, 0.0, 1.0), clampf(col.g * bright, 0.0, 1.0), clampf(col.b * bright, 0.0, 1.0))
+				quick_colors[zone_coord] = col
+				_quick_zone_colors[zone_coord] = col
+				out[bi] = int(col.r * 255.0)
+				out[bi + 1] = int(col.g * 255.0)
+				out[bi + 2] = int(col.b * 255.0)
+				out[bi + 3] = 255
+				if not tile_cache.has(zone_coord):
+					_tiles_pending_build.append(zone_coord)
+				if Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
 					_map_chunk_row = py
 					_map_chunk_col = px + 1
 					if _map_chunk_col >= rpx:
@@ -9426,11 +9452,6 @@ func _map_render_chunk() -> void:
 					_map_chunk_out = out
 					budget_hit = true
 					break
-			else:
-				out[bi] = 20
-				out[bi + 1] = 20
-				out[bi + 2] = 26
-				out[bi + 3] = 255
 		if budget_hit:
 			break
 		_map_chunk_col = 0
@@ -10505,6 +10526,21 @@ func _process(delta: float) -> void:
 			_map_dirty = false
 		if _map_chunk_row >= 0:
 			_map_render_chunk()
+		elif _tiles_pending_build.size() > 0:
+			var wg_bg := _find_world_generator()
+			if wg_bg:
+				var bt0 := Time.get_ticks_usec()
+				var built := 0
+				while _tiles_pending_build.size() > 0:
+					var zc: Vector2i = _tiles_pending_build[_tiles_pending_build.size() - 1]
+					_tiles_pending_build.resize(_tiles_pending_build.size() - 1)
+					if not _zone_tile_cache.has(zc):
+						_get_zone_tile(zc, wg_bg)
+						built += 1
+						if Time.get_ticks_usec() - bt0 > 5000:
+							break
+				if built > 0 and _tiles_pending_build.size() == 0:
+					_map_dirty = true
 
 	var _pc_total_ms := float(Time.get_ticks_usec() - _pc_t0) / 1000.0
 	_pc_proc_max_total = maxf(_pc_proc_max_total, _pc_total_ms)
