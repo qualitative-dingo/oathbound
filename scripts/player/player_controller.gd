@@ -5853,7 +5853,7 @@ func _build_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
 			var wx := base_x + (float(tx) + 0.5) * step
 			var wz := base_z + (float(ty) + 0.5) * step
 			var bi := (ty * _TILE_RES + tx) * 4
-			var island_m := wg._sample_island_mask(wx, wz)
+			var island_m: float = wg._sample_island_mask(wx, wz)
 			if island_m < 0.01:
 				tile[bi] = int(water_col.r * 255.0)
 				tile[bi + 1] = int(water_col.g * 255.0)
