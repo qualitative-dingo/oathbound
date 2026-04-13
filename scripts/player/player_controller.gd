@@ -9377,6 +9377,7 @@ func _map_render_chunk() -> void:
 				out[bi + 3] = 255
 
 	_map_chunk_row = row_end
+	_map_chunk_out = out
 	var _mt_chunk_ms := float(Time.get_ticks_usec() - _mt0) / 1000.0
 
 	if _map_chunk_row >= rpx:
