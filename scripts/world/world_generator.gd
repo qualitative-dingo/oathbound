@@ -2063,9 +2063,17 @@ func get_height_at(x: float, z: float) -> float:
 			if bed_h < h:
 				h = bed_h
 
-	# Clamp inland water — on solid land, only major rivers drop below water
+	# Clamp inland water — on solid land, rivers stay above water
 	if shore > 0.5:
 		h = maxf(h, WATER_LEVEL + 0.3)
+
+	# Sparse natural lakes — punch through the inland clamp at rare noise troughs
+	if _continent_noise and shore > 0.8:
+		var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0)
+		if lake_n < -0.55:
+			var lake_t := smoothstep(-0.55, -0.75, lake_n)
+			var lake_depth := lerpf(1.5, 4.0, lake_t)
+			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
 
 	# Flatten spawn area — applied AFTER all water carving so rivers/creeks
 	# cannot punch through. Fully flat within 35m, fading out to 80m.

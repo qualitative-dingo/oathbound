@@ -442,6 +442,7 @@ var _map_chunk_zoom: float = 40.0
 const _MAP_CHUNK_BUDGET_US := 8000
 const _MAP_MAX_TILE_BUILDS := 20
 var _map_tile_builds_this_chunk := 0
+var _map_tiles_deferred := false
 var _map_fog_time := 0.0
 var _map_fog_noise: FastNoiseLite
 
@@ -1486,11 +1487,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			_map_zoom_target = clampf(_map_zoom_target - MAP_ZOOM_STEP, MAP_ZOOM_MIN, MAP_ZOOM_MAX)
 			_map_zoom = _map_zoom_target
 			_map_dirty = true
+			_map_chunk_row = -1
 			return
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_map_zoom_target = clampf(_map_zoom_target + MAP_ZOOM_STEP, MAP_ZOOM_MIN, MAP_ZOOM_MAX)
 			_map_zoom = _map_zoom_target
 			_map_dirty = true
+			_map_chunk_row = -1
 			return
 
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
@@ -5910,6 +5913,10 @@ func _get_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
 			_zone_tile_lru.remove_at(lru_idx)
 			_zone_tile_lru.append(zone_coord)
 		return _zone_tile_cache[zone_coord]
+	if _map_chunk_row >= 0 and _map_tile_builds_this_chunk >= _MAP_MAX_TILE_BUILDS:
+		_map_tiles_deferred = true
+		return PackedByteArray()
+	_map_tile_builds_this_chunk += 1
 	var tile := _build_zone_tile(zone_coord, wg)
 	_zone_tile_cache[zone_coord] = tile
 	_zone_tile_lru.append(zone_coord)
@@ -5920,18 +5927,81 @@ func _get_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
 	return tile
 
 
+func _sample_tile_texel(tile: PackedByteArray, tx: int, tz: int) -> Color:
+	var bi := (tz * _TILE_RES + tx) * 4
+	return Color(float(tile[bi]) / 255.0, float(tile[bi + 1]) / 255.0, float(tile[bi + 2]) / 255.0, float(tile[bi + 3]) / 255.0)
+
+
 func _terrain_color_cache_lookup(zone_coord: Vector2i, world_x: float, world_z: float, zone_size: float, wg: Node) -> Color:
 	var tile := _get_zone_tile(zone_coord, wg)
+	if tile.is_empty():
+		return Color(0.08, 0.08, 0.10, 0.6)
+
 	var local_x := fmod(world_x, zone_size)
 	var local_z := fmod(world_z, zone_size)
 	if local_x < 0.0:
 		local_x += zone_size
 	if local_z < 0.0:
 		local_z += zone_size
-	var tx := clampi(int(local_x / zone_size * float(_TILE_RES)), 0, _TILE_RES - 1)
-	var tz := clampi(int(local_z / zone_size * float(_TILE_RES)), 0, _TILE_RES - 1)
-	var bi := (tz * _TILE_RES + tx) * 4
-	return Color(float(tile[bi]) / 255.0, float(tile[bi + 1]) / 255.0, float(tile[bi + 2]) / 255.0, float(tile[bi + 3]) / 255.0)
+
+	var step := zone_size / float(_TILE_RES)
+	var u := local_x / step - 0.5
+	var v := local_z / step - 0.5
+	var u0 := floori(u)
+	var v0 := floori(v)
+	var fu := u - float(u0)
+	var fv := v - float(v0)
+	var u1 := u0 + 1
+	var v1 := v0 + 1
+
+	var c00: Color
+	var c10: Color
+	var c01: Color
+	var c11: Color
+
+	if u0 >= 0 and u1 < _TILE_RES and v0 >= 0 and v1 < _TILE_RES:
+		c00 = _sample_tile_texel(tile, u0, v0)
+		c10 = _sample_tile_texel(tile, u1, v0)
+		c01 = _sample_tile_texel(tile, u0, v1)
+		c11 = _sample_tile_texel(tile, u1, v1)
+	else:
+		var samples: Array[Color] = [Color.BLACK, Color.BLACK, Color.BLACK, Color.BLACK]
+		var coords := [[u0, v0], [u1, v0], [u0, v1], [u1, v1]]
+		for i in 4:
+			var sx: int = coords[i][0]
+			var sz: int = coords[i][1]
+			var zc := zone_coord
+			if sx < 0:
+				zc.x -= 1
+				sx += _TILE_RES
+			elif sx >= _TILE_RES:
+				zc.x += 1
+				sx -= _TILE_RES
+			if sz < 0:
+				zc.y -= 1
+				sz += _TILE_RES
+			elif sz >= _TILE_RES:
+				zc.y += 1
+				sz -= _TILE_RES
+			var t := _get_zone_tile(zc, wg)
+			if t.is_empty():
+				samples[i] = Color(0.08, 0.08, 0.10, 0.6)
+			else:
+				samples[i] = _sample_tile_texel(t, sx, sz)
+		c00 = samples[0]
+		c10 = samples[1]
+		c01 = samples[2]
+		c11 = samples[3]
+
+	var w00 := (1.0 - fu) * (1.0 - fv)
+	var w10 := fu * (1.0 - fv)
+	var w01 := (1.0 - fu) * fv
+	var w11 := fu * fv
+	return Color(
+		c00.r * w00 + c10.r * w10 + c01.r * w01 + c11.r * w11,
+		c00.g * w00 + c10.g * w10 + c01.g * w01 + c11.g * w11,
+		c00.b * w00 + c10.b * w10 + c01.b * w01 + c11.b * w11,
+		c00.a * w00 + c10.a * w10 + c01.a * w01 + c11.a * w11)
 
 
 func invalidate_terrain_cache_at(world_x: float, world_z: float, radius: float) -> void:
@@ -9215,6 +9285,7 @@ func _refresh_map() -> void:
 		_map_biome_label.text = display
 
 	_map_chunk_zoom = _map_zoom
+	_map_tiles_deferred = false
 
 	var rpx := MAP_RENDER_PX
 	_map_chunk_out = PackedByteArray()
@@ -9325,10 +9396,13 @@ func _map_render_chunk() -> void:
 			_map_texture_rect.texture = _map_image_tex
 		var _mt_upload_ms := float(Time.get_ticks_usec() - _mt_upload) / 1000.0
 
+		if _map_tiles_deferred:
+			_map_dirty = true
+
 		var _dbg_total := _map_dbg_ocean + _map_dbg_water + _map_dbg_land + _map_dbg_mountain
-		print("[MAP] ocean=%d water=%d land=%d mountain=%d (of %d visible) | chunk=%.1fms markers=%.1fms upload=%.1fms cache=%d" % [
+		print("[MAP] ocean=%d water=%d land=%d mountain=%d (of %d visible) | chunk=%.1fms markers=%.1fms upload=%.1fms cache=%d deferred=%s" % [
 			_map_dbg_ocean, _map_dbg_water, _map_dbg_land, _map_dbg_mountain, _dbg_total,
-			_mt_chunk_ms, _mt_markers_ms, _mt_upload_ms, _zone_tile_cache.size()])
+			_mt_chunk_ms, _mt_markers_ms, _mt_upload_ms, _zone_tile_cache.size(), str(_map_tiles_deferred)])
 
 
 func _draw_player_arrow(half_px: int) -> void:
