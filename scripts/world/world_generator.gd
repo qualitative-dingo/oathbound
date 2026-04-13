@@ -2076,19 +2076,19 @@ func get_height_at(x: float, z: float) -> float:
 			if bed_h < h:
 				h = bed_h
 
-	# Inland terrain floor — two-scale rolling hills prevent sub-water terrain outside rivers
-	if shore > 0.5 and accum < _CREEK_ACCUM_THRESH * 0.8:
+	# Inland terrain floor — eliminates all sub-water terrain on solid land
+	if shore > 0.5:
 		var rolling := (1.0 + continent) * 1.5 + absf(detail) * 2.5
 		var floor_h := WATER_LEVEL + 0.5 + rolling + breadth * height_scale * 0.3
 		h = maxf(h, floor_h)
 
-	# Natural lakes — single noise sample with threshold bands for size variety
+	# Natural lakes — punch through the floor with tight thresholds for rare, large bodies
 	if _continent_noise and shore > 0.8:
 		var lake_n := _continent_noise.get_noise_2d(x * 0.4 + 5000.0, z * 0.4 + 5000.0)
-		if lake_n < -0.38:
-			var big_t := smoothstep(-0.55, -0.75, lake_n)
-			var small_t := smoothstep(-0.38, -0.58, lake_n)
-			var depth := lerpf(lerpf(1.0, 3.5, small_t), lerpf(3.0, 7.0, big_t), big_t)
+		if lake_n < -0.58:
+			var big_t := smoothstep(-0.68, -0.82, lake_n)
+			var small_t := smoothstep(-0.58, -0.72, lake_n)
+			var depth := lerpf(lerpf(1.5, 4.0, small_t), lerpf(4.0, 8.0, big_t), big_t)
 			var lake_t := maxf(small_t, big_t)
 			h = lerpf(h, WATER_LEVEL - depth, lake_t)
 
