@@ -428,6 +428,13 @@ var _map_mask_bytes: PackedByteArray
 var _map_dirty := true
 var _map_last_player_pos := Vector3.ZERO
 var _map_refresh_timer := 0.0
+var _map_chunk_row := -1
+var _map_chunk_out: PackedByteArray
+var _map_chunk_player_pos := Vector3.ZERO
+var _map_chunk_center_zone := Vector2i.ZERO
+var _map_chunk_no_fog := false
+var _map_chunk_explored: Dictionary = {}
+const _MAP_CHUNK_ROWS := 32
 var _map_fog_time := 0.0
 var _map_fog_noise: FastNoiseLite
 
@@ -4322,6 +4329,7 @@ func _toggle_map() -> void:
 
 func _close_map() -> void:
 	_map_open = false
+	_map_chunk_row = -1
 	if _map_panel:
 		_map_panel.visible = false
 	for lbl in _map_marker_labels:
@@ -5798,6 +5806,11 @@ var _minimap_ring_colors: PackedColorArray
 var _minimap_zone_color_cache: Dictionary = {}  # Vector2i -> Color
 var _minimap_last_pos: Vector3 = Vector3.ZERO
 
+const _TILE_RES := 8
+const _TILE_MAX_CACHE := 2000
+var _zone_tile_cache: Dictionary = {}  # Vector2i -> PackedByteArray (TILE_RES*TILE_RES*4 RGBA)
+var _zone_tile_lru: Array[Vector2i] = []
+
 func _ensure_minimap_lut() -> void:
 	if not _minimap_mask_lut.is_empty():
 		return
@@ -5821,6 +5834,93 @@ func _ensure_minimap_lut() -> void:
 				_minimap_mask_lut[idx] = 2
 
 
+func _build_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
+	var tile := PackedByteArray()
+	tile.resize(_TILE_RES * _TILE_RES * 4)
+	var zone_size: float = wg.ZONE_SIZE
+	var water_col := Color(0.12, 0.28, 0.52)
+	var water_shallow := Color(0.18, 0.38, 0.55)
+	var biome_cache: Dictionary = {}
+	var base_x := float(zone_coord.x) * zone_size
+	var base_z := float(zone_coord.y) * zone_size
+	var step := zone_size / float(_TILE_RES)
+	for ty in _TILE_RES:
+		for tx in _TILE_RES:
+			var wx := base_x + (float(tx) + 0.5) * step
+			var wz := base_z + (float(ty) + 0.5) * step
+			var bi := (ty * _TILE_RES + tx) * 4
+			var island_m := wg._sample_island_mask(wx, wz)
+			if island_m < 0.01:
+				tile[bi] = int(water_col.r * 255.0)
+				tile[bi + 1] = int(water_col.g * 255.0)
+				tile[bi + 2] = int(water_col.b * 255.0)
+				tile[bi + 3] = 0
+				continue
+			var h := wg.get_height_at(wx, wz)
+			var cr: int; var cg: int; var cb: int
+			if h < wg.WATER_LEVEL:
+				var depth := clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0)
+				var wc := water_shallow.lerp(water_col, depth)
+				cr = int(wc.r * 255.0)
+				cg = int(wc.g * 255.0)
+				cb = int(wc.b * 255.0)
+			else:
+				var col := _get_blended_biome_color(wx, wz, h, zone_size, wg, biome_cache)
+				var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
+				cr = int(clampf(col.r * bright, 0.0, 1.0) * 255.0)
+				cg = int(clampf(col.g * bright, 0.0, 1.0) * 255.0)
+				cb = int(clampf(col.b * bright, 0.0, 1.0) * 255.0)
+			tile[bi] = cr
+			tile[bi + 1] = cg
+			tile[bi + 2] = cb
+			tile[bi + 3] = 255
+	return tile
+
+
+func _get_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
+	if _zone_tile_cache.has(zone_coord):
+		var lru_idx := _zone_tile_lru.find(zone_coord)
+		if lru_idx >= 0 and lru_idx < _zone_tile_lru.size() - 1:
+			_zone_tile_lru.remove_at(lru_idx)
+			_zone_tile_lru.append(zone_coord)
+		return _zone_tile_cache[zone_coord]
+	var tile := _build_zone_tile(zone_coord, wg)
+	_zone_tile_cache[zone_coord] = tile
+	_zone_tile_lru.append(zone_coord)
+	while _zone_tile_lru.size() > _TILE_MAX_CACHE:
+		var evict := _zone_tile_lru[0]
+		_zone_tile_lru.remove_at(0)
+		_zone_tile_cache.erase(evict)
+	return tile
+
+
+func _terrain_color_cache_lookup(zone_coord: Vector2i, world_x: float, world_z: float, zone_size: float, wg: Node) -> Color:
+	var tile := _get_zone_tile(zone_coord, wg)
+	var local_x := fmod(world_x, zone_size)
+	var local_z := fmod(world_z, zone_size)
+	if local_x < 0.0:
+		local_x += zone_size
+	if local_z < 0.0:
+		local_z += zone_size
+	var tx := clampi(int(local_x / zone_size * float(_TILE_RES)), 0, _TILE_RES - 1)
+	var tz := clampi(int(local_z / zone_size * float(_TILE_RES)), 0, _TILE_RES - 1)
+	var bi := (tz * _TILE_RES + tx) * 4
+	return Color(float(tile[bi]) / 255.0, float(tile[bi + 1]) / 255.0, float(tile[bi + 2]) / 255.0, float(tile[bi + 3]) / 255.0)
+
+
+func invalidate_terrain_cache_at(world_x: float, world_z: float, radius: float) -> void:
+	var wg := _find_world_generator()
+	if not wg:
+		return
+	var zone_size: float = wg.ZONE_SIZE
+	var zone_radius := ceili(radius / zone_size) + 1
+	var center_zone := Vector2i(floori(world_x / zone_size), floori(world_z / zone_size))
+	for dz in range(-zone_radius, zone_radius + 1):
+		for dx in range(-zone_radius, zone_radius + 1):
+			var zc := Vector2i(center_zone.x + dx, center_zone.y + dz)
+			_zone_tile_cache.erase(zc)
+
+
 func _refresh_minimap() -> void:
 	if _in_cave:
 		return
@@ -5838,13 +5938,10 @@ func _refresh_minimap() -> void:
 	var half_lo := _MINIMAP_LO / 2
 	var zone_size: float = wg.ZONE_SIZE
 	var water_col := Color(0.12, 0.28, 0.52)
-	var water_shallow := Color(0.18, 0.38, 0.55)
 	var transparent := Color(0, 0, 0, 0)
 
 	var world_radius_map := _minimap_zoom * zone_size
 	var meters_per_lo_pixel := world_radius_map / float(half_lo)
-
-	var biome_cache: Dictionary = {}
 
 	for ly in _MINIMAP_LO:
 		for lx in _MINIMAP_LO:
@@ -5859,19 +5956,10 @@ func _refresh_minimap() -> void:
 
 			var world_x := player_pos.x + float(lx - half_lo) * meters_per_lo_pixel
 			var world_z := player_pos.z + float(ly - half_lo) * meters_per_lo_pixel
-
-			var h := wg.get_height_at(world_x, world_z)
-			var col: Color
-			if h < wg.WATER_LEVEL:
-				var depth := clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0)
-				col = water_shallow.lerp(water_col, depth)
-			else:
-				col = _get_blended_biome_color(world_x, world_z, h, zone_size, wg, biome_cache)
-				var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
-				col = Color(
-					clampf(col.r * bright, 0.0, 1.0),
-					clampf(col.g * bright, 0.0, 1.0),
-					clampf(col.b * bright, 0.0, 1.0))
+			var zc := Vector2i(floori(world_x / zone_size), floori(world_z / zone_size))
+			var col := _terrain_color_cache_lookup(zc, world_x, world_z, zone_size, wg)
+			if col.a < 0.5:
+				col = water_col
 			_minimap_lo_image.set_pixel(lx, ly, col)
 
 	_draw_signpost_marker(_minimap_lo_image, player_pos, meters_per_lo_pixel, half_lo, wg)
@@ -9083,10 +9171,14 @@ func _refresh_map() -> void:
 		return
 
 	var player_pos := wg.get_world_position(self)
-	var center_zone: Vector2i = wg.world_to_zone(player_pos)
-	var half_px := MAP_RENDER_PX / 2
-	var explored: Dictionary = wg._explored_zones
-	var zone_size: float = wg.ZONE_SIZE
+	_map_chunk_player_pos = player_pos
+	_map_chunk_center_zone = wg.world_to_zone(player_pos)
+	_map_chunk_explored = wg._explored_zones.duplicate()
+
+	var wpn_base: StringName = ItemDatabase.parse_star_id(equipped_weapon).get("base_id", &"") as StringName
+	var inv_wpn := Inventory.get_equipped("weapon")
+	var inv_base: StringName = ItemDatabase.parse_star_id(inv_wpn).get("base_id", &"") as StringName if inv_wpn != &"" else &""
+	_map_chunk_no_fog = wpn_base == &"god_axe" or inv_base == &"god_axe"
 
 	if _map_biome_label:
 		var current_biome: StringName = wg.get_biome_at(player_pos)
@@ -9096,28 +9188,41 @@ func _refresh_map() -> void:
 			display += " - " + _microbiome_display_name(current_micro)
 		_map_biome_label.text = display
 
+	var rpx := MAP_RENDER_PX
+	_map_chunk_out = PackedByteArray()
+	_map_chunk_out.resize(rpx * rpx * 4)
+	_map_chunk_row = 0
+
+
+func _map_render_chunk() -> void:
+	if _map_chunk_row < 0 or _map_chunk_row >= MAP_RENDER_PX:
+		return
+
+	var wg := _find_world_generator()
+	if not wg:
+		_map_chunk_row = -1
+		return
+
+	var _mt0 := Time.get_ticks_usec()
+	var rpx := MAP_RENDER_PX
+	var half_px := rpx / 2
+	var zone_size: float = wg.ZONE_SIZE
 	var zones_per_pixel: float = _map_zoom / float(half_px)
 	var water_col := Color(0.12, 0.28, 0.52)
-	var water_shallow := Color(0.18, 0.38, 0.55)
-	var wpn_base: StringName = ItemDatabase.parse_star_id(equipped_weapon).get("base_id", &"") as StringName
-	var inv_wpn := Inventory.get_equipped("weapon")
-	var inv_base: StringName = ItemDatabase.parse_star_id(inv_wpn).get("base_id", &"") as StringName if inv_wpn != &"" else &""
-	var no_fog := wpn_base == &"god_axe" or inv_base == &"god_axe"
-
-	var unx_r := 20
-	var unx_g := 20
-	var unx_b := 26
 	var mask_bytes := _map_mask_bytes
-	var rpx := MAP_RENDER_PX
-	var out := PackedByteArray()
-	out.resize(rpx * rpx * 4)
-	var biome_cache: Dictionary = {}
+	var out := _map_chunk_out
+	var player_pos := _map_chunk_player_pos
+	var center_zone := _map_chunk_center_zone
+	var explored := _map_chunk_explored
+	var no_fog := _map_chunk_no_fog
 
-	for py in rpx:
+	var row_end := mini(_map_chunk_row + _MAP_CHUNK_ROWS, rpx)
+	var terrain_px := 0
+
+	for py in range(_map_chunk_row, row_end):
 		for px in rpx:
 			var bi := (py * rpx + px) * 4
 			var ma := mask_bytes[bi + 3]
-
 			if ma < 3:
 				continue
 
@@ -9139,54 +9244,46 @@ func _refresh_map() -> void:
 			if no_fog or explored.has(zone_coord):
 				var world_x := player_pos.x + zone_fx * zone_size
 				var world_z := player_pos.z + zone_fz * zone_size
-				var island_m := wg._sample_island_mask(world_x, world_z)
-				if island_m < 0.01:
+				var cached_col := _terrain_color_cache_lookup(zone_coord, world_x, world_z, zone_size, wg)
+				if cached_col.a > 0.5:
+					out[bi] = int(cached_col.r * 255.0)
+					out[bi + 1] = int(cached_col.g * 255.0)
+					out[bi + 2] = int(cached_col.b * 255.0)
+					out[bi + 3] = 255
+				else:
 					out[bi] = int(water_col.r * 255.0)
 					out[bi + 1] = int(water_col.g * 255.0)
 					out[bi + 2] = int(water_col.b * 255.0)
 					out[bi + 3] = 255
-					continue
-				var zh := wg.get_height_at(world_x, world_z)
-				var cr: int
-				var cg: int
-				var cb: int
-				if zh < wg.WATER_LEVEL:
-					var depth := clampf((wg.WATER_LEVEL - zh) / 6.0, 0.0, 1.0)
-					var wc := water_shallow.lerp(water_col, depth)
-					cr = int(wc.r * 255.0)
-					cg = int(wc.g * 255.0)
-					cb = int(wc.b * 255.0)
-				else:
-					var col := _get_blended_biome_color(world_x, world_z, zh, zone_size, wg, biome_cache)
-					var bright := clampf(lerpf(0.7, 1.25, (zh + 5.0) / 30.0), 0.0, 1.0)
-					cr = int(clampf(col.r * bright, 0.0, 1.0) * 255.0)
-					cg = int(clampf(col.g * bright, 0.0, 1.0) * 255.0)
-					cb = int(clampf(col.b * bright, 0.0, 1.0) * 255.0)
-				out[bi] = cr
-				out[bi + 1] = cg
-				out[bi + 2] = cb
-				out[bi + 3] = 255
+				terrain_px += 1
 			else:
-				out[bi] = unx_r
-				out[bi + 1] = unx_g
-				out[bi + 2] = unx_b
+				out[bi] = 20
+				out[bi + 1] = 20
+				out[bi + 2] = 26
 				out[bi + 3] = 255
 
-	_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
+	_map_chunk_row = row_end
+	var _mt_chunk_ms := float(Time.get_ticks_usec() - _mt0) / 1000.0
 
-	# -- Structure markers --
-	_draw_structure_markers(half_px, zones_per_pixel, zone_size, wg)
+	if _map_chunk_row >= rpx:
+		_map_chunk_row = -1
+		_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
 
-	# -- Marrow quest area circle --
-	if _quest_bones_accepted and not _quest_bones_completed:
-		_draw_marrow_quest_area(half_px, zones_per_pixel, zone_size)
+		var _mt_markers := Time.get_ticks_usec()
+		_draw_structure_markers(half_px, zones_per_pixel, zone_size, wg)
+		if _quest_bones_accepted and not _quest_bones_completed:
+			_draw_marrow_quest_area(half_px, zones_per_pixel, zone_size)
+		_draw_map_markers(half_px, zones_per_pixel, zone_size)
+		var _mt_markers_ms := float(Time.get_ticks_usec() - _mt_markers) / 1000.0
 
-	# -- NPC map markers (Valheim-style, visible through fog) --
-	_draw_map_markers(half_px, zones_per_pixel, zone_size)
+		var _mt_upload := Time.get_ticks_usec()
+		_map_image_tex.set_image(_map_image)
+		if _map_texture_rect.texture != _map_image_tex:
+			_map_texture_rect.texture = _map_image_tex
+		var _mt_upload_ms := float(Time.get_ticks_usec() - _mt_upload) / 1000.0
 
-	_map_image_tex.set_image(_map_image)
-	if _map_texture_rect.texture != _map_image_tex:
-		_map_texture_rect.texture = _map_image_tex
+		print("[MAP TIMING] chunk=%.1fms markers=%.1fms upload=%.1fms terrain_px=%d cache=%d" % [
+			_mt_chunk_ms, _mt_markers_ms, _mt_upload_ms, terrain_px, _zone_tile_cache.size()])
 
 
 func _draw_player_arrow(half_px: int) -> void:
@@ -10205,7 +10302,7 @@ func _process(delta: float) -> void:
 	var _pc_tmm := Time.get_ticks_usec()
 	if not _minimap_paused:
 		_minimap_refresh_timer += delta
-		var refresh_interval := 0.25
+		var refresh_interval := 0.5
 		var moved := global_position.distance_squared_to(_minimap_last_pos) > 4.0
 		if _minimap_needs_refresh or (moved and _minimap_refresh_timer >= refresh_interval):
 			_minimap_refresh_timer = 0.0
@@ -10229,11 +10326,13 @@ func _process(delta: float) -> void:
 		_map_refresh_timer += delta
 		var periodic := _map_refresh_timer >= 4.0
 		var needs_refresh := _map_dirty or (moved and _map_refresh_timer >= 1.5) or periodic
-		if needs_refresh:
+		if needs_refresh and _map_chunk_row < 0:
 			_map_last_player_pos = global_position
 			_map_refresh_timer = 0.0
 			_refresh_map()
 			_map_dirty = false
+		if _map_chunk_row >= 0:
+			_map_render_chunk()
 
 	var _pc_total_ms := float(Time.get_ticks_usec() - _pc_t0) / 1000.0
 	_pc_proc_max_total = maxf(_pc_proc_max_total, _pc_total_ms)
