@@ -1646,7 +1646,7 @@ static func _create_signpost(world_pos: Vector3, text: String, merchant_pos: Vec
 
 	var board := MeshInstance3D.new()
 	var board_mesh := BoxMesh.new()
-	board_mesh.size = Vector3(1.0, 1.05, 0.12)
+	board_mesh.size = Vector3(2.0, 1.05, 0.12)
 	board.mesh = board_mesh
 	board.material_override = post_mat
 	board.position = Vector3(0, 4.5, 0.18)

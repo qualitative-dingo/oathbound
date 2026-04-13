@@ -865,7 +865,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 		return WATER_LEVEL - 15.0
 
 	var continent := _continent_noise.get_noise_2d(wx, wz)
-	var mountain := _gate_mountain(wx, wz, maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.35, 0.0))
+	var mountain := _gate_mountain(wx, wz, maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.15, 0.0))
 	var breadth := _mountain_breadth(wx, wz)
 	var h := continent * height_scale * 0.35
 
@@ -1871,7 +1871,7 @@ func _mountain_pool_surface(x: float, z: float) -> float:
 	var valley_n := _valley_pool_noise.get_noise_2d(x, z)
 	if valley_n >= -0.40:
 		return -999.0
-	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
+	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.15, 0.0))
 	var valley_concavity := _sample_terrain_concavity(x, z, mountain)
 	if valley_concavity <= 0.3:
 		return -999.0
@@ -1896,7 +1896,7 @@ func _get_raw_height_no_paths(x: float, z: float) -> float:
 		return WATER_LEVEL - 15.0
 
 	var continent := _continent_noise.get_noise_2d(x, z)
-	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
+	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.15, 0.0))
 	var breadth := _mountain_breadth(x, z)
 	var h := continent * height_scale * 0.35
 	var foothills := maxf(mountain, 0.0) * smoothstep(0.0, 0.3, mountain)
@@ -1938,7 +1938,7 @@ func get_height_at(x: float, z: float) -> float:
 		return WATER_LEVEL - 15.0
 
 	var continent := _continent_noise.get_noise_2d(x, z)
-	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.35, 0.0))
+	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.15, 0.0))
 	var breadth := _mountain_breadth(x, z)
 	var detail := _detail_noise.get_noise_2d(x, z)
 
@@ -2003,11 +2003,14 @@ func get_height_at(x: float, z: float) -> float:
 	bias *= island
 	h += bias
 
+	# Sharp shore ramp — snap to full land quickly so only a thin coastal strip goes underwater
+	var shore := smoothstep(0.05, 0.25, island)
+
 	# Blend toward deep ocean at island edges for natural shore transitions
-	h = lerpf(WATER_LEVEL - 15.0, h, island)
+	h = lerpf(WATER_LEVEL - 15.0, h, shore)
 
 	# Keep terrain above water on land — floor at +3m prevents random noise lakes
-	var min_land := lerpf(WATER_LEVEL - 15.0, WATER_LEVEL + 3.0, island)
+	var min_land := lerpf(WATER_LEVEL - 15.0, WATER_LEVEL + 3.0, shore)
 	h = maxf(h, min_land)
 
 	# Watershed river/creek carving
@@ -2059,6 +2062,10 @@ func get_height_at(x: float, z: float) -> float:
 			var bed_h := lerpf(lerpf(a, b, cb_fx), lerpf(c, d, cb_fx), cb_fz)
 			if bed_h < h:
 				h = bed_h
+
+	# Clamp inland water — on solid land, only major rivers drop below water
+	if shore > 0.5:
+		h = maxf(h, WATER_LEVEL + 0.3)
 
 	# Flatten spawn area — applied AFTER all water carving so rivers/creeks
 	# cannot punch through. Fully flat within 35m, fading out to 80m.

@@ -4500,8 +4500,11 @@ func _build_speech_bubble(root: Control) -> void:
 	root.add_child(_speech_panel)
 
 
+const _SPEECH_INSTANT_TRIGGERS: Array[StringName] = [&"signpost"]
+
 func _show_speech(lines: Array, trigger_key: StringName) -> void:
-	if _speech_cooldown > 0.0:
+	var is_instant := trigger_key in _SPEECH_INSTANT_TRIGGERS
+	if not is_instant and _speech_cooldown > 0.0:
 		return
 	if _speech_trigger_cooldowns.has(trigger_key) and _speech_trigger_cooldowns[trigger_key] > 0.0:
 		return
@@ -4564,10 +4567,13 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 		_speech_tween.tween_interval(_SPEECH_DISPLAY_TIME)
 		_append_speech_fade_out(_speech_tween)
 
-	_speech_cooldown = _SPEECH_GLOBAL_COOLDOWN
-	const _NO_TRIGGER_CD: Array[StringName] = [&"killing_spree", &"close_call", &"craft_5star", &"find_5star", &"halvard"]
-	if trigger_key not in _NO_TRIGGER_CD:
-		_speech_trigger_cooldowns[trigger_key] = _SPEECH_TRIGGER_COOLDOWN
+	if trigger_key in _SPEECH_INSTANT_TRIGGERS:
+		_speech_trigger_cooldowns[trigger_key] = 1.0
+	else:
+		_speech_cooldown = _SPEECH_GLOBAL_COOLDOWN
+		const _NO_TRIGGER_CD: Array[StringName] = [&"killing_spree", &"close_call", &"craft_5star", &"find_5star", &"halvard"]
+		if trigger_key not in _NO_TRIGGER_CD:
+			_speech_trigger_cooldowns[trigger_key] = _SPEECH_TRIGGER_COOLDOWN
 
 
 func _on_speech_audio_finished() -> void:
@@ -9559,12 +9565,12 @@ func _get_blended_biome_color(world_x: float, world_z: float, height: float, zon
 
 
 func _biome_map_color(biome: StringName, micro: StringName = &"none", height: float = 0.0) -> Color:
-	if height > 18.0:
+	if height > 12.0:
 		var grass_col := Color(0.45, 0.52, 0.32)
 		var stone_col := Color(0.52, 0.50, 0.45)
 		var snow_col  := Color(0.92, 0.92, 0.95)
-		var rock_t := clampf((height - 18.0) / 22.0, 0.0, 1.0)
-		var snow_t := clampf((height - 35.0) / 20.0, 0.0, 1.0)
+		var rock_t := clampf((height - 12.0) / 20.0, 0.0, 1.0)
+		var snow_t := clampf((height - 30.0) / 20.0, 0.0, 1.0)
 		var col := grass_col.lerp(stone_col, rock_t)
 		return col.lerp(snow_col, snow_t)
 	if biome == &"hearthlands" and micro != &"none":
