@@ -436,7 +436,7 @@ var _map_chunk_center_zone := Vector2i.ZERO
 var _map_chunk_no_fog := false
 var _map_chunk_explored: Dictionary = {}
 var _map_chunk_zoom: float = 40.0
-const _MAP_CHUNK_BUDGET_US := 14000
+const _MAP_CHUNK_BUDGET_US := 6000
 var _map_partial_upload_timer := 0.0
 var _quick_zone_colors: Dictionary = {}
 var _tiles_pending_build: Array = []
@@ -6057,6 +6057,22 @@ func invalidate_terrain_cache_at(world_x: float, world_z: float, radius: float) 
 			_zone_tile_cache.erase(zc)
 
 
+func _minimap_fast_color(zc: Vector2i, world_x: float, world_z: float, zone_size: float, wg: Node) -> Color:
+	if _zone_tile_cache.has(zc):
+		return _terrain_color_cache_lookup(zc, world_x, world_z, zone_size, wg)
+	var h := wg._get_base_height(world_x, world_z)
+	var water_col := Color(0.12, 0.28, 0.52)
+	if h < wg.WATER_LEVEL:
+		return Color(water_col.r, water_col.g, water_col.b, 0.0)
+	var mtn_b: float = wg._mountain_breadth(world_x, world_z)
+	var map_h := h
+	if mtn_b > 0.15:
+		map_h = maxf(map_h, 12.0 + mtn_b * 25.0)
+	var col := _biome_map_color(wg._determine_biome(zc), &"none", map_h)
+	var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
+	return Color(clampf(col.r * bright, 0.0, 1.0), clampf(col.g * bright, 0.0, 1.0), clampf(col.b * bright, 0.0, 1.0), 1.0)
+
+
 func _refresh_minimap() -> void:
 	if _in_cave:
 		return
@@ -6093,7 +6109,7 @@ func _refresh_minimap() -> void:
 			var world_x := player_pos.x + float(lx - half_lo) * meters_per_lo_pixel
 			var world_z := player_pos.z + float(ly - half_lo) * meters_per_lo_pixel
 			var zc := Vector2i(floori(world_x / zone_size), floori(world_z / zone_size))
-			var col := _terrain_color_cache_lookup(zc, world_x, world_z, zone_size, wg)
+			var col := _minimap_fast_color(zc, world_x, world_z, zone_size, wg)
 			if col.a < 0.5:
 				col = water_col
 			_minimap_lo_image.set_pixel(lx, ly, col)
@@ -9405,6 +9421,7 @@ func _map_render_chunk() -> void:
 				out[bi + 3] = 255
 				continue
 
+			var need_tile_build := false
 			if tile_cache.has(zone_coord):
 				var world_x := player_pos.x + zone_fx * zone_size
 				var world_z := player_pos.z + zone_fz * zone_size
@@ -9445,17 +9462,18 @@ func _map_render_chunk() -> void:
 				out[bi + 1] = int(col.g * 255.0)
 				out[bi + 2] = int(col.b * 255.0)
 				out[bi + 3] = 255
-				if not tile_cache.has(zone_coord):
-					_tiles_pending_build.append(zone_coord)
-				if Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
-					_map_chunk_row = py
-					_map_chunk_col = px + 1
-					if _map_chunk_col >= rpx:
-						_map_chunk_row += 1
-						_map_chunk_col = 0
-					_map_chunk_out = out
-					budget_hit = true
-					break
+				need_tile_build = not tile_cache.has(zone_coord)
+			if need_tile_build:
+				_tiles_pending_build.append(zone_coord)
+			if Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
+				_map_chunk_row = py
+				_map_chunk_col = px + 1
+				if _map_chunk_col >= rpx:
+					_map_chunk_row += 1
+					_map_chunk_col = 0
+				_map_chunk_out = out
+				budget_hit = true
+				break
 		if budget_hit:
 			break
 		_map_chunk_col = 0
