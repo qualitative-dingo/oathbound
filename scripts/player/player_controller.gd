@@ -5933,6 +5933,10 @@ func _build_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
 				tile[bi + 3] = 0
 				continue
 			var h: float = wg.get_height_at(wx, wz)
+			var map_h := h
+			var mtn_b: float = wg._mountain_breadth(wx, wz)
+			if mtn_b > 0.15:
+				map_h = maxf(map_h, 12.0 + mtn_b * 25.0)
 			var cr: int; var cg: int; var cb: int
 			if h < wg.WATER_LEVEL:
 				var depth := clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0)
@@ -5941,7 +5945,7 @@ func _build_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
 				cg = int(wc.g * 255.0)
 				cb = int(wc.b * 255.0)
 			else:
-				var col := _get_blended_biome_color(wx, wz, h, zone_size, wg, biome_cache)
+				var col := _get_blended_biome_color(wx, wz, map_h, zone_size, wg, biome_cache)
 				var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
 				cr = int(clampf(col.r * bright, 0.0, 1.0) * 255.0)
 				cg = int(clampf(col.g * bright, 0.0, 1.0) * 255.0)
