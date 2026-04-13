@@ -5961,10 +5961,6 @@ func _get_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
 			_zone_tile_lru.remove_at(lru_idx)
 			_zone_tile_lru.append(zone_coord)
 		return _zone_tile_cache[zone_coord]
-	if _map_chunk_row >= 0 and _map_tile_builds_this_chunk >= _MAP_MAX_TILE_BUILDS:
-		_map_tiles_deferred = true
-		return PackedByteArray()
-	_map_tile_builds_this_chunk += 1
 	var tile := _build_zone_tile(zone_coord, wg)
 	_zone_tile_cache[zone_coord] = tile
 	_zone_tile_lru.append(zone_coord)
@@ -5982,8 +5978,6 @@ func _sample_tile_texel(tile: PackedByteArray, tx: int, tz: int) -> Color:
 
 func _terrain_color_cache_lookup(zone_coord: Vector2i, world_x: float, world_z: float, zone_size: float, wg: Node) -> Color:
 	var tile := _get_zone_tile(zone_coord, wg)
-	if tile.is_empty():
-		return Color(0.08, 0.08, 0.10, 0.6)
 
 	var local_x := fmod(world_x, zone_size)
 	var local_z := fmod(world_z, zone_size)
@@ -6032,10 +6026,7 @@ func _terrain_color_cache_lookup(zone_coord: Vector2i, world_x: float, world_z: 
 				zc.y += 1
 				sz -= _TILE_RES
 			var t := _get_zone_tile(zc, wg)
-			if t.is_empty():
-				samples[i] = Color(0.08, 0.08, 0.10, 0.6)
-			else:
-				samples[i] = _sample_tile_texel(t, sx, sz)
+			samples[i] = _sample_tile_texel(t, sx, sz)
 		c00 = samples[0]
 		c10 = samples[1]
 		c01 = samples[2]
@@ -9333,7 +9324,6 @@ func _refresh_map() -> void:
 		_map_biome_label.text = display
 
 	_map_chunk_zoom = _map_zoom
-	_map_tiles_deferred = false
 
 	var rpx := MAP_RENDER_PX
 	_map_chunk_out = PackedByteArray()
@@ -9366,7 +9356,6 @@ func _map_render_chunk() -> void:
 	var center_zone := _map_chunk_center_zone
 	var explored := _map_chunk_explored
 	var no_fog := _map_chunk_no_fog
-	_map_tile_builds_this_chunk = 0
 
 	var terrain_px := 0
 
@@ -9445,13 +9434,10 @@ func _map_render_chunk() -> void:
 			_map_texture_rect.texture = _map_image_tex
 		var _mt_upload_ms := float(Time.get_ticks_usec() - _mt_upload) / 1000.0
 
-		if _map_tiles_deferred:
-			_map_dirty = true
-
 		var _dbg_total := _map_dbg_ocean + _map_dbg_water + _map_dbg_land + _map_dbg_mountain
-		print("[MAP] ocean=%d water=%d land=%d mountain=%d (of %d visible) | chunk=%.1fms markers=%.1fms upload=%.1fms cache=%d deferred=%s" % [
+		print("[MAP] ocean=%d water=%d land=%d mountain=%d (of %d visible) | chunk=%.1fms markers=%.1fms upload=%.1fms cache=%d" % [
 			_map_dbg_ocean, _map_dbg_water, _map_dbg_land, _map_dbg_mountain, _dbg_total,
-			_mt_chunk_ms, _mt_markers_ms, _mt_upload_ms, _zone_tile_cache.size(), str(_map_tiles_deferred)])
+			_mt_chunk_ms, _mt_markers_ms, _mt_upload_ms, _zone_tile_cache.size()])
 
 
 func _draw_player_arrow(half_px: int) -> void:
