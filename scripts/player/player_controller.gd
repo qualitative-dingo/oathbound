@@ -5882,7 +5882,7 @@ var _minimap_ring_colors: PackedColorArray
 var _minimap_zone_color_cache: Dictionary = {}  # Vector2i -> Color
 var _minimap_last_pos: Vector3 = Vector3.ZERO
 
-const _TILE_RES := 8
+const _TILE_RES := 12
 const _TILE_MAX_CACHE := 2000
 var _zone_tile_cache: Dictionary = {}  # Vector2i -> PackedByteArray (TILE_RES*TILE_RES*4 RGBA)
 var _zone_tile_lru: Array[Vector2i] = []
@@ -9330,7 +9330,25 @@ func _refresh_map() -> void:
 
 	var rpx := MAP_RENDER_PX
 	var mask_bytes := _map_mask_bytes
-	_map_chunk_out = mask_bytes.duplicate()
+	var buf := PackedByteArray()
+	buf.resize(rpx * rpx * 4)
+	for i in range(0, rpx * rpx * 4, 4):
+		var ma := mask_bytes[i + 3]
+		if ma < 3:
+			continue
+		var mr := mask_bytes[i]
+		var mg := mask_bytes[i + 1]
+		if mr < 230 and mg < 230 and ma > 128 and (mr > 13 or mg > 13):
+			buf[i] = mr
+			buf[i + 1] = mg
+			buf[i + 2] = mask_bytes[i + 2]
+			buf[i + 3] = ma
+		else:
+			buf[i] = 20
+			buf[i + 1] = 20
+			buf[i + 2] = 26
+			buf[i + 3] = 255
+	_map_chunk_out = buf
 	_map_dbg_ocean = 0
 	_map_dbg_water = 0
 	_map_dbg_land = 0
