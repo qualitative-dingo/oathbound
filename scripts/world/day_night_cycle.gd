@@ -206,17 +206,17 @@ const TONEMAP_EXPOSURE_KEYS := [
 ]
 
 const SATURATION_KEYS := [
-	[0.0,    0.65],   # desaturated at night (but not washed-out)
-	[0.125,  0.65],
-	[0.146,  0.85],
-	[0.167,  1.05],   # dawn boosted
-	[0.229,  1.20],
-	[0.50,   1.10],   # noon
-	[0.854,  1.20],   # 20:30 warm boosted
-	[0.875,  1.05],   # 21:00 golden
-	[0.958,  0.75],
-	[0.98,   0.65],
-	[1.0,    0.65],
+	[0.0,    0.975],  # desaturated at night (1.5x baseline)
+	[0.125,  0.975],
+	[0.146,  1.275],
+	[0.167,  1.575],  # dawn boosted
+	[0.229,  1.80],
+	[0.50,   1.65],   # noon
+	[0.854,  1.80],   # 20:30 warm boosted
+	[0.875,  1.575],  # 21:00 golden
+	[0.958,  1.125],
+	[0.98,   0.975],
+	[1.0,    0.975],
 ]
 
 const SHADOW_OPACITY_KEYS := [

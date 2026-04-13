@@ -750,7 +750,7 @@ func _init_noise_layers() -> void:
 	_mountain_broad_noise = FastNoiseLite.new()
 	_mountain_broad_noise.seed = _seed_hash + 1000
 	_mountain_broad_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_mountain_broad_noise.frequency = base_frequency * 0.15
+	_mountain_broad_noise.frequency = base_frequency * 0.25
 	_mountain_broad_noise.fractal_octaves = 1
 
 	_detail_noise = FastNoiseLite.new()
@@ -829,7 +829,7 @@ func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
 	if mountain_raw <= 0.0:
 		return 0.0
 	var broad := _sample_broad_mountain(wx, wz)
-	var breadth := smoothstep(0.10, 0.40, broad)
+	var breadth := smoothstep(-0.05, 0.30, broad)
 	return mountain_raw * breadth
 
 
@@ -837,7 +837,7 @@ func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
 ## Used to scale peak height so isolated features stay short.
 func _mountain_breadth(wx: float, wz: float) -> float:
 	var broad := _sample_broad_mountain(wx, wz)
-	return smoothstep(0.10, 0.40, broad)
+	return smoothstep(-0.05, 0.30, broad)
 
 
 ## Island mask: returns 0..1 where 1 = fully land, 0 = deep ocean.
@@ -865,7 +865,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 		return WATER_LEVEL - 15.0
 
 	var continent := _continent_noise.get_noise_2d(wx, wz)
-	var mountain := _gate_mountain(wx, wz, maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.15, 0.0))
+	var mountain := _gate_mountain(wx, wz, maxf(_mountain_noise.get_noise_2d(wx, wz) - 0.05, 0.0))
 	var breadth := _mountain_breadth(wx, wz)
 	var h := continent * height_scale * 0.35
 
@@ -1938,7 +1938,7 @@ func get_height_at(x: float, z: float) -> float:
 		return WATER_LEVEL - 15.0
 
 	var continent := _continent_noise.get_noise_2d(x, z)
-	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.15, 0.0))
+	var mountain := _gate_mountain(x, z, maxf(_mountain_noise.get_noise_2d(x, z) - 0.05, 0.0))
 	var breadth := _mountain_breadth(x, z)
 	var detail := _detail_noise.get_noise_2d(x, z)
 
@@ -2009,9 +2009,14 @@ func get_height_at(x: float, z: float) -> float:
 	# Blend toward deep ocean at island edges for natural shore transitions
 	h = lerpf(WATER_LEVEL - 15.0, h, shore)
 
-	# Soft land floor — just above water so natural terrain variation is preserved
-	var min_land := lerpf(WATER_LEVEL - 15.0, WATER_LEVEL + 0.5, shore)
-	h = maxf(h, min_land)
+	# Land uplift with natural variation — rolling hills where lakes were removed
+	if shore > 0.3 and h < WATER_LEVEL + 2.0:
+		var fill_n := _detail_noise.get_noise_2d(x * 0.008 + 4000.0, z * 0.008 + 4000.0)
+		var fill_n2 := _detail_noise.get_noise_2d(x * 0.025 + 6000.0, z * 0.025 + 6000.0)
+		var terrain_var := (fill_n * 0.6 + fill_n2 * 0.4) * 3.5 + 2.0
+		var target := WATER_LEVEL + maxf(terrain_var, 0.5)
+		var lift_t := smoothstep(WATER_LEVEL + 2.0, WATER_LEVEL - 3.0, h)
+		h = lerpf(h, target, lift_t * shore)
 
 	# Watershed river/creek carving
 	var accum := _ws_sample_accum(x, z)
@@ -2063,9 +2068,11 @@ func get_height_at(x: float, z: float) -> float:
 			if bed_h < h:
 				h = bed_h
 
-	# Clamp inland water — on solid land, rivers stay above water
+	# Soft inland floor — prevent carved terrain from going underwater on solid land
 	if shore > 0.5:
-		h = maxf(h, WATER_LEVEL + 0.3)
+		var floor_n := _detail_noise.get_noise_2d(x * 0.012 + 4500.0, z * 0.012 + 4500.0)
+		var varied_floor := WATER_LEVEL + 0.3 + maxf(floor_n * 1.5, 0.0)
+		h = maxf(h, varied_floor)
 
 	# Natural lakes — two scales for size variety, punch through the inland clamp
 	if _continent_noise and shore > 0.8:

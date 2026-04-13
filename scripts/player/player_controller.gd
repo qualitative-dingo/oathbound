@@ -429,6 +429,7 @@ var _map_dirty := true
 var _map_last_player_pos := Vector3.ZERO
 var _map_refresh_timer := 0.0
 var _map_chunk_row := -1
+var _map_chunk_col := 0
 var _map_chunk_out: PackedByteArray
 var _map_chunk_player_pos := Vector3.ZERO
 var _map_chunk_center_zone := Vector2i.ZERO
@@ -5188,7 +5189,7 @@ func _add_saturation_slider(parent: VBoxContainer, label_text: String, initial: 
 
 	var slider := HSlider.new()
 	slider.min_value = 0.5
-	slider.max_value = 2.0
+	slider.max_value = 1.5
 	slider.step = 0.05
 	slider.value = initial
 	slider.custom_minimum_size = Vector2(0, 24)
@@ -9333,6 +9334,7 @@ func _refresh_map() -> void:
 	_map_dbg_land = 0
 	_map_dbg_mountain = 0
 	_map_chunk_row = 0
+	_map_chunk_col = 0
 
 
 func _map_render_chunk() -> void:
@@ -9358,13 +9360,11 @@ func _map_render_chunk() -> void:
 	var no_fog := _map_chunk_no_fog
 
 	var terrain_px := 0
+	var budget_hit := false
 
-	var row_end := rpx
 	for py in range(_map_chunk_row, rpx):
-		if Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
-			row_end = py
-			break
-		for px in rpx:
+		var start_px := _map_chunk_col if py == _map_chunk_row else 0
+		for px in range(start_px, rpx):
 			var bi := (py * rpx + px) * 4
 			var ma := mask_bytes[bi + 3]
 			if ma < 3:
@@ -9413,12 +9413,25 @@ func _map_render_chunk() -> void:
 				out[bi + 2] = 26
 				out[bi + 3] = 255
 
-	_map_chunk_row = row_end
+			if Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
+				_map_chunk_row = py
+				_map_chunk_col = px + 1
+				if _map_chunk_col >= rpx:
+					_map_chunk_row += 1
+					_map_chunk_col = 0
+				_map_chunk_out = out
+				budget_hit = true
+				break
+		if budget_hit:
+			break
+		_map_chunk_col = 0
+
 	_map_chunk_out = out
 	var _mt_chunk_ms := float(Time.get_ticks_usec() - _mt0) / 1000.0
 
-	if _map_chunk_row >= rpx:
+	if not budget_hit:
 		_map_chunk_row = -1
+		_map_chunk_col = 0
 		_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
 
 		var _mt_markers := Time.get_ticks_usec()
@@ -9683,12 +9696,12 @@ func _get_blended_biome_color(world_x: float, world_z: float, height: float, zon
 
 
 func _biome_map_color(biome: StringName, micro: StringName = &"none", height: float = 0.0) -> Color:
-	if height > 12.0:
+	if height > 10.0:
 		var grass_col := Color(0.45, 0.52, 0.32)
 		var stone_col := Color(0.52, 0.50, 0.45)
 		var snow_col  := Color(0.92, 0.92, 0.95)
-		var rock_t := clampf((height - 12.0) / 20.0, 0.0, 1.0)
-		var snow_t := clampf((height - 30.0) / 20.0, 0.0, 1.0)
+		var rock_t := clampf((height - 10.0) / 20.0, 0.0, 1.0)
+		var snow_t := clampf((height - 28.0) / 20.0, 0.0, 1.0)
 		var col := grass_col.lerp(stone_col, rock_t)
 		return col.lerp(snow_col, snow_t)
 	if biome == &"hearthlands" and micro != &"none":

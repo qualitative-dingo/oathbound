@@ -81,7 +81,7 @@ func load_and_apply_settings() -> void:
 		get_window().position = (screen_size - Vector2i(win_w, win_h)) / 2
 
 	render_distance = clampi(int(data.get("render_distance", 2)), 1, 5)
-	saturation_boost = clampf(float(data.get("saturation_boost", 1.0)), 0.5, 2.0)
+	saturation_boost = clampf(float(data.get("saturation_boost", 1.0)), 0.5, 1.5)
 
 
 func _process(delta: float) -> void:
