@@ -438,7 +438,10 @@ var _map_dbg_land := 0
 var _map_dbg_mountain := 0
 var _map_chunk_no_fog := false
 var _map_chunk_explored: Dictionary = {}
-const _MAP_CHUNK_ROWS := 32
+var _map_chunk_zoom: float = 40.0
+const _MAP_CHUNK_BUDGET_US := 8000
+const _MAP_MAX_TILE_BUILDS := 20
+var _map_tile_builds_this_chunk := 0
 var _map_fog_time := 0.0
 var _map_fog_noise: FastNoiseLite
 
@@ -9211,6 +9214,8 @@ func _refresh_map() -> void:
 			display += " - " + _microbiome_display_name(current_micro)
 		_map_biome_label.text = display
 
+	_map_chunk_zoom = _map_zoom
+
 	var rpx := MAP_RENDER_PX
 	_map_chunk_out = PackedByteArray()
 	_map_chunk_out.resize(rpx * rpx * 4)
@@ -9234,7 +9239,7 @@ func _map_render_chunk() -> void:
 	var rpx := MAP_RENDER_PX
 	var half_px := rpx / 2
 	var zone_size: float = wg.ZONE_SIZE
-	var zones_per_pixel: float = _map_zoom / float(half_px)
+	var zones_per_pixel: float = _map_chunk_zoom / float(half_px)
 	var water_col := Color(0.12, 0.28, 0.52)
 	var mask_bytes := _map_mask_bytes
 	var out := _map_chunk_out
@@ -9242,11 +9247,15 @@ func _map_render_chunk() -> void:
 	var center_zone := _map_chunk_center_zone
 	var explored := _map_chunk_explored
 	var no_fog := _map_chunk_no_fog
+	_map_tile_builds_this_chunk = 0
 
-	var row_end := mini(_map_chunk_row + _MAP_CHUNK_ROWS, rpx)
 	var terrain_px := 0
 
-	for py in range(_map_chunk_row, row_end):
+	var row_end := rpx
+	for py in range(_map_chunk_row, rpx):
+		if Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
+			row_end = py
+			break
 		for px in rpx:
 			var bi := (py * rpx + px) * 4
 			var ma := mask_bytes[bi + 3]
@@ -9324,7 +9333,7 @@ func _map_render_chunk() -> void:
 
 func _draw_player_arrow(half_px: int) -> void:
 	var base_scale := 1.4
-	var zoom_compensate := _map_zoom / 40.0
+	var zoom_compensate := _map_chunk_zoom / 40.0
 	_draw_arrow_on_image(_map_image, half_px, base_scale * zoom_compensate)
 
 
