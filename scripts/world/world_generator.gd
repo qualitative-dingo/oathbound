@@ -2009,8 +2009,8 @@ func get_height_at(x: float, z: float) -> float:
 	# Blend toward deep ocean at island edges for natural shore transitions
 	h = lerpf(WATER_LEVEL - 15.0, h, shore)
 
-	# Keep terrain above water on land — floor at +3m prevents random noise lakes
-	var min_land := lerpf(WATER_LEVEL - 15.0, WATER_LEVEL + 3.0, shore)
+	# Soft land floor — just above water so natural terrain variation is preserved
+	var min_land := lerpf(WATER_LEVEL - 15.0, WATER_LEVEL + 0.5, shore)
 	h = maxf(h, min_land)
 
 	# Watershed river/creek carving
@@ -2067,13 +2067,18 @@ func get_height_at(x: float, z: float) -> float:
 	if shore > 0.5:
 		h = maxf(h, WATER_LEVEL + 0.3)
 
-	# Sparse natural lakes — punch through the inland clamp at rare noise troughs
+	# Natural lakes — two scales for size variety, punch through the inland clamp
 	if _continent_noise and shore > 0.8:
+		# Large lakes (~1km features, rare)
+		var big_lake_n := _continent_noise.get_noise_2d(x * 0.25 + 8000.0, z * 0.25 + 8000.0)
+		if big_lake_n < -0.48:
+			var bl_t := smoothstep(-0.48, -0.70, big_lake_n)
+			h = lerpf(h, WATER_LEVEL - lerpf(2.0, 6.0, bl_t), bl_t)
+		# Regular lakes (varying sizes, more frequent)
 		var lake_n := _continent_noise.get_noise_2d(x * 0.7 + 5000.0, z * 0.7 + 5000.0)
-		if lake_n < -0.55:
-			var lake_t := smoothstep(-0.55, -0.75, lake_n)
-			var lake_depth := lerpf(1.5, 4.0, lake_t)
-			h = lerpf(h, WATER_LEVEL - lake_depth, lake_t)
+		if lake_n < -0.42:
+			var sl_t := smoothstep(-0.42, -0.65, lake_n)
+			h = lerpf(h, WATER_LEVEL - lerpf(1.0, 3.5, sl_t), sl_t)
 
 	# Flatten spawn area — applied AFTER all water carving so rivers/creeks
 	# cannot punch through. Fully flat within 35m, fading out to 80m.
