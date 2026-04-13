@@ -5010,6 +5010,11 @@ func _build_pause_menu() -> void:
 		SaveManager.save_settings()
 	)
 
+	_add_saturation_slider(vbox, "Saturation", SaveManager.saturation_boost, func(val: float) -> void:
+		SaveManager.saturation_boost = val
+		SaveManager.save_settings()
+	)
+
 	var pvp_row := HBoxContainer.new()
 	pvp_row.add_theme_constant_override("separation", 10)
 	pvp_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -5154,6 +5159,49 @@ func _add_render_distance_slider(parent: VBoxContainer, label_text: String, init
 
 	slider.value_changed.connect(func(val: float) -> void:
 		val_lbl.text = str(int(val))
+		on_change.call(val)
+	)
+	row.add_child(slider)
+	parent.add_child(row)
+
+
+func _add_saturation_slider(parent: VBoxContainer, label_text: String, initial: float, on_change: Callable) -> void:
+	var row := VBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.add_theme_font_size_override("font_size", 15)
+	lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	header.add_child(lbl)
+
+	var val_lbl := Label.new()
+	val_lbl.text = str(int(initial * 100.0)) + "%"
+	val_lbl.add_theme_font_size_override("font_size", 15)
+	val_lbl.add_theme_color_override("font_color", Color(0.85, 0.75, 0.55))
+	header.add_child(val_lbl)
+
+	row.add_child(header)
+
+	var slider := HSlider.new()
+	slider.min_value = 0.5
+	slider.max_value = 2.0
+	slider.step = 0.05
+	slider.value = initial
+	slider.custom_minimum_size = Vector2(0, 24)
+
+	var slider_style := StyleBoxFlat.new()
+	slider_style.bg_color = Color(0.18, 0.18, 0.22)
+	slider_style.set_corner_radius_all(4)
+	slider_style.content_margin_top = 8
+	slider_style.content_margin_bottom = 8
+	slider.add_theme_stylebox_override("slider", slider_style)
+
+	slider.value_changed.connect(func(val: float) -> void:
+		val_lbl.text = str(int(val * 100.0)) + "%"
 		on_change.call(val)
 	)
 	row.add_child(slider)

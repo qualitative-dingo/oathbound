@@ -28,7 +28,7 @@ var weather_ambient_mult: float = 1.0
 # ── Feature toggles (set by DebugPanel) ─────────────────────────────────
 var glow_override_enabled: bool = false
 ## When true, skip glow/tonemap/adjustment writes so the panel can isolate grain/banding.
-var debug_post_fx_bypass: bool = true
+var debug_post_fx_bypass: bool = false
 
 # ── Sun arc parameters ──────────────────────────────────────────────────
 var SUN_AXIS := Vector3(-1.0, 0.0, -0.5).normalized()
@@ -206,17 +206,17 @@ const TONEMAP_EXPOSURE_KEYS := [
 ]
 
 const SATURATION_KEYS := [
-	[0.0,    0.50],   # desaturated at night
-	[0.125,  0.50],
-	[0.146,  0.70],
-	[0.167,  0.90],   # dawn boosted
-	[0.229,  1.05],
-	[0.50,   0.95],   # noon
-	[0.854,  1.05],   # 20:30 warm boosted
-	[0.875,  0.90],   # 21:00 golden
-	[0.958,  0.60],
-	[0.98,   0.50],
-	[1.0,    0.50],
+	[0.0,    0.65],   # desaturated at night (but not washed-out)
+	[0.125,  0.65],
+	[0.146,  0.85],
+	[0.167,  1.05],   # dawn boosted
+	[0.229,  1.20],
+	[0.50,   1.10],   # noon
+	[0.854,  1.20],   # 20:30 warm boosted
+	[0.875,  1.05],   # 21:00 golden
+	[0.958,  0.75],
+	[0.98,   0.65],
+	[1.0,    0.65],
 ]
 
 const SHADOW_OPACITY_KEYS := [
@@ -344,8 +344,11 @@ func _update_environment() -> void:
 	# Tonemap
 	_env.tonemap_exposure = _sample_float(TONEMAP_EXPOSURE_KEYS, game_time)
 
-	# Color grading
-	_env.adjustment_saturation = _sample_float(SATURATION_KEYS, game_time)
+	# Color grading — base curve scaled by user preference
+	_env.adjustment_enabled = true
+	var base_sat := _sample_float(SATURATION_KEYS, game_time)
+	var user_mult: float = SaveManager.saturation_boost if SaveManager else 1.0
+	_env.adjustment_saturation = base_sat * user_mult
 
 	if _env.volumetric_fog_enabled:
 		_env.volumetric_fog_enabled = false
@@ -353,10 +356,15 @@ func _update_environment() -> void:
 	if debug_post_fx_bypass:
 		_env.ssao_enabled = false
 		_env.glow_enabled = false
-		_env.adjustment_enabled = false
 		_env.adjustment_contrast = 1.0
-		_env.adjustment_saturation = 1.0
 		_env.tonemap_exposure = 1.0
+		var bypass_mult: float = SaveManager.saturation_boost if SaveManager else 1.0
+		if bypass_mult != 1.0:
+			_env.adjustment_enabled = true
+			_env.adjustment_saturation = bypass_mult
+		else:
+			_env.adjustment_enabled = false
+			_env.adjustment_saturation = 1.0
 
 
 # ── Gradient sampling helpers ────────────────────────────────────────────

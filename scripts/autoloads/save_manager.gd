@@ -13,6 +13,7 @@ var current_character: Dictionary = {}
 var current_world: Dictionary = {}
 
 var render_distance: int = 2
+var saturation_boost: float = 1.0  # 0.5–2.0 multiplier applied on top of day/night curve
 
 var _autosave_timer := 0.0
 var _game_active := false
@@ -35,6 +36,7 @@ func save_settings() -> void:
 		"window_width": DisplayServer.window_get_size().x,
 		"window_height": DisplayServer.window_get_size().y,
 		"render_distance": render_distance,
+		"saturation_boost": saturation_boost,
 	}
 	var file := FileAccess.open(SETTINGS_FILE, FileAccess.WRITE)
 	if file:
@@ -79,6 +81,7 @@ func load_and_apply_settings() -> void:
 		get_window().position = (screen_size - Vector2i(win_w, win_h)) / 2
 
 	render_distance = clampi(int(data.get("render_distance", 2)), 1, 5)
+	saturation_boost = clampf(float(data.get("saturation_boost", 1.0)), 0.5, 2.0)
 
 
 func _process(delta: float) -> void:
