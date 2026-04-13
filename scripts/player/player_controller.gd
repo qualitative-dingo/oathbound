@@ -433,15 +433,13 @@ var _map_chunk_col := 0
 var _map_chunk_out: PackedByteArray
 var _map_chunk_player_pos := Vector3.ZERO
 var _map_chunk_center_zone := Vector2i.ZERO
-var _map_dbg_ocean := 0
-var _map_dbg_water := 0
-var _map_dbg_land := 0
-var _map_dbg_mountain := 0
 var _map_chunk_no_fog := false
 var _map_chunk_explored: Dictionary = {}
 var _map_chunk_zoom: float = 40.0
 const _MAP_CHUNK_BUDGET_US := 14000
 var _map_partial_upload_timer := 0.0
+var _quick_zone_colors: Dictionary = {}
+var _tiles_pending_build: Array = []
 var _map_fog_time := 0.0
 var _map_fog_noise: FastNoiseLite
 

@@ -2076,6 +2076,13 @@ func get_height_at(x: float, z: float) -> float:
 			if bed_h < h:
 				h = bed_h
 
+	# Soft inland terrain floor — keeps non-river terrain above water with natural variation
+	if shore > 0.5 and accum < _CREEK_ACCUM_THRESH:
+		var floor_base := WATER_LEVEL + 1.5 + detail * 2.5 + breadth * height_scale * 0.25
+		if h < floor_base:
+			var push_t := smoothstep(floor_base, floor_base - 8.0, h) * shore
+			h = lerpf(h, floor_base, push_t * 0.9)
+
 	# Natural lakes — single noise sample with threshold bands for size variety
 	if _continent_noise and shore > 0.8:
 		var lake_n := _continent_noise.get_noise_2d(x * 0.4 + 5000.0, z * 0.4 + 5000.0)
