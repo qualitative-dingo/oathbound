@@ -109,12 +109,12 @@ const _CREEK_MIN_ELEV := 1.5          # min terrain height above WATER_LEVEL
 const _CREEK_MIN_WIDTH := 2.0
 const _CREEK_MAX_WIDTH := 33.2
 const _CREEK_DEPTH := 2.5             # how deep the channel is carved
-const _CREEK_SUBDIV := 14             # interpolation points between grid cells
+const _CREEK_SUBDIV := 8              # interpolation points between grid cells
 var _creek_segments: Dictionary = {}   # Vector2i -> Array[Dictionary]
 var _creek_shader_mat: ShaderMaterial
 
 # ─── Creek Bed Grid (sparse terrain carving matching creek mesh width) ────────
-const _CREEK_BED_CELL := 2.0
+const _CREEK_BED_CELL := 4.0
 var _creek_bed: Dictionary = {}        # Vector2i -> float (target bed height)
 var _creek_water_surface: Dictionary = {} # Vector2i -> float (water surface h at cell)
 
@@ -576,9 +576,10 @@ func _process(_delta: float) -> void:
 		cov["grass_pct"], cov["grass_placed"], cov["grass_tested"],
 		cov["flower_pct"], cov["flower_placed"], cov["flower_tested"]])
 	if cov["grass_tested"] > 0:
-		print("[GRASS REJ] rg=%d (struct=%d river=%d) density=%d height=%d slope=%d altitude=%d" % [
+		print("[GRASS REJ] rg=%d (struct=%d river=%d) density=%d (noise=%d path=%d) height=%d slope=%d altitude=%d" % [
 			cov["rej_rg"], cov["rej_struct"], cov["rej_river"],
-			cov["rej_density"], cov["rej_height"], cov["rej_slope"], cov["rej_altitude"]])
+			cov["rej_density"], cov.get("rej_density_noise", 0), cov.get("rej_density_path", 0),
+			cov["rej_height"], cov["rej_slope"], cov["rej_altitude"]])
 	_ZonePopulator.reset_coverage_stats()
 	_perf_max_queue_ms = 0.0
 	_perf_max_pending_ms = 0.0
@@ -1361,9 +1362,10 @@ func _trace_creek_paths() -> void:
 			raw_points.append(Vector2(float(cgx), float(cgz)))
 			raw_accums.append(_ws_accum[cidx])
 
-			var ch_wx: float = -world_radius + float(cgx) * _WS_CELL
-			var ch_wz: float = -world_radius + float(cgz) * _WS_CELL
-			var ch: float = get_height_at(ch_wx, ch_wz)
+			# Use cached grid height instead of get_height_at — the walk operates
+			# at _WS_CELL resolution so the pre-sampled height is exactly what
+			# get_height_at would return here, minus much more expensive work.
+			var ch: float = _ws_heights[cidx]
 			if ch < WATER_LEVEL + 0.1:
 				break
 
@@ -1421,10 +1423,11 @@ func _trace_creek_paths() -> void:
 
 		# Force-extend: if the river ended above water, keep walking toward water.
 		# Uses momentum to punch through mountain ridges (gorge carving) rather
-		# than wandering along the base.
-		var ext_wx: float = -world_radius + float(cgx) * _WS_CELL
-		var ext_wz: float = -world_radius + float(cgz) * _WS_CELL
-		if get_height_at(ext_wx, ext_wz) > WATER_LEVEL + 0.3 and raw_points.size() >= 2:
+		# than wandering along the base. Heights come from the pre-sampled
+		# _ws_heights grid so we avoid thousands of expensive get_height_at
+		# calls for what are ultimately grid-resolution decisions.
+		var ext_idx_end: int = cgz * _ws_dim + cgx
+		if _ws_heights[ext_idx_end] > WATER_LEVEL + 0.3 and raw_points.size() >= 2:
 			var mom_x := 0.0
 			var mom_z := 0.0
 			var mom_count: int = mini(raw_points.size(), 6)
@@ -1438,11 +1441,9 @@ func _trace_creek_paths() -> void:
 
 			var ext_visited := {}
 			ext_visited[cgz * _ws_dim + cgx] = true
-			var start_h := get_height_at(ext_wx, ext_wz)
 			for _ext in 120:
-				var cur_wx := -world_radius + float(cgx) * _WS_CELL
-				var cur_wz := -world_radius + float(cgz) * _WS_CELL
-				var cur_h := get_height_at(cur_wx, cur_wz)
+				var cur_idx: int = cgz * _ws_dim + cgx
+				var cur_h: float = _ws_heights[cur_idx]
 
 				var best_d := -1
 				var best_h := 99999.0
@@ -1454,9 +1455,7 @@ func _trace_creek_paths() -> void:
 					var eid: int = enz * _ws_dim + enx
 					if ext_visited.has(eid):
 						continue
-					var ewx := -world_radius + float(enx) * _WS_CELL
-					var ewz := -world_radius + float(enz) * _WS_CELL
-					var eh := get_height_at(ewx, ewz)
+					var eh: float = _ws_heights[eid]
 					if eh < best_h:
 						best_h = eh
 						best_d = d
@@ -1481,9 +1480,7 @@ func _trace_creek_paths() -> void:
 						best_d = best_mom_d
 						var mnx: int = cgx + _D8X[best_d]
 						var mnz: int = cgz + _D8Z[best_d]
-						best_h = get_height_at(
-							-world_radius + float(mnx) * _WS_CELL,
-							-world_radius + float(mnz) * _WS_CELL)
+						best_h = _ws_heights[mnz * _ws_dim + mnx]
 
 				if best_d < 0:
 					break
@@ -1724,61 +1721,117 @@ func _store_creek_segment(zone: Vector2i, points: PackedVector3Array, widths: Pa
 	})
 
 
+## Parallel creek-bed stamping. Each worker processes a chunk of creek segments
+## into a local Dictionary; main thread min-merges them into _creek_bed.
+## Segments only read pre-computed state (_ws_accum, _ws_heights, noise layers,
+## _tavern_world_pos) so the inner work is thread-safe.
+var _stamp_seg_chunks: Array = []
+var _stamp_local_results: Array = []
+
+func _bg_stamp_creek_bed_chunk(i: int) -> void:
+	if i < 0 or i >= _stamp_seg_chunks.size():
+		return
+	var segs: Array = _stamp_seg_chunks[i]
+	var local: Dictionary = {}
+	var tavern_active := _tavern_world_pos.y > 0.0
+	var tavern_x := _tavern_world_pos.x
+	var tavern_z := _tavern_world_pos.z
+	var tavern_r2 := _TAVERN_FLAT_RADIUS * _TAVERN_FLAT_RADIUS
+	for seg in segs:
+		var points: PackedVector3Array = seg["points"]
+		var widths: PackedFloat32Array = seg["widths"]
+		for pi in points.size():
+			var p := points[pi]
+			var w := widths[pi]
+
+			var raw_h := _get_raw_height_no_paths(p.x, p.z)
+			var terrain_excess := maxf(raw_h - p.y, 0.0)
+			var local_accum := _ws_sample_accum(p.x, p.z)
+
+			var ridge_bonus := clampf(terrain_excess / 8.0, 0.0, 1.5) * 8.0
+			var radius := w + 3.0 + ridge_bonus
+			var bed_center := p.y - _CREEK_DEPTH - terrain_excess * 0.4
+			if local_accum > _WS_RIVER_THRESH:
+				bed_center = minf(bed_center, WATER_LEVEL - 0.5)
+			var inner_r := w * 0.75 + ridge_bonus * 0.4
+
+			var cx_min := int(floor((p.x - radius) / _CREEK_BED_CELL))
+			var cx_max := int(floor((p.x + radius) / _CREEK_BED_CELL))
+			var cz_min := int(floor((p.z - radius) / _CREEK_BED_CELL))
+			var cz_max := int(floor((p.z + radius) / _CREEK_BED_CELL))
+			var radius_sq := radius * radius
+
+			for cx in range(cx_min, cx_max + 1):
+				for cz in range(cz_min, cz_max + 1):
+					var cell_wx := (float(cx) + 0.5) * _CREEK_BED_CELL
+					var cell_wz := (float(cz) + 0.5) * _CREEK_BED_CELL
+					if cell_wx * cell_wx + cell_wz * cell_wz < 2500.0:
+						continue
+					if tavern_active:
+						var t_cdx := cell_wx - tavern_x
+						var t_cdz := cell_wz - tavern_z
+						if t_cdx * t_cdx + t_cdz * t_cdz < tavern_r2:
+							continue
+					var dx := cell_wx - p.x
+					var dz := cell_wz - p.z
+					var dist_sq := dx * dx + dz * dz
+					if dist_sq >= radius_sq:
+						continue
+					var dist := sqrt(dist_sq)
+					var carve_h: float
+					if dist <= inner_r:
+						carve_h = bed_center
+					else:
+						var bank_t := clampf((dist - inner_r) / maxf(radius - inner_r, 0.01), 0.0, 1.0)
+						carve_h = lerpf(bed_center, p.y + 0.5, bank_t * bank_t * bank_t)
+					var key := Vector2i(cx, cz)
+					if local.has(key):
+						local[key] = minf(local[key] as float, carve_h)
+					else:
+						local[key] = carve_h
+	_stamp_local_results[i] = local
+
+
 func _stamp_creek_bed() -> void:
 	_creek_bed.clear()
+
+	# Flatten every zone's segment list into a single array for chunking.
+	var all_segs: Array = []
 	for zone_segs in _creek_segments.values():
 		for seg in zone_segs:
-			var points: PackedVector3Array = seg["points"]
-			var widths: PackedFloat32Array = seg["widths"]
-			for i in points.size():
-				var p := points[i]
-				var w := widths[i]
+			all_segs.append(seg)
+	if all_segs.is_empty():
+		return
 
-				var raw_h := _get_raw_height_no_paths(p.x, p.z)
-				var terrain_excess := maxf(raw_h - p.y, 0.0)
-				var local_accum := _ws_sample_accum(p.x, p.z)
+	# Chunk segments across worker threads. Each chunk builds a local dict
+	# independently; we merge with min-reduction at the end. Chunk count
+	# matches logical CPU count (capped) to avoid per-task dispatch overhead.
+	var chunk_count := clampi(OS.get_processor_count(), 2, 16)
+	var per_chunk := int(ceil(float(all_segs.size()) / float(chunk_count)))
+	_stamp_seg_chunks.clear()
+	var idx := 0
+	while idx < all_segs.size():
+		var end: int = mini(idx + per_chunk, all_segs.size())
+		_stamp_seg_chunks.append(all_segs.slice(idx, end))
+		idx = end
+	_stamp_local_results.clear()
+	_stamp_local_results.resize(_stamp_seg_chunks.size())
 
-				var ridge_bonus := clampf(terrain_excess / 8.0, 0.0, 1.5) * 8.0
-				var radius := w + 3.0 + ridge_bonus
-				var bed_center := p.y - _CREEK_DEPTH - terrain_excess * 0.4
-				if local_accum > _WS_RIVER_THRESH:
-					bed_center = minf(bed_center, WATER_LEVEL - 0.5)
-				var inner_r := w * 0.75 + ridge_bonus * 0.4
+	var gid := WorkerThreadPool.add_group_task(_bg_stamp_creek_bed_chunk, _stamp_seg_chunks.size(), -1, true)
+	WorkerThreadPool.wait_for_group_task_completion(gid)
 
-				var cx_min := int(floor((p.x - radius) / _CREEK_BED_CELL))
-				var cx_max := int(floor((p.x + radius) / _CREEK_BED_CELL))
-				var cz_min := int(floor((p.z - radius) / _CREEK_BED_CELL))
-				var cz_max := int(floor((p.z + radius) / _CREEK_BED_CELL))
-				var radius_sq := radius * radius
+	# Merge all per-chunk dictionaries into _creek_bed with min-reduction so
+	# overlapping creeks keep the lowest carve depth (deepest channel wins).
+	for local: Dictionary in _stamp_local_results:
+		for key: Vector2i in local:
+			var h: float = local[key]
+			if _creek_bed.has(key):
+				_creek_bed[key] = minf(_creek_bed[key] as float, h)
+			else:
+				_creek_bed[key] = h
 
-				for cx in range(cx_min, cx_max + 1):
-					for cz in range(cz_min, cz_max + 1):
-						var cell_wx := (float(cx) + 0.5) * _CREEK_BED_CELL
-						var cell_wz := (float(cz) + 0.5) * _CREEK_BED_CELL
-						if cell_wx * cell_wx + cell_wz * cell_wz < 2500.0:
-							continue
-						if _tavern_world_pos.y > 0.0:
-							var t_cdx := cell_wx - _tavern_world_pos.x
-							var t_cdz := cell_wz - _tavern_world_pos.z
-							if t_cdx * t_cdx + t_cdz * t_cdz < _TAVERN_FLAT_RADIUS * _TAVERN_FLAT_RADIUS:
-								continue
-						var dx := cell_wx - p.x
-						var dz := cell_wz - p.z
-						var dist_sq := dx * dx + dz * dz
-						if dist_sq >= radius_sq:
-							continue
-						var dist := sqrt(dist_sq)
-						var carve_h: float
-						if dist <= inner_r:
-							carve_h = bed_center
-						else:
-							var bank_t := clampf((dist - inner_r) / maxf(radius - inner_r, 0.01), 0.0, 1.0)
-							carve_h = lerpf(bed_center, p.y + 0.5, bank_t * bank_t * bank_t)
-						var key := Vector2i(cx, cz)
-						if _creek_bed.has(key):
-							_creek_bed[key] = minf(_creek_bed[key] as float, carve_h)
-						else:
-							_creek_bed[key] = carve_h
+	_stamp_seg_chunks.clear()
+	_stamp_local_results.clear()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

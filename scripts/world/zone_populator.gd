@@ -190,6 +190,8 @@ static var _cov_grass_rej_rg := 0
 static var _cov_grass_rej_struct := 0
 static var _cov_grass_rej_river := 0
 static var _cov_grass_rej_density := 0
+static var _cov_grass_rej_density_noise := 0
+static var _cov_grass_rej_density_path := 0
 static var _cov_grass_rej_height := 0
 static var _cov_grass_rej_slope := 0
 static var _cov_grass_rej_altitude := 0
@@ -202,6 +204,8 @@ static func get_coverage_stats() -> Dictionary:
 		"flower_tested": _cov_flower_tested, "flower_placed": _cov_flower_placed, "flower_pct": f_pct,
 		"rej_rg": _cov_grass_rej_rg, "rej_struct": _cov_grass_rej_struct, "rej_river": _cov_grass_rej_river,
 		"rej_density": _cov_grass_rej_density,
+		"rej_density_noise": _cov_grass_rej_density_noise,
+		"rej_density_path": _cov_grass_rej_density_path,
 		"rej_height": _cov_grass_rej_height, "rej_slope": _cov_grass_rej_slope,
 		"rej_altitude": _cov_grass_rej_altitude,
 	}
@@ -215,6 +219,8 @@ static func reset_coverage_stats() -> void:
 	_cov_grass_rej_struct = 0
 	_cov_grass_rej_river = 0
 	_cov_grass_rej_density = 0
+	_cov_grass_rej_density_noise = 0
+	_cov_grass_rej_density_path = 0
 	_cov_grass_rej_height = 0
 	_cov_grass_rej_slope = 0
 	_cov_grass_rej_altitude = 0
@@ -2326,15 +2332,27 @@ static func _scatter_grass(
 			_cov_grass_rej_river += 1
 			continue
 
+		# Density noise keeps a small variety of sparser patches (~5% rejection
+		# on average) so grass isn't a perfectly uniform carpet. The old code
+		# also thinned near _RG_WATER (via the smeared watershed-accumulation
+		# grid, same fundamental problem as the old river check) which
+		# rejected ~85% of candidates in wide bands around water and pinned
+		# overall coverage at ~30%. The height check further down already
+		# prevents grass from spawning in actual water, and is_in_river_channel
+		# handles creek beds, so no extra water thinning is needed here.
 		var h5 := _grass_cell_hash(gcx, gcz, 4)
 		var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
-		var keep := lerpf(0.88, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
-		if rg_flags & _RG_WATER != 0:
-			keep *= 0.15
+		var keep := lerpf(0.94, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
+		var path_thinned := false
 		if rg_flags & _RG_PATH != 0:
-			keep *= 0.35
+			keep *= 0.55  # softer than before (was 0.35) so paths still have *some* grass
+			path_thinned = true
 		if h5 > keep:
 			_cov_grass_rej_density += 1
+			if path_thinned:
+				_cov_grass_rej_density_path += 1
+			else:
+				_cov_grass_rej_density_noise += 1
 			continue
 
 		var sn := _hg_snap_and_normal(wx, wz)
