@@ -775,7 +775,7 @@ func _draw_player_arrow() -> void:
 	var view_pos := _world_to_viewport(pp)
 	if not _point_in_viewport(view_pos, 32.0):
 		return
-	var size := Vector2(28, 28)
+	var size := Vector2(36, 36)
 	var angle := 0.0
 	if _camera_ref and is_instance_valid(_camera_ref):
 		var fwd := -_camera_ref.global_transform.basis.z
@@ -862,50 +862,61 @@ func _microbiome_display_name(micro: StringName) -> String:
 # ───────────────────────── Player arrow texture (ported) ───────────────────────
 
 func _generate_arrow_texture(sz: int) -> ImageTexture:
+	# Classic map-arrow chevron pointing up (-Y). Four corners: tip, right
+	# wing, rear notch, left wing. Filled red with a soft black outline.
 	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
-	var half := float(sz) / 2.0
-	var border_col := Color(0.08, 0.04, 0.0, 1.0)
-	var fill_outer := Color(0.82, 0.55, 0.12, 1.0)
-	var fill_inner := Color(1.0, 0.88, 0.35, 1.0)
-	var highlight := Color(1.0, 0.97, 0.80, 1.0)
-	var tip_y := 3.0
-	var base_y := float(sz) - 5.0
-	var notch_y := base_y - 7.0
-	var wing_w := 7.0
+	var fsz := float(sz)
+	var tip   := Vector2(fsz * 0.5,  fsz * 0.08)
+	var right := Vector2(fsz * 0.92, fsz * 0.92)
+	var notch := Vector2(fsz * 0.5,  fsz * 0.70)
+	var left  := Vector2(fsz * 0.08, fsz * 0.92)
+	var fill_col := Color(0.95, 0.22, 0.18, 1.0)
+	var fill_dark := Color(0.55, 0.10, 0.08, 1.0)
+	var border := Color(0.05, 0.02, 0.02, 1.0)
 	for y in sz:
 		for x in sz:
-			var fx := float(x) - half
-			var fy := float(y) - tip_y
-			var total_h := base_y - tip_y
-			var t := clampf(fy / total_h, 0.0, 1.0)
-			var cur_w := wing_w * t
-			var in_left := fx >= -cur_w and fx <= 0.0
-			var in_right := fx <= cur_w and fx >= 0.0
-			if not (in_left or in_right):
+			var p := Vector2(float(x) + 0.5, float(y) + 0.5)
+			var d_right := _sd_triangle(p, tip, right, notch)
+			var d_left  := _sd_triangle(p, tip, notch, left)
+			var d := minf(d_right, d_left)  # negative inside, positive outside
+			if d > 1.2:
 				continue
-			if float(y) > notch_y:
-				var notch_h := base_y - notch_y
-				var nt := clampf((float(y) - notch_y) / notch_h, 0.0, 1.0)
-				if absf(fx) < wing_w * (1.0 - nt) * (1.0 - nt * 0.75):
-					continue
-			var edge_dist := cur_w - absf(fx)
-			var top_dist := fy
-			var min_dist := minf(edge_dist, top_dist)
-			min_dist = minf(min_dist, base_y - float(y))
-			if min_dist < 1.5:
-				var ba := clampf(min_dist / 1.5, 0.0, 1.0)
-				if min_dist < 0.5:
-					img.set_pixel(x, y, Color(border_col.r, border_col.g, border_col.b, clampf(min_dist + 0.5, 0.0, 1.0)))
-				else:
-					img.set_pixel(x, y, border_col.lerp(fill_outer, (min_dist - 0.5) / 1.0))
-				continue
-			var center_t := 1.0 - clampf(absf(fx) / maxf(cur_w * 0.4, 0.01), 0.0, 1.0)
-			center_t = center_t * center_t
-			var col := fill_outer.lerp(fill_inner, center_t * 0.7)
-			if absf(fx) < 1.2:
-				var spec_t := 1.0 - absf(fx) / 1.2
-				col = col.lerp(highlight, spec_t * 0.6 * (1.0 - t * 0.3))
-			col = col.lerp(fill_outer.darkened(0.15), t * 0.3)
-			img.set_pixel(x, y, col)
+			var grad_t := clampf((p.y - tip.y) / maxf(notch.y - tip.y, 0.01), 0.0, 1.0)
+			var fill := fill_col.lerp(fill_dark, grad_t * 0.6)
+			if d > -1.0:
+				# Antialiased border band
+				var b_t := clampf((d + 1.0) / 2.2, 0.0, 1.0)
+				var col := fill.lerp(border, b_t)
+				col.a = clampf(1.2 - d, 0.0, 1.0)
+				img.set_pixel(x, y, col)
+			else:
+				img.set_pixel(x, y, fill)
 	return ImageTexture.create_from_image(img)
+
+
+## Signed distance from point p to triangle (a, b, c). Negative inside, positive outside.
+func _sd_triangle(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> float:
+	var d_ab := _sd_segment(p, a, b)
+	var d_bc := _sd_segment(p, b, c)
+	var d_ca := _sd_segment(p, c, a)
+	var d := minf(d_ab, minf(d_bc, d_ca))
+	var inside := _sign_tri(p, a, b, c) >= 0.0
+	return -d if inside else d
+
+
+func _sd_segment(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var ap := p - a
+	var t := clampf(ap.dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+	return (ap - ab * t).length()
+
+
+## Returns +1 if p is inside triangle abc (CCW-ish), -1 if outside.
+func _sign_tri(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> float:
+	var d1 := (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y)
+	var d2 := (p.x - c.x) * (b.y - c.y) - (b.x - c.x) * (p.y - c.y)
+	var d3 := (p.x - a.x) * (c.y - a.y) - (c.x - a.x) * (p.y - a.y)
+	var has_neg := d1 < 0.0 or d2 < 0.0 or d3 < 0.0
+	var has_pos := d1 > 0.0 or d2 > 0.0 or d3 > 0.0
+	return -1.0 if (has_neg and has_pos) else 1.0
