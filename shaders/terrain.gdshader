@@ -4,6 +4,7 @@ render_mode cull_back, diffuse_lambert_wrap;
 group_uniforms textures;
 uniform sampler2D tex_flat  : filter_linear_mipmap, repeat_enable;
 uniform sampler2D tex_slope : filter_linear_mipmap, repeat_enable;
+uniform sampler2D tex_beach : filter_linear_mipmap, repeat_enable;
 
 group_uniforms settings;
 uniform float texture_scale : hint_range(0.01, 4.0) = 0.5;
@@ -24,6 +25,11 @@ uniform float path_roughness : hint_range(0.0, 1.0) = 0.92;
 group_uniforms riverbank;
 uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
 uniform float bank_roughness : hint_range(0.0, 1.0) = 0.95;
+
+group_uniforms beach;
+uniform vec3 beach_color : source_color = vec3(0.86, 0.78, 0.58);
+uniform float beach_roughness : hint_range(0.0, 1.0) = 0.90;
+uniform float beach_strength : hint_range(0.0, 1.0) = 1.0;
 
 group_uniforms rock;
 uniform vec3 rock_color_base : source_color = vec3(0.26, 0.27, 0.30);
@@ -136,6 +142,7 @@ varying vec3 v_world_pos;
 varying float v_path_mask;
 varying vec3 v_macro_normal;
 varying float v_river_bank;
+varying float v_beach;
 
 // Analytical rock bump — deterministic function of world XZ, so the gradient
 // is identical regardless of which zone mesh draws the fragment.
@@ -157,6 +164,7 @@ void vertex() {
 	vec2 mg = UV2;
 	v_macro_normal = normalize(vec3(-mg.x, 1.0, -mg.y));
 	v_river_bank = COLOR.b;
+	v_beach = COLOR.a;
 }
 
 void fragment() {
@@ -257,13 +265,31 @@ void fragment() {
 	path_base *= (0.9 + fbm2(world_pos.xz * 0.06 + vec2(150.0, 250.0)) * 0.15);
 	albedo = mix(albedo, path_base, pm);
 
-	// River bank — use slope_path_fade instead of flat_w to kill zigzags on slopes
+	// Beach mask — sand strip along ocean coasts. Baked into COLOR.a by the
+	// zone mesh builder so the shader knows whether a low-altitude vertex is
+	// ocean coast (paint sand) vs inland lake (leave alone). We add a little
+	// world-space noise so the transition doesn't look like a mesh-boundary
+	// stairstep.
+	float beach_warp = vnoise(world_pos.xz * 0.06 + vec2(320.0, 610.0));
+	float beach_mask_raw = smoothstep(0.10, 0.55, v_beach + (beach_warp - 0.5) * 0.25);
+	// Beach only replaces grass — keep cliff rock alone.
+	float beach_mask = beach_mask_raw * grass_w * beach_strength;
+
+	// River bank — use slope_path_fade instead of flat_w to kill zigzags on
+	// slopes. Suppressed where the beach is painted so we don't get a dark
+	// muddy stripe underneath the sand.
 	float bank_noise = vnoise(world_pos.xz * 0.15 + vec2(444.0, 222.0));
 	float bank_detail = vnoise(world_pos.xz * 0.6 + vec2(111.0, 555.0));
 	float bank_mask = smoothstep(0.1, 0.6, v_river_bank + (bank_noise - 0.5) * 0.3);
 	vec3 bank_detail_col = col_slope * 0.5 + bank_color * 0.5;
 	bank_detail_col *= (0.8 + bank_detail * 0.25);
-	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade);
+	albedo = mix(albedo, bank_detail_col, bank_mask * slope_path_fade * (1.0 - beach_mask));
+
+	// Paint sand on top — fine noise gives a grainy shimmer instead of a flat wash.
+	vec3 col_beach = triplanar(tex_beach, world_pos, blend, texture_scale * 2.0);
+	float sand_grain = vnoise(world_pos.xz * 0.45 + vec2(820.0, 190.0));
+	vec3 sand_final = col_beach * beach_color * (0.9 + sand_grain * 0.2);
+	albedo = mix(albedo, sand_final, beach_mask);
 
 	float ao_mask = smoothstep(0.3, 0.6, n_med) * grass_w * 0.2;
 	albedo *= (1.0 - ao_mask);
@@ -273,8 +299,8 @@ void fragment() {
 	float luma = dot(albedo, vec3(0.299, 0.587, 0.114));
 	albedo = mix(albedo, vec3(luma), ground_shadow * 0.3);
 
-	// Biome tint on grass only — rock stays untinted
-	float tint_strength = grass_w;
+	// Biome tint on grass only — rock and beach stay untinted
+	float tint_strength = grass_w * (1.0 - beach_mask);
 	vec3 final_tint = mix(vec3(1.0), tint_color, clamp(tint_strength, 0.0, 1.0));
 	// Micro-variation computed from world-space noise (replaces per-vertex brightness
 	// which caused C0-continuous gradient discontinuities at zone boundaries).
@@ -285,6 +311,7 @@ void fragment() {
 	float base_rough = mix(0.8, 0.95, mud_mask * 0.5 + ao_mask);
 	base_rough = mix(base_rough, 0.65, dirt_mask);
 	base_rough = mix(base_rough, bank_roughness, bank_mask * grass_w);
+	base_rough = mix(base_rough, beach_roughness, beach_mask);
 	// Rock roughness with subtle variation so it doesn't look like plastic
 	float rock_rough_var = vnoise(world_pos.xz * 0.08 + vec2(777.0, 333.0)) * 0.12;
 	base_rough = mix(base_rough, 0.78 + rock_rough_var, cliff_w);

@@ -1309,6 +1309,12 @@ func _trace_creek_paths() -> void:
 			var h: float = _ws_heights[idx]
 			if h < WATER_LEVEL + _CREEK_MIN_ELEV:
 				continue
+			# Skip cells already inside the ocean-coast transition zone —
+			# rivers spawning there carve ugly trenches along the shoreline.
+			var wx_cand: float = -world_radius + float(gx) * _WS_CELL
+			var wz_cand: float = -world_radius + float(gz) * _WS_CELL
+			if _sample_island_mask(wx_cand, wz_cand) < 0.80:
+				continue
 			candidates.append(Vector3i(gx, gz, int(accum * 1000.0)))
 	candidates.sort_custom(func(a: Vector3i, b: Vector3i) -> bool: return a.z > b.z)
 
@@ -1367,6 +1373,14 @@ func _trace_creek_paths() -> void:
 			# get_height_at would return here, minus much more expensive work.
 			var ch: float = _ws_heights[cidx]
 			if ch < WATER_LEVEL + 0.1:
+				break
+			# Stop before we enter the ocean approach zone — rivers that push
+			# into it carve weird trenches along the coastline. The ocean is
+			# a fine drainage target, we just don't want the last km of river
+			# channel to run right along the beach.
+			var cur_wx_trace: float = -world_radius + float(cgx) * _WS_CELL
+			var cur_wz_trace: float = -world_radius + float(cgz) * _WS_CELL
+			if _sample_island_mask(cur_wx_trace, cur_wz_trace) < 0.70:
 				break
 
 			var fd: int = _ws_flow[cidx]
@@ -1495,6 +1509,12 @@ func _trace_creek_paths() -> void:
 				if ext_idx < _ws_accum.size():
 					_ws_accum[ext_idx] = maxf(_ws_accum[ext_idx], carry_acc)
 				if best_h < WATER_LEVEL + 0.1:
+					break
+				# Same rule as the main trace: stop the forced extension before
+				# it rams through the ocean coast.
+				var ext_wx: float = -world_radius + float(cgx) * _WS_CELL
+				var ext_wz: float = -world_radius + float(cgz) * _WS_CELL
+				if _sample_island_mask(ext_wx, ext_wz) < 0.70:
 					break
 
 		if raw_points.size() < 2:
@@ -2134,6 +2154,13 @@ func get_height_at(x: float, z: float) -> float:
 	# Blend toward deep ocean at island edges for natural shore transitions
 	h = lerpf(WATER_LEVEL - 15.0, h, shore)
 
+	# Beach zone — narrow band on the ocean side of the coast transition.
+	# Peaks where island mask is mid-range (actual shoreline) and fades to
+	# zero both out to sea and deeper into the land. We use it below to
+	# (a) skip the aggressive inland uplift so beaches actually stay low,
+	# (b) force the floor down to a gentle sandy ramp instead of cliffs.
+	var beach_zone := smoothstep(0.18, 0.45, island) * (1.0 - smoothstep(0.50, 0.82, island))
+
 	# Land uplift — fill low inland areas with rolling terrain that respects mountain zones
 	if shore > 0.3 and h < WATER_LEVEL + 4.0:
 		var fill_n := _detail_noise.get_noise_2d(x * 0.008 + 4000.0, z * 0.008 + 4000.0)
@@ -2142,16 +2169,21 @@ func get_height_at(x: float, z: float) -> float:
 		var base_target := WATER_LEVEL + maxf(terrain_var, 1.0)
 		var target := base_target + breadth * height_scale * 0.3
 		var lift_t := smoothstep(WATER_LEVEL + 4.0, WATER_LEVEL - 3.0, h)
-		h = lerpf(h, target, lift_t * shore)
+		# Gate the uplift down inside the beach zone so we don't rebuild the
+		# cliff we're trying to eliminate.
+		h = lerpf(h, target, lift_t * shore * (1.0 - beach_zone * 0.85))
 
-	# Watershed river/creek carving
+	# Watershed river/creek carving — faded out near ocean coasts so rivers
+	# stop carving trenches along the shoreline and the coast stays clean
+	# for the beach strip instead.
+	var coast_carve_mul := smoothstep(0.70, 0.92, island)
 	var accum := _ws_sample_accum(x, z)
-	if accum > _CREEK_ACCUM_THRESH * 0.5:
+	if accum > _CREEK_ACCUM_THRESH * 0.5 and coast_carve_mul > 0.01:
 		var widen_n := _detail_noise.get_noise_2d(x * 0.025 + 3000.0, z * 0.025 + 3000.0)
 		var effective_accum := accum + widen_n * _WS_RIVER_THRESH * 0.35
 
 		if h > WATER_LEVEL + _CREEK_MIN_ELEV and effective_accum < _WS_RIVER_FULL * 0.4:
-			var creek_t := smoothstep(_CREEK_ACCUM_THRESH * 0.5, _CREEK_ACCUM_THRESH * 1.5, effective_accum)
+			var creek_t := smoothstep(_CREEK_ACCUM_THRESH * 0.5, _CREEK_ACCUM_THRESH * 1.5, effective_accum) * coast_carve_mul
 			if creek_t > 0.0:
 				var norm_acc := clampf((effective_accum - _CREEK_ACCUM_THRESH) / 20.0, 0.0, 1.0)
 				var channel_w_factor := lerpf(0.3, 1.0, norm_acc)
@@ -2162,14 +2194,14 @@ func get_height_at(x: float, z: float) -> float:
 					if h > river_floor:
 						h = lerpf(h, river_floor, creek_t * river_t)
 		else:
-			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum)
+			var bank_t := smoothstep(_WS_RIVER_THRESH * 0.5, _WS_RIVER_THRESH * 1.1, effective_accum) * coast_carve_mul
 			if bank_t > 0.0:
 				h = lerpf(h, WATER_LEVEL + 0.15, bank_t)
 
 			if effective_accum > _WS_RIVER_THRESH:
 				var t := smoothstep(_WS_RIVER_THRESH, _WS_RIVER_FULL, effective_accum)
 				var depth := lerpf(1.5, 5.0, t)
-				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0)
+				var carve := clampf(t * 1.5 + 0.4, 0.0, 1.0) * coast_carve_mul
 				h = lerpf(h, WATER_LEVEL - depth, carve)
 
 	# Creek bed grid carving — wide channels matching creek mesh footprints
@@ -2194,10 +2226,16 @@ func get_height_at(x: float, z: float) -> float:
 			if bed_h < h:
 				h = bed_h
 
-	# Inland terrain floor — eliminates all sub-water terrain on solid land
+	# Inland terrain floor — eliminates all sub-water terrain on solid land.
+	# The beach zone gets a much lower floor (just above water) and a tiny
+	# bit of noise, so we get a smooth sandy ramp instead of the old cliff.
 	if shore > 0.5:
 		var rolling := (1.0 + continent) * 1.5 + absf(detail) * 2.5
 		var floor_h := WATER_LEVEL + 0.5 + rolling + breadth * height_scale * 0.3
+		if beach_zone > 0.01:
+			var sand_wobble := _detail_noise.get_noise_2d(x * 0.05 + 3700.0, z * 0.05 + 3700.0)
+			var beach_floor := WATER_LEVEL + 0.15 + sand_wobble * 0.35
+			floor_h = lerpf(floor_h, beach_floor, beach_zone)
 		h = maxf(h, floor_h)
 
 	# Natural lakes — punch through the floor with tight thresholds for rare, large bodies
@@ -4065,13 +4103,28 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			var accum_here := _ws_sample_accum(wx + bw1 + bw2, wz + bw1 - bw2)
 			var river_bank := smoothstep(_WS_RIVER_THRESH * 0.7, _WS_RIVER_THRESH * 1.3, accum_here)
 
-			if _detail_noise:
+			# Ocean coast vs inland lake: sample the island mask. Deep water
+			# is ~0 and solid inland is ~1, so values in the 0.2–0.85 band are
+			# the ocean transition zone. Inland-lake shores are detected via
+			# the high-frequency lake_n noise we were already using, but we
+			# now gate it by island mask so ocean edges DON'T get the dark
+			# muddy bank tint.
+			var island_here := _sample_island_mask(wx, wz) if _island_noise else 1.0
+			if _detail_noise and island_here > 0.85:
 				var lake_n := _continent_noise.get_noise_2d(wx * 0.7 + 5000.0, wz * 0.7 + 5000.0)
 				var lake_shore := smoothstep(-0.25, -0.45, lake_n)
 				river_bank = maxf(river_bank, lake_shore)
 
 			river_bank = clampf(river_bank, 0.0, 1.0)
-			colors.append(Color(path_f, 1.0, river_bank))
+
+			# Beach mask (colors.a): same coast band used by get_height_at so the
+			# sand color paints exactly the flattened beach geometry. Gated by
+			# altitude so we don't stain the seabed or the inland hills if the
+			# mask bleeds a little out of the flat band.
+			var beach_coast := smoothstep(0.18, 0.45, island_here) * (1.0 - smoothstep(0.50, 0.82, island_here))
+			var beach_alt := clampf(1.0 - smoothstep(WATER_LEVEL - 0.5, WATER_LEVEL + 3.0, h), 0.0, 1.0)
+			var beach_mask := clampf(beach_coast * beach_alt, 0.0, 1.0)
+			colors.append(Color(path_f, 1.0, river_bank, beach_mask))
 
 	# Third pass: compute normals.
 	# Boundary vertices (on any zone edge) use get_height_at for ALL four
@@ -4256,6 +4309,8 @@ func _init_biome_materials() -> void:
 	if not dirt_tex:
 		dirt_tex = _load_tex("res://textures/materials/bark.png")
 
+	var beach_tex := _load_tex("res://textures/terrain/sand.png")
+
 	# Per-biome: [flat_texture_name, tint_color, tex_scale]
 	var biome_cfg: Dictionary = {
 		&"hearthlands":     ["grass",        Color(0.20, 0.40, 0.12),  0.5],
@@ -4277,11 +4332,14 @@ func _init_biome_materials() -> void:
 				mat.set_shader_parameter("tex_flat", flat_tex)
 			if dirt_tex:
 				mat.set_shader_parameter("tex_slope", dirt_tex)
+			if beach_tex:
+				mat.set_shader_parameter("tex_beach", beach_tex)
 			mat.set_shader_parameter("tint_color", Vector3(tint.r, tint.g, tint.b))
 			mat.set_shader_parameter("texture_scale", tex_scale)
 			mat.set_shader_parameter("origin_shift", origin_shift)
 			mat.set_shader_parameter("path_color", Vector3(0.12, 0.07, 0.03))
 			mat.set_shader_parameter("bank_color", Vector3(0.12, 0.09, 0.05))
+			mat.set_shader_parameter("beach_color", Vector3(0.86, 0.78, 0.58))
 			_biome_materials[biome_id] = mat
 		else:
 			# Fallback if shader fails to load

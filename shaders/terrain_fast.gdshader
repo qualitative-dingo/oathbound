@@ -10,11 +10,13 @@ uniform float min_rock_altitude : hint_range(0.0, 50.0) = 15.0;
 uniform vec3 origin_shift;
 uniform vec3 path_color : source_color = vec3(0.18, 0.11, 0.05);
 uniform vec3 bank_color : source_color = vec3(0.12, 0.09, 0.05);
+uniform vec3 beach_color : source_color = vec3(0.86, 0.78, 0.58);
 
 varying vec3 v_world_pos;
 varying float v_path_mask;
 varying vec3 v_macro_normal;
 varying float v_river_bank;
+varying float v_beach;
 
 void vertex() {
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz + origin_shift;
@@ -22,6 +24,7 @@ void vertex() {
 	vec2 mg = UV2;
 	v_macro_normal = normalize(vec3(-mg.x, 1.0, -mg.y));
 	v_river_bank = COLOR.b;
+	v_beach = COLOR.a;
 }
 
 float hash_fast(vec2 p) {
@@ -120,8 +123,13 @@ void fragment() {
 	float micro_n = vnoise_fast(wpos.xz * 0.06 + vec2(9000.0, 9000.0));
 	float micro_brightness = 0.92 + (micro_n - 0.5) * 0.24;
 	micro_brightness = mix(micro_brightness, max(micro_brightness, 0.92), rock_w);
+	float beach_warp = vnoise_fast(wpos.xz * 0.06 + vec2(320.0, 610.0));
+	float beach_mask = smoothstep(0.10, 0.55, v_beach + (beach_warp - 0.5) * 0.25) * (1.0 - rock_w);
+
 	vec3 ground = mix(grass_col * tint_color, rock_col, rock_w) * micro_brightness;
-	ground = mix(ground, bank_color, bm * (1.0 - rock_w));
-	ALBEDO = mix(ground, path_color, pm * (1.0 - rock_w));
+	ground = mix(ground, bank_color, bm * (1.0 - rock_w) * (1.0 - beach_mask));
+	float sand_grain = vnoise_fast(wpos.xz * 0.45 + vec2(820.0, 190.0));
+	ground = mix(ground, beach_color * (0.9 + sand_grain * 0.2), beach_mask);
+	ALBEDO = mix(ground, path_color, pm * (1.0 - rock_w) * (1.0 - beach_mask));
 	ROUGHNESS = mix(mix(0.85, 0.85, rock_w), 0.7, pm * (1.0 - rock_w));
 }
