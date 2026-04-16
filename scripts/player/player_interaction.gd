@@ -800,6 +800,13 @@ func _interact_signpost(signpost: Node3D) -> void:
 	pc._show_speech(pc._LINES_SIGNPOST, &"signpost")
 	if signpost.get_meta("reveals_merchant", false):
 		var merchant_pos: Vector3 = signpost.get_meta("merchant_pos", Vector3.ZERO) as Vector3
+		var wgs := pc.get_tree().get_nodes_in_group(&"world_generator")
+		var wg_ref := wgs[0] if not wgs.is_empty() else null
+		var player_abs: Vector3 = wg_ref.get_world_position(pc) if wg_ref and wg_ref.has_method(&"get_world_position") else pc.global_position
+		var signpost_abs: Vector3 = wg_ref.get_world_position(signpost) if wg_ref and wg_ref.has_method(&"get_world_position") else signpost.global_position
+		var merchant_real: Vector3 = wg_ref.get_merchant_world_pos() if wg_ref and wg_ref.has_method(&"get_merchant_world_pos") else Vector3.ZERO
+		print("[SIGNPOST] reveals_merchant meta=%s real_merchant=%s player_abs=%s signpost_abs=%s" % [
+			merchant_pos, merchant_real, player_abs, signpost_abs])
 		if merchant_pos != Vector3.ZERO:
 			pc._reveal_map_marker("merchant", merchant_pos, "Halvard")
 

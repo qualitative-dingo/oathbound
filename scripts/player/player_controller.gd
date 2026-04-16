@@ -4473,6 +4473,11 @@ func _show_speech(lines: Array, trigger_key: StringName) -> void:
 		return
 	if not _speech_panel:
 		return
+	# Don't let a non-instant speech clobber an instant speech whose voice is
+	# still playing — avoids text/audio mismatch when an instant trigger is
+	# immediately followed by another _show_speech call.
+	if not is_instant and _speech_waiting_for_audio:
+		return
 
 	var voiced: Array = []
 	var unvoiced: Array = []
@@ -8912,7 +8917,6 @@ func _build_bed_visual(structure: Node3D, sz: Vector3) -> void:
 func _reveal_map_marker(marker_id: String, world_pos: Vector3, label_text: String) -> void:
 	if _world_map:
 		_world_map.reveal_marker(marker_id, world_pos, label_text)
-	_show_speech(["I should mark this on my map... %s is out there somewhere." % label_text], &"map_reveal")
 
 
 func _biome_map_color(biome: StringName, micro: StringName = &"none", height: float = 0.0) -> Color:

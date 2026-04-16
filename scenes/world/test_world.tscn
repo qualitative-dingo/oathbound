@@ -86,8 +86,8 @@ directional_shadow_split_1 = 0.07
 directional_shadow_split_2 = 0.2
 directional_shadow_split_3 = 0.5
 directional_shadow_blend_splits = true
-directional_shadow_max_distance = 120.0
-directional_shadow_fade_start = 0.85
+directional_shadow_max_distance = 200.0
+directional_shadow_fade_start = 0.75
 
 [node name="WorldGenerator" type="Node3D" parent="." unique_id=584584793]
 script = ExtResource("2_worldgen")

@@ -180,10 +180,16 @@ func open() -> void:
 	if _biome_label and _wg and _player:
 		var pp := _wg.get_world_position(_player)
 		_biome_label.text = _biome_display_name(_wg.get_biome_at(pp))
-	# Release the mouse so the map can be panned/zoomed. WASD movement is
-	# polled via Input.is_action_pressed and is not affected. The map's root
-	# panel uses MOUSE_FILTER_STOP so mouse motion won't leak back into
-	# camera rotation while the cursor is over the map.
+	# Debug dump: show stored marker positions vs current player/merchant so we
+	# can tell if a stale or wrong absolute position snuck into _markers.
+	if _wg and _player:
+		var player_abs: Vector3 = _wg.get_world_position(_player)
+		var merchant_real: Vector3 = _wg.get_merchant_world_pos() if _wg.has_method(&"get_merchant_world_pos") else Vector3.ZERO
+		print("[WORLD MAP] open — player_abs=%s merchant_real=%s origin_shift=%s" % [
+			player_abs, merchant_real, _wg.origin_shift])
+		for m in _markers:
+			print("[WORLD MAP]   marker id=%s label=%s pos=%s" % [
+				m.get("id", ""), m.get("label", ""), m.get("pos", Vector3.ZERO)])
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_queue_overlay_redraw()
 	opened.emit()
@@ -225,6 +231,10 @@ func reveal_marker(marker_id: String, world_pos: Vector3, label_text: String) ->
 	for m in _markers:
 		if m.get("id", "") == marker_id:
 			return
+	var origin_shift: Vector3 = _wg.origin_shift if _wg else Vector3.ZERO
+	var player_abs: Vector3 = _wg.get_world_position(_player) if _wg and _player else Vector3.ZERO
+	print("[WORLD MAP] reveal_marker id=%s label=%s world_pos=%s (origin_shift=%s player_abs=%s)" % [
+		marker_id, label_text, world_pos, origin_shift, player_abs])
 	_markers.append({
 		"id": marker_id,
 		"pos": world_pos,
@@ -792,9 +802,16 @@ func _draw_overlay() -> void:
 			_draw_map_exclamation(view_pos, Color(1.0, 0.9, 0.3))
 
 	# Named markers (quests, etc.) — same rule: stored as absolute world pos,
-	# pass straight to _world_to_viewport.
+	# pass straight to _world_to_viewport. For fixed-world NPCs we re-query the
+	# world generator so the marker can never drift from the canonical spot
+	# (even if something stashed a bad pos into _markers).
 	for marker in _markers:
 		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
+		var mid := str(marker.get("id", ""))
+		if mid == "merchant" and _wg and _wg.has_method(&"get_merchant_world_pos"):
+			var live_pos: Vector3 = _wg.get_merchant_world_pos()
+			if live_pos != Vector3.ZERO:
+				wpos = live_pos
 		var col: Color = marker.get("color", Color.GOLD) as Color
 		var view_pos := _world_to_viewport(wpos)
 		_draw_map_dot(view_pos, col, 5.0)

@@ -839,23 +839,18 @@ func _init_noise_layers() -> void:
 #  WATERSHED COMPUTATION — runs once at startup
 # ═══════════════════════════════════════════════════════════════════════════════
 
-## Sample the broad mountain mask with a guaranteed region near spawn.
+## Sample the broad mountain mask (pure noise — no forced spawn region).
 func _sample_broad_mountain(wx: float, wz: float) -> float:
-	var broad := _mountain_broad_noise.get_noise_2d(wx, wz)
-	var spawn_mtn_dist := Vector2(wx - 300.0, wz - 250.0).length()
-	return maxf(broad, smoothstep(280.0, 60.0, spawn_mtn_dist))
+	return _mountain_broad_noise.get_noise_2d(wx, wz)
 
 
 ## Gate fine-detail mountain value by the broad (base-octave) mountain mask.
 ## Returns 0 where there's no large-scale mountain region, preserving the full
 ## value inside established mountain chains.
-func _gate_mountain(wx: float, wz: float, mountain_raw: float) -> float:
-	var spawn_mtn_dist := Vector2(wx - 300.0, wz - 250.0).length()
-	var spawn_mtn_boost := smoothstep(280.0, 60.0, spawn_mtn_dist) * 0.5
-	mountain_raw = maxf(mountain_raw, spawn_mtn_boost)
+func _gate_mountain(_wx: float, _wz: float, mountain_raw: float) -> float:
 	if mountain_raw <= 0.0:
 		return 0.0
-	var broad := _sample_broad_mountain(wx, wz)
+	var broad := _sample_broad_mountain(_wx, _wz)
 	var breadth := smoothstep(-0.05, 0.30, broad)
 	return mountain_raw * breadth
 
@@ -4342,58 +4337,74 @@ func set_fast_terrain_shader(fast: bool) -> void:
 func _init_biome_materials() -> void:
 	_terrain_shader_fancy = load("res://shaders/terrain.gdshader") as Shader
 	_terrain_shader_fast = load("res://shaders/terrain_fast.gdshader") as Shader
-	var terrain_shader := _terrain_shader_fancy
+	var splat_shader := load("res://shaders/terrain_splat.gdshader") as Shader
 
-	var dirt_tex := _load_tex("res://textures/terrain/dirt.png")
+	var grass_tex        := _load_tex("res://textures/terrain/grass.png")
+	var grass_detail_tex := _load_tex("res://textures/terrain/forest_floor.png")
+	var dirt_tex         := _load_tex("res://textures/terrain/dirt.png")
 	if not dirt_tex:
-		dirt_tex = _load_tex("res://textures/materials/bark.png")
+		dirt_tex = _load_tex("res://textures/materials/dirt.png")
+	var rock_tex         := _load_tex("res://textures/terrain/stone.png")
+	if not rock_tex:
+		rock_tex = _load_tex("res://textures/materials/stone.png")
+	var sand_tex         := _load_tex("res://textures/terrain/sand.png")
 
-	var beach_tex := _load_tex("res://textures/terrain/sand.png")
+	# ── hearthlands: splatmap spike with real rock/grass/dirt/sand textures ─
+	if splat_shader and grass_tex and dirt_tex and rock_tex and sand_tex:
+		var hmat := ShaderMaterial.new()
+		hmat.shader = splat_shader
+		hmat.set_shader_parameter("tex_grass",        grass_tex)
+		hmat.set_shader_parameter("tex_grass_detail", grass_detail_tex if grass_detail_tex else grass_tex)
+		hmat.set_shader_parameter("tex_dirt",         dirt_tex)
+		hmat.set_shader_parameter("tex_rock",         rock_tex)
+		hmat.set_shader_parameter("tex_sand",         sand_tex)
+		hmat.set_shader_parameter("origin_shift",     origin_shift)
+		_biome_materials[&"hearthlands"] = hmat
+	elif _terrain_shader_fancy:
+		# Fallback to legacy fancy shader if any splat texture is missing
+		var hmat := ShaderMaterial.new()
+		hmat.shader = _terrain_shader_fancy
+		if grass_tex:
+			hmat.set_shader_parameter("tex_flat", grass_tex)
+		if dirt_tex:
+			hmat.set_shader_parameter("tex_slope", dirt_tex)
+		if sand_tex:
+			hmat.set_shader_parameter("tex_beach", sand_tex)
+		hmat.set_shader_parameter("tint_color", Vector3(0.20, 0.40, 0.12))
+		hmat.set_shader_parameter("texture_scale", 0.5)
+		hmat.set_shader_parameter("origin_shift", origin_shift)
+		_biome_materials[&"hearthlands"] = hmat
 
-	# Per-biome: [flat_texture_name, tint_color, tex_scale]
-	var biome_cfg: Dictionary = {
-		&"hearthlands":     ["grass",        Color(0.20, 0.40, 0.12),  0.5],
-		&"ocean":           ["sand",         Color(0.3, 0.5, 0.7),  0.5],
-	}
-
-	for biome_id in biome_cfg:
-		var cfg: Array = biome_cfg[biome_id]
-		var flat_name: String = cfg[0]
-		var tint: Color = cfg[1]
-		var tex_scale: float = cfg[2]
-
-		var flat_tex := _load_tex("res://textures/terrain/%s.png" % flat_name)
-
-		if terrain_shader:
-			var mat := ShaderMaterial.new()
-			mat.shader = terrain_shader
-			if flat_tex:
-				mat.set_shader_parameter("tex_flat", flat_tex)
-			if dirt_tex:
-				mat.set_shader_parameter("tex_slope", dirt_tex)
-			if beach_tex:
-				mat.set_shader_parameter("tex_beach", beach_tex)
-			mat.set_shader_parameter("tint_color", Vector3(tint.r, tint.g, tint.b))
-			mat.set_shader_parameter("texture_scale", tex_scale)
-			mat.set_shader_parameter("origin_shift", origin_shift)
-			mat.set_shader_parameter("path_color", Vector3(0.12, 0.07, 0.03))
-			mat.set_shader_parameter("bank_color", Vector3(0.12, 0.09, 0.05))
-			mat.set_shader_parameter("beach_color", Vector3(0.86, 0.78, 0.58))
-			_biome_materials[biome_id] = mat
-		else:
-			# Fallback if shader fails to load
-			var mat := StandardMaterial3D.new()
-			mat.albedo_color = _get_biome_terrain_color(biome_id)
-			mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-			mat.roughness = 0.85
-			mat.vertex_color_use_as_albedo = true
-			mat.uv1_triplanar = true
-			mat.uv1_world_triplanar = true
-			mat.uv1_triplanar_sharpness = 1.0
-			if flat_tex:
-				mat.albedo_texture = flat_tex
-			mat.uv1_scale = Vector3(0.5, 0.5, 0.5)
-			_biome_materials[biome_id] = mat
+	# ── ocean: keep legacy fancy shader for now ───────────────────────────
+	if _terrain_shader_fancy:
+		var omat := ShaderMaterial.new()
+		omat.shader = _terrain_shader_fancy
+		if sand_tex:
+			omat.set_shader_parameter("tex_flat", sand_tex)
+		if dirt_tex:
+			omat.set_shader_parameter("tex_slope", dirt_tex)
+		if sand_tex:
+			omat.set_shader_parameter("tex_beach", sand_tex)
+		omat.set_shader_parameter("tint_color", Vector3(0.3, 0.5, 0.7))
+		omat.set_shader_parameter("texture_scale", 0.5)
+		omat.set_shader_parameter("origin_shift", origin_shift)
+		omat.set_shader_parameter("path_color", Vector3(0.12, 0.07, 0.03))
+		omat.set_shader_parameter("bank_color", Vector3(0.12, 0.09, 0.05))
+		omat.set_shader_parameter("beach_color", Vector3(0.86, 0.78, 0.58))
+		_biome_materials[&"ocean"] = omat
+	else:
+		var omat := StandardMaterial3D.new()
+		omat.albedo_color = _get_biome_terrain_color(&"ocean")
+		omat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		omat.roughness = 0.85
+		omat.vertex_color_use_as_albedo = true
+		omat.uv1_triplanar = true
+		omat.uv1_world_triplanar = true
+		omat.uv1_triplanar_sharpness = 1.0
+		if sand_tex:
+			omat.albedo_texture = sand_tex
+		omat.uv1_scale = Vector3(0.5, 0.5, 0.5)
+		_biome_materials[&"ocean"] = omat
 
 
 func _load_tex(path: String) -> Texture2D:
