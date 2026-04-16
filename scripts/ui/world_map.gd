@@ -402,16 +402,23 @@ uniform float time = 0.0;
 
 void fragment() {
     float explored = texture(fog_mask, UV).r;
-    if (reveal_all || explored > 0.92) {
+    if (reveal_all) {
         COLOR = vec4(0.0);
-    } else {
-        vec2 n_uv_a = UV * 3.0 + vec2(time * 0.015, time * 0.008);
-        vec2 n_uv_b = UV * 7.0 - vec2(time * 0.022, time * 0.014);
-        float n = texture(noise_tex, n_uv_a).r * 0.6 + texture(noise_tex, n_uv_b).r * 0.4;
-        float feather = smoothstep(0.35, 0.92, explored);
-        float alpha = mix(0.93, 0.65, n) * (1.0 - feather);
-        COLOR = vec4(fog_color, alpha);
+        return;
     }
+    // Animated low-frequency noise so the fog looks like drifting clouds
+    // rather than a flat wash, but it modulates COLOR (lightness), not
+    // alpha — unexplored areas must be fully opaque so the player can't
+    // just read the terrain through thin fog.
+    vec2 n_uv_a = UV * 3.0 + vec2(time * 0.015, time * 0.008);
+    vec2 n_uv_b = UV * 7.0 - vec2(time * 0.022, time * 0.014);
+    float n = texture(noise_tex, n_uv_a).r * 0.6 + texture(noise_tex, n_uv_b).r * 0.4;
+    vec3 c = fog_color * mix(0.85, 1.25, n);
+    // Soft feather along the boundary of explored regions so edges don't
+    // look like pixel stairsteps.
+    float feather = smoothstep(0.35, 0.92, explored);
+    float alpha = 1.0 - feather;
+    COLOR = vec4(c, alpha);
 }
 """
 	return sh
