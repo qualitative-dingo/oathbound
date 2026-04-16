@@ -15,14 +15,21 @@ static var _zone_roots: Array[StaticBody3D] = []
 static var _trees: Array[StaticBody3D] = []
 static var _rocks: Array[StaticBody3D] = []
 static var _blueberry_bushes: Array[StaticBody3D] = []
+# Phase 3a — creature pool keyed by creature_kind (StringName).
+# Storing the whole CharacterBody3D avoids the physics body create/destroy
+# cost that was spiking `phys` on every zone crossing.
+static var _creatures: Dictionary = {}  # StringName -> Array[CharacterBody3D]
 
 const MAX_TREES := 100
 const MAX_ROCKS := 10
 const MAX_BLUEBERRY := 30
 const MAX_ZONE_ROOTS := 5
+const MAX_CREATURES_PER_KIND := 12
 
 static var _stats_recycled := 0
 static var _stats_reused := 0
+static var _stats_creature_recycled := 0
+static var _stats_creature_reused := 0
 
 
 # ─── Zone Root Pool ────────────────────────────────────────────────────────────
@@ -159,6 +166,52 @@ static func recycle_blueberry(node: StaticBody3D) -> void:
 		node.queue_free()
 
 
+# ─── Creature Pool (Phase 3a) ────────────────────────────────────────────────
+#
+# Keyed by creature_kind so we reuse the same physics body + model tree when
+# the same species re-spawns in a new zone. Zones unloaded during traversal
+# used to `queue_free` every CharacterBody3D inside them, forcing the physics
+# server to destroy and recreate all rigid/character bodies — that spike lives
+# inside the physics step and showed up as 30-60 ms `phys` peaks in the logs.
+
+static func get_creature_node(kind: StringName) -> CharacterBody3D:
+	var bucket: Array = _creatures.get(kind, []) as Array
+	while not bucket.is_empty():
+		var c: CharacterBody3D = bucket.pop_back()
+		if not is_instance_valid(c):
+			continue
+		# Caller is responsible for calling reset_for_pool() + add_child.
+		_stats_creature_reused += 1
+		return c
+	return null
+
+
+static func recycle_creature(node: CharacterBody3D) -> bool:
+	# Returns true if pooled, false if caller should queue_free.
+	if not is_instance_valid(node):
+		return false
+	# Don't pool dead creatures — state cleanup is too risky.
+	if node.has_method(&"is_dead") and node.is_dead():
+		return false
+	var kind_v: Variant = node.get(&"creature_kind")
+	if kind_v == null:
+		return false
+	var kind: StringName = kind_v as StringName
+	if kind == &"":
+		return false
+	var bucket: Array = _creatures.get(kind, []) as Array
+	if bucket.size() >= MAX_CREATURES_PER_KIND:
+		return false
+	if node.get_parent():
+		node.get_parent().remove_child(node)
+	node.visible = false
+	node.process_mode = Node.PROCESS_MODE_DISABLED
+	bucket.append(node)
+	_creatures[kind] = bucket
+	_stats_creature_recycled += 1
+	return true
+
+
 # ─── Zone Recycling (walks children, categorizes, and pools everything) ────────
 
 static func recycle_zone(zone_root: StaticBody3D) -> void:
@@ -187,8 +240,10 @@ static func recycle_zone(zone_root: StaticBody3D) -> void:
 				zone_root.remove_child(child)
 				child.queue_free()
 		elif child is CharacterBody3D:
-			zone_root.remove_child(child)
-			child.queue_free()
+			var cb := child as CharacterBody3D
+			if not recycle_creature(cb):
+				zone_root.remove_child(cb)
+				cb.queue_free()
 		elif cname == "TerrainMesh" or cname == "TerrainCol":
 			pass
 		elif child is StaticBody3D and child.is_in_group(&"horses"):
@@ -220,14 +275,25 @@ static func flush_all() -> void:
 		if is_instance_valid(n):
 			n.queue_free()
 	_blueberry_bushes.clear()
+	for _k in _creatures.keys():
+		for n in _creatures[_k]:
+			if is_instance_valid(n):
+				n.queue_free()
+	_creatures.clear()
 	_stats_recycled = 0
 	_stats_reused = 0
+	_stats_creature_recycled = 0
+	_stats_creature_reused = 0
 
 
 # ─── Diagnostics ───────────────────────────────────────────────────────────────
 
 static func get_pool_stats() -> String:
-	return "pool[z=%d t=%d r=%d bb=%d re=%d ru=%d]" % [
+	var creature_total := 0
+	for k in _creatures.keys():
+		creature_total += (_creatures[k] as Array).size()
+	return "pool[z=%d t=%d r=%d bb=%d c=%d re=%d ru=%d cre=%d cru=%d]" % [
 		_zone_roots.size(), _trees.size(), _rocks.size(),
-		_blueberry_bushes.size(),
-		_stats_recycled, _stats_reused]
+		_blueberry_bushes.size(), creature_total,
+		_stats_recycled, _stats_reused,
+		_stats_creature_recycled, _stats_creature_reused]

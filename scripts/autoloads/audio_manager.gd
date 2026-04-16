@@ -245,7 +245,12 @@ func play_speech(group_name: String, idx: int, volume_db: float = -2.0) -> void:
 	if idx < 0 or idx >= streams.size():
 		return
 	_speech_player.stream = streams[idx] as AudioStream
-	_speech_player.volume_db = volume_db
+	# Halvard's source recordings are quieter than the player character's,
+	# so boost any halvard_* group by ~20% (+1.5 dB) to match overall loudness.
+	var final_db := volume_db
+	if group_name.begins_with("halvard"):
+		final_db += 1.5
+	_speech_player.volume_db = final_db
 	_speech_player.pitch_scale = 1.0
 	_speech_player.play()
 

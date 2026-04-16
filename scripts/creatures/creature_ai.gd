@@ -298,6 +298,65 @@ func _ready() -> void:
 						_strip_root_motion(anim)
 
 
+## Phase 3a — reset runtime state to "freshly spawned" so this creature can
+## be reused from the ZonePool without paying the physics body creation cost.
+## Must only be called on the main thread when the creature is detached from
+## a zone (no parent) or about to be re-parented into one. The model tree
+## and nameplate stay intact — only combat state, timers, and AI state reset.
+func reset_for_pool() -> void:
+	current_health = max_health
+	_state = State.IDLE
+	velocity = Vector3.ZERO
+	_target = null
+	_cached_player = null
+	_player_cache_timer = 0.0
+	_wander_direction = Vector3.ZERO
+	_wander_timer = 0.0
+	_aggro_check_cd = 0.0
+	_attack_timer = 0.0
+	_attack_hit_done = false
+	_idle_timer = 0.0
+	_hit_flash_timer = 0.0
+	_spawn_recorded = false
+	_hp_bar_visible_timer = 0.0
+	_hud_targeted = false
+	_slow_timer = 0.0
+	_slow_factor = 1.0
+	_stun_timer = 0.0
+	_poison_timer = 0.0
+	_poison_dps = 0.0
+	_poison_source = null
+	_fire_exposure = 0.0
+	_fire_damage_timer = 0.0
+	_campfire_in_fire = false
+	_disorient_timer = 0.0
+	_armor_shred_timer = 0.0
+	_armor_shred_factor = 0.0
+	_anim_frame_idx = 0
+	_anim_frame_timer = 0.0
+	_roar_cooldown = 0.0
+	_holding_at_target = false
+	_combat_timer = 0.0
+	_evading = false
+	_perch_timer = 0.0
+	_perch_target = null
+	_perch_settled = false
+	_dying_fall = false
+	_death_visual_started = false
+	_fish_target = null
+	_fish_scan_cooldown = 0.0
+	_eat_timer = 0.0
+	_sync_initialized = false
+	if _hp_bar_fill:
+		_hp_bar_fill.visible = false
+	if _hp_bar_bg:
+		_hp_bar_bg.visible = false
+	visible = true
+	collision_layer = 16
+	collision_mask = 0 if is_flying else 1
+	process_mode = Node.PROCESS_MODE_INHERIT
+
+
 func _physics_process(delta: float) -> void:
 	if not _spawn_recorded:
 		_spawn_recorded = true

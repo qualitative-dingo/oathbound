@@ -197,6 +197,12 @@ static var _cov_grass_rej_slope := 0
 static var _cov_grass_rej_altitude := 0
 static var _cov_grass_rej_beach := 0
 
+# Phase 0 — grass scatter timing (per 5s diag window).
+static var _grass_scatter_calls := 0
+static var _grass_scatter_total_us := 0
+static var _grass_scatter_max_us := 0
+static var _grass_scatter_budget_hits := 0
+
 static func get_coverage_stats() -> Dictionary:
 	var g_pct := 100.0 * _cov_grass_placed / maxf(_cov_grass_tested, 1) as float
 	var f_pct := 100.0 * _cov_flower_placed / maxf(_cov_flower_tested, 1) as float
@@ -210,6 +216,10 @@ static func get_coverage_stats() -> Dictionary:
 		"rej_height": _cov_grass_rej_height, "rej_slope": _cov_grass_rej_slope,
 		"rej_altitude": _cov_grass_rej_altitude,
 		"rej_beach": _cov_grass_rej_beach,
+		"scatter_calls": _grass_scatter_calls,
+		"scatter_total_ms": _grass_scatter_total_us / 1000.0,
+		"scatter_max_ms": _grass_scatter_max_us / 1000.0,
+		"scatter_budget_hits": _grass_scatter_budget_hits,
 	}
 
 static func reset_coverage_stats() -> void:
@@ -227,6 +237,10 @@ static func reset_coverage_stats() -> void:
 	_cov_grass_rej_slope = 0
 	_cov_grass_rej_altitude = 0
 	_cov_grass_rej_beach = 0
+	_grass_scatter_calls = 0
+	_grass_scatter_total_us = 0
+	_grass_scatter_max_us = 0
+	_grass_scatter_budget_hits = 0
 
 static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: float) -> void:
 	if coord == _rg_coord:
@@ -1511,18 +1525,35 @@ static func populate_zone_phase(
 		return 1
 
 	# ── Phase 3: ground grass (MultiMesh, shader-culled for performance) ──
+	# When budgeted (normal gameplay), offload the per-cell compute to a
+	# WorkerThreadPool task so the main thread only pays the MultiMesh apply
+	# cost. The synchronous path remains for the unbounded spawn-area pass
+	# (budgeted=false) where we *want* to block until every zone's grass is
+	# ready before handing control to the player.
 	if phase == 3:
 		if not debug_skip_grass:
-			var grass_done := _scatter_grass(zone_root, coord, biome, rng, height_func, budgeted)
-			if not grass_done:
-				return 0
+			if budgeted:
+				var grass_done := _scatter_grass_async(zone_root, coord, biome, rng, height_func)
+				if not grass_done:
+					return 0
+			else:
+				var grass_done := _scatter_grass(zone_root, coord, biome, rng, height_func, budgeted)
+				if not grass_done:
+					return 0
 		return 1
 
 	# ── Phases 4–5: wildflowers (5 types per frame) ──
+	# Async path offloads the per-cell compute to WorkerThreadPool and only
+	# runs the MultiMesh apply on the main thread when transforms are ready.
 	if phase >= 4 and phase <= 5:
 		if not debug_skip_flowers:
 			var fi_start := (phase - 4) * 5
-			_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 5)
+			if budgeted:
+				var fdone := _scatter_flowers_async(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 5)
+				if not fdone:
+					return 0
+			else:
+				_scatter_flowers(zone_root, coord, biome, rng, height_func, fi_start, fi_start + 5)
 		return 1
 
 	# ── Phase 6: blueberry bushes + water plants + creek vegetation ──
@@ -2236,11 +2267,39 @@ static func _grass_cell_hash(cx: int, cz: int, salt: int) -> float:
 	return float(n & 0x7FFFFFFF) / float(0x7FFFFFFF)
 
 
-const _GRASS_CELL_BUDGET := 3000
+## Phase 5 — Lowered from 3000 → 1500 so the sync fallback path can't
+## stall a frame with 3k cells of height-grid lookups. Normal gameplay
+## uses `_scatter_grass_async` (WorkerThreadPool); this budget only
+## gates the sync path still used by the initial spawn-area populate.
+const _GRASS_CELL_BUDGET := 1500
 static var _grass_cursors: Dictionary = {}  # Vector2i -> {idx, transforms, x0, z0, x1, z1}
+
+# Phase 2 — async grass scatter state.
+# _grass_bg_state[coord] = { "status": "pending"|"ready"|"done",
+#                            "transforms": Array[Transform3D] }
+# Mutex protects cross-thread reads/writes (worker writes, main reads/applies).
+static var _grass_bg_state: Dictionary = {}
+static var _grass_bg_mutex: Mutex = Mutex.new()
+# Phase 2 — async flower state (same pattern, per-type buckets).
+# _flower_bg_state[coord] = { "status", "results": [{ "fi", "transforms"}...] }
+static var _flower_bg_state: Dictionary = {}
+static var _flower_bg_mutex: Mutex = Mutex.new()
 
 static func _grass_cursor_clear(coord: Vector2i) -> void:
 	_grass_cursors.erase(coord)
+	_grass_bg_mutex.lock()
+	_grass_bg_state.erase(coord)
+	_grass_bg_mutex.unlock()
+	# Flower state is keyed by "x_y_start_end" — drop every entry for this coord.
+	var coord_prefix := "%d_%d_" % [coord.x, coord.y]
+	_flower_bg_mutex.lock()
+	var keys_to_erase: Array = []
+	for k in _flower_bg_state.keys():
+		if (k as String).begins_with(coord_prefix):
+			keys_to_erase.append(k)
+	for k in keys_to_erase:
+		_flower_bg_state.erase(k)
+	_flower_bg_mutex.unlock()
 
 static func _scatter_grass(
 	zone_root: Node3D,
@@ -2254,6 +2313,8 @@ static func _scatter_grass(
 		return true
 	if biome != &"hearthlands":
 		return true
+
+	var _gs_t0 := Time.get_ticks_usec()
 
 	_ensure_height_grid(coord, height_func)
 
@@ -2269,6 +2330,19 @@ static func _scatter_grass(
 	var wg_ref := _get_world_generator()
 	var has_river_check: bool = wg_ref != null and wg_ref.has_method(&"is_in_river_channel")
 	var has_beach_check: bool = wg_ref != null and wg_ref.has_method(&"get_beach_factor")
+
+	# Phase 5 — A zone can only contain a beach if it dips close to the water
+	# line anywhere. Scan the cached height grid once (2.5k floats, ~30 µs)
+	# so every per-cell beach lookup below can be skipped for obviously
+	# inland zones. Threshold is WATER_LEVEL+5 to match get_beach_factor's
+	# smoothstep ceiling.
+	var beach_possible := false
+	if has_beach_check:
+		var min_h := INF
+		for hv in _hg_data:
+			if hv < min_h:
+				min_h = hv
+		beach_possible = min_h < _WATER_LEVEL + 5.0
 
 	const GRASS_CELL := 0.46
 	var cell_x0: int
@@ -2345,19 +2419,22 @@ static func _scatter_grass(
 		# prevents grass from spawning in actual water, and is_in_river_channel
 		# handles creek beds, so no extra water thinning is needed here.
 		var h5 := _grass_cell_hash(gcx, gcz, 4)
-		var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
-		var keep := lerpf(0.94, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
-		var path_thinned := false
-		if rg_flags & _RG_PATH != 0:
-			keep *= 0.55  # softer than before (was 0.35) so paths still have *some* grass
-			path_thinned = true
-		if h5 > keep:
-			_cov_grass_rej_density += 1
-			if path_thinned:
+		# Phase 5 — Paths short-circuit the fbm2 density call entirely; the
+		# 0.55 thinning is already enforced via a flat keep threshold which
+		# produces the same visual outcome at a fraction of the cost.
+		var path_thinned := rg_flags & _RG_PATH != 0
+		if path_thinned:
+			if h5 > 0.55:
+				_cov_grass_rej_density += 1
 				_cov_grass_rej_density_path += 1
-			else:
+				continue
+		else:
+			var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
+			var keep := lerpf(0.94, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
+			if h5 > keep:
+				_cov_grass_rej_density += 1
 				_cov_grass_rej_density_noise += 1
-			continue
+				continue
 
 		var sn := _hg_snap_and_normal(wx, wz)
 		var ground_y := sn.x
@@ -2372,7 +2449,10 @@ static func _scatter_grass(
 		# pass the cached ground_y so get_beach_factor avoids redoing the
 		# full height computation on the hot path. 0.25 threshold matches
 		# the shader — below that the sand blend is barely visible anyway.
-		if has_beach_check and wg_ref.get_beach_factor(wx, wz, ground_y) > 0.25:
+		# Phase 5 — `beach_possible` short-circuits the sample when the
+		# zone's min height is already above WATER_LEVEL+5 (no possible
+		# coast anywhere inside it).
+		if has_beach_check and beach_possible and wg_ref.get_beach_factor(wx, wz, ground_y) > 0.25:
 			_cov_grass_rej_beach += 1
 			continue
 
@@ -2394,11 +2474,20 @@ static func _scatter_grass(
 
 	if i < total_cells:
 		_grass_cursors[coord] = {"idx": i, "transforms": transforms, "x0": cell_x0, "z0": cell_z0, "x1": cell_x1, "z1": cell_z1}
+		var _gs_dt_partial := int(Time.get_ticks_usec() - _gs_t0)
+		_grass_scatter_calls += 1
+		_grass_scatter_total_us += _gs_dt_partial
+		_grass_scatter_max_us = maxi(_grass_scatter_max_us, _gs_dt_partial)
+		_grass_scatter_budget_hits += 1
 		return false
 
 	_grass_cursors.erase(coord)
 
 	if transforms.is_empty():
+		var _gs_dt_empty := int(Time.get_ticks_usec() - _gs_t0)
+		_grass_scatter_calls += 1
+		_grass_scatter_total_us += _gs_dt_empty
+		_grass_scatter_max_us = maxi(_grass_scatter_max_us, _gs_dt_empty)
 		return true
 
 	var mmi := MultiMeshInstance3D.new()
@@ -2417,7 +2506,551 @@ static func _scatter_grass(
 	mmi.visibility_range_end = 288.0
 	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	zone_root.add_child(mmi)
+	var _gs_dt_done := int(Time.get_ticks_usec() - _gs_t0)
+	_grass_scatter_calls += 1
+	_grass_scatter_total_us += _gs_dt_done
+	_grass_scatter_max_us = maxi(_grass_scatter_max_us, _gs_dt_done)
 	return true
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  PHASE 2 — ASYNC GRASS SCATTER (WorkerThreadPool)
+#
+#  Splits the per-cell compute off the main thread. Main thread:
+#    1. Ensures height + rejection grids for the target zone.
+#    2. Snapshots the grid data into a per-task Dictionary.
+#    3. Schedules _bg_compute_grass_transforms on WorkerThreadPool.
+#    4. On subsequent frames, polls _grass_bg_state — when "ready", applies
+#       the precomputed Array[Transform3D] to a MultiMeshInstance3D and adds
+#       the instance to zone_root.
+#
+#  Thread safety:
+#    - Grid snapshots are deep-copied PackedFloat32Array / PackedByteArray.
+#    - wg.is_in_river_channel / wg.get_beach_factor read read-only world-gen
+#      state (FastNoiseLite, _creek_bed dict, _ws_accum). FastNoiseLite
+#      reads are documented as thread-safe; the dicts/arrays are populated
+#      once during world init and never mutated afterwards.
+#    - _grass_bg_state / _grass_bg_mutex protect cross-thread handoff.
+# ═════════════════════════════════════════════════════════════════════════════
+
+## Main-thread schedule-and-apply. Returns true when the scatter is fully
+## done (either applied or empty), false if still pending on a worker thread.
+static func _scatter_grass_async(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	_rng: RandomNumberGenerator,
+	height_func: Callable,
+) -> bool:
+	if not _grass_mat or not _billboard_quad_mesh:
+		return true
+	if biome != &"hearthlands":
+		return true
+
+	_grass_bg_mutex.lock()
+	var state: Dictionary = _grass_bg_state.get(coord, {})
+	_grass_bg_mutex.unlock()
+
+	if state.is_empty():
+		_ensure_height_grid(coord, height_func)
+		_ensure_rejection_grid(coord, coord.x * ZONE_SIZE, coord.y * ZONE_SIZE)
+		var snap := _snapshot_grass_inputs(coord)
+		_grass_bg_mutex.lock()
+		_grass_bg_state[coord] = {"status": "pending"}
+		_grass_bg_mutex.unlock()
+		WorkerThreadPool.add_task(Callable(ZonePopulator, &"_bg_compute_grass_transforms").bind(coord, snap))
+		return false
+
+	var status: String = state.get("status", "pending") as String
+	if status == "pending":
+		return false
+	if status == "done":
+		return true
+
+	# status == "ready" — apply on main thread.
+	var transforms: Array = state.get("transforms", []) as Array
+	var tested: int = state.get("tested", 0) as int
+	var placed: int = state.get("placed", 0) as int
+	var rej: Dictionary = state.get("rej", {}) as Dictionary
+	_grass_bg_mutex.lock()
+	_grass_bg_state[coord] = {"status": "done"}
+	_grass_bg_mutex.unlock()
+
+	# Merge stats from the worker into the coverage counters.
+	_cov_grass_tested += tested
+	_cov_grass_placed += placed
+	_cov_grass_rej_rg += int(rej.get("rg", 0))
+	_cov_grass_rej_struct += int(rej.get("struct", 0))
+	_cov_grass_rej_river += int(rej.get("river", 0))
+	_cov_grass_rej_density += int(rej.get("density", 0))
+	_cov_grass_rej_density_noise += int(rej.get("density_noise", 0))
+	_cov_grass_rej_density_path += int(rej.get("density_path", 0))
+	_cov_grass_rej_height += int(rej.get("height", 0))
+	_cov_grass_rej_slope += int(rej.get("slope", 0))
+	_cov_grass_rej_altitude += int(rej.get("altitude", 0))
+	_cov_grass_rej_beach += int(rej.get("beach", 0))
+
+	if transforms.is_empty():
+		return true
+	if not is_instance_valid(zone_root) or not zone_root.is_inside_tree():
+		return true
+
+	var mmi := MultiMeshInstance3D.new()
+	var mm := MultiMesh.new()
+	mm.mesh = _billboard_quad_mesh
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	mm.instance_count = transforms.size()
+	mmi.multimesh = mm
+	for tidx in transforms.size():
+		mm.set_instance_transform(tidx, transforms[tidx])
+	mmi.name = "GrassClump"
+	mmi.material_override = _grass_mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.visibility_range_end = 288.0
+	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+	zone_root.add_child(mmi)
+	return true
+
+
+static func _snapshot_grass_inputs(coord: Vector2i) -> Dictionary:
+	# Deep-copy the shared static grids so the worker thread can read them
+	# without racing a subsequent _ensure_height_grid for a different zone.
+	# Phase 5 — Pre-compute the zone's minimum height so the worker thread
+	# can skip get_beach_factor entirely on obviously-inland zones.
+	var min_h: float = INF
+	for hv in _hg_data:
+		if hv < min_h:
+			min_h = hv
+	return {
+		"coord": coord,
+		"hg_data": _hg_data.duplicate(),
+		"hg_origin_x": _hg_origin_x,
+		"hg_origin_z": _hg_origin_z,
+		"hg_step": _hg_step,
+		"hg_full": _HG_FULL,
+		"rg_data": _rg_data.duplicate(),
+		"rg_res": _RG_RES,
+		"rg_cell": _RG_CELL,
+		"origin_shift": origin_shift,
+		"wg": _get_world_generator(),
+		"beach_possible": min_h < _WATER_LEVEL + 5.0,
+	}
+
+
+## Worker-thread entrypoint. All inputs come from `snap` — must not access
+## shared static grid state, must not touch the scene tree, must not emit.
+static func _bg_compute_grass_transforms(coord: Vector2i, snap: Dictionary) -> void:
+	var _t0 := Time.get_ticks_usec()
+	var transforms: Array[Transform3D] = []
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+
+	var hg_data: PackedFloat32Array = snap["hg_data"]
+	var hg_origin_x: float = snap["hg_origin_x"]
+	var hg_origin_z: float = snap["hg_origin_z"]
+	var hg_step: float = snap["hg_step"]
+	var hg_full: int = snap["hg_full"]
+	var w: int = hg_full + 1
+	var rg_data: PackedByteArray = snap["rg_data"]
+	var rg_res: int = snap["rg_res"]
+	var rg_cell: float = snap["rg_cell"]
+	var wg = snap["wg"]
+	var has_river_check: bool = wg != null and wg.has_method(&"is_in_river_channel")
+	var beach_possible: bool = snap.get("beach_possible", true) as bool
+	var has_beach_check: bool = beach_possible and wg != null and wg.has_method(&"get_beach_factor")
+
+	const GRASS_CELL := 0.46
+	var cell_x0 := int(floor(origin_x / GRASS_CELL))
+	var cell_z0 := int(floor(origin_z / GRASS_CELL))
+	var cell_x1 := int(ceil((origin_x + ZONE_SIZE) / GRASS_CELL))
+	var cell_z1 := int(ceil((origin_z + ZONE_SIZE) / GRASS_CELL))
+	var cols: int = cell_x1 - cell_x0
+	var total_cells: int = (cell_z1 - cell_z0) * cols
+
+	var tested := 0
+	var placed := 0
+	var rej_rg := 0
+	var rej_struct := 0
+	var rej_river := 0
+	var rej_density := 0
+	var rej_density_noise := 0
+	var rej_density_path := 0
+	var rej_height := 0
+	var rej_slope := 0
+	var rej_altitude := 0
+	var rej_beach := 0
+
+	# Inline equivalents of _hg_sample / _hg_snap_and_normal so we read the
+	# snapshotted PackedFloat32Array directly (avoids static state).
+	for i in total_cells:
+		var gcz := cell_z0 + i / cols
+		var gcx := cell_x0 + i % cols
+
+		var h1 := _grass_cell_hash(gcx, gcz, 0)
+		var h2 := _grass_cell_hash(gcx, gcz, 1)
+		var h3 := _grass_cell_hash(gcx, gcz, 2)
+		var h4 := _grass_cell_hash(gcx, gcz, 3)
+
+		var wx := (float(gcx) + 0.05 + h1 * 0.9) * GRASS_CELL
+		var wz := (float(gcz) + 0.05 + h2 * 0.9) * GRASS_CELL
+		var lx := wx - origin_x
+		var lz := wz - origin_z
+
+		if lx < 0.0 or lx >= ZONE_SIZE or lz < 0.0 or lz >= ZONE_SIZE:
+			continue
+
+		tested += 1
+
+		var rgx := clampi(int(lx / rg_cell), 0, rg_res - 1)
+		var rgz := clampi(int(lz / rg_cell), 0, rg_res - 1)
+		var rg_flags := rg_data[rgz * rg_res + rgx]
+		if rg_flags & _RG_STRUCTURE != 0:
+			rej_rg += 1
+			rej_struct += 1
+			continue
+
+		if has_river_check and wg.is_in_river_channel(wx, wz):
+			rej_river += 1
+			continue
+
+		var h5 := _grass_cell_hash(gcx, gcz, 4)
+		# Phase 5 — Paths skip the fbm2 density call; a flat 0.55 keep
+		# threshold produces the same visual outcome ~4× faster.
+		var path_thinned := rg_flags & _RG_PATH != 0
+		if path_thinned:
+			if h5 > 0.55:
+				rej_density += 1
+				rej_density_path += 1
+				continue
+		else:
+			var density := _fbm2(wx * 0.04 + 500.0, wz * 0.04 + 300.0)
+			var keep := lerpf(0.94, 1.0, clampf(density * 0.5 + 0.5, 0.0, 1.0))
+			if h5 > keep:
+				rej_density += 1
+				rej_density_noise += 1
+				continue
+
+		# Inline _hg_snap_and_normal against snapshot.
+		const STEP := ZONE_SIZE / 48.0
+		var gx := floorf(wx / STEP) * STEP
+		var gz := floorf(wz / STEP) * STEP
+		var fx := (wx - gx) / STEP
+		var fz := (wz - gz) / STEP
+		var h00 := _bg_hg_sample(gx, gz, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)
+		var h10 := _bg_hg_sample(gx + STEP, gz, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)
+		var h01 := _bg_hg_sample(gx, gz + STEP, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)
+		var h11 := _bg_hg_sample(gx + STEP, gz + STEP, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)
+		var ground_y: float
+		if fx + fz <= 1.0:
+			ground_y = h00 + (h10 - h00) * fx + (h01 - h00) * fz
+		else:
+			ground_y = h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
+		var tx := Vector3(2.0 * STEP, h10 - h00 + h11 - h01, 0.0)
+		var tz := Vector3(0.0, h01 - h00 + h11 - h10, 2.0 * STEP)
+		var ny := tz.cross(tx).normalized().y
+
+		if ground_y < _WATER_LEVEL + 0.35 or ground_y > 120.0:
+			rej_height += 1
+			continue
+		if ny < 0.70:
+			rej_slope += 1
+			continue
+
+		if has_beach_check and wg.get_beach_factor(wx, wz, ground_y) > 0.25:
+			rej_beach += 1
+			continue
+
+		if ground_y > 25.0:
+			var altitude_thin := smoothstep(25.0, 60.0, ground_y)
+			var altitude_keep := lerpf(1.0, 0.30, altitude_thin)
+			if _grass_cell_hash(gcx, gcz, 5) > altitude_keep:
+				rej_altitude += 1
+				continue
+
+		placed += 1
+		var scale_val := 0.4 + h3 * 0.45
+		var rot := h4 * TAU
+		var sx := 2.4 * scale_val
+		var sy := 1.96 * scale_val
+		var sz := 2.4 * scale_val
+		var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+		transforms.append(Transform3D(basis, Vector3(lx, ground_y - 0.04, lz)))
+
+	var elapsed_us := int(Time.get_ticks_usec() - _t0)
+
+	_grass_bg_mutex.lock()
+	_grass_bg_state[coord] = {
+		"status": "ready",
+		"transforms": transforms,
+		"tested": tested,
+		"placed": placed,
+		"rej": {
+			"rg": rej_rg, "struct": rej_struct, "river": rej_river,
+			"density": rej_density, "density_noise": rej_density_noise,
+			"density_path": rej_density_path,
+			"height": rej_height, "slope": rej_slope, "altitude": rej_altitude,
+			"beach": rej_beach,
+		},
+	}
+	_grass_scatter_calls += 1
+	_grass_scatter_total_us += elapsed_us
+	_grass_scatter_max_us = maxi(_grass_scatter_max_us, elapsed_us)
+	_grass_bg_mutex.unlock()
+
+
+static func _bg_hg_sample(
+	wx: float, wz: float,
+	hg_data: PackedFloat32Array,
+	hg_origin_x: float, hg_origin_z: float, hg_step: float,
+	hg_full: int, w: int,
+) -> float:
+	var gx := (wx - hg_origin_x) / hg_step
+	var gz := (wz - hg_origin_z) / hg_step
+	var ix := clampi(int(gx), 0, hg_full - 1)
+	var iz := clampi(int(gz), 0, hg_full - 1)
+	var fx := clampf(gx - float(ix), 0.0, 1.0)
+	var fz := clampf(gz - float(iz), 0.0, 1.0)
+	var h00 := hg_data[iz * w + ix]
+	var h10 := hg_data[iz * w + ix + 1]
+	var h01 := hg_data[(iz + 1) * w + ix]
+	var h11 := hg_data[(iz + 1) * w + ix + 1]
+	if fx + fz <= 1.0:
+		return h00 + (h10 - h00) * fx + (h01 - h00) * fz
+	return h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  PHASE 2 — ASYNC FLOWER SCATTER (WorkerThreadPool)
+#  One worker task per (coord, type_start, type_end) slice. Materials are
+#  pre-created on the main thread (RenderingServer ops) and then applied
+#  alongside the worker-computed transforms once ready.
+# ═════════════════════════════════════════════════════════════════════════════
+
+static func _flower_bg_key(coord: Vector2i, type_start: int, type_end: int) -> String:
+	return "%d_%d_%d_%d" % [coord.x, coord.y, type_start, type_end]
+
+
+static func _scatter_flowers_async(
+	zone_root: Node3D,
+	coord: Vector2i,
+	biome: StringName,
+	_rng: RandomNumberGenerator,
+	height_func: Callable,
+	type_start: int,
+	type_end: int,
+) -> bool:
+	if not _billboard_shader or not _billboard_quad_mesh:
+		return true
+	if biome != &"hearthlands":
+		return true
+
+	var key := _flower_bg_key(coord, type_start, type_end)
+	_flower_bg_mutex.lock()
+	var state: Dictionary = _flower_bg_state.get(key, {})
+	_flower_bg_mutex.unlock()
+
+	if state.is_empty():
+		_ensure_height_grid(coord, height_func)
+		_ensure_rejection_grid(coord, coord.x * ZONE_SIZE, coord.y * ZONE_SIZE)
+		var flower_types := _get_flower_types()
+		var clamped_end: int = mini(type_end, flower_types.size())
+		# Main-thread-only: create materials (RenderingServer ops) before task.
+		var mats: Array = []
+		var cfgs: Array = []
+		for fi in range(type_start, clamped_end):
+			var cfg: Array = flower_types[fi]
+			cfgs.append(cfg)
+			mats.append(_make_flower_mat(cfg[0], Color(cfg[1], 1.0)))
+		var snap := _snapshot_grass_inputs(coord)
+		snap["cfgs"] = cfgs
+		snap["fi_start"] = type_start
+		_flower_bg_mutex.lock()
+		_flower_bg_state[key] = {"status": "pending", "mats": mats, "cfgs": cfgs}
+		_flower_bg_mutex.unlock()
+		WorkerThreadPool.add_task(Callable(ZonePopulator, &"_bg_compute_flower_transforms").bind(key, snap))
+		return false
+
+	var status: String = state.get("status", "pending") as String
+	if status == "pending":
+		return false
+	if status == "done":
+		return true
+
+	# status == "ready" — apply.
+	var results: Array = state.get("results", []) as Array
+	var mats: Array = state.get("mats", []) as Array
+	var tested: int = state.get("tested", 0) as int
+	var placed: int = state.get("placed", 0) as int
+	_flower_bg_mutex.lock()
+	_flower_bg_state[key] = {"status": "done"}
+	_flower_bg_mutex.unlock()
+
+	_cov_flower_tested += tested
+	_cov_flower_placed += placed
+
+	if not is_instance_valid(zone_root) or not zone_root.is_inside_tree():
+		return true
+
+	for r_idx in results.size():
+		var res: Dictionary = results[r_idx]
+		var transforms: Array = res.get("transforms", []) as Array
+		var fi: int = res.get("fi", 0) as int
+		if transforms.is_empty():
+			continue
+		var mat: ShaderMaterial = mats[r_idx] if r_idx < mats.size() else null
+		var mmi := MultiMeshInstance3D.new()
+		var mm := MultiMesh.new()
+		mm.mesh = _billboard_quad_mesh
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = false
+		mm.instance_count = transforms.size()
+		mmi.multimesh = mm
+		for tidx in transforms.size():
+			mm.set_instance_transform(tidx, transforms[tidx])
+		mmi.name = "Flower_%d" % fi
+		if mat:
+			mmi.material_override = mat
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = 120.0
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+		zone_root.add_child(mmi)
+	return true
+
+
+static func _bg_compute_flower_transforms(key: String, snap: Dictionary) -> void:
+	var coord: Vector2i = snap["coord"]
+	var cfgs: Array = snap["cfgs"]
+	var fi_start: int = snap["fi_start"]
+	var origin_x: float = coord.x * ZONE_SIZE
+	var origin_z: float = coord.y * ZONE_SIZE
+
+	var hg_data: PackedFloat32Array = snap["hg_data"]
+	var hg_origin_x: float = snap["hg_origin_x"]
+	var hg_origin_z: float = snap["hg_origin_z"]
+	var hg_step: float = snap["hg_step"]
+	var hg_full: int = snap["hg_full"]
+	var w: int = hg_full + 1
+	var rg_data: PackedByteArray = snap["rg_data"]
+	var rg_res: int = snap["rg_res"]
+	var rg_cell: float = snap["rg_cell"]
+
+	const FLOWER_CELL := 3.0
+	var fc_x0 := int(floor(origin_x / FLOWER_CELL))
+	var fc_z0 := int(floor(origin_z / FLOWER_CELL))
+	var fc_x1 := int(ceil((origin_x + ZONE_SIZE) / FLOWER_CELL))
+	var fc_z1 := int(ceil((origin_z + ZONE_SIZE) / FLOWER_CELL))
+	var fc_total := (fc_x1 - fc_x0) * (fc_z1 - fc_z0)
+
+	var results: Array = []
+	var tested := 0
+	var placed := 0
+
+	for local_i in cfgs.size():
+		var cfg: Array = cfgs[local_i]
+		var count: int = cfg[2]
+		var scale_min: float = cfg[3]
+		var scale_max: float = cfg[4]
+		var quad_w: float = cfg[5]
+		var quad_h: float = cfg[6]
+		var fi: int = fi_start + local_i
+		var water_only := fi == 3 or fi == 5
+		var accept_thresh := float(count) / float(fc_total) * 2.5
+		var salt_base := 100 + fi * 10
+		var transforms: Array[Transform3D] = []
+
+		for gcz in range(fc_z0, fc_z1):
+			for gcx in range(fc_x0, fc_x1):
+				var h0 := _grass_cell_hash(gcx, gcz, salt_base)
+				if h0 > accept_thresh:
+					continue
+				var h1 := _grass_cell_hash(gcx, gcz, salt_base + 1)
+				var h2 := _grass_cell_hash(gcx, gcz, salt_base + 2)
+				var h3 := _grass_cell_hash(gcx, gcz, salt_base + 3)
+				var h4 := _grass_cell_hash(gcx, gcz, salt_base + 4)
+
+				var wx := (float(gcx) + 0.05 + h1 * 0.9) * FLOWER_CELL
+				var wz := (float(gcz) + 0.05 + h2 * 0.9) * FLOWER_CELL
+				var lx := wx - origin_x
+				var lz := wz - origin_z
+
+				if lx < 0.0 or lx >= ZONE_SIZE or lz < 0.0 or lz >= ZONE_SIZE:
+					continue
+
+				tested += 1
+
+				var rgx := clampi(int(lx / rg_cell), 0, rg_res - 1)
+				var rgz := clampi(int(lz / rg_cell), 0, rg_res - 1)
+				if rg_data[rgz * rg_res + rgx] & (_RG_DENSITY_LOW | _RG_PATH | _RG_STRUCTURE) != 0:
+					continue
+
+				var density := _vegetation_density_noise(wx, wz)
+				if density < 0.22:
+					continue
+
+				const STEP := ZONE_SIZE / 48.0
+				var gx := floorf(wx / STEP) * STEP
+				var gz := floorf(wz / STEP) * STEP
+				var fx := (wx - gx) / STEP
+				var fz := (wz - gz) / STEP
+				var h00 := _bg_hg_sample(gx, gz, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)
+				var h10 := _bg_hg_sample(gx + STEP, gz, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)
+				var h01 := _bg_hg_sample(gx, gz + STEP, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)
+				var h11 := _bg_hg_sample(gx + STEP, gz + STEP, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)
+				var ground_y: float
+				if fx + fz <= 1.0:
+					ground_y = h00 + (h10 - h00) * fx + (h01 - h00) * fz
+				else:
+					ground_y = h11 + (h01 - h11) * (1.0 - fx) + (h10 - h11) * (1.0 - fz)
+				var tx := Vector3(2.0 * STEP, h10 - h00 + h11 - h01, 0.0)
+				var tz := Vector3(0.0, h01 - h00 + h11 - h10, 2.0 * STEP)
+				var ny := tz.cross(tx).normalized().y
+
+				if ground_y < _MIN_LAND_Y or ground_y > 22.0:
+					continue
+				if ny < 0.95:
+					continue
+				if absf(ground_y - _bg_hg_sample(wx + 2.0, wz, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)) > 1.5 \
+						or absf(ground_y - _bg_hg_sample(wx - 2.0, wz, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)) > 1.5 \
+						or absf(ground_y - _bg_hg_sample(wx, wz + 2.0, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)) > 1.5 \
+						or absf(ground_y - _bg_hg_sample(wx, wz - 2.0, hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w)) > 1.5:
+					continue
+				if water_only:
+					if ground_y > _WATER_LEVEL + 3.0:
+						continue
+					var near_water := false
+					for probe_r in [2.0, 4.0, 6.0]:
+						for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1),
+								Vector2(0.707, 0.707), Vector2(-0.707, 0.707),
+								Vector2(0.707, -0.707), Vector2(-0.707, -0.707)]:
+							if _bg_hg_sample(wx + d.x * probe_r, wz + d.y * probe_r,
+									hg_data, hg_origin_x, hg_origin_z, hg_step, hg_full, w) < _WATER_LEVEL + 0.1:
+								near_water = true
+								break
+						if near_water:
+							break
+					if not near_water:
+						continue
+
+				placed += 1
+				var scale_val := scale_min + h3 * (scale_max - scale_min)
+				var rot := h4 * TAU
+				var sx := quad_w * scale_val
+				var sy := quad_h * scale_val
+				var sz := quad_w * scale_val
+				var basis := Basis(Vector3.UP, rot).scaled(Vector3(sx, sy, sz))
+				transforms.append(Transform3D(basis, Vector3(lx, ground_y, lz)))
+
+		results.append({"fi": fi, "transforms": transforms})
+
+	_flower_bg_mutex.lock()
+	var prev: Dictionary = _flower_bg_state.get(key, {})
+	prev["status"] = "ready"
+	prev["results"] = results
+	prev["tested"] = tested
+	prev["placed"] = placed
+	_flower_bg_state[key] = prev
+	_flower_bg_mutex.unlock()
 
 
 static func _is_near_structure(wx: float, wz: float, min_dist_sq: float = 4.0, cached_structures: Array = []) -> bool:
@@ -3653,9 +4286,15 @@ static var _creature_yaw_offsets: Dictionary = {
 
 
 static func _create_enemy(biome: StringName, rng: RandomNumberGenerator = null, forced_kind: StringName = &"") -> CharacterBody3D:
+	var kind := forced_kind if forced_kind != &"" else _pick_creature_kind(biome, rng)
+	# Phase 3a — try to reuse a pooled creature of the same kind before
+	# paying the physics body + model-scene creation cost.
+	var pooled: CharacterBody3D = _ZonePool.get_creature_node(kind)
+	if pooled and pooled.has_method(&"reset_for_pool"):
+		pooled.reset_for_pool()
+		return pooled
 	var creature: CharacterBody3D = _CreatureAI.new()
 
-	var kind := forced_kind if forced_kind != &"" else _pick_creature_kind(biome, rng)
 	var stats := _creature_stats(kind)
 
 	# Roll creature star level (1-5 stars, weighted by rarity)

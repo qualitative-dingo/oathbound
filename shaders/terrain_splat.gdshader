@@ -27,19 +27,21 @@ uniform float rock_scale   : hint_range(0.02, 2.0) = 0.18;
 uniform float sand_scale   : hint_range(0.02, 4.0) = 1.20;
 
 group_uniforms tint;
-uniform vec3 grass_tint : source_color = vec3(0.82, 0.92, 0.70);
-uniform vec3 dirt_tint  : source_color = vec3(0.90, 0.82, 0.68);
-uniform vec3 rock_tint  : source_color = vec3(0.90, 0.90, 0.90);
-uniform vec3 sand_tint  : source_color = vec3(1.00, 0.96, 0.82);
+uniform vec3 grass_tint : source_color = vec3(0.42, 0.72, 0.34);
+uniform vec3 grass_detail_tint : source_color = vec3(0.36, 0.58, 0.28);
+uniform vec3 dirt_tint  : source_color = vec3(0.78, 0.64, 0.42);
+uniform vec3 rock_tint  : source_color = vec3(0.82, 0.82, 0.82);
+uniform vec3 sand_tint  : source_color = vec3(1.00, 0.94, 0.78);
 uniform vec3 path_tint  : source_color = vec3(0.38, 0.28, 0.18);
 uniform vec3 bank_tint  : source_color = vec3(0.42, 0.32, 0.22);
 
 group_uniforms blending;
-uniform float slope_midpoint : hint_range(0.0, 1.0) = 0.35;
-uniform float slope_softness : hint_range(0.01, 0.8) = 0.30;
-uniform float rock_altitude  : hint_range(0.0, 80.0) = 18.0;
-uniform float rock_altitude_softness : hint_range(1.0, 40.0) = 14.0;
-uniform float detail_mix     : hint_range(0.0, 1.0) = 0.55;
+uniform float slope_midpoint : hint_range(0.0, 1.0) = 0.48;
+uniform float slope_softness : hint_range(0.01, 0.8) = 0.22;
+uniform float rock_altitude  : hint_range(0.0, 80.0) = 22.0;
+uniform float rock_altitude_softness : hint_range(1.0, 40.0) = 18.0;
+uniform float detail_mix     : hint_range(0.0, 1.0) = 0.35;
+uniform float dirt_band_strength : hint_range(0.0, 1.0) = 0.30;
 uniform float rock_bump_strength : hint_range(0.0, 4.0) = 1.6;
 
 group_uniforms roughness;
@@ -153,9 +155,14 @@ void fragment() {
 
 	// ── Sample all four terrain textures ──────────────────────────────────
 	vec3 grass_a = triplanar(tex_grass,        wpos, blend, grass_scale)  * grass_tint;
-	vec3 grass_b = triplanar(tex_grass_detail, wpos, blend, detail_scale) * grass_tint;
+	vec3 grass_b = triplanar(tex_grass_detail, wpos, blend, detail_scale) * grass_detail_tint;
 	float grass_noise = fbm2(wpos.xz * 0.05 + vec2(910.0, 430.0));
-	vec3 grass_col = mix(grass_a, grass_b, smoothstep(0.35, 0.65, grass_noise) * detail_mix);
+	vec3 grass_col = mix(grass_a, grass_b, smoothstep(0.40, 0.70, grass_noise) * detail_mix);
+
+	// Large-scale grass hue variation — meadow greens shouldn't be one color
+	float meadow_n = fbm2(wpos.xz * 0.008 + vec2(2100.0, 1700.0));
+	vec3 meadow_shift = vec3(-0.05, 0.05, -0.03) * (meadow_n - 0.5) * 2.0;
+	grass_col = clamp(grass_col + meadow_shift, vec3(0.0), vec3(1.0));
 
 	vec3 dirt_col = triplanar(tex_dirt, wpos, blend, dirt_scale) * dirt_tint;
 	vec3 rock_col = triplanar(tex_rock, wpos, blend, rock_scale) * rock_tint;
@@ -174,7 +181,7 @@ void fragment() {
 
 	// ── Combine grass + dirt edge + rock ──────────────────────────────────
 	vec3 albedo = mix(grass_col, rock_col, rock_w);
-	albedo = mix(albedo, dirt_col, dirt_w * 0.55);
+	albedo = mix(albedo, dirt_col, dirt_w * dirt_band_strength);
 
 	// ── Path (baked into COLOR.r) ─────────────────────────────────────────
 	float path_perturb = (vnoise(wpos.xz * 0.35 + vec2(777.0, 333.0)) - 0.5) * 0.25;

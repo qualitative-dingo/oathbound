@@ -526,6 +526,28 @@ var _perf_max_unload_ms := 0.0
 var _perf_max_explore_ms := 0.0
 var _perf_max_total_ms := 0.0
 var _perf_pending_size_max := 0
+
+# ─── Phase 0 — Stutter diagnostics ───
+# Gated by _PERF_VERBOSE so we can silence the flood once the pipeline is stable.
+# _SLOW_FRAME_MS = threshold for printing [SLOW FRAME]/[FINALIZE] warnings.
+const _PERF_VERBOSE := true
+const _SLOW_FRAME_MS := 10.0
+const _SLOW_FINALIZE_MS := 8.0
+# Per-subphase worst-case within a single _process_pending_zones call in the
+# current 5s diag window. Reset alongside the other _perf_max_* counters.
+var _perf_max_pp_collision_ms := 0.0
+var _perf_max_pp_rebuild_ms := 0.0
+var _perf_max_pp_ready_ms := 0.0
+var _perf_max_pp_populate_ms := 0.0
+var _perf_max_pp_finalize_ms := 0.0
+var _perf_max_pp_submit_ms := 0.0
+# Collision toggle burst counters (cleared each diag window).
+var _perf_collision_enables_window := 0
+var _perf_collision_disables_window := 0
+var _perf_collision_max_enables_per_frame := 0
+# Finalize stage timings captured for the slowest single finalize in the window.
+var _perf_slow_finalize_total_ms := 0.0
+var _perf_slow_finalize_info := ""
 var _last_player_zones: Array[Vector2i] = []  # throttle _queue_zones_around
 var _unload_timer := 0.0
 var _requeue_timer := 0.0  # periodic re-queue to fill gaps from cap-limited passes
@@ -568,6 +590,14 @@ func _process(_delta: float) -> void:
 		_perf_max_total_ms, _perf_max_queue_ms, _perf_max_pending_ms,
 		_perf_max_unload_ms, _perf_max_explore_ms, _perf_pending_size_max,
 		origin_shift.x, origin_shift.z, displaced])
+	if _PERF_VERBOSE:
+		print("[PERF PP] collision=%.2fms rebuild=%.2fms ready=%.2fms populate=%.2fms finalize=%.2fms submit=%.2fms  cols(en=%d dis=%d peak_en/frame=%d)" % [
+			_perf_max_pp_collision_ms, _perf_max_pp_rebuild_ms, _perf_max_pp_ready_ms,
+			_perf_max_pp_populate_ms, _perf_max_pp_finalize_ms, _perf_max_pp_submit_ms,
+			_perf_collision_enables_window, _perf_collision_disables_window,
+			_perf_collision_max_enables_per_frame])
+		if _perf_slow_finalize_total_ms > 0.0:
+			print("[FINALIZE SLOW] total=%.2fms %s" % [_perf_slow_finalize_total_ms, _perf_slow_finalize_info])
 	# Vegetation debug: count flower MMIs and instances per zone
 	var veg_snap := _vegetation_perf_snapshot()
 	var cov := _ZonePopulator.get_coverage_stats()
@@ -580,6 +610,10 @@ func _process(_delta: float) -> void:
 			cov["rej_rg"], cov["rej_struct"], cov["rej_river"],
 			cov["rej_density"], cov.get("rej_density_noise", 0), cov.get("rej_density_path", 0),
 			cov["rej_height"], cov["rej_slope"], cov["rej_altitude"], cov.get("rej_beach", 0)])
+	if _PERF_VERBOSE and cov.get("scatter_calls", 0) > 0:
+		print("[GRASS TIME] calls=%d total=%.2fms max=%.2fms budget_hits=%d" % [
+			cov.get("scatter_calls", 0), cov.get("scatter_total_ms", 0.0),
+			cov.get("scatter_max_ms", 0.0), cov.get("scatter_budget_hits", 0)])
 	_ZonePopulator.reset_coverage_stats()
 	_perf_max_queue_ms = 0.0
 	_perf_max_pending_ms = 0.0
@@ -587,6 +621,17 @@ func _process(_delta: float) -> void:
 	_perf_max_explore_ms = 0.0
 	_perf_max_total_ms = 0.0
 	_perf_pending_size_max = 0
+	_perf_max_pp_collision_ms = 0.0
+	_perf_max_pp_rebuild_ms = 0.0
+	_perf_max_pp_ready_ms = 0.0
+	_perf_max_pp_populate_ms = 0.0
+	_perf_max_pp_finalize_ms = 0.0
+	_perf_max_pp_submit_ms = 0.0
+	_perf_collision_enables_window = 0
+	_perf_collision_disables_window = 0
+	_perf_collision_max_enables_per_frame = 0
+	_perf_slow_finalize_total_ms = 0.0
+	_perf_slow_finalize_info = ""
 
 
 func _vegetation_perf_snapshot() -> Dictionary:
@@ -2863,6 +2908,11 @@ func _queue_zones_around(center: Vector2i, radius: int = -1) -> void:
 
 var _finalize_backlog: Array = []   # zones ready for mesh setup
 var _populate_backlog: Array = []   # zones with mesh ready, waiting for object spawning
+# Phase 1a — after stage A (mesh+collision) finishes we enqueue stage B (creek meshes)
+# and stage C (mountain pool) here so they can run on later frames when the
+# 5ms / 8ms pending budget still has headroom. Each entry:
+#   { "coord": Vector2i, "zone_root": StaticBody3D, "stage": int (1=creek, 2=pool) }
+var _finalize_stage_backlog: Array = []
 var _deferred_collisions: Array = []  # collision shapes to enable next frame (untyped to handle freed instances)
 var _deferred_disable_collisions: Array = []  # collision shapes to disable next frame (untyped to handle freed)
 
@@ -2875,7 +2925,10 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 
 
 const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
-const _INIT_POPULATE_BUDGET_US := 8000  # boosted budget during init backlog drain
+# Phase 1b: lowered from 8ms → 5ms. At 60 FPS the total frame budget is 16.6ms
+# and we need most of that for render + physics. The previous 8ms figure was
+# routinely blown anyway because single finalize / populate phases ignored it.
+const _INIT_POPULATE_BUDGET_US := 5000  # boosted budget during init backlog drain
 const _MAX_COLLISION_ENABLES_PER_FRAME := 3
 const _MAX_COLLISION_DISABLES_PER_FRAME := 2
 
@@ -2895,7 +2948,7 @@ func _process_pending_zones() -> void:
 	# (grass/flowers/bushes for all 9 spawn zones done). Combined with gen_in_flight
 	# == 0 this tells us when the world is fully "settled" after spawn.
 	if not _init_backlog_drained_logged and GameEvents.launch_ts_us > 0:
-		if _populate_backlog.is_empty() and _gen_in_flight.is_empty() and _finalize_backlog.is_empty():
+		if _populate_backlog.is_empty() and _gen_in_flight.is_empty() and _finalize_backlog.is_empty() and _finalize_stage_backlog.is_empty():
 			_init_backlog_drained_logged = true
 			print("[LAUNCH→BACKLOG_DRAINED] since_launch=%.1fms  <<< async spawn-area populate complete" % GameEvents.launch_elapsed_ms())
 
@@ -2906,8 +2959,21 @@ func _process_pending_zones() -> void:
 			continue
 		player_zones.append(world_to_zone(get_world_position(p)))
 
-	# 0a. Guarantee: TerrainCol is ALWAYS enabled in the 3x3 grid around every player.
-	# This runs unconditionally every frame — no queue dependency.
+	var _tp_sub := Time.get_ticks_usec()
+	var _frame_enables := 0
+	var _frame_disables := 0
+	# Phase 1b — total collision enables per frame (including the 3x3 "always-on"
+	# guarantee, the fast-path near-player pass, and the ordinary queue drain).
+	# Previously the 3x3 guarantee could enable up to 9 shapes on a single
+	# origin-shift or zone-crossing frame, bypassing the cap and producing
+	# 30–60 ms physics spikes. Now everything shares _MAX_COLLISION_ENABLES_PER_FRAME.
+	# The 3x3 guarantee still wins priority — anything that overflows the cap
+	# lands in _deferred_collisions and is processed over the next frames, with
+	# player-adjacent shapes in the fast-path pass below.
+	var _enable_cap: int = _MAX_COLLISION_ENABLES_PER_FRAME
+
+	# 0a. Priority: TerrainCol in the 3x3 grid around every player. Still mandatory
+	# for physics, but capped per-frame so a crossing-zone burst does not stall.
 	for pz in player_zones:
 		for dx in range(-1, 2):
 			for dz in range(-1, 2):
@@ -2916,9 +2982,18 @@ func _process_pending_zones() -> void:
 				if not zone_node:
 					continue
 				var tc = zone_node.get_node_or_null("TerrainCol")
-				if tc and tc.disabled:
+				if not tc or not tc.disabled:
+					continue
+				if _frame_enables < _enable_cap:
 					tc.disabled = false
 					_deferred_collisions.erase(tc)
+					_deferred_disable_collisions.erase(tc)
+					_frame_enables += 1
+				else:
+					# Over cap this frame — push to front of queue so it wins
+					# priority on the next frame via the near-player fast-path.
+					if not _deferred_collisions.has(tc):
+						_deferred_collisions.push_front(tc)
 					_deferred_disable_collisions.erase(tc)
 
 	# 0b. Fast-path: enable queued collision shapes near any player (capped)
@@ -2932,10 +3007,14 @@ func _process_pending_zones() -> void:
 			if not parent:
 				remaining.append(col_shape)
 				continue
+			if _frame_enables >= _enable_cap:
+				remaining.append(col_shape)
+				continue
 			if not parent.has_meta(&"zone_coord"):
 				if near_enabled < 4:
 					col_shape.disabled = false
 					near_enabled += 1
+					_frame_enables += 1
 				else:
 					remaining.append(col_shape)
 				continue
@@ -2948,17 +3027,17 @@ func _process_pending_zones() -> void:
 			if near_player and near_enabled < 4:
 				col_shape.disabled = false
 				near_enabled += 1
+				_frame_enables += 1
 			else:
 				remaining.append(col_shape)
 		_deferred_collisions = remaining
 
-	# 0c. Process remaining collision shape toggles under budget
-	var enables_this_frame := 0
-	while not _deferred_collisions.is_empty() and enables_this_frame < _MAX_COLLISION_ENABLES_PER_FRAME:
+	# 0c. Process remaining collision shape toggles under total cap
+	while not _deferred_collisions.is_empty() and _frame_enables < _enable_cap:
 		var col_shape = _deferred_collisions.pop_front()
 		if is_instance_valid(col_shape):
 			col_shape.disabled = false
-			enables_this_frame += 1
+			_frame_enables += 1
 
 	# 0d. Process deferred disables — skip any that are near a player
 	var disables_this_frame := 0
@@ -2980,12 +3059,28 @@ func _process_pending_zones() -> void:
 		if disables_this_frame < _MAX_COLLISION_DISABLES_PER_FRAME:
 			col_shape.disabled = true
 			disables_this_frame += 1
+			_frame_disables += 1
 		else:
 			disable_remaining.append(col_shape)
 	_deferred_disable_collisions = disable_remaining
+	var _tp_collision := Time.get_ticks_usec()
+	_perf_collision_enables_window += _frame_enables
+	_perf_collision_disables_window += _frame_disables
+	_perf_collision_max_enables_per_frame = maxi(_perf_collision_max_enables_per_frame, _frame_enables)
+	var _ms_collision := float(_tp_collision - _tp_sub) / 1000.0
+	_perf_max_pp_collision_ms = maxf(_perf_max_pp_collision_ms, _ms_collision)
+	if _PERF_VERBOSE and _ms_collision > _SLOW_FRAME_MS:
+		print("[SLOW FRAME] pp.collision=%.2fms (enables=%d disables=%d remaining_en=%d remaining_dis=%d)" % [
+			_ms_collision, _frame_enables, _frame_disables,
+			_deferred_collisions.size(), _deferred_disable_collisions.size()])
 
 	# 0.5. Apply completed terrain rebuilds (from terraform / hoe)
 	_apply_rebuild_results()
+	var _tp_rebuild := Time.get_ticks_usec()
+	var _ms_rebuild := float(_tp_rebuild - _tp_collision) / 1000.0
+	_perf_max_pp_rebuild_ms = maxf(_perf_max_pp_rebuild_ms, _ms_rebuild)
+	if _PERF_VERBOSE and _ms_rebuild > _SLOW_FRAME_MS:
+		print("[SLOW FRAME] pp.rebuild=%.2fms" % [_ms_rebuild])
 
 	# 0.6. Water physics simulation — disabled until propagation is tuned
 	#_simulate_water()
@@ -3019,6 +3114,11 @@ func _process_pending_zones() -> void:
 		ready_count += 1
 
 	_evict_terrain_cache()
+	var _tp_ready := Time.get_ticks_usec()
+	var _ms_ready := float(_tp_ready - _tp_rebuild) / 1000.0
+	_perf_max_pp_ready_ms = maxf(_perf_max_pp_ready_ms, _ms_ready)
+	if _PERF_VERBOSE and _ms_ready > _SLOW_FRAME_MS:
+		print("[SLOW FRAME] pp.ready=%.2fms (drained=%d)" % [_ms_ready, ready_count])
 
 	# 2. Populate zone objects — budget-checked before EVERY phase so no single phase blows the frame
 	#    Sort by distance to closest player so nearby zones fill in first
@@ -3040,7 +3140,13 @@ func _process_pending_zones() -> void:
 		var phase: int = pitem.get("phase", 0)
 		var biome: StringName = pitem["biome"]
 		var micro: StringName = pitem["micro"]
+		var _phase_t0 := Time.get_ticks_usec() if _PERF_VERBOSE else 0
 		var result := _ZonePopulator.populate_zone_phase(zone_root, pcoord, biome, _seed_hash, get_height_at, micro, phase)
+		if _PERF_VERBOSE:
+			var _phase_ms := float(Time.get_ticks_usec() - _phase_t0) / 1000.0
+			if _phase_ms > _SLOW_FRAME_MS:
+				print("[SLOW FRAME] populate coord=%s phase=%d biome=%s ms=%.2f" % [
+					str(pcoord), phase, str(biome), _phase_ms])
 		if result == 2:
 			_populate_backlog.pop_front()
 			var min_dist := 999.0
@@ -3049,33 +3155,57 @@ func _process_pending_zones() -> void:
 				var d := float((pcoord - pz).length())
 				if d < min_dist:
 					min_dist = d
+			# Phase 3b — batch-disable all newly-created prop collision shapes
+			# so they are enabled over subsequent frames via the _MAX_COLLISION_ENABLES_PER_FRAME
+			# cap instead of spiking physics cooking on the populate-complete frame.
+			_batch_defer_zone_prop_collisions(zone_root)
 			_update_zone_lod(zone_root, min_dist)
 			zone_loaded.emit(pcoord)
 			continue
 		if result == 1:
 			pitem["phase"] = phase + 1
+	var _tp_populate := Time.get_ticks_usec()
+	var _ms_populate := float(_tp_populate - _tp_ready) / 1000.0
+	_perf_max_pp_populate_ms = maxf(_perf_max_pp_populate_ms, _ms_populate)
+	if _PERF_VERBOSE and _ms_populate > _SLOW_FRAME_MS:
+		print("[SLOW FRAME] pp.populate=%.2fms backlog=%d" % [_ms_populate, _populate_backlog.size()])
 
-	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
+	# 3. Finalize zone meshes — budget-checked BEFORE EVERY finalize (Phase 1b).
+	# The old code only checked after the first finalize, so a single heavy
+	# finalize could arrive on top of an already-over-budget populate phase and
+	# push the frame past 100 ms. Now if we're already out of budget we simply
+	# skip finalizing this frame — the backlog carries over.
 	var max_finalize := 2
 	var finalized := 0
-	if Time.get_ticks_usec() - t_start < budget_us:
-		while not _finalize_backlog.is_empty() and finalized < max_finalize:
-			if finalized > 0 and Time.get_ticks_usec() - t_start > budget_us:
-				break
-			var item: Dictionary = _finalize_backlog.pop_front()
-			var coord: Vector2i = item["coord"]
-			if not _is_in_load_range(coord):
-				if coord not in _pending_zones_set and coord not in _loaded_zones:
-					_pending_zones.append(coord)
-					_pending_zones_set[coord] = true
-				continue
-			if coord not in _loaded_zones:
-				_finalize_zone(coord, item["arrays"], item["shape"])
-				finalized += 1
+	while not _finalize_backlog.is_empty() and finalized < max_finalize:
+		if Time.get_ticks_usec() - t_start > budget_us:
+			break
+		var item: Dictionary = _finalize_backlog.pop_front()
+		var coord: Vector2i = item["coord"]
+		if not _is_in_load_range(coord):
+			if coord not in _pending_zones_set and coord not in _loaded_zones:
+				_pending_zones.append(coord)
+				_pending_zones_set[coord] = true
+			continue
+		if coord not in _loaded_zones:
+			_finalize_zone(coord, item["arrays"], item["shape"])
+			finalized += 1
+	# Phase 1a — drain deferred creek/pool stages from prior finalizes, also
+	# budget-checked so a backlog of heavy biomes cannot stack a single frame.
+	_process_finalize_stages(t_start, budget_us)
+	var _tp_finalize := Time.get_ticks_usec()
+	var _ms_finalize := float(_tp_finalize - _tp_populate) / 1000.0
+	_perf_max_pp_finalize_ms = maxf(_perf_max_pp_finalize_ms, _ms_finalize)
+	if _PERF_VERBOSE and _ms_finalize > _SLOW_FRAME_MS:
+		print("[SLOW FRAME] pp.finalize=%.2fms finalized=%d backlog=%d stage_backlog=%d" % [
+			_ms_finalize, finalized, _finalize_backlog.size(), _finalize_stage_backlog.size()])
 
 	# 4. Submit new zone builds — stop if backlog is already large
 	var max_backlog := 6
 	if _finalize_backlog.size() + _gen_in_flight.size() > max_backlog:
+		if _PERF_VERBOSE:
+			var _ms_submit_skip := float(Time.get_ticks_usec() - _tp_finalize) / 1000.0
+			_perf_max_pp_submit_ms = maxf(_perf_max_pp_submit_ms, _ms_submit_skip)
 		return
 	var zones_this_frame := MAX_ZONES_PER_FRAME
 	var submitted := 0
@@ -3093,6 +3223,11 @@ func _process_pending_zones() -> void:
 		_gen_in_flight[coord] = true
 		WorkerThreadPool.add_task(_bg_build_zone.bind(coord))
 		submitted += 1
+	var _tp_submit := Time.get_ticks_usec()
+	var _ms_submit := float(_tp_submit - _tp_finalize) / 1000.0
+	_perf_max_pp_submit_ms = maxf(_perf_max_pp_submit_ms, _ms_submit)
+	if _PERF_VERBOSE and _ms_submit > _SLOW_FRAME_MS:
+		print("[SLOW FRAME] pp.submit=%.2fms submitted=%d" % [_ms_submit, submitted])
 
 
 func _evict_terrain_cache() -> void:
@@ -3131,6 +3266,31 @@ func _clear_zone_collisions_from_queues(zone_node: Node) -> void:
 			var parent = shape.get_parent()
 			if parent == zone_node or (is_instance_valid(parent.get_parent()) and parent.get_parent() == zone_node):
 				_deferred_disable_collisions.remove_at(i)
+
+
+## Dev-only: unload every zone + drop cached meshes so the next load pass
+## rebuilds terrain with the current shader / mesh-builder code. Useful after
+## tweaking terrain_splat.gdshader or the mesh construction logic.
+func reload_all_zones() -> void:
+	var coords := _loaded_zones.keys()
+	for coord in coords:
+		var zone_node: Node = _loaded_zones[coord]
+		_clear_zone_collisions_from_queues(zone_node)
+		if zone_node is StaticBody3D:
+			_ZonePool.recycle_zone(zone_node as StaticBody3D)
+		else:
+			zone_node.queue_free()
+		_loaded_zones.erase(coord)
+		_zone_biome_cache.erase(coord)
+		_zone_microbiome_cache.erase(coord)
+		_zone_water_cache.erase(coord)
+		_ZonePopulator._grass_cursor_clear(coord)
+		zone_unloaded.emit(coord)
+	_terrain_mesh_cache.clear()
+	_populate_backlog.clear()
+	_finalize_stage_backlog.clear()
+	_init_biome_materials()
+	print("[WorldGenerator] reload_all_zones: cleared %d zones + mesh cache; materials rebuilt" % coords.size())
 
 
 func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = false) -> void:
@@ -3182,6 +3342,9 @@ func _unload_distant_zones(players: Array[Node3D], force_aggressive: bool = fals
 		for i in range(_populate_backlog.size() - 1, -1, -1):
 			if _populate_backlog[i]["coord"] == coord:
 				_populate_backlog.remove_at(i)
+		for i in range(_finalize_stage_backlog.size() - 1, -1, -1):
+			if _finalize_stage_backlog[i]["coord"] == coord:
+				_finalize_stage_backlog.remove_at(i)
 		_ZonePopulator._grass_cursor_clear(coord)
 		unloaded += 1
 		zone_unloaded.emit(coord)
@@ -3224,6 +3387,33 @@ func _update_zone_lods(players: Array[Node3D], _delta: float) -> void:
 		var zone_node: Node3D = _loaded_zones[coord]
 		if is_instance_valid(zone_node):
 			_update_zone_lod(zone_node, min_dist)
+
+
+## Phase 3b — Walk a freshly-populated zone root and disable every prop
+## CollisionShape3D so `_update_zone_lod` will re-enable them through the
+## frame-capped `_deferred_collisions` queue. Without this step, every tree,
+## rock, and bush added during populate registers an active shape with the
+## physics server simultaneously, producing a visible hitch the frame the zone
+## finishes populating. TerrainCol/TerrainMesh are skipped — terrain collision
+## is managed separately by the priority 3x3 guarantee above.
+func _batch_defer_zone_prop_collisions(zone_root: Node3D) -> void:
+	if not is_instance_valid(zone_root):
+		return
+	for child in zone_root.get_children():
+		if not is_instance_valid(child):
+			continue
+		var cname: String = child.name
+		if cname == "TerrainCol" or cname == "TerrainMesh":
+			continue
+		if not (child is StaticBody3D):
+			continue
+		if (child as Node).get_meta("skip_collision_lod", false):
+			continue
+		for sub in child.get_children():
+			if sub is CollisionShape3D:
+				var col := sub as CollisionShape3D
+				if not col.disabled:
+					col.disabled = true
 
 
 func _update_zone_lod(zone_node: Node3D, zone_dist: float) -> void:
@@ -3323,6 +3513,7 @@ func _bg_build_zone(coord: Vector2i) -> void:
 func _finalize_zone(coord: Vector2i, arrays: Array, shape: HeightMapShape3D) -> void:
 	if coord in _loaded_zones:
 		return
+	var _fz_t0 := Time.get_ticks_usec() if _PERF_VERBOSE else 0
 	var biome := _determine_biome(coord)
 	var biome_mat: Material = _biome_materials.get(biome, _biome_materials[&"hearthlands"])
 
@@ -3418,14 +3609,21 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: HeightMapShape3D) -> 
 	if not _was_explored:
 		zone_explored.emit(coord)
 
-	# Build creek/river strip meshes for this zone
-	_build_creek_meshes_for_zone(zone_root, coord)
-
-	# Build mountain-top lake water surfaces
-	_build_mountain_pool_for_zone(zone_root, coord)
+	var _fz_t_mesh := Time.get_ticks_usec() if _PERF_VERBOSE else 0
 
 	# Water physics mesh — disabled until propagation is properly tuned
 	#_build_water_mesh_for_zone(zone_root, coord)
+
+	# Phase 1a: Stage B (creek meshes) and Stage C (mountain pool) are now
+	# deferred into _finalize_stage_backlog and processed by
+	# _process_finalize_stages() with its own budget check. This keeps the
+	# main-thread cost of stage A (mesh+collision+add_child) low enough to
+	# stay under the 5ms pending budget even during heavy zone loading.
+	_finalize_stage_backlog.append({
+		"coord": coord,
+		"zone_root": zone_root,
+		"stage": 1,
+	})
 
 	# Queue object spawning for the NEXT frame to keep this frame light
 	var micro := _determine_microbiome(coord)
@@ -3439,6 +3637,55 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: HeightMapShape3D) -> 
 		"biome": biome,
 		"micro": micro,
 	})
+
+	if _PERF_VERBOSE:
+		var _fz_total_ms := float(Time.get_ticks_usec() - _fz_t0) / 1000.0
+		if _fz_total_ms > _SLOW_FINALIZE_MS:
+			var _fz_mesh_ms := float(_fz_t_mesh - _fz_t0) / 1000.0
+			var info := "coord=%s biome=%s mesh+col=%.2fms (stageA only)" % [
+				str(coord), str(biome), _fz_mesh_ms]
+			print("[FINALIZE] total=%.2fms %s" % [_fz_total_ms, info])
+			if _fz_total_ms > _perf_slow_finalize_total_ms:
+				_perf_slow_finalize_total_ms = _fz_total_ms
+				_perf_slow_finalize_info = info
+
+
+## Phase 1a — Drains the deferred creek/pool build backlog a little each frame.
+## Each stage is budget-checked individually so we can split A→B→C across
+## multiple frames when heavy zones arrive in bursts.
+func _process_finalize_stages(t_start: int, budget_us: int) -> void:
+	if _finalize_stage_backlog.is_empty():
+		return
+	var i := 0
+	while i < _finalize_stage_backlog.size():
+		if Time.get_ticks_usec() - t_start > budget_us:
+			return
+		var item: Dictionary = _finalize_stage_backlog[i]
+		var coord: Vector2i = item["coord"]
+		var zone_root = item["zone_root"]
+		if not is_instance_valid(zone_root) or zone_root != _loaded_zones.get(coord):
+			_finalize_stage_backlog.remove_at(i)
+			continue
+		var stage: int = item["stage"]
+		var _sb_t0 := Time.get_ticks_usec() if _PERF_VERBOSE else 0
+		if stage == 1:
+			_build_creek_meshes_for_zone(zone_root, coord)
+			item["stage"] = 2
+		elif stage == 2:
+			_build_mountain_pool_for_zone(zone_root, coord)
+			_finalize_stage_backlog.remove_at(i)
+			if _PERF_VERBOSE:
+				var _sb_ms := float(Time.get_ticks_usec() - _sb_t0) / 1000.0
+				if _sb_ms > _SLOW_FRAME_MS:
+					print("[SLOW FRAME] finalize.stageC coord=%s ms=%.2f" % [str(coord), _sb_ms])
+			continue
+		else:
+			_finalize_stage_backlog.remove_at(i)
+			continue
+		if _PERF_VERBOSE:
+			var _sb_ms2 := float(Time.get_ticks_usec() - _sb_t0) / 1000.0
+			if _sb_ms2 > _SLOW_FRAME_MS:
+				print("[SLOW FRAME] finalize.stageB coord=%s ms=%.2f" % [str(coord), _sb_ms2])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

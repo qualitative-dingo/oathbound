@@ -425,6 +425,7 @@ var _minimap_biome_label: Label
 var _minimap_weather_label: Label
 var _minimap_time_label: Label
 var _minimap_refresh_timer := 0.0
+var _minimap_time_refresh_timer := 0.0
 var _minimap_needs_refresh := true
 var _minimap_paused := false
 var _minimap_outer: Control
@@ -1321,6 +1322,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if ke.physical_keycode == KEY_F4 and not ke.alt_pressed and not ke.meta_pressed:
 			_toggle_terrain_diag()
+			get_viewport().set_input_as_handled()
+			return
+		if ke.physical_keycode == KEY_F6:
+			var wg := _find_world_generator()
+			if wg and wg.has_method("reload_all_zones"):
+				wg.call("reload_all_zones")
 			get_viewport().set_input_as_handled()
 			return
 
@@ -4311,10 +4318,16 @@ func _build_world_map() -> void:
 
 func _on_world_map_opened() -> void:
 	_map_open = true
+	# Phase 4 — Pause the circular minimap while the full-screen world map is
+	# open.  The two overlays would otherwise compete for ImageTexture.update()
+	# slots every frame, producing noticeable scroll-hitching.
+	_minimap_paused = true
 
 
 func _on_world_map_closed() -> void:
 	_map_open = false
+	_minimap_paused = false
+	_minimap_needs_refresh = true
 
 
 func _build_death_overlay(root: Control) -> void:
@@ -5876,13 +5889,18 @@ func _refresh_minimap() -> void:
 	if _minimap_biome_label:
 		var current_biome: StringName = wg.get_biome_at(player_pos)
 		_minimap_biome_label.text = _biome_display_name(current_biome)
-	if _minimap_time_label:
-		var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree().current_scene else null
-		if dnc and dnc.has_method("get_time_string"):
-			_minimap_time_label.text = dnc.get_time_string()
-		else:
-			var dict := Time.get_time_dict_from_system()
-			_minimap_time_label.text = "%02d:%02d" % [dict["hour"], dict["minute"]]
+	_refresh_minimap_time_label()
+
+
+func _refresh_minimap_time_label() -> void:
+	if not _minimap_time_label:
+		return
+	var dnc := get_tree().current_scene.get_node_or_null("DayNightCycle") if get_tree() and get_tree().current_scene else null
+	if dnc and dnc.has_method("get_time_string"):
+		_minimap_time_label.text = dnc.get_time_string()
+	else:
+		var dict := Time.get_time_dict_from_system()
+		_minimap_time_label.text = "%02d:%02d" % [dict["hour"], dict["minute"]]
 
 
 func _build_hotbar(root: Control) -> void:
@@ -9698,6 +9716,12 @@ func _process(delta: float) -> void:
 		if _minimap_needs_refresh or (moved and _minimap_refresh_timer >= refresh_interval):
 			_minimap_refresh_timer = 0.0
 			_refresh_minimap()
+		# Clock must tick even when the player is standing still, otherwise
+		# the minimap time label freezes at the last movement-triggered refresh.
+		_minimap_time_refresh_timer += delta
+		if _minimap_time_refresh_timer >= 0.5:
+			_minimap_time_refresh_timer = 0.0
+			_refresh_minimap_time_label()
 	var _minimap_ms := float(Time.get_ticks_usec() - _pc_tmm) / 1000.0
 	_pc_proc_max_minimap = maxf(_pc_proc_max_minimap, _minimap_ms)
 

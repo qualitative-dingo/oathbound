@@ -487,7 +487,13 @@ func _precompute_tick() -> void:
 	var zone_size: float = _wg.ZONE_SIZE
 	var water_color := _deep_water_color()
 
+	# Phase 4 — Use half budget while the map is closed.  The player can't
+	# see precompute progress anyway, so giving back ~1.5ms of main-thread
+	# time removes a steady-state stutter source early in the session.
+	var budget_us: int = PRECOMPUTE_BUDGET_US if _is_open else int(PRECOMPUTE_BUDGET_US / 2)
+
 	var t0 := Time.get_ticks_usec()
+	var row_start := _precompute_row
 	while _precompute_row < BASE_TEX_RES:
 		for px in range(BASE_TEX_RES):
 			var world_x := (float(px) - 0.5 * BASE_TEX_RES) * meters_per_px
@@ -514,10 +520,17 @@ func _precompute_tick() -> void:
 					clampf(col.b * bright, 0.0, 1.0),
 					1.0))
 		_precompute_row += 1
-		if Time.get_ticks_usec() - t0 > PRECOMPUTE_BUDGET_US:
+		if Time.get_ticks_usec() - t0 > budget_us:
 			break
 
-	_precompute_tex.update(_precompute_image)
+	# Phase 4 — Only push the rows we actually touched this frame via
+	# update().  ImageTexture re-uploads the whole mip chain on every call,
+	# but skipping the call entirely on frames where no rows were written
+	# is the real win (happens whenever precompute has completed and a
+	# caller still invokes the tick, or when budget_us is exhausted before
+	# a row finishes).
+	if _precompute_row > row_start:
+		_precompute_tex.update(_precompute_image)
 	if _precompute_row >= BASE_TEX_RES:
 		_precompute_done = true
 		print("[WORLD MAP] Precompute complete (%dx%d)" % [BASE_TEX_RES, BASE_TEX_RES])
