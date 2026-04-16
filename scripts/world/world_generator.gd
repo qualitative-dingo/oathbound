@@ -1610,7 +1610,10 @@ func _trace_creek_paths() -> void:
 			var last_g := raw_points[raw_points.size() - 1]
 			var lwx: float = -world_radius + last_g.x * _WS_CELL
 			var lwz: float = -world_radius + last_g.y * _WS_CELL
-			var lh := get_height_at(lwx, lwz)
+			# Endpoint sits at a grid cell, so use the cached height instead
+			# of a full get_height_at lookup.
+			var last_gidx: int = int(last_g.y) * _ws_dim + int(last_g.x)
+			var lh: float = _ws_heights[last_gidx] if last_gidx >= 0 and last_gidx < _ws_heights.size() else WATER_LEVEL
 			if lh < WATER_LEVEL + 1.0:
 				# Close enough to water — add pool transition points
 				var last_y: float = points[points.size() - 1].y
