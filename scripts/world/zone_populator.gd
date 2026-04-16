@@ -195,6 +195,7 @@ static var _cov_grass_rej_density_path := 0
 static var _cov_grass_rej_height := 0
 static var _cov_grass_rej_slope := 0
 static var _cov_grass_rej_altitude := 0
+static var _cov_grass_rej_beach := 0
 
 static func get_coverage_stats() -> Dictionary:
 	var g_pct := 100.0 * _cov_grass_placed / maxf(_cov_grass_tested, 1) as float
@@ -208,6 +209,7 @@ static func get_coverage_stats() -> Dictionary:
 		"rej_density_path": _cov_grass_rej_density_path,
 		"rej_height": _cov_grass_rej_height, "rej_slope": _cov_grass_rej_slope,
 		"rej_altitude": _cov_grass_rej_altitude,
+		"rej_beach": _cov_grass_rej_beach,
 	}
 
 static func reset_coverage_stats() -> void:
@@ -224,6 +226,7 @@ static func reset_coverage_stats() -> void:
 	_cov_grass_rej_height = 0
 	_cov_grass_rej_slope = 0
 	_cov_grass_rej_altitude = 0
+	_cov_grass_rej_beach = 0
 
 static func _ensure_rejection_grid(coord: Vector2i, origin_x: float, origin_z: float) -> void:
 	if coord == _rg_coord:
@@ -2265,6 +2268,7 @@ static func _scatter_grass(
 	# ~50-100% of candidates for zones near any river.
 	var wg_ref := _get_world_generator()
 	var has_river_check: bool = wg_ref != null and wg_ref.has_method(&"is_in_river_channel")
+	var has_beach_check: bool = wg_ref != null and wg_ref.has_method(&"get_beach_factor")
 
 	const GRASS_CELL := 0.46
 	var cell_x0: int
@@ -2362,6 +2366,14 @@ static func _scatter_grass(
 			continue
 		if sn.y < 0.70:
 			_cov_grass_rej_slope += 1
+			continue
+
+		# Reject grass on ocean beaches so sand actually reads as sand. We
+		# pass the cached ground_y so get_beach_factor avoids redoing the
+		# full height computation on the hot path. 0.25 threshold matches
+		# the shader — below that the sand blend is barely visible anyway.
+		if has_beach_check and wg_ref.get_beach_factor(wx, wz, ground_y) > 0.25:
+			_cov_grass_rej_beach += 1
 			continue
 
 		if ground_y > 25.0:

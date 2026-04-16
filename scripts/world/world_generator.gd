@@ -576,10 +576,10 @@ func _process(_delta: float) -> void:
 		cov["grass_pct"], cov["grass_placed"], cov["grass_tested"],
 		cov["flower_pct"], cov["flower_placed"], cov["flower_tested"]])
 	if cov["grass_tested"] > 0:
-		print("[GRASS REJ] rg=%d (struct=%d river=%d) density=%d (noise=%d path=%d) height=%d slope=%d altitude=%d" % [
+		print("[GRASS REJ] rg=%d (struct=%d river=%d) density=%d (noise=%d path=%d) height=%d slope=%d altitude=%d beach=%d" % [
 			cov["rej_rg"], cov["rej_struct"], cov["rej_river"],
 			cov["rej_density"], cov.get("rej_density_noise", 0), cov.get("rej_density_path", 0),
-			cov["rej_height"], cov["rej_slope"], cov["rej_altitude"]])
+			cov["rej_height"], cov["rej_slope"], cov["rej_altitude"], cov.get("rej_beach", 0)])
 	_ZonePopulator.reset_coverage_stats()
 	_perf_max_queue_ms = 0.0
 	_perf_max_pending_ms = 0.0
@@ -1899,6 +1899,24 @@ func is_in_river_channel(wx: float, wz: float, carve_slack: float = 1.0) -> bool
 	return (_creek_bed[key] as float) < raw - carve_slack
 
 
+## Returns 0..1 ocean-beach factor at (wx, wz). Zero inland and out at sea,
+## peaks on the sandy coastal ramp. Mirrors the exact logic used by the
+## terrain mesh to paint [member ALBEDO] sand, so populators can reject
+## vegetation wherever the terrain renders as beach. Pass the already-known
+## terrain height via [param known_h] to avoid a redundant [method
+## get_height_at] call on the hot path.
+func get_beach_factor(wx: float, wz: float, known_h: float = NAN) -> float:
+	if not _island_noise:
+		return 0.0
+	var island := _sample_island_mask(wx, wz)
+	var beach_coast := smoothstep(0.10, 0.35, island) * (1.0 - smoothstep(0.60, 0.95, island))
+	if beach_coast <= 0.0:
+		return 0.0
+	var h: float = known_h if not is_nan(known_h) else get_height_at(wx, wz)
+	var beach_alt := clampf(1.0 - smoothstep(WATER_LEVEL - 0.5, WATER_LEVEL + 5.0, h), 0.0, 1.0)
+	return clampf(beach_coast * beach_alt, 0.0, 1.0)
+
+
 func get_biome_at(world_pos: Vector3) -> StringName:
 	var zone := world_to_zone(world_pos)
 	return _determine_biome(zone)
@@ -2154,12 +2172,13 @@ func get_height_at(x: float, z: float) -> float:
 	# Blend toward deep ocean at island edges for natural shore transitions
 	h = lerpf(WATER_LEVEL - 15.0, h, shore)
 
-	# Beach zone — narrow band on the ocean side of the coast transition.
+	# Beach zone — wide band on the ocean side of the coast transition.
 	# Peaks where island mask is mid-range (actual shoreline) and fades to
-	# zero both out to sea and deeper into the land. We use it below to
-	# (a) skip the aggressive inland uplift so beaches actually stay low,
-	# (b) force the floor down to a gentle sandy ramp instead of cliffs.
-	var beach_zone := smoothstep(0.18, 0.45, island) * (1.0 - smoothstep(0.50, 0.82, island))
+	# zero both out to sea and deeper into the land. We intentionally keep
+	# this band wide so every stretch of ocean coast — including noisy
+	# pockets where the island mask reaches ~0.90 near the water — still
+	# gets a proper beach instead of a grass cliff.
+	var beach_zone := smoothstep(0.10, 0.35, island) * (1.0 - smoothstep(0.60, 0.95, island))
 
 	# Land uplift — fill low inland areas with rolling terrain that respects mountain zones
 	if shore > 0.3 and h < WATER_LEVEL + 4.0:
@@ -2170,8 +2189,10 @@ func get_height_at(x: float, z: float) -> float:
 		var target := base_target + breadth * height_scale * 0.3
 		var lift_t := smoothstep(WATER_LEVEL + 4.0, WATER_LEVEL - 3.0, h)
 		# Gate the uplift down inside the beach zone so we don't rebuild the
-		# cliff we're trying to eliminate.
-		h = lerpf(h, target, lift_t * shore * (1.0 - beach_zone * 0.85))
+		# cliff we're trying to eliminate. Near-full suppression (0.98) so
+		# beaches stay close to water even when noise would otherwise push
+		# them up.
+		h = lerpf(h, target, lift_t * shore * (1.0 - beach_zone * 0.98))
 
 	# Watershed river/creek carving — faded out near ocean coasts so rivers
 	# stop carving trenches along the shoreline and the coast stays clean
@@ -2237,6 +2258,21 @@ func get_height_at(x: float, z: float) -> float:
 			var beach_floor := WATER_LEVEL + 0.15 + sand_wobble * 0.35
 			floor_h = lerpf(floor_h, beach_floor, beach_zone)
 		h = maxf(h, floor_h)
+
+	# Active cliff flattening along the ocean coast. maxf above only raises
+	# h, so tall coastal cliffs (produced by continent/detail noise) keep
+	# their height even inside the beach zone and we end up with grass
+	# plateaus that fall straight into the sea. Here we pull any cliff in
+	# the beach band down toward the sandy ramp, but only for low/medium
+	# cliffs — taller mountains (>6m above water) are left alone so we
+	# don't flatten proper coastal cliffs in rocky biomes into beaches.
+	if beach_zone > 0.02 and h > WATER_LEVEL + 0.2:
+		var over_water := h - WATER_LEVEL
+		var flatten_scope := 1.0 - smoothstep(3.0, 6.0, over_water)
+		if flatten_scope > 0.0:
+			var sand_wobble_f := _detail_noise.get_noise_2d(x * 0.05 + 3700.0, z * 0.05 + 3700.0)
+			var beach_target := WATER_LEVEL + 0.15 + sand_wobble_f * 0.35
+			h = lerpf(h, beach_target, beach_zone * flatten_scope)
 
 	# Natural lakes — punch through the floor with tight thresholds for rare, large bodies
 	if _continent_noise and shore > 0.8:
@@ -4120,9 +4156,12 @@ func _build_zone_mesh(coord: Vector2i) -> Array:
 			# Beach mask (colors.a): same coast band used by get_height_at so the
 			# sand color paints exactly the flattened beach geometry. Gated by
 			# altitude so we don't stain the seabed or the inland hills if the
-			# mask bleeds a little out of the flat band.
-			var beach_coast := smoothstep(0.18, 0.45, island_here) * (1.0 - smoothstep(0.50, 0.82, island_here))
-			var beach_alt := clampf(1.0 - smoothstep(WATER_LEVEL - 0.5, WATER_LEVEL + 3.0, h), 0.0, 1.0)
+			# mask bleeds a little out of the flat band. Band matches the wider
+			# beach_zone in get_height_at, and the altitude limit goes up to
+			# WATER_LEVEL+5 so any coastal ramp shorter than a small cliff
+			# still reads as sand.
+			var beach_coast := smoothstep(0.10, 0.35, island_here) * (1.0 - smoothstep(0.60, 0.95, island_here))
+			var beach_alt := clampf(1.0 - smoothstep(WATER_LEVEL - 0.5, WATER_LEVEL + 5.0, h), 0.0, 1.0)
 			var beach_mask := clampf(beach_coast * beach_alt, 0.0, 1.0)
 			colors.append(Color(path_f, 1.0, river_bank, beach_mask))
 
