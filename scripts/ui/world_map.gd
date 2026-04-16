@@ -180,6 +180,11 @@ func open() -> void:
 	if _biome_label and _wg and _player:
 		var pp := _wg.get_world_position(_player)
 		_biome_label.text = _biome_display_name(_wg.get_biome_at(pp))
+	# Release the mouse so the map can be panned/zoomed. WASD movement is
+	# polled via Input.is_action_pressed and is not affected. The map's root
+	# panel uses MOUSE_FILTER_STOP so mouse motion won't leak back into
+	# camera rotation while the cursor is over the map.
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_queue_overlay_redraw()
 	opened.emit()
 
@@ -190,6 +195,7 @@ func close() -> void:
 	_is_open = false
 	visible = false
 	_is_panning = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	closed.emit()
 
 
@@ -771,22 +777,26 @@ func _draw_overlay() -> void:
 			var view_pos := _world_to_viewport(wp)
 			_draw_map_dot(view_pos, Color(0.5, 0.35, 0.2), 4.0)
 
-	# Signposts ("!" markers)
+	# Signposts ("!" markers) — get_signpost_positions() returns absolute
+	# world coordinates, and _world_to_viewport expects absolute world
+	# coordinates, so do NOT run them through world_to_scene_pos first
+	# (that would double-offset them by origin_shift and scoot every
+	# marker away from its real location).
 	if _wg.has_method("get_signpost_positions"):
 		var sp_positions: Array = _wg.get_signpost_positions()
 		for sp_world in sp_positions:
 			var sp_vec := sp_world as Vector3
 			if not _zone_explored(sp_vec):
 				continue
-			var view_pos := _world_to_viewport(_wg.world_to_scene_pos(sp_vec))
+			var view_pos := _world_to_viewport(sp_vec)
 			_draw_map_exclamation(view_pos, Color(1.0, 0.9, 0.3))
 
-	# Named markers (quests, etc.)
+	# Named markers (quests, etc.) — same rule: stored as absolute world pos,
+	# pass straight to _world_to_viewport.
 	for marker in _markers:
 		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
 		var col: Color = marker.get("color", Color.GOLD) as Color
-		var scene_pos := _wg.world_to_scene_pos(wpos)
-		var view_pos := _world_to_viewport(scene_pos)
+		var view_pos := _world_to_viewport(wpos)
 		_draw_map_dot(view_pos, col, 5.0)
 		# Soft ring
 		_overlay.draw_arc(view_pos, 8.0, 0.0, TAU, 24, Color(col.r, col.g, col.b, 0.65), 2.0, true)
