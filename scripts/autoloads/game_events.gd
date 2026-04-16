@@ -5,6 +5,17 @@ extends Node
 
 var _debug_beacon: UDPServer
 
+# ── Launch timing ────────────────────────────────────────────────────────────
+# Wall-clock timestamp (microseconds) captured when the user presses Play in
+# the main menu. Every major loading milestone prints its elapsed time relative
+# to this so we can see the full "press play → interactive" breakdown in logs.
+var launch_ts_us: int = 0
+
+func launch_elapsed_ms() -> float:
+	if launch_ts_us <= 0:
+		return 0.0
+	return (Time.get_ticks_usec() - launch_ts_us) / 1000.0
+
 func _ready() -> void:
 	_apply_debug_window_layout()
 

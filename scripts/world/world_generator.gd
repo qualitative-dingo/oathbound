@@ -432,6 +432,7 @@ func get_sub_chunk_explore_fraction(zone_x: int, zone_z: int) -> float:
 
 func _ready() -> void:
 	var _t_world_start := Time.get_ticks_usec()
+	print("[LAUNCH→WG_READY] start since_launch=%.1fms" % GameEvents.launch_elapsed_ms())
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	Engine.max_fps = 0
 	_ZonePool.flush_all()
@@ -471,6 +472,8 @@ func _ready() -> void:
 		(_t_spawn - _t_materials) / 1000.0,
 		(_t_water - _t_spawn) / 1000.0,
 		world_seed])
+	print("[LAUNCH→WG_READY] end since_launch=%.1fms wg_ready_took=%.1fms" % [
+		GameEvents.launch_elapsed_ms(), _total_ms])
 	_theme_songs = [
 		"misty_forest_echoes.mp3",
 		"misty_forest_lament.mp3",
@@ -1799,6 +1802,27 @@ func zone_to_world_center(coord: Vector2i) -> Vector3:
 	)
 
 
+## Returns true if the world position falls inside the carved channel of a
+## river/creek (i.e. where water actually flows), not just the gentle banks.
+## Grass placement and similar ground clutter use this so plants can grow
+## right up to the bank without spawning IN the water.
+##
+## [param carve_slack] controls how much below the natural (uncarved) terrain
+## the bed has to be before the cell counts as "in the channel". Banks in
+## [member _creek_bed] store a carve height that lerps up toward the
+## surrounding terrain, so a tight slack value excludes them automatically.
+func is_in_river_channel(wx: float, wz: float, carve_slack: float = 1.0) -> bool:
+	if _creek_bed.is_empty():
+		return false
+	var cx := int(floor(wx / _CREEK_BED_CELL))
+	var cz := int(floor(wz / _CREEK_BED_CELL))
+	var key := Vector2i(cx, cz)
+	if not _creek_bed.has(key):
+		return false
+	var raw := _get_raw_height_no_paths(wx, wz)
+	return (_creek_bed[key] as float) < raw - carve_slack
+
+
 func get_biome_at(world_pos: Vector3) -> StringName:
 	var zone := world_to_zone(world_pos)
 	return _determine_biome(zone)
@@ -2535,11 +2559,13 @@ var _init_populate_boost_frames: int = 0
 
 
 func _dismiss_loading_screen() -> void:
+	print("[LAUNCH→DISMISS] called since_launch=%.1fms" % GameEvents.launch_elapsed_ms())
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var ls := get_tree().root.get_node_or_null("LoadingScreen")
 	if ls and ls.has_method("dismiss"):
 		ls.dismiss()
+	print("[LAUNCH→DISMISS] done since_launch=%.1fms  <<< user sees world here" % GameEvents.launch_elapsed_ms())
 
 
 const _PORTAL_FAR_X := 5120.0
@@ -2728,6 +2754,8 @@ const _INIT_POPULATE_BUDGET_US := 8000  # boosted budget during init backlog dra
 const _MAX_COLLISION_ENABLES_PER_FRAME := 3
 const _MAX_COLLISION_DISABLES_PER_FRAME := 2
 
+var _init_backlog_drained_logged := false
+
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
 	# Boost the per-frame budget for a few seconds after world init so the
@@ -2737,6 +2765,14 @@ func _process_pending_zones() -> void:
 	if _init_populate_boost_frames > 0:
 		_init_populate_boost_frames -= 1
 		budget_us = _INIT_POPULATE_BUDGET_US
+
+	# One-shot: announce when the initial spawn-area populate backlog is empty
+	# (grass/flowers/bushes for all 9 spawn zones done). Combined with gen_in_flight
+	# == 0 this tells us when the world is fully "settled" after spawn.
+	if not _init_backlog_drained_logged and GameEvents.launch_ts_us > 0:
+		if _populate_backlog.is_empty() and _gen_in_flight.is_empty() and _finalize_backlog.is_empty():
+			_init_backlog_drained_logged = true
+			print("[LAUNCH→BACKLOG_DRAINED] since_launch=%.1fms  <<< async spawn-area populate complete" % GameEvents.launch_elapsed_ms())
 
 	# 0-pre. Build player zone list (used by multiple steps below)
 	var player_zones: Array[Vector2i] = []

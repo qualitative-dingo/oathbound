@@ -742,13 +742,20 @@ func _set_status(msg: String, color: Color) -> void:
 
 
 func _launch_world(world_data: Dictionary) -> void:
+	GameEvents.launch_ts_us = Time.get_ticks_usec()
+	var _t_launch := GameEvents.launch_ts_us
+	print("[LAUNCH] start world=%s seed=%s" % [str(world_data.get("name", "?")), str(world_data.get("seed", "?"))])
+
 	Inventory._slots.clear()
 	Inventory._equipped.clear()
 	Inventory.give_starting_gear()
 	GameEvents.inventory_changed.emit()
 
+	var _t0 := Time.get_ticks_usec()
 	var world_scene := load("res://scenes/world/test_world.tscn") as PackedScene
+	var _t_load_scene := Time.get_ticks_usec()
 	var world_instance := world_scene.instantiate()
+	var _t_instantiate := Time.get_ticks_usec()
 
 	var wg := world_instance.get_node_or_null("WorldGenerator")
 	if wg:
@@ -766,8 +773,15 @@ func _launch_world(world_data: Dictionary) -> void:
 
 	get_tree().root.add_child(world_instance)
 	get_tree().current_scene = world_instance
+	var _t_added := Time.get_ticks_usec()
 
 	SaveManager.call_deferred("_deferred_load_save")
+
+	print("[LAUNCH] menu_to_scene_tree load_scene=%.1fms instantiate=%.1fms add_to_tree=%.1fms total_since_launch=%.1fms" % [
+		(_t_load_scene - _t0) / 1000.0,
+		(_t_instantiate - _t_load_scene) / 1000.0,
+		(_t_added - _t_instantiate) / 1000.0,
+		(_t_added - _t_launch) / 1000.0])
 	queue_free()
 
 

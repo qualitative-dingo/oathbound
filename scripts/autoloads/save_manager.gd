@@ -334,12 +334,16 @@ func _accumulate_play_time() -> void:
 
 
 func _deferred_load_save() -> void:
+	print("[LAUNCH→LOAD_SAVE] called since_launch=%.1fms" % GameEvents.launch_elapsed_ms())
 	await get_tree().process_frame
 	await get_tree().process_frame
+	var _t_load_start := Time.get_ticks_usec()
 	var save_data := load_game()
+	var _t_load_end := Time.get_ticks_usec()
 
 	# No save for this character+world combo — carry over inventory/stats from
 	# the character's most recent save on any world so gear persists across worlds.
+	var used_fallback := false
 	if save_data.is_empty():
 		var fallback := _load_latest_character_save()
 		if not fallback.is_empty():
@@ -347,12 +351,15 @@ func _deferred_load_save() -> void:
 				"inventory": fallback.get("inventory", {}),
 				"player": _strip_position_from_player(fallback.get("player", {})),
 			}
+			used_fallback = true
+	var _t_fallback := Time.get_ticks_usec()
 
 	if not save_data.is_empty():
 		apply_save_data(save_data)
 	else:
 		Inventory.give_starting_gear()
 		GameEvents.inventory_changed.emit()
+	var _t_apply := Time.get_ticks_usec()
 
 	# Always start a session with full health (like Valheim)
 	var player := _get_player()
@@ -361,6 +368,12 @@ func _deferred_load_save() -> void:
 		if max_hp > 0.0:
 			player.set("current_health", max_hp)
 			player.set("current_stamina", float(player.get("max_stamina")))
+	print("[LAUNCH→LOAD_SAVE] done since_launch=%.1fms load_json=%.1fms fallback=%.1fms(used=%s) apply=%.1fms has_save=%s" % [
+		GameEvents.launch_elapsed_ms(),
+		(_t_load_end - _t_load_start) / 1000.0,
+		(_t_fallback - _t_load_end) / 1000.0, str(used_fallback),
+		(_t_apply - _t_fallback) / 1000.0,
+		str(not save_data.is_empty())])
 
 
 func _load_latest_character_save() -> Dictionary:

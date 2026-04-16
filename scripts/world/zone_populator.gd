@@ -2253,6 +2253,13 @@ static func _scatter_grass(
 
 	_ensure_rejection_grid(coord, origin_x, origin_z)
 
+	# Grab the world generator once so we can do a precise per-candidate
+	# river-channel check. The rejection grid's _RG_RIVER flag is too coarse
+	# (watershed accum is bilinearly sampled + laterally spread), which rejects
+	# ~50-100% of candidates for zones near any river.
+	var wg_ref := _get_world_generator()
+	var has_river_check: bool = wg_ref != null and wg_ref.has_method(&"is_in_river_channel")
+
 	const GRASS_CELL := 0.46
 	var cell_x0: int
 	var cell_z0: int
@@ -2312,7 +2319,10 @@ static func _scatter_grass(
 			_cov_grass_rej_struct += 1
 			continue
 
-		if rg_flags & _RG_RIVER != 0:
+		# Only reject candidates that are actually INSIDE the water channel of
+		# a creek/river (carved well below the natural terrain). Grass
+		# spawning next to rivers is fine and encouraged.
+		if has_river_check and wg_ref.is_in_river_channel(wx, wz):
 			_cov_grass_rej_river += 1
 			continue
 
