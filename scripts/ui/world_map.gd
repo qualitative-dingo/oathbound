@@ -36,12 +36,13 @@ var _precompute_row: int = 0
 var _precompute_done: bool = false
 var _precompute_started: bool = false
 
-# Fog of war state
+# Fog of war state. The mask lives at BASE_TEX_RES so UVs line up exactly
+# with the terrain overview texture. Each zone fills the rectangle of pixels
+# that covers it in world space.
 var _fog_image: Image
 var _fog_tex: ImageTexture
-var _fog_origin_zone: Vector2i             # zone corresponding to fog pixel (0,0)
-var _fog_dim: int = 0
 var _fog_dirty: bool = false
+var _fog_seeded: bool = false
 var _reveal_all: bool = false
 var _fog_time: float = 0.0
 
@@ -125,12 +126,35 @@ func _on_window_resized() -> void:
 
 func setup(player: Node3D, wg: WorldGenerator) -> void:
 	_player = player
+	_bind_world_generator(wg)
+
+
+## Connect to the WorldGenerator and (re)seed fog. If [param wg] is null we
+## fall back to searching the scene; if still missing, we retry once per frame
+## via [method _process] until the generator appears. This keeps us safe when
+## the player spawns before world generation finishes.
+func _bind_world_generator(wg: WorldGenerator) -> void:
+	if wg == null:
+		wg = _find_world_generator_in_tree()
+	if wg == null:
+		return
+	if _wg == wg and _fog_seeded:
+		return
 	_wg = wg
-	if _wg:
-		if not _wg.zone_explored.is_connected(_on_zone_explored):
-			_wg.zone_explored.connect(_on_zone_explored)
-		_seed_fog_from_explored()
-		_kickoff_precompute_when_ready()
+	if not _wg.zone_explored.is_connected(_on_zone_explored):
+		_wg.zone_explored.connect(_on_zone_explored)
+	_seed_fog_from_explored()
+	_kickoff_precompute_when_ready()
+
+
+func _find_world_generator_in_tree() -> WorldGenerator:
+	if not is_inside_tree():
+		return null
+	var nodes := get_tree().get_nodes_in_group(&"world_generator")
+	for n in nodes:
+		if n is WorldGenerator:
+			return n as WorldGenerator
+	return null
 
 
 func set_camera(cam: Camera3D) -> void:
@@ -300,11 +324,20 @@ func _build_ui() -> void:
 	_fog_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_viewport.add_child(_fog_rect)
 
+	# Allocate the fog mask at terrain resolution *before* anything else, so
+	# the shader always has a valid all-black sampler even if world generation
+	# isn't ready yet. (Unset sampler2D uniforms default to white, i.e. "fully
+	# explored", which would reveal the whole map.)
+	_fog_image = Image.create(BASE_TEX_RES, BASE_TEX_RES, false, Image.FORMAT_R8)
+	_fog_image.fill(Color(0, 0, 0, 1))
+	_fog_tex = ImageTexture.create_from_image(_fog_image)
+
 	_fog_material = ShaderMaterial.new()
 	_fog_material.shader = _build_fog_shader()
 	_fog_material.set_shader_parameter(&"fog_color", _FOG_COLOR)
 	_fog_material.set_shader_parameter(&"reveal_all", false)
 	_fog_material.set_shader_parameter(&"noise_tex", _build_fog_noise_texture())
+	_fog_material.set_shader_parameter(&"fog_mask", _fog_tex)
 	_fog_material.set_shader_parameter(&"time", 0.0)
 	_fog_rect.material = _fog_material
 
@@ -463,32 +496,53 @@ func _precompute_tick() -> void:
 func _seed_fog_from_explored() -> void:
 	if not _wg:
 		return
-	var world_radius: float = _wg.world_radius
-	var zone_size: float = _wg.ZONE_SIZE
-	var half_zones := int(ceil(world_radius / zone_size)) + 1
-	_fog_origin_zone = Vector2i(-half_zones, -half_zones)
-	_fog_dim = half_zones * 2 + 1
-	_fog_image = Image.create(_fog_dim, _fog_dim, false, Image.FORMAT_R8)
+	# The mask image is already allocated in _build_ui() at BASE_TEX_RES, black.
+	# Reset to fully unexplored and mark each known zone.
+	if _fog_image == null:
+		_fog_image = Image.create(BASE_TEX_RES, BASE_TEX_RES, false, Image.FORMAT_R8)
 	_fog_image.fill(Color(0, 0, 0, 1))
 	for key in _wg._explored_zones.keys():
 		_mark_fog_zone(key as Vector2i)
-	_fog_tex = ImageTexture.create_from_image(_fog_image)
+	if _fog_tex == null:
+		_fog_tex = ImageTexture.create_from_image(_fog_image)
+	else:
+		_fog_tex.update(_fog_image)
 	_fog_material.set_shader_parameter(&"fog_mask", _fog_tex)
+	_fog_seeded = true
 	_fog_dirty = false
 
 
+## Fill the block of pixels covering the given world zone.
 func _mark_fog_zone(zone: Vector2i) -> void:
-	if _fog_image == null:
+	if _fog_image == null or _wg == null:
 		return
-	var px := zone.x - _fog_origin_zone.x
-	var py := zone.y - _fog_origin_zone.y
-	if px < 0 or py < 0 or px >= _fog_dim or py >= _fog_dim:
+	var world_radius: float = _wg.world_radius
+	var zone_size: float = _wg.ZONE_SIZE
+	var meters_per_px: float = (world_radius * 2.0) / float(BASE_TEX_RES)
+	if meters_per_px <= 0.0:
 		return
-	_fog_image.set_pixel(px, py, Color(1, 1, 1, 1))
+	var wx0: float = float(zone.x) * zone_size
+	var wz0: float = float(zone.y) * zone_size
+	var wx1: float = wx0 + zone_size
+	var wz1: float = wz0 + zone_size
+	var px0: int = int(floor((wx0 + world_radius) / meters_per_px))
+	var py0: int = int(floor((wz0 + world_radius) / meters_per_px))
+	var px1: int = int(floor((wx1 + world_radius) / meters_per_px))
+	var py1: int = int(floor((wz1 + world_radius) / meters_per_px))
+	px0 = clampi(px0, 0, BASE_TEX_RES - 1)
+	py0 = clampi(py0, 0, BASE_TEX_RES - 1)
+	px1 = clampi(px1, 0, BASE_TEX_RES - 1)
+	py1 = clampi(py1, 0, BASE_TEX_RES - 1)
+	var white := Color(1, 1, 1, 1)
+	for y in range(py0, py1 + 1):
+		for x in range(px0, px1 + 1):
+			_fog_image.set_pixel(x, y, white)
 
 
 func _on_zone_explored(zone: Vector2i) -> void:
 	if _fog_image == null:
+		return
+	if not _fog_seeded and _wg:
 		_seed_fog_from_explored()
 		return
 	_mark_fog_zone(zone)
@@ -578,6 +632,13 @@ func _queue_overlay_redraw() -> void:
 # ───────────────────────── Per-frame process ───────────────────────────────────
 
 func _process(delta: float) -> void:
+	# If we were set up before the WorldGenerator existed, keep trying to
+	# bind until it appears. Without this the fog mask never gets seeded
+	# from real world data, and the shader's default white sampler reveals
+	# the entire map.
+	if _wg == null or not _fog_seeded:
+		_bind_world_generator(null)
+
 	if not _precompute_done:
 		_precompute_tick()
 
