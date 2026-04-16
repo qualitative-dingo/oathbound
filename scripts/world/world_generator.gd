@@ -919,6 +919,7 @@ func _get_base_height(wx: float, wz: float) -> float:
 
 
 func _compute_watershed() -> void:
+	var _t0 := Time.get_ticks_usec()
 	_ws_dim = int(ceil(world_radius * 2.0 / _WS_CELL)) + 2
 	var n: int = _ws_dim * _ws_dim
 
@@ -931,6 +932,7 @@ func _compute_watershed() -> void:
 			var wx: float = -world_radius + float(gx) * _WS_CELL
 			var wz: float = -world_radius + float(gz) * _WS_CELL
 			heights[gz * _ws_dim + gx] = _get_base_height(wx, wz)
+	var _t_heights := Time.get_ticks_usec()
 
 	# Step 2 — D8 flow directions (steepest-descent neighbor)
 	var flow := PackedInt32Array()
@@ -1026,18 +1028,32 @@ func _compute_watershed() -> void:
 
 	# Step 5 — store flow directions for creek path tracing
 	_ws_flow = flow
+	var _t_flow := Time.get_ticks_usec()
 
 	# Step 6 — trace winding outflow streams from noise-driven lakes
 	_trace_lake_outflows()
+	var _t_lakes := Time.get_ticks_usec()
 
 	# Step 7 — trace elevated creek paths for visual flowing-water strips
 	_trace_creek_paths()
+	var _t_creeks := Time.get_ticks_usec()
 
 	# Step 8 — stamp creek bed grid for wide terrain carving
 	_stamp_creek_bed()
+	var _t_bed := Time.get_ticks_usec()
 
 	# Step 9 — water physics source registration — disabled until propagation is tuned
 	#_register_water_sources()
+
+	print("[WATERSHED] dim=%d n=%d total=%.1fms heights=%.1fms flow=%.1fms lakes=%.1fms creeks=%.1fms bed=%.1fms creek_segs=%d creek_bed_cells=%d" % [
+		_ws_dim, n,
+		(_t_bed - _t0) / 1000.0,
+		(_t_heights - _t0) / 1000.0,
+		(_t_flow - _t_heights) / 1000.0,
+		(_t_lakes - _t_flow) / 1000.0,
+		(_t_creeks - _t_lakes) / 1000.0,
+		(_t_bed - _t_creeks) / 1000.0,
+		_creek_segments.size(), _creek_bed.size()])
 
 
 func _register_water_sources() -> void:
@@ -2369,20 +2385,47 @@ func _compute_marrow_positions() -> void:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 func _generate_spawn_area() -> void:
+	var _t0 := Time.get_ticks_usec()
 	# Find tavern position BEFORE building zone meshes so get_height_at
 	# can flatten terrain under the tavern during mesh generation.
 	_find_tavern_position()
+	var _t_tavern := Time.get_ticks_usec()
 
 	var spawn_zone := world_to_zone(Vector3.ZERO)
+	# Collect zones that still need mesh/collision built
+	var coords_to_build: Array[Vector2i] = []
 	for x in range(spawn_zone.x - 1, spawn_zone.x + 2):
 		for z in range(spawn_zone.y - 1, spawn_zone.y + 2):
 			var coord := Vector2i(x, z)
-			if coord not in _loaded_zones:
-				var arrays := _build_zone_mesh(coord)
-				var shape := _build_collision_shape(coord)
-				_terrain_mesh_cache[coord] = arrays
-				_terrain_shape_cache[coord] = shape
-				_finalize_zone(coord, arrays, shape)
+			if coord not in _loaded_zones and not _terrain_mesh_cache.has(coord):
+				coords_to_build.append(coord)
+
+	# Parallel mesh+collision build across all 9 zones. _build_zone_mesh and
+	# _build_collision_shape only read pre-computed noise/watershed data, so
+	# they're thread-safe (same invariant the streaming pipeline relies on).
+	if not coords_to_build.is_empty():
+		_spawn_build_coords = coords_to_build
+		_spawn_build_results.clear()
+		_spawn_build_results.resize(coords_to_build.size())
+		var gid := WorkerThreadPool.add_group_task(_bg_build_spawn_zone, coords_to_build.size(), -1, true)
+		WorkerThreadPool.wait_for_group_task_completion(gid)
+		for i in coords_to_build.size():
+			var c: Vector2i = coords_to_build[i]
+			var r: Dictionary = _spawn_build_results[i]
+			_terrain_mesh_cache[c] = r["arrays"]
+			_terrain_shape_cache[c] = r["shape"]
+		_spawn_build_coords.clear()
+		_spawn_build_results.clear()
+	var _t_build := Time.get_ticks_usec()
+
+	# Finalize all 9 zones (creates scene nodes). Cheap vs the mesh build above.
+	for x in range(spawn_zone.x - 1, spawn_zone.x + 2):
+		for z in range(spawn_zone.y - 1, spawn_zone.y + 2):
+			var coord := Vector2i(x, z)
+			if coord not in _loaded_zones and _terrain_mesh_cache.has(coord):
+				_finalize_zone(coord, _terrain_mesh_cache[coord], _terrain_shape_cache[coord])
+	var _t_finalize := Time.get_ticks_usec()
+
 	# Only enable the CENTER spawn zone's terrain collision immediately (player needs to stand)
 	# Leave surrounding zones' terrain in the deferred queue for gradual enabling
 	# This prevents a burst from enabling 9+ terrain collision shapes at once
@@ -2412,20 +2455,83 @@ func _generate_spawn_area() -> void:
 	# Spawn tavern before populating so vegetation avoids its footprint
 	_spawn_tavern()
 
-	# Populate all 9 spawn-area zones synchronously so the player (who spawns
-	# at the corner of the center zone) sees full vegetation in every direction.
-	while not _populate_backlog.is_empty():
-		var pitem: Dictionary = _populate_backlog.pop_front()
+	# Populate phases 0-2 (villages/trees/rocks/creatures) synchronously for ALL
+	# 9 spawn zones so the player sees a complete world on spawn. Phases 3-6
+	# (grass, flowers, bushes, water plants) are left in _populate_backlog and
+	# stream in over the first seconds via _process_pending_zones. A boosted
+	# per-frame budget (see _init_populate_boost) drains them quickly without
+	# blocking the loading screen.
+	var center_pitem: Dictionary = {}
+	for i in range(_populate_backlog.size() - 1, -1, -1):
+		var pitem: Dictionary = _populate_backlog[i]
+		var pcoord: Vector2i = pitem["coord"]
 		var zone_root = pitem["zone_root"]
+		if not is_instance_valid(zone_root):
+			_populate_backlog.remove_at(i)
+			continue
+		# Run phases 0..2 now — these place trees/rocks/structures which the
+		# player would notice missing. Grass/flowers (phases 3-5) and bushes
+		# (phase 6) are deferred to the async streaming loop.
+		for phase in 3:
+			_ZonePopulator.populate_zone_phase(zone_root, pcoord, pitem["biome"], _seed_hash, get_height_at, pitem["micro"], phase, false)
+		pitem["phase"] = 3
+		var dist := float((pcoord - spawn_zone).length())
+		_update_zone_lod(zone_root, dist)
+		if pcoord == spawn_zone:
+			center_pitem = pitem
+	var _t_populate_sync := Time.get_ticks_usec()
+
+	# Fully finish the center zone synchronously so the player lands in a
+	# complete environment. Ring zones' remaining phases stream in async.
+	if not center_pitem.is_empty():
+		var zone_root = center_pitem["zone_root"]
+		var pcoord: Vector2i = center_pitem["coord"]
 		if is_instance_valid(zone_root):
-			var pcoord: Vector2i = pitem["coord"]
-			_ZonePopulator.populate_zone(zone_root, pcoord, pitem["biome"], _seed_hash, get_height_at, pitem["micro"])
-			var dist := float((pcoord - spawn_zone).length())
-			_update_zone_lod(zone_root, dist)
+			var p := int(center_pitem.get("phase", 0))
+			while p <= 6:
+				var r := _ZonePopulator.populate_zone_phase(zone_root, pcoord, center_pitem["biome"], _seed_hash, get_height_at, center_pitem["micro"], p, false)
+				if r >= 1:
+					p += 1
+			center_pitem["phase"] = 7
+			_populate_backlog.erase(center_pitem)
 			zone_loaded.emit(pcoord)
+	var _t_center := Time.get_ticks_usec()
+
+	# Give the async populate drain a larger budget for the first few seconds
+	# so remaining ring-zone phases finish before the player starts exploring.
+	_init_populate_boost_frames = 180  # ~3s at 60fps
 
 	_spawn_starter_goblins()
 	_dismiss_loading_screen.call_deferred()
+	var _t_done := Time.get_ticks_usec()
+	print("[SPAWN AREA] total=%.1fms tavern=%.1fms build=%.1fms(x%d parallel) finalize=%.1fms populate_p012=%.1fms center_p346=%.1fms backlog_left=%d" % [
+		(_t_done - _t0) / 1000.0,
+		(_t_tavern - _t0) / 1000.0,
+		(_t_build - _t_tavern) / 1000.0, coords_to_build.size(),
+		(_t_finalize - _t_build) / 1000.0,
+		(_t_populate_sync - _t_finalize) / 1000.0,
+		(_t_center - _t_populate_sync) / 1000.0,
+		_populate_backlog.size()])
+
+
+# ─── Parallel spawn-zone build plumbing ──────────────────────────────────────
+
+var _spawn_build_coords: Array[Vector2i] = []
+var _spawn_build_results: Array = []
+
+## Runs on WorkerThreadPool — builds one spawn-area zone's mesh + collision.
+func _bg_build_spawn_zone(i: int) -> void:
+	if i < 0 or i >= _spawn_build_coords.size():
+		return
+	var coord: Vector2i = _spawn_build_coords[i]
+	var arrays := _build_zone_mesh(coord)
+	var shape := _build_collision_shape(coord)
+	_spawn_build_results[i] = {"arrays": arrays, "shape": shape}
+
+
+# Boost populate budget for N physics frames after world init so deferred
+# phases (grass/flowers/bushes) for ring zones finish quickly.
+var _init_populate_boost_frames: int = 0
 
 
 func _dismiss_loading_screen() -> void:
@@ -2618,11 +2724,19 @@ func _is_in_load_range(coord: Vector2i) -> bool:
 
 
 const _PENDING_BUDGET_US := 2000  # max microseconds per frame for pending work
+const _INIT_POPULATE_BUDGET_US := 8000  # boosted budget during init backlog drain
 const _MAX_COLLISION_ENABLES_PER_FRAME := 3
 const _MAX_COLLISION_DISABLES_PER_FRAME := 2
 
 func _process_pending_zones() -> void:
 	var t_start := Time.get_ticks_usec()
+	# Boost the per-frame budget for a few seconds after world init so the
+	# deferred grass/flower phases for ring zones finish before the player
+	# notices missing vegetation.
+	var budget_us := _PENDING_BUDGET_US
+	if _init_populate_boost_frames > 0:
+		_init_populate_boost_frames -= 1
+		budget_us = _INIT_POPULATE_BUDGET_US
 
 	# 0-pre. Build player zone list (used by multiple steps below)
 	var player_zones: Array[Vector2i] = []
@@ -2753,7 +2867,7 @@ func _process_pending_zones() -> void:
 			return float((a["coord"] - _sort_pz).length_squared()) < float((b["coord"] - _sort_pz).length_squared())
 		)
 	while not _populate_backlog.is_empty():
-		if Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
+		if Time.get_ticks_usec() - t_start > budget_us:
 			break
 		var pitem: Dictionary = _populate_backlog[0]
 		var pcoord: Vector2i = pitem["coord"]
@@ -2783,9 +2897,9 @@ func _process_pending_zones() -> void:
 	# 3. Finalize zone meshes — budget-checked after each to prevent stacked heavy frames
 	var max_finalize := 2
 	var finalized := 0
-	if Time.get_ticks_usec() - t_start < _PENDING_BUDGET_US:
+	if Time.get_ticks_usec() - t_start < budget_us:
 		while not _finalize_backlog.is_empty() and finalized < max_finalize:
-			if finalized > 0 and Time.get_ticks_usec() - t_start > _PENDING_BUDGET_US:
+			if finalized > 0 and Time.get_ticks_usec() - t_start > budget_us:
 				break
 			var item: Dictionary = _finalize_backlog.pop_front()
 			var coord: Vector2i = item["coord"]

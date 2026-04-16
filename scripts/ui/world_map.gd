@@ -51,7 +51,7 @@ var _root_panel: Panel
 var _frame: Panel
 var _viewport: Control
 var _terrain_rect: TextureRect
-var _fog_rect: TextureRect
+var _fog_rect: ColorRect
 var _fog_material: ShaderMaterial
 var _overlay: Control
 var _title_label: Label
@@ -315,11 +315,13 @@ func _build_ui() -> void:
 	_terrain_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_viewport.add_child(_terrain_rect)
 
-	_fog_rect = TextureRect.new()
+	# Use a ColorRect so the shader always runs, even before fog_mask is
+	# populated. A TextureRect with no .texture refuses to draw, which would
+	# bypass the fog shader entirely and leave the whole map revealed.
+	_fog_rect = ColorRect.new()
 	_fog_rect.name = "Fog"
 	_fog_rect.size = Vector2(BASE_TEX_RES, BASE_TEX_RES)
-	_fog_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_fog_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	_fog_rect.color = Color(1, 1, 1, 1)  # replaced by shader; just needs to be opaque
 	_fog_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_fog_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_viewport.add_child(_fog_rect)
