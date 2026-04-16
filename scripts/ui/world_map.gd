@@ -51,7 +51,7 @@ var _root_panel: Panel
 var _frame: Panel
 var _viewport: Control
 var _terrain_rect: TextureRect
-var _fog_rect: ColorRect
+var _fog_rect: TextureRect
 var _fog_material: ShaderMaterial
 var _overlay: Control
 var _title_label: Label
@@ -315,24 +315,29 @@ func _build_ui() -> void:
 	_terrain_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_viewport.add_child(_terrain_rect)
 
-	# Use a ColorRect so the shader always runs, even before fog_mask is
-	# populated. A TextureRect with no .texture refuses to draw, which would
-	# bypass the fog shader entirely and leave the whole map revealed.
-	_fog_rect = ColorRect.new()
-	_fog_rect.name = "Fog"
-	_fog_rect.size = Vector2(BASE_TEX_RES, BASE_TEX_RES)
-	_fog_rect.color = Color(1, 1, 1, 1)  # replaced by shader; just needs to be opaque
-	_fog_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_fog_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_viewport.add_child(_fog_rect)
-
-	# Allocate the fog mask at terrain resolution *before* anything else, so
-	# the shader always has a valid all-black sampler even if world generation
-	# isn't ready yet. (Unset sampler2D uniforms default to white, i.e. "fully
-	# explored", which would reveal the whole map.)
+	# Allocate the fog mask (all black = fully unexplored) *before* creating
+	# the TextureRect. Two gotchas:
+	#  * A TextureRect with a null texture refuses to draw at all, which would
+	#    bypass the fog shader entirely and leave the whole map revealed.
+	#  * Even a ColorRect with a material but a white-fallback color can
+	#    render pure white if the shader fails to compile or the material
+	#    isn't applied yet. So we explicitly assign the fog-mask ImageTexture
+	#    as the TextureRect's texture — the shader samples it as fog_mask
+	#    anyway, and having it also be the rect's texture guarantees the rect
+	#    always has something valid to draw.
 	_fog_image = Image.create(BASE_TEX_RES, BASE_TEX_RES, false, Image.FORMAT_R8)
 	_fog_image.fill(Color(0, 0, 0, 1))
 	_fog_tex = ImageTexture.create_from_image(_fog_image)
+
+	_fog_rect = TextureRect.new()
+	_fog_rect.name = "Fog"
+	_fog_rect.texture = _fog_tex
+	_fog_rect.size = Vector2(BASE_TEX_RES, BASE_TEX_RES)
+	_fog_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_fog_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	_fog_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	_fog_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_viewport.add_child(_fog_rect)
 
 	_fog_material = ShaderMaterial.new()
 	_fog_material.shader = _build_fog_shader()
