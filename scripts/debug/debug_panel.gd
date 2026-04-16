@@ -377,8 +377,9 @@ func _apply_toggle(key: String, on: bool) -> void:
 
 	if key == "world_map" and _player_ref:
 		_player_ref.set("_map_disabled", not on)
-		if not on and _player_ref.get("_map_open"):
-			_player_ref.call("_close_map")
+		var world_map_node: Node = _player_ref.get("_world_map")
+		if world_map_node and world_map_node.has_method("set_disabled"):
+			world_map_node.call("set_disabled", not on)
 
 	if key == "fancy_terrain":
 		var wg_nodes := get_tree().get_nodes_in_group(&"world_generator")

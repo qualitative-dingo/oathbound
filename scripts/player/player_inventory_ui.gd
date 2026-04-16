@@ -54,22 +54,11 @@ func close_inventory() -> void:
 
 
 func toggle_map() -> void:
-	pc._map_open = not pc._map_open
-	if pc._map_open:
-		pc._map_zoom = pc._map_zoom_target
-		pc._map_dirty = true
-		if pc._map_panel:
-			pc._map_panel.visible = true
-		pc._refresh_map()
-		pc._map_dirty = false
-	else:
-		close_map()
+	pc._toggle_map()
 
 
 func close_map() -> void:
-	pc._map_open = false
-	if pc._map_panel:
-		pc._map_panel.visible = false
+	pc._close_map()
 
 
 func build_inventory_panel(root: Control) -> void:

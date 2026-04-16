@@ -25,6 +25,8 @@ const _DebugPortal := preload("res://scripts/interactables/debug_portal.gd")
 signal zone_loaded(coord: Vector2i)
 signal zone_unloaded(coord: Vector2i)
 signal biome_at_player_changed(biome_id: StringName)
+signal zone_explored(coord: Vector2i)
+signal world_ready
 
 # ─── World Constants ───────────────────────────────────────────────────────────
 
@@ -400,6 +402,7 @@ func explore_around(world_pos: Vector3, radius_zones: int = 3) -> void:
 			var zone_coord := Vector2i(zx, zz)
 			if not _explored_zones.has(zone_coord):
 				_explored_zones[zone_coord] = true
+				zone_explored.emit(zone_coord)
 			var zone_wx: float = zx * ZONE_SIZE
 			var zone_wz: float = zz * ZONE_SIZE
 			for sx in SUB_CHUNK_RES:
@@ -480,6 +483,7 @@ func _ready() -> void:
 	]
 	AudioManager.play_music_playlist(_theme_songs, 4.0)
 	GameEvents.day_night_changed.connect(_on_day_night_changed)
+	world_ready.emit()
 
 
 func _on_day_night_changed(is_day: bool) -> void:
@@ -3134,7 +3138,10 @@ func _finalize_zone(coord: Vector2i, arrays: Array, shape: HeightMapShape3D) -> 
 	zone_root.position = Vector3(coord.x * ZONE_SIZE, 0.0, coord.y * ZONE_SIZE)
 	zone_root.set_meta(&"zone_coord", coord)
 	_loaded_zones[coord] = zone_root
+	var _was_explored := _explored_zones.has(coord)
 	_explored_zones[coord] = true
+	if not _was_explored:
+		zone_explored.emit(coord)
 
 	# Build creek/river strip meshes for this zone
 	_build_creek_meshes_for_zone(zone_root, coord)

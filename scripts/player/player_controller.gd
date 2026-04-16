@@ -60,16 +60,6 @@ var _attack_cooldown: float = 0.0
 var _inventory_open: bool = false
 var _map_open: bool = false
 var _map_disabled: bool = false
-var _map_markers: Array[Dictionary] = []
-var _map_marker_labels: Array[Label] = []
-var _map_zoom: float = 40.0
-var _map_zoom_target: float = 40.0
-const MAP_ZOOM_MIN := 18.0
-const MAP_ZOOM_MAX := 155.0
-const MAP_ZOOM_STEP := 6.0
-const MAP_ZOOM_SPEED := 25.0
-const MAP_PX := 512
-const MAP_RENDER_PX := 256
 
 var equipped_weapon: StringName = &"fists"
 ## Synced for multiplayer; updated when animation changes.
@@ -418,30 +408,7 @@ var _hotbar_icons: Array[TextureRect] = []
 var _hotbar_qty_labels: Array[Label] = []
 var _tooltip_panel: PanelContainer
 var _tooltip_label: RichTextLabel
-var _map_panel: PanelContainer
-var _map_biome_label: Label
-var _map_texture_rect: TextureRect
-var _map_image: Image
-var _map_image_tex: ImageTexture
-var _map_circle_mask: Image
-var _map_mask_bytes: PackedByteArray
-var _map_dirty := true
-var _map_last_player_pos := Vector3.ZERO
-var _map_refresh_timer := 0.0
-var _map_chunk_row := -1
-var _map_chunk_col := 0
-var _map_chunk_out: PackedByteArray
-var _map_chunk_player_pos := Vector3.ZERO
-var _map_chunk_center_zone := Vector2i.ZERO
-var _map_chunk_no_fog := false
-var _map_chunk_explored: Dictionary = {}
-var _map_chunk_zoom: float = 40.0
-const _MAP_CHUNK_BUDGET_US := 6000
-var _map_partial_upload_timer := 0.0
-var _quick_zone_colors: Dictionary = {}
-var _tiles_pending_build: Array = []
-var _map_fog_time := 0.0
-var _map_fog_noise: FastNoiseLite
+var _world_map: WorldMap
 
 const MINIMAP_PX := 180
 const MINIMAP_RING := 5
@@ -462,7 +429,6 @@ var _minimap_needs_refresh := true
 var _minimap_paused := false
 var _minimap_outer: Control
 var _minimap_arrow_rect: TextureRect
-var _map_arrow_rect: TextureRect
 
 ## Phase 5: Report player data to host for save on disconnect
 const _REPORT_DATA_INTERVAL := 8.0
@@ -1476,21 +1442,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				_build_rotation = snappedf(_build_rotation + deg_to_rad(45.0), deg_to_rad(45.0))
 			else:
 				_build_rotation += deg_to_rad(15.0)
-			return
-
-	if _map_open and event is InputEventMouseButton and event.pressed:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_map_zoom_target = clampf(_map_zoom_target - MAP_ZOOM_STEP, MAP_ZOOM_MIN, MAP_ZOOM_MAX)
-			_map_zoom = _map_zoom_target
-			_map_dirty = true
-			_map_chunk_row = -1
-			return
-		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_map_zoom_target = clampf(_map_zoom_target + MAP_ZOOM_STEP, MAP_ZOOM_MIN, MAP_ZOOM_MAX)
-			_map_zoom = _map_zoom_target
-			_map_dirty = true
-			_map_chunk_row = -1
 			return
 
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
@@ -4335,26 +4286,36 @@ func _close_inventory() -> void:
 func _toggle_map() -> void:
 	if _map_disabled:
 		return
-	_map_open = not _map_open
-	if _map_open:
-		_map_zoom = _map_zoom_target
-		_map_dirty = true
-		if _map_panel:
-			_map_panel.visible = true
-		_refresh_map()
-		_map_dirty = false
-	else:
-		_close_map()
+	if _world_map:
+		_world_map.toggle()
+		_map_open = _world_map.is_open()
 
 
 func _close_map() -> void:
+	if _world_map:
+		_world_map.close()
 	_map_open = false
-	_map_chunk_row = -1
-	if _map_panel:
-		_map_panel.visible = false
-	for lbl in _map_marker_labels:
-		if is_instance_valid(lbl):
-			lbl.visible = false
+
+
+func _build_world_map() -> void:
+	_world_map = WorldMap.new()
+	_world_map.name = "WorldMap"
+	add_child(_world_map)
+	_world_map.setup(self, _find_world_generator())
+	if _spring_arm and _spring_arm.get_child_count() > 0:
+		var cam := _spring_arm.get_child(0) as Camera3D
+		if cam:
+			_world_map.set_camera(cam)
+	_world_map.opened.connect(_on_world_map_opened)
+	_world_map.closed.connect(_on_world_map_closed)
+
+
+func _on_world_map_opened() -> void:
+	_map_open = true
+
+
+func _on_world_map_closed() -> void:
+	_map_open = false
 
 
 func _build_death_overlay(root: Control) -> void:
@@ -4427,7 +4388,7 @@ func _build_hud() -> void:
 	_build_death_overlay(_hud_root)
 	_build_inventory_panel(_hud_root)
 	_build_tooltip(_hud_root)
-	_build_map_panel(_hud_root)
+	_build_world_map()
 	_build_drag_icon(_hud_root)
 	_build_build_menu(_hud_root)
 	_workbench_ui = PlayerWorkbenchUI.new()
@@ -5661,56 +5622,6 @@ func _make_minimap_icon_frame(sz: int) -> PanelContainer:
 	return frame
 
 
-func _draw_arrow_on_image(img: Image, half_px: int, scale: float = 1.0) -> void:
-	var cam := get_viewport().get_camera_3d()
-	var facing := 0.0
-	if cam:
-		var fwd := -cam.global_transform.basis.z
-		facing = atan2(fwd.x, -fwd.z)
-
-	var arrow_col := Color(1.0, 0.3, 0.2)
-	var outline_col := Color(0.15, 0.05, 0.02)
-	var center_col := Color(1.0, 1.0, 1.0)
-	var img_sz := img.get_width()
-
-	var verts: Array[Vector2] = [
-		Vector2(0.0, -5.0) * scale,
-		Vector2(-3.0, 4.0) * scale,
-		Vector2(0.0, 1.5) * scale,
-		Vector2(3.0, 4.0) * scale,
-	]
-	var cos_a := cos(facing)
-	var sin_a := sin(facing)
-	var reach := int(7.0 * scale) + 1
-
-	for dy in range(-reach, reach + 1):
-		for dx in range(-reach, reach + 1):
-			var px_x := half_px + dx
-			var px_y := half_px + dy
-			if px_x < 0 or px_x >= img_sz or px_y < 0 or px_y >= img_sz:
-				continue
-			var pt := Vector2(
-				float(dx) * cos_a + float(dy) * sin_a,
-				-float(dx) * sin_a + float(dy) * cos_a)
-			if _point_in_arrow(pt, verts, 1.2):
-				img.set_pixel(px_x, px_y, outline_col)
-
-	for dy in range(-reach, reach + 1):
-		for dx in range(-reach, reach + 1):
-			var px_x := half_px + dx
-			var px_y := half_px + dy
-			if px_x < 0 or px_x >= img_sz or px_y < 0 or px_y >= img_sz:
-				continue
-			var pt := Vector2(
-				float(dx) * cos_a + float(dy) * sin_a,
-				-float(dx) * sin_a + float(dy) * cos_a)
-			if _point_in_arrow(pt, verts, 1.0):
-				img.set_pixel(px_x, px_y, arrow_col)
-
-	if half_px >= 0 and half_px < img_sz:
-		img.set_pixel(half_px, half_px, center_col)
-
-
 func _draw_signpost_marker(img: Image, player_pos: Vector3, m_per_px: float, half: int, wg: Node) -> void:
 	if not wg.has_method("get_signpost_positions"):
 		return
@@ -5880,10 +5791,6 @@ var _minimap_ring_colors: PackedColorArray
 var _minimap_zone_color_cache: Dictionary = {}  # Vector2i -> Color
 var _minimap_last_pos: Vector3 = Vector3.ZERO
 
-const _TILE_RES := 8
-const _TILE_MAX_CACHE := 2000
-var _zone_tile_cache: Dictionary = {}  # Vector2i -> PackedByteArray (TILE_RES*TILE_RES*4 RGBA)
-var _zone_tile_lru: Array[Vector2i] = []
 
 func _ensure_minimap_lut() -> void:
 	if not _minimap_mask_lut.is_empty():
@@ -5908,158 +5815,7 @@ func _ensure_minimap_lut() -> void:
 				_minimap_mask_lut[idx] = 2
 
 
-func _build_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
-	var tile := PackedByteArray()
-	tile.resize(_TILE_RES * _TILE_RES * 4)
-	var zone_size: float = wg.ZONE_SIZE
-	var water_col := Color(0.12, 0.28, 0.52)
-	var water_shallow := Color(0.18, 0.38, 0.55)
-	var biome_cache: Dictionary = {}
-	var base_x := float(zone_coord.x) * zone_size
-	var base_z := float(zone_coord.y) * zone_size
-	var step := zone_size / float(_TILE_RES)
-	for ty in _TILE_RES:
-		for tx in _TILE_RES:
-			var wx := base_x + (float(tx) + 0.5) * step
-			var wz := base_z + (float(ty) + 0.5) * step
-			var bi := (ty * _TILE_RES + tx) * 4
-			var island_m: float = wg._sample_island_mask(wx, wz)
-			if island_m < 0.01:
-				tile[bi] = int(water_col.r * 255.0)
-				tile[bi + 1] = int(water_col.g * 255.0)
-				tile[bi + 2] = int(water_col.b * 255.0)
-				tile[bi + 3] = 0
-				continue
-			var h: float = wg.get_height_at(wx, wz)
-			var map_h := h
-			var mtn_b: float = wg._last_breadth
-			if mtn_b > 0.15:
-				map_h = maxf(map_h, 12.0 + mtn_b * 25.0)
-			var cr: int; var cg: int; var cb: int
-			if h < wg.WATER_LEVEL:
-				var depth := clampf((wg.WATER_LEVEL - h) / 6.0, 0.0, 1.0)
-				var wc := water_shallow.lerp(water_col, depth)
-				cr = int(wc.r * 255.0)
-				cg = int(wc.g * 255.0)
-				cb = int(wc.b * 255.0)
-			else:
-				var col := _get_blended_biome_color(wx, wz, map_h, zone_size, wg, biome_cache)
-				var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
-				cr = int(clampf(col.r * bright, 0.0, 1.0) * 255.0)
-				cg = int(clampf(col.g * bright, 0.0, 1.0) * 255.0)
-				cb = int(clampf(col.b * bright, 0.0, 1.0) * 255.0)
-			tile[bi] = cr
-			tile[bi + 1] = cg
-			tile[bi + 2] = cb
-			tile[bi + 3] = 255
-	return tile
-
-
-func _get_zone_tile(zone_coord: Vector2i, wg: Node) -> PackedByteArray:
-	if _zone_tile_cache.has(zone_coord):
-		var lru_idx := _zone_tile_lru.find(zone_coord)
-		if lru_idx >= 0 and lru_idx < _zone_tile_lru.size() - 1:
-			_zone_tile_lru.remove_at(lru_idx)
-			_zone_tile_lru.append(zone_coord)
-		return _zone_tile_cache[zone_coord]
-	var tile := _build_zone_tile(zone_coord, wg)
-	_zone_tile_cache[zone_coord] = tile
-	_zone_tile_lru.append(zone_coord)
-	while _zone_tile_lru.size() > _TILE_MAX_CACHE:
-		var evict := _zone_tile_lru[0]
-		_zone_tile_lru.remove_at(0)
-		_zone_tile_cache.erase(evict)
-	return tile
-
-
-func _sample_tile_texel(tile: PackedByteArray, tx: int, tz: int) -> Color:
-	var bi := (tz * _TILE_RES + tx) * 4
-	return Color(float(tile[bi]) / 255.0, float(tile[bi + 1]) / 255.0, float(tile[bi + 2]) / 255.0, float(tile[bi + 3]) / 255.0)
-
-
-func _terrain_color_cache_lookup(zone_coord: Vector2i, world_x: float, world_z: float, zone_size: float, wg: Node) -> Color:
-	var tile := _get_zone_tile(zone_coord, wg)
-
-	var local_x := fmod(world_x, zone_size)
-	var local_z := fmod(world_z, zone_size)
-	if local_x < 0.0:
-		local_x += zone_size
-	if local_z < 0.0:
-		local_z += zone_size
-
-	var step := zone_size / float(_TILE_RES)
-	var u := local_x / step - 0.5
-	var v := local_z / step - 0.5
-	var u0 := floori(u)
-	var v0 := floori(v)
-	var fu := u - float(u0)
-	var fv := v - float(v0)
-	var u1 := u0 + 1
-	var v1 := v0 + 1
-
-	var c00: Color
-	var c10: Color
-	var c01: Color
-	var c11: Color
-
-	if u0 >= 0 and u1 < _TILE_RES and v0 >= 0 and v1 < _TILE_RES:
-		c00 = _sample_tile_texel(tile, u0, v0)
-		c10 = _sample_tile_texel(tile, u1, v0)
-		c01 = _sample_tile_texel(tile, u0, v1)
-		c11 = _sample_tile_texel(tile, u1, v1)
-	else:
-		var samples: Array[Color] = [Color.BLACK, Color.BLACK, Color.BLACK, Color.BLACK]
-		var coords := [[u0, v0], [u1, v0], [u0, v1], [u1, v1]]
-		for i in 4:
-			var sx: int = coords[i][0]
-			var sz: int = coords[i][1]
-			var zc := zone_coord
-			if sx < 0:
-				zc.x -= 1
-				sx += _TILE_RES
-			elif sx >= _TILE_RES:
-				zc.x += 1
-				sx -= _TILE_RES
-			if sz < 0:
-				zc.y -= 1
-				sz += _TILE_RES
-			elif sz >= _TILE_RES:
-				zc.y += 1
-				sz -= _TILE_RES
-			var t := _get_zone_tile(zc, wg)
-			samples[i] = _sample_tile_texel(t, sx, sz)
-		c00 = samples[0]
-		c10 = samples[1]
-		c01 = samples[2]
-		c11 = samples[3]
-
-	var w00 := (1.0 - fu) * (1.0 - fv)
-	var w10 := fu * (1.0 - fv)
-	var w01 := (1.0 - fu) * fv
-	var w11 := fu * fv
-	return Color(
-		c00.r * w00 + c10.r * w10 + c01.r * w01 + c11.r * w11,
-		c00.g * w00 + c10.g * w10 + c01.g * w01 + c11.g * w11,
-		c00.b * w00 + c10.b * w10 + c01.b * w01 + c11.b * w11,
-		c00.a * w00 + c10.a * w10 + c01.a * w01 + c11.a * w11)
-
-
-func invalidate_terrain_cache_at(world_x: float, world_z: float, radius: float) -> void:
-	var wg := _find_world_generator()
-	if not wg:
-		return
-	var zone_size: float = wg.ZONE_SIZE
-	var zone_radius := ceili(radius / zone_size) + 1
-	var center_zone := Vector2i(floori(world_x / zone_size), floori(world_z / zone_size))
-	for dz in range(-zone_radius, zone_radius + 1):
-		for dx in range(-zone_radius, zone_radius + 1):
-			var zc := Vector2i(center_zone.x + dx, center_zone.y + dz)
-			_zone_tile_cache.erase(zc)
-
-
-func _minimap_fast_color(zc: Vector2i, world_x: float, world_z: float, zone_size: float, wg: Node) -> Color:
-	if _zone_tile_cache.has(zc):
-		return _terrain_color_cache_lookup(zc, world_x, world_z, zone_size, wg)
+func _minimap_fast_color(zc: Vector2i, world_x: float, world_z: float, _zone_size: float, wg: Node) -> Color:
 	var h := wg._get_base_height(world_x, world_z)
 	var water_col := Color(0.12, 0.28, 0.52)
 	if h < wg.WATER_LEVEL:
@@ -9172,590 +8928,10 @@ func _build_bed_visual(structure: Node3D, sz: Vector3) -> void:
 	structure.add_child(footboard)
 
 
-func _build_map_panel(root: Control) -> void:
-	_map_panel = PanelContainer.new()
-	_map_panel.name = "MapPanel"
-	_map_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.02, 0.02, 0.04, 0.45)
-	_map_panel.add_theme_stylebox_override("panel", bg)
-	_map_panel.visible = false
-	_map_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	var vbox := VBoxContainer.new()
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 6)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	var title := Label.new()
-	title.text = "WORLD MAP"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_color_override("font_color", Color(0.85, 0.75, 0.45))
-	title.add_theme_font_size_override("font_size", 22)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(title)
-
-	_map_biome_label = Label.new()
-	_map_biome_label.name = "BiomeLabel"
-	_map_biome_label.text = ""
-	_map_biome_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_map_biome_label.add_theme_color_override("font_color", Color(0.7, 0.85, 0.6))
-	_map_biome_label.add_theme_font_size_override("font_size", 14)
-	_map_biome_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(_map_biome_label)
-
-	var map_container := Control.new()
-	map_container.name = "MapContainer"
-	map_container.custom_minimum_size = Vector2(MAP_PX, MAP_PX)
-	map_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	_map_texture_rect = TextureRect.new()
-	_map_texture_rect.name = "MapTexture"
-	_map_texture_rect.custom_minimum_size = Vector2(MAP_PX, MAP_PX)
-	_map_texture_rect.size = Vector2(MAP_PX, MAP_PX)
-	_map_texture_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_map_texture_rect.stretch_mode = TextureRect.STRETCH_SCALE
-	_map_texture_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_map_texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	map_container.add_child(_map_texture_rect)
-
-	_add_compass_label(map_container, "N", Vector2(MAP_PX * 0.5 - 4, 10), Color(0.95, 0.85, 0.5))
-	_add_compass_label(map_container, "S", Vector2(MAP_PX * 0.5 - 3, MAP_PX - 26), Color(0.6, 0.55, 0.45))
-	_add_compass_label(map_container, "E", Vector2(MAP_PX - 22, MAP_PX * 0.5 - 8), Color(0.6, 0.55, 0.45))
-	_add_compass_label(map_container, "W", Vector2(10, MAP_PX * 0.5 - 8), Color(0.6, 0.55, 0.45))
-
-	var map_arrow_sz := 32
-	_map_arrow_rect = TextureRect.new()
-	_map_arrow_rect.name = "MapArrowOverlay"
-	_map_arrow_rect.custom_minimum_size = Vector2(map_arrow_sz, map_arrow_sz)
-	_map_arrow_rect.size = Vector2(map_arrow_sz, map_arrow_sz)
-	_map_arrow_rect.position = Vector2(MAP_PX / 2 - map_arrow_sz / 2, MAP_PX / 2 - map_arrow_sz / 2)
-	_map_arrow_rect.pivot_offset = Vector2(map_arrow_sz / 2, map_arrow_sz / 2)
-	_map_arrow_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_map_arrow_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_map_arrow_rect.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	_map_arrow_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_map_arrow_rect.z_index = 10
-	_map_arrow_rect.texture = _generate_arrow_texture(map_arrow_sz)
-	map_container.add_child(_map_arrow_rect)
-
-	vbox.add_child(map_container)
-
-	var hint := Label.new()
-	hint.text = "Scroll to zoom  |  [M] Close"
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.add_theme_color_override("font_color", Color(0.4, 0.38, 0.32))
-	hint.add_theme_font_size_override("font_size", 12)
-	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(hint)
-
-	center.add_child(vbox)
-	_map_panel.add_child(center)
-	root.add_child(_map_panel)
-
-	_map_image = Image.create(MAP_RENDER_PX, MAP_RENDER_PX, false, Image.FORMAT_RGBA8)
-	_map_image_tex = ImageTexture.new()
-	_build_circle_mask()
-
-	_map_fog_noise = FastNoiseLite.new()
-	_map_fog_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_map_fog_noise.frequency = 0.015
-	_map_fog_noise.fractal_octaves = 3
-
-
-func _add_compass_label(parent: Control, text: String, pos: Vector2, color: Color) -> void:
-	var lbl := Label.new()
-	lbl.text = text
-	lbl.position = pos
-	lbl.add_theme_color_override("font_color", color)
-	lbl.add_theme_font_size_override("font_size", 14)
-	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(lbl)
-
-
-func _build_circle_mask() -> void:
-	_map_circle_mask = Image.create(MAP_RENDER_PX, MAP_RENDER_PX, false, Image.FORMAT_RGBA8)
-	var half := float(MAP_RENDER_PX) * 0.5
-	var radius := half - 3.0
-	var edge_width := 7.0
-	var ring_outer := radius + 1.5
-	var ring_inner := radius - 1.0
-	for y in range(MAP_RENDER_PX):
-		for x in range(MAP_RENDER_PX):
-			var dx := float(x) - half
-			var dy := float(y) - half
-			var dist := sqrt(dx * dx + dy * dy)
-			if dist > ring_outer:
-				_map_circle_mask.set_pixel(x, y, Color(0.0, 0.0, 0.0, 0.0))
-			elif dist > radius:
-				# Ornamental ring border
-				var ring_t := 1.0 - (dist - radius) / (ring_outer - radius)
-				var angle := atan2(dy, dx)
-				var notch := absf(sin(angle * 32.0))
-				var brightness := lerpf(0.25, 0.45, notch) * ring_t
-				_map_circle_mask.set_pixel(x, y, Color(brightness, brightness * 0.9, brightness * 0.7, 1.0))
-			elif dist > ring_inner:
-				# Inner ring edge
-				_map_circle_mask.set_pixel(x, y, Color(0.3, 0.27, 0.2, 1.0))
-			elif dist > ring_inner - edge_width:
-				var t := (dist - (ring_inner - edge_width)) / edge_width
-				_map_circle_mask.set_pixel(x, y, Color(1.0, 1.0, 1.0, t * 0.15 + 0.85))
-			else:
-				_map_circle_mask.set_pixel(x, y, Color(1.0, 1.0, 1.0, 1.0))
-	_map_mask_bytes = _map_circle_mask.get_data()
-
-
-func _refresh_map() -> void:
-	if not _map_panel or not _map_image or not _map_texture_rect:
-		return
-	if _map_mask_bytes.is_empty():
-		return
-
-	var wg := _find_world_generator()
-	if not wg:
-		_map_image_tex.set_image(_map_image)
-		if _map_texture_rect.texture != _map_image_tex:
-			_map_texture_rect.texture = _map_image_tex
-		return
-
-	var player_pos := wg.get_world_position(self)
-	_map_chunk_player_pos = player_pos
-	_map_chunk_center_zone = wg.world_to_zone(player_pos)
-	_map_chunk_explored = wg._explored_zones.duplicate()
-
-	var wpn_base: StringName = ItemDatabase.parse_star_id(equipped_weapon).get("base_id", &"") as StringName
-	var inv_wpn := Inventory.get_equipped("weapon")
-	var inv_base: StringName = ItemDatabase.parse_star_id(inv_wpn).get("base_id", &"") as StringName if inv_wpn != &"" else &""
-	_map_chunk_no_fog = wpn_base == &"god_axe" or inv_base == &"god_axe"
-
-	if _map_biome_label:
-		var current_biome: StringName = wg.get_biome_at(player_pos)
-		var current_micro: StringName = wg.get_microbiome_at(player_pos)
-		var display := _biome_display_name(current_biome)
-		if current_micro != &"none":
-			display += " - " + _microbiome_display_name(current_micro)
-		_map_biome_label.text = display
-
-	_map_chunk_zoom = _map_zoom
-
-	var rpx := MAP_RENDER_PX
-	var mask_bytes := _map_mask_bytes
-	var buf := PackedByteArray()
-	buf.resize(rpx * rpx * 4)
-	for i in range(0, rpx * rpx * 4, 4):
-		var ma := mask_bytes[i + 3]
-		if ma < 3:
-			continue
-		var mr := mask_bytes[i]
-		var mg := mask_bytes[i + 1]
-		if mr < 230 and mg < 230 and ma > 128 and (mr > 13 or mg > 13):
-			buf[i] = mr
-			buf[i + 1] = mg
-			buf[i + 2] = mask_bytes[i + 2]
-			buf[i + 3] = ma
-		else:
-			buf[i] = 20
-			buf[i + 1] = 20
-			buf[i + 2] = 26
-			buf[i + 3] = 255
-	_map_chunk_out = buf
-	_map_chunk_row = 0
-	_map_chunk_col = 0
-	_map_partial_upload_timer = 0.0
-	_quick_zone_colors.clear()
-	_tiles_pending_build.clear()
-
-
-func _map_render_chunk() -> void:
-	if _map_chunk_row < 0 or _map_chunk_row >= MAP_RENDER_PX:
-		return
-
-	var wg := _find_world_generator()
-	if not wg:
-		_map_chunk_row = -1
-		return
-
-	var _mt0 := Time.get_ticks_usec()
-	var rpx := MAP_RENDER_PX
-	var half_px := rpx / 2
-	var zone_size: float = wg.ZONE_SIZE
-	var zones_per_pixel: float = _map_chunk_zoom / float(half_px)
-	var mask_bytes := _map_mask_bytes
-	var out := _map_chunk_out
-	var player_pos := _map_chunk_player_pos
-	var center_zone := _map_chunk_center_zone
-	var explored := _map_chunk_explored
-	var no_fog := _map_chunk_no_fog
-	var tile_cache := _zone_tile_cache
-	var quick_colors := _quick_zone_colors
-	var water_color := Color(0.12, 0.28, 0.52)
-
-	var budget_hit := false
-
-	for py in range(_map_chunk_row, rpx):
-		var start_px := _map_chunk_col if py == _map_chunk_row else 0
-		for px in range(start_px, rpx):
-			var bi := (py * rpx + px) * 4
-			var ma := mask_bytes[bi + 3]
-			if ma < 3:
-				continue
-			var mr := mask_bytes[bi]
-			var mg := mask_bytes[bi + 1]
-			if mr < 230 and mg < 230 and ma > 128 and (mr > 13 or mg > 13):
-				continue
-
-			var zone_fx: float = float(px - half_px) * zones_per_pixel
-			var zone_fz: float = float(py - half_px) * zones_per_pixel
-			var zone_coord := Vector2i(
-				center_zone.x + floori(zone_fx),
-				center_zone.y + floori(zone_fz))
-
-			if not (no_fog or explored.has(zone_coord)):
-				out[bi] = 20
-				out[bi + 1] = 20
-				out[bi + 2] = 26
-				out[bi + 3] = 255
-				continue
-
-			var need_tile_build := false
-			if tile_cache.has(zone_coord):
-				var world_x := player_pos.x + zone_fx * zone_size
-				var world_z := player_pos.z + zone_fz * zone_size
-				var c := _terrain_color_cache_lookup(zone_coord, world_x, world_z, zone_size, wg)
-				if c.a > 0.5:
-					out[bi] = int(c.r * 255.0)
-					out[bi + 1] = int(c.g * 255.0)
-					out[bi + 2] = int(c.b * 255.0)
-				else:
-					out[bi] = int(water_color.r * 255.0)
-					out[bi + 1] = int(water_color.g * 255.0)
-					out[bi + 2] = int(water_color.b * 255.0)
-				out[bi + 3] = 255
-			elif quick_colors.has(zone_coord):
-				var qc: Color = quick_colors[zone_coord]
-				out[bi] = int(qc.r * 255.0)
-				out[bi + 1] = int(qc.g * 255.0)
-				out[bi + 2] = int(qc.b * 255.0)
-				out[bi + 3] = 255
-			else:
-				var cx := (float(zone_coord.x) + 0.5) * zone_size
-				var cz := (float(zone_coord.y) + 0.5) * zone_size
-				var h := wg._get_base_height(cx, cz)
-				var mtn_b: float = wg._mountain_breadth(cx, cz)
-				var map_h := h
-				if mtn_b > 0.15:
-					map_h = maxf(map_h, 12.0 + mtn_b * 25.0)
-				var col: Color
-				if h < wg.WATER_LEVEL:
-					col = water_color
-				else:
-					col = _biome_map_color(wg._determine_biome(zone_coord), &"none", map_h)
-					var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
-					col = Color(clampf(col.r * bright, 0.0, 1.0), clampf(col.g * bright, 0.0, 1.0), clampf(col.b * bright, 0.0, 1.0))
-				quick_colors[zone_coord] = col
-				_quick_zone_colors[zone_coord] = col
-				out[bi] = int(col.r * 255.0)
-				out[bi + 1] = int(col.g * 255.0)
-				out[bi + 2] = int(col.b * 255.0)
-				out[bi + 3] = 255
-				need_tile_build = not tile_cache.has(zone_coord)
-			if need_tile_build:
-				_tiles_pending_build.append(zone_coord)
-			if Time.get_ticks_usec() - _mt0 > _MAP_CHUNK_BUDGET_US:
-				_map_chunk_row = py
-				_map_chunk_col = px + 1
-				if _map_chunk_col >= rpx:
-					_map_chunk_row += 1
-					_map_chunk_col = 0
-				_map_chunk_out = out
-				budget_hit = true
-				break
-		if budget_hit:
-			break
-		_map_chunk_col = 0
-
-	_map_chunk_out = out
-
-	if not budget_hit:
-		_map_chunk_row = -1
-		_map_chunk_col = 0
-		var dbg_water := 0; var dbg_land := 0; var dbg_mtn := 0; var dbg_fog := 0
-		for di in range(0, rpx * rpx * 4, 4):
-			if out[di + 3] == 0:
-				continue
-			if out[di] == 20 and out[di + 1] == 20 and out[di + 2] == 26:
-				dbg_fog += 1
-			elif out[di] < 50 and out[di + 2] > 80:
-				dbg_water += 1
-			elif out[di] > 130 and out[di + 1] > 130 and out[di + 2] > 130:
-				dbg_mtn += 1
-			else:
-				dbg_land += 1
-		var total := dbg_water + dbg_land + dbg_mtn
-		if total > 0:
-			print("[MAP DBG] water=%d(%.0f%%) land=%d(%.0f%%) mountain=%d(%.0f%%) fog=%d tiles_cached=%d zoom=%.1f" % [dbg_water, dbg_water * 100.0 / total, dbg_land, dbg_land * 100.0 / total, dbg_mtn, dbg_mtn * 100.0 / total, dbg_fog, tile_cache.size(), _map_chunk_zoom])
-		_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
-		_draw_structure_markers(half_px, zones_per_pixel, zone_size, wg)
-		if _quest_bones_accepted and not _quest_bones_completed:
-			_draw_marrow_quest_area(half_px, zones_per_pixel, zone_size)
-		_draw_map_markers(half_px, zones_per_pixel, zone_size)
-		_map_image_tex.set_image(_map_image)
-		if _map_texture_rect.texture != _map_image_tex:
-			_map_texture_rect.texture = _map_image_tex
-	else:
-		_map_partial_upload_timer += float(Time.get_ticks_usec() - _mt0) / 1000.0
-		if _map_partial_upload_timer > 200.0:
-			_map_image.set_data(rpx, rpx, false, Image.FORMAT_RGBA8, out)
-			_map_image_tex.set_image(_map_image)
-			if _map_texture_rect.texture != _map_image_tex:
-				_map_texture_rect.texture = _map_image_tex
-			_map_partial_upload_timer = 0.0
-
-
-func _draw_player_arrow(half_px: int) -> void:
-	var base_scale := 1.4
-	var zoom_compensate := _map_chunk_zoom / 40.0
-	_draw_arrow_on_image(_map_image, half_px, base_scale * zoom_compensate)
-
-
-func _point_in_arrow(pt: Vector2, verts: Array[Vector2], scale: float) -> bool:
-	var s0 := verts[0] * scale
-	var s1 := verts[1] * scale
-	var s2 := verts[2] * scale
-	var s3 := verts[3] * scale
-	return _point_in_tri(pt, s0, s1, s2) or _point_in_tri(pt, s0, s2, s3)
-
-
-func _point_in_tri(p: Vector2, a: Vector2, b: Vector2, c: Vector2) -> bool:
-	var d1 := (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y)
-	var d2 := (p.x - c.x) * (b.y - c.y) - (b.x - c.x) * (p.y - c.y)
-	var d3 := (p.x - a.x) * (c.y - a.y) - (c.x - a.x) * (p.y - a.y)
-	var has_neg := (d1 < 0.0) or (d2 < 0.0) or (d3 < 0.0)
-	var has_pos := (d1 > 0.0) or (d2 > 0.0) or (d3 > 0.0)
-	return not (has_neg and has_pos)
-
-
-func _draw_structure_markers(half_px: int, zones_per_pixel: float, zone_size: float, wg: Node) -> void:
-	var marker_col := Color(0.9, 0.75, 0.3)
-	var cave_col := Color(0.5, 0.35, 0.2)
-	var signpost_col := Color(1.0, 0.9, 0.3)
-
-	for node in get_tree().get_nodes_in_group(&"structures"):
-		var n3d := node as Node3D
-		if not n3d:
-			continue
-		if n3d.is_in_group(&"village"):
-			continue
-		if n3d.name == "Tavern":
-			continue
-		_draw_map_dot(n3d.global_position, marker_col, 2, half_px, zones_per_pixel, zone_size)
-
-	if wg and wg.has_method("get_signpost_positions"):
-		var sp_positions: Array = wg.get_signpost_positions()
-		var explored_zones: Dictionary = wg._explored_zones
-		for sp_world: Vector3 in sp_positions:
-			var sp_zone = wg.world_to_zone(sp_world)
-			if not explored_zones.has(sp_zone):
-				continue
-			var sp_scene: Vector3 = wg.world_to_scene_pos(sp_world)
-			_draw_map_exclamation(sp_scene, signpost_col, half_px, zones_per_pixel, zone_size)
-
-	for node in get_tree().get_nodes_in_group(&"cave_entrances"):
-		var n3d := node as Node3D
-		if not n3d:
-			continue
-		_draw_map_dot(n3d.global_position, cave_col, 2, half_px, zones_per_pixel, zone_size)
-
-
-
-func _draw_map_dot(world_pos: Vector3, color: Color, radius: int, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
-	if zones_per_pixel < 0.001:
-		return
-	var dx_world := world_pos.x - global_position.x
-	var dz_world := world_pos.z - global_position.z
-	var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
-	var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
-	var sz := MAP_RENDER_PX
-	for dy in range(-radius, radius + 1):
-		for dx in range(-radius, radius + 1):
-			if dx * dx + dy * dy <= radius * radius:
-				var fx := px_x + dx
-				var fy := px_y + dy
-				if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
-					_map_image.set_pixel(fx, fy, color)
-
-
-func _draw_map_exclamation(world_pos: Vector3, color: Color, half_px: int, zones_per_pixel: float, zone_size: float) -> void:
-	if zones_per_pixel < 0.001:
-		return
-	var dx_w := world_pos.x - global_position.x
-	var dz_w := world_pos.z - global_position.z
-	var cx: int = half_px + roundi(dx_w / (zones_per_pixel * zone_size))
-	var cy: int = half_px + roundi(dz_w / (zones_per_pixel * zone_size))
-	var outline := Color(0.15, 0.10, 0.0)
-	var sz := MAP_RENDER_PX
-	for dy: int in range(-4, 1):
-		for dx_off: int in range(-1, 2):
-			var fx: int = cx + dx_off
-			var fy: int = cy + dy
-			if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
-				_map_image.set_pixel(fx, fy, outline)
-	for dy: int in range(2, 5):
-		for dx_off: int in range(-1, 2):
-			var fx: int = cx + dx_off
-			var fy: int = cy + dy
-			if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
-				_map_image.set_pixel(fx, fy, outline)
-	for dy: int in range(-3, 0):
-		var fx: int = cx
-		var fy: int = cy + dy
-		if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
-			_map_image.set_pixel(fx, fy, color)
-	for dy: int in range(3, 4):
-		var fx: int = cx
-		var fy: int = cy + dy
-		if fx >= 0 and fx < sz and fy >= 0 and fy < sz:
-			_map_image.set_pixel(fx, fy, color)
-
-
-func _draw_marrow_quest_area(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
-	if zones_per_pixel < 0.001:
-		return
-	var wg := _find_world_generator()
-	if not wg:
-		return
-	var positions: Array[Vector3] = wg.get_marrow_positions()
-	if positions.is_empty():
-		return
-	var center := Vector3.ZERO
-	for p in positions:
-		center += p
-	center /= float(positions.size())
-	var max_dist := 0.0
-	for p in positions:
-		var d := Vector2(p.x - center.x, p.z - center.z).length()
-		if d > max_dist:
-			max_dist = d
-	var world_radius := max_dist + 30.0
-	var px_radius := roundi(world_radius / (zones_per_pixel * zone_size))
-	px_radius = maxi(px_radius, 6)
-	var player_world := wg.get_world_position(self)
-	var dx_w := center.x - player_world.x
-	var dz_w := center.z - player_world.z
-	var cx: int = half_px + roundi(dx_w / (zones_per_pixel * zone_size))
-	var cy: int = half_px + roundi(dz_w / (zones_per_pixel * zone_size))
-	var col := Color(0.85, 0.55, 0.15, 1.0)
-	var r_sq_outer := px_radius * px_radius
-	var r_inner := px_radius - 2
-	var r_sq_inner := r_inner * r_inner
-	for dy in range(-px_radius, px_radius + 1):
-		for dx in range(-px_radius, px_radius + 1):
-			var d_sq := dx * dx + dy * dy
-			if d_sq <= r_sq_outer and d_sq >= r_sq_inner:
-				var fx := cx + dx
-				var fy := cy + dy
-				if fx >= 0 and fx < MAP_RENDER_PX and fy >= 0 and fy < MAP_RENDER_PX:
-					_map_image.set_pixel(fx, fy, col)
-
-
 func _reveal_map_marker(marker_id: String, world_pos: Vector3, label_text: String) -> void:
-	for m in _map_markers:
-		if m.get("id", "") == marker_id:
-			return
-	_map_markers.append({
-		"id": marker_id,
-		"pos": world_pos,
-		"label": label_text,
-		"color": Color(1.0, 0.85, 0.3),
-	})
+	if _world_map:
+		_world_map.reveal_marker(marker_id, world_pos, label_text)
 	_show_speech(["I should mark this on my map... %s is out there somewhere." % label_text], &"map_reveal")
-
-
-func _draw_map_markers(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
-	var wg := _find_world_generator()
-	for marker in _map_markers:
-		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
-		var col: Color = marker.get("color", Color.GOLD) as Color
-		var scene_pos := wg.world_to_scene_pos(wpos) if wg else wpos
-		_draw_map_dot(scene_pos, col, 3, half_px, zones_per_pixel, zone_size)
-		var ring_col := Color(col.r, col.g, col.b, 0.6)
-		var msz := MAP_RENDER_PX
-		for r in range(4, 6):
-			for dy in range(-r, r + 1):
-				for dx in range(-r, r + 1):
-					var dd := dx * dx + dy * dy
-					if dd >= (r - 1) * (r - 1) and dd <= r * r:
-						var dx_w := scene_pos.x - global_position.x
-						var dz_w := scene_pos.z - global_position.z
-						var px_x := half_px + roundi(dx_w / (zones_per_pixel * zone_size)) + dx
-						var px_y := half_px + roundi(dz_w / (zones_per_pixel * zone_size)) + dy
-						if px_x >= 0 and px_x < msz and px_y >= 0 and px_y < msz:
-							_map_image.set_pixel(px_x, px_y, ring_col)
-
-	_update_map_marker_labels(half_px, zones_per_pixel, zone_size)
-
-
-func _update_map_marker_labels(half_px: int, zones_per_pixel: float, zone_size: float) -> void:
-	while _map_marker_labels.size() < _map_markers.size():
-		var lbl := Label.new()
-		lbl.add_theme_font_size_override("font_size", 13)
-		lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5))
-		lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-		lbl.add_theme_constant_override("shadow_offset_x", 1)
-		lbl.add_theme_constant_override("shadow_offset_y", 1)
-		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		lbl.z_index = 100
-		if _map_texture_rect:
-			_map_texture_rect.get_parent().add_child(lbl)
-		_map_marker_labels.append(lbl)
-
-	var wg := _find_world_generator()
-	for i in _map_markers.size():
-		var marker: Dictionary = _map_markers[i]
-		var lbl: Label = _map_marker_labels[i]
-		var wpos: Vector3 = marker.get("pos", Vector3.ZERO) as Vector3
-		var scene_pos := wg.world_to_scene_pos(wpos) if wg else wpos
-		var dx_world := scene_pos.x - global_position.x
-		var dz_world := scene_pos.z - global_position.z
-		var px_x := half_px + roundi(dx_world / (zones_per_pixel * zone_size))
-		var px_y := half_px + roundi(dz_world / (zones_per_pixel * zone_size))
-		lbl.text = str(marker.get("label", ""))
-		var scale_f := float(MAP_PX) / float(MAP_RENDER_PX)
-		lbl.position = Vector2(float(px_x) * scale_f + 8.0, float(px_y) * scale_f - 8.0)
-		lbl.visible = _map_open
-
-	for i in range(_map_markers.size(), _map_marker_labels.size()):
-		_map_marker_labels[i].visible = false
-
-
-func _zone_biome_color(zone_coord: Vector2i, wg: Node, biome_cache: Dictionary, height: float) -> Color:
-	if biome_cache.has(zone_coord):
-		var cached: Array = biome_cache[zone_coord]
-		return _biome_map_color(cached[0], cached[1], height)
-	var biome: StringName = wg._determine_biome(zone_coord)
-	var micro: StringName = wg.get_microbiome_at_zone(zone_coord)
-	biome_cache[zone_coord] = [biome, micro]
-	return _biome_map_color(biome, micro, height)
-
-
-func _get_blended_biome_color(world_x: float, world_z: float, height: float, zone_size: float, wg: Node, biome_cache: Dictionary) -> Color:
-	var cx := world_x / zone_size - 0.5
-	var cz := world_z / zone_size - 0.5
-	var ix := floori(cx)
-	var iz := floori(cz)
-	var fx := cx - float(ix)
-	var fz := cz - float(iz)
-	fx = fx * fx * (3.0 - 2.0 * fx)
-	fz = fz * fz * (3.0 - 2.0 * fz)
-	var c00 := _zone_biome_color(Vector2i(ix, iz), wg, biome_cache, height)
-	var c10 := _zone_biome_color(Vector2i(ix + 1, iz), wg, biome_cache, height)
-	var c01 := _zone_biome_color(Vector2i(ix, iz + 1), wg, biome_cache, height)
-	var c11 := _zone_biome_color(Vector2i(ix + 1, iz + 1), wg, biome_cache, height)
-	return c00.lerp(c10, fx).lerp(c01.lerp(c11, fx), fz)
 
 
 func _biome_map_color(biome: StringName, micro: StringName = &"none", height: float = 0.0) -> Color:
@@ -10547,37 +9723,6 @@ func _process(delta: float) -> void:
 			var angle := atan2(fwd.x, -fwd.z)
 			if _minimap_arrow_rect:
 				_minimap_arrow_rect.rotation = angle
-			if _map_arrow_rect:
-				_map_arrow_rect.rotation = angle
-
-	if _map_open:
-		_map_fog_time += delta
-		var moved := global_position.distance_squared_to(_map_last_player_pos) > 400.0
-		_map_refresh_timer += delta
-		var periodic := _map_refresh_timer >= 4.0
-		var needs_refresh := _map_dirty or (moved and _map_refresh_timer >= 1.5) or periodic
-		if needs_refresh and _map_chunk_row < 0:
-			_map_last_player_pos = global_position
-			_map_refresh_timer = 0.0
-			_refresh_map()
-			_map_dirty = false
-		if _map_chunk_row >= 0:
-			_map_render_chunk()
-		elif _tiles_pending_build.size() > 0:
-			var wg_bg := _find_world_generator()
-			if wg_bg:
-				var bt0 := Time.get_ticks_usec()
-				var built := 0
-				while _tiles_pending_build.size() > 0:
-					var zc: Vector2i = _tiles_pending_build[_tiles_pending_build.size() - 1]
-					_tiles_pending_build.resize(_tiles_pending_build.size() - 1)
-					if not _zone_tile_cache.has(zc):
-						_get_zone_tile(zc, wg_bg)
-						built += 1
-						if Time.get_ticks_usec() - bt0 > 5000:
-							break
-				if built > 0 and _tiles_pending_build.size() == 0:
-					_map_dirty = true
 
 	var _pc_total_ms := float(Time.get_ticks_usec() - _pc_t0) / 1000.0
 	_pc_proc_max_total = maxf(_pc_proc_max_total, _pc_total_ms)
