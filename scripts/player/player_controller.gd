@@ -2382,8 +2382,7 @@ func _setup_player_sprite() -> void:
 		_gltf_all_meshes = []
 		_collect_mesh_instances(_player_sprite, _gltf_all_meshes)
 		for mi in _gltf_all_meshes:
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			_disable_shadow_receive(mi)
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		if is_tripo_barbarian:
 			_apply_tripo_player_texture()
 		elif is_lowpoly_viking:
@@ -8687,17 +8686,6 @@ func _build_campfire_visual(structure: StaticBody3D, sz: Vector3) -> void:
 	_building.build_campfire_visual(structure, sz)
 
 
-func _disable_shadow_receive(mi: MeshInstance3D) -> void:
-	if not mi.mesh:
-		return
-	for surf_idx in mi.mesh.get_surface_count():
-		var mat := mi.get_active_material(surf_idx)
-		if mat is BaseMaterial3D:
-			var m := mat.duplicate() as BaseMaterial3D
-			m.set_flag(BaseMaterial3D.FLAG_DONT_RECEIVE_SHADOWS, true)
-			mi.set_surface_override_material(surf_idx, m)
-
-
 func _disable_structure_shadows(node: Node) -> void:
 	if node is MeshInstance3D:
 		var mi := node as MeshInstance3D
@@ -12848,8 +12836,7 @@ func _update_equipped_weapon_model() -> void:
 		else:
 			_draw_weapon()
 		for mi in _get_all_mesh_instances(_equipped_weapon_node):
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			_disable_shadow_receive(mi)
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 			if mi.mesh:
 				for si in mi.mesh.get_surface_count():
 					var mat := mi.get_active_material(si)

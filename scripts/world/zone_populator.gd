@@ -3337,19 +3337,16 @@ static func _create_tree(biome: StringName, rng: RandomNumberGenerator, microbio
 
 
 static func _pick_tree_name(_biome: StringName, rng: RandomNumberGenerator, microbiome: StringName = &"none") -> String:
+	# Birch:Oak = 1:10 globally (~9% birch). The only exception is the
+	# "birch_forest" microbiome, which is named for its birches and keeps a
+	# birch-leaning mix so the biome still feels distinct — but well below
+	# its old dominant 85%.
+	const BIRCH_DEFAULT := 1.0 / 11.0
 	match microbiome:
 		&"birch_forest":
-			return "Birch" if rng.randf() < 0.85 else "Oak"
-		&"forest":
-			return "Birch" if rng.randf() < 0.3 else "Oak"
-		&"meadow":
-			return "Birch" if rng.randf() < 0.4 else "Oak"
-		&"riverside":
-			return "Birch" if rng.randf() < 0.5 else "Oak"
-		&"hills":
-			return "Oak" if rng.randf() < 0.7 else "Birch"
-		_:
 			return "Birch" if rng.randf() < 0.35 else "Oak"
+		_:
+			return "Birch" if rng.randf() < BIRCH_DEFAULT else "Oak"
 
 
 static func _get_canopy_material(_biome: StringName) -> Material:

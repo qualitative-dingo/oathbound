@@ -5,7 +5,7 @@ uniform sampler2D albedo_texture : source_color, filter_linear_mipmap, repeat_en
 uniform float rim_power : hint_range(0.5, 8.0) = 3.0;
 uniform float rim_intensity : hint_range(0.0, 1.0) = 0.35;
 uniform vec4 rim_color : source_color = vec4(0.8, 0.75, 0.6, 1.0);
-uniform float ao_strength : hint_range(0.0, 1.0) = 0.4;
+uniform float ao_strength : hint_range(0.0, 1.0) = 0.25;
 uniform float roughness_value : hint_range(0.0, 1.0) = 0.85;
 uniform float specular_value : hint_range(0.0, 1.0) = 0.15;
 uniform float grain_strength : hint_range(0.0, 0.3) = 0.0;
@@ -57,4 +57,6 @@ void fragment() {
 	float rim = 1.0 - dot(NORMAL, VIEW);
 	rim = pow(max(rim, 0.0), rim_power) * rim_intensity;
 	EMISSION = rim_color.rgb * rim;
+
+	BACKLIGHT = vec3(0.12, 0.14, 0.18);
 }
