@@ -5816,15 +5816,15 @@ func _ensure_minimap_lut() -> void:
 
 
 func _minimap_fast_color(zc: Vector2i, world_x: float, world_z: float, _zone_size: float, wg: Node) -> Color:
-	var h := wg._get_base_height(world_x, world_z)
+	var h: float = float(wg._get_base_height(world_x, world_z))
 	var water_col := Color(0.12, 0.28, 0.52)
-	if h < wg.WATER_LEVEL:
+	if h < float(wg.WATER_LEVEL):
 		return Color(water_col.r, water_col.g, water_col.b, 0.0)
-	var mtn_b: float = wg._mountain_breadth(world_x, world_z)
-	var map_h := h
+	var mtn_b: float = float(wg._mountain_breadth(world_x, world_z))
+	var map_h: float = h
 	if mtn_b > 0.15:
 		map_h = maxf(map_h, 12.0 + mtn_b * 25.0)
-	var col := _biome_map_color(wg._determine_biome(zc), &"none", map_h)
+	var col: Color = _biome_map_color(wg._determine_biome(zc), &"none", map_h)
 	var bright := clampf(lerpf(0.7, 1.25, (h + 5.0) / 30.0), 0.0, 1.0)
 	return Color(clampf(col.r * bright, 0.0, 1.0), clampf(col.g * bright, 0.0, 1.0), clampf(col.b * bright, 0.0, 1.0), 1.0)
 

@@ -629,16 +629,16 @@ func _on_viewport_gui_input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_apply_zoom_step(+ZOOM_STEP, mb.position)
-			accept_event()
+			_viewport.accept_event()
 			return
 		if mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_apply_zoom_step(-ZOOM_STEP, mb.position)
-			accept_event()
+			_viewport.accept_event()
 			return
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			_is_panning = mb.pressed
 			_pan_last_mouse = mb.position
-			accept_event()
+			_viewport.accept_event()
 			return
 	if event is InputEventMouseMotion and _is_panning:
 		var mm := event as InputEventMouseMotion
@@ -649,7 +649,7 @@ func _on_viewport_gui_input(event: InputEvent) -> void:
 			_pan_tex -= delta / scale
 			_clamp_pan()
 			_update_layout()
-		accept_event()
+		_viewport.accept_event()
 
 
 func _apply_zoom_step(dz: float, _anchor_vp: Vector2) -> void:
